@@ -221,3 +221,5 @@ node_modules/
 .vscode/
 
 __pycache__/
+
+archive/
