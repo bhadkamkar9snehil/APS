@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "aps-ui",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-s", "ui_design", "-p", "3131", "--no-clipboard"],
+      "port": 3131
+    }
+  ]
+}
