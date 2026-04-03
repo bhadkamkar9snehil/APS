@@ -205,3 +205,19 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Project cleanup ignore patterns
+/archive/root_cleanup/
+api_server.log
+*.xlsm
+*.docx
+*.pptx
+node_modules/
+.vscode/
+
+
+.claude
+
+.vscode/
+
+__pycache__/
