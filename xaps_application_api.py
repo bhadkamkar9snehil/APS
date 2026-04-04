@@ -132,6 +132,39 @@ def _jsonify(data, status: int = 200):
     return app.response_class(json.dumps(data, cls=_Enc, ensure_ascii=False), status=status, mimetype="application/json")
 
 
+def _error_response(
+    error_message: str,
+    error_code: str = "INTERNAL_ERROR",
+    error_domain: str = "API",
+    trace_id: str | None = None,
+    details: str | None = None,
+    degraded_mode: bool = False,
+    status_code: int = 500,
+) -> tuple:
+    """Create standardized error response payload.
+    
+    Args:
+        error_message: User-friendly error description
+        error_code: Machine-readable error code (e.g. MASTER_DATA_ERROR, BOM_CYCLE)
+        error_domain: Subsystem that failed (API, MASTER_DATA, BOM, MATERIAL, SCHEDULER, CTP, WORKBOOK_IO)
+        trace_id: Correlation/run ID for this error
+        details: Additional technical details
+        degraded_mode: Whether system is still running in degraded mode
+        status_code: HTTP status code
+    """
+    response = {
+        "error": True,
+        "error_code": error_code,
+        "error_message": error_message,
+        "error_domain": error_domain,
+        "trace_id": trace_id or _state.get("run_id") or "unknown",
+        "degraded_mode": degraded_mode,
+        "details": details,
+        "timestamp": datetime.now().isoformat(),
+    }
+    return _jsonify(response, status=status_code), status_code
+
+
 def _df_to_records(df: pd.DataFrame) -> list:
     if df is None or df.empty:
         return []
@@ -542,13 +575,85 @@ def _output_sheet(section: str) -> Optional[str]:
 
 
 # legacy-compatible routes
+def _validate_workbook_schema() -> Dict[str, Any]:
+    """Validate workbook schema: required sheets and columns.
+    
+    Returns dict with:
+    - valid: bool
+    - missing_sheets: list
+    - missing_columns: dict of sheet -> [missing columns]
+    - sheet_details: dict of sheet -> {exists: bool, row_count: int, columns: list}
+    """
+    result = {
+        "valid": True,
+        "missing_sheets": [],
+        "missing_columns": {},
+        "sheet_details": {},
+        "required_sheets": list(MASTERDATA_SECTION_TO_SHEET.values()),
+    }
+    
+    # Define required columns per sheet (subset for validation)
+    REQUIRED_COLUMNS = {
+        "Config": ["Key"],
+        "Sales_Orders": ["SO_ID", "SKU_ID"],
+        "BOM": ["Parent_SKU", "Child_SKU"],
+        "Inventory": ["SKU_ID"],
+        "Resource_Master": ["Resource_ID"],
+        "Routing": ["SKU_ID", "Operation"],
+        "SKU_Master": ["SKU_ID"],
+    }
+    
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(WORKBOOK, read_only=True, data_only=False)
+        sheet_names = set(wb.sheetnames)
+        wb.close()
+    except Exception as e:
+        result["valid"] = False
+        result["schema_error"] = f"Failed to read workbook sheets: {str(e)}"
+        return result
+    
+    # Check for missing required sheets
+    for sheet_name in REQUIRED_COLUMNS.keys():
+        if sheet_name not in sheet_names:
+            result["missing_sheets"].append(sheet_name)
+            result["valid"] = False
+    
+    # Check columns for each sheet that exists
+    for sheet_name, required_cols in REQUIRED_COLUMNS.items():
+        if sheet_name not in sheet_names:
+            continue
+        
+        try:
+            df = _read_sheet(sheet_name)
+            result["sheet_details"][sheet_name] = {
+                "exists": True,
+                "row_count": len(df),
+                "columns": list(df.columns),
+            }
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            if missing_cols:
+                result["missing_columns"][sheet_name] = missing_cols
+                result["valid"] = False
+        except Exception as e:
+            result["sheet_details"][sheet_name] = {
+                "exists": False,
+                "error": str(e),
+            }
+            result["valid"] = False
+    
+    return result
+
+
 @app.route('/api/health')
 def health():
+    """Health check endpoint with workbook schema validation."""
     exists = WORKBOOK.exists()
     mtime = datetime.fromtimestamp(WORKBOOK.stat().st_mtime).isoformat() if exists else None
 
     workbook_ok = False
     workbook_error = None
+    schema_validation = {}
 
     if exists:
         try:
@@ -556,21 +661,29 @@ def health():
             wb = openpyxl.load_workbook(WORKBOOK, read_only=True, data_only=True)
             wb.close()
             workbook_ok = True
+            
+            # Validate schema
+            schema_validation = _validate_workbook_schema()
         except Exception as e:
             workbook_error = str(e)
+    
+    active_run = _get_active_run_artifact()
 
     return _jsonify({
-        "ok": exists and workbook_ok,
+        "ok": exists and workbook_ok and schema_validation.get("valid", True),
         "api": "up",
         "workbook": str(WORKBOOK),
         "workbook_exists": exists,
         "workbook_ok": workbook_ok,
         "workbook_mtime": mtime,
         "workbook_error": workbook_error,
+        "schema": schema_validation,
         "last_run": _state.get("last_run"),
+        "run_id": _state.get("run_id"),
         "solver_status": _state.get("solver_status", "NOT RUN"),
         "solver_detail": _state.get("solver_detail", ""),
-    }, 200 if exists else 500)
+        "active_run_degraded_flags": active_run.get("degraded_flags") if active_run else None,
+    }, 200 if exists and workbook_ok else 500)
 
 
 @app.route('/api/data/dashboard')
@@ -634,6 +747,17 @@ def run_bom_api():
         structure_errors = explosion_result.get('structure_errors', [])
         feasible = explosion_result.get('feasible', True)
         
+        if not feasible and structure_errors:
+            error_summary = "; ".join(f"{e.get('type')}: {e.get('path')}" for e in structure_errors[:3])
+            return _error_response(
+                error_message="BOM structure validation failed",
+                error_code="BOM_STRUCTURE_ERROR",
+                error_domain="BOM",
+                details=error_summary,
+                degraded_mode=False,
+                status_code=400
+            )[0]
+        
         # Net against inventory using the exploded DataFrame
         netted = net_requirements(gross_bom_df, d['inventory'])
         
@@ -645,7 +769,13 @@ def run_bom_api():
             "rows": len(netted)
         })
     except Exception as e:
-        return _jsonify({"error": str(e), "trace": traceback.format_exc()}, 500)
+        return _error_response(
+            error_message=f"BOM explosion failed: {str(e)}",
+            error_code="BOM_EXPLOSION_ERROR",
+            error_domain="BOM",
+            details=traceback.format_exc(),
+            status_code=500
+        )[0]
 
 
 def _enrich_campaigns_with_material_data(campaigns: List[Dict], bom: pd.DataFrame, inventory: pd.DataFrame | dict) -> List[Dict]:
@@ -931,12 +1061,27 @@ def run_schedule_api():
         })
     except Exception as e:
         _state['error'] = str(e)
-        return _jsonify({"error": str(e), "trace": traceback.format_exc()}, 500)
+        error_resp = _error_response(
+            error_message=f"Scheduling failed: {str(e)}",
+            error_code="SCHEDULE_ERROR",
+            error_domain="SCHEDULER",
+            details=traceback.format_exc(),
+            degraded_mode=False,
+            status_code=500
+        )
+        return error_resp[0]
 
 
 @app.route('/api/run/ctp', methods=['POST'])
 def run_ctp_api():
+    """Capable-to-promise endpoint.
+    
+    Uses the most recent schedule output to freeze committed jobs.
+    Evaluates feasibility for new demand against frozen schedule.
+    """
     try:
+        from engine.ctp import _frozen_jobs_from_schedule_dataframe
+        
         body = request.get_json(silent=True) or {}
         sku_id = str(body.get('sku_id', ''))
         qty_mt = float(body.get('qty_mt', 100.0))
@@ -945,11 +1090,36 @@ def run_ctp_api():
         config = d['config']
         min_cmt = float(config.get('Min_Campaign_MT', 100.0) or 100.0)
         max_cmt = float(config.get('Max_Campaign_MT', 500.0) or 500.0)
-        campaigns = _state['campaigns'] or build_campaigns(d['sales_orders'], min_cmt, max_cmt, inventory=d['inventory'], bom=d['bom'], config=config, skus=d['skus'])
-        res = capable_to_promise(sku_id=sku_id, qty_mt=qty_mt, requested_date=requested_date, campaigns=campaigns, resources=d['resources'], bom=d['bom'], inventory=d['inventory'], routing=d['routing'], skus=d['skus'], planning_start=datetime.now(), config=config, queue_times=d['queue_times'])
+        campaigns = _state.get('campaigns') or build_campaigns(d['sales_orders'], min_cmt, max_cmt, inventory=d['inventory'], bom=d['bom'], config=config, skus=d['skus'])
+        
+        # Build frozen jobs from most recent schedule output
+        schedule_df = _state.get('heat_schedule', pd.DataFrame())
+        frozen_jobs = _frozen_jobs_from_schedule_dataframe(schedule_df)
+        
+        res = capable_to_promise(
+            sku_id=sku_id, 
+            qty_mt=qty_mt, 
+            requested_date=requested_date, 
+            campaigns=campaigns, 
+            resources=d['resources'], 
+            bom=d['bom'], 
+            inventory=d['inventory'], 
+            routing=d['routing'], 
+            skus=d['skus'], 
+            planning_start=datetime.now(), 
+            config=config, 
+            queue_times=d['queue_times'],
+            frozen_jobs=frozen_jobs  # Pass frozen jobs from schedule
+        )
         return _jsonify({k: _safe(v) for k, v in res.items()})
     except Exception as e:
-        return _jsonify({"error": str(e), "trace": traceback.format_exc()}, 500)
+        return _error_response(
+            error_message=f"CTP evaluation failed: {str(e)}",
+            error_code="CTP_ERROR",
+            error_domain="CTP",
+            details=traceback.format_exc(),
+            status_code=500
+        )[0]
 
 
 @app.route('/api/orders/assign', methods=['POST'])
