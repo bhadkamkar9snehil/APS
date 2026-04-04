@@ -55,7 +55,7 @@ timeout /t 2 /nobreak >nul
 echo  [OK] UI server running
 
 :: Open browser
-echo  [->] Opening browser...
+echo  [^-^>] Opening browser...
 start http://localhost:%UI_PORT%/xaps_iframe_app.html
 
 echo.
