@@ -183,12 +183,16 @@
           <div class="metric danger"><div class="metric-label">Critical</div><div class="metric-value" id="matCrit">—</div></div>
           <div class="metric"><div class="metric-label">Held campaigns</div><div class="metric-value" id="matHeld">—</div></div>
         </div>
-        <div class="card"><div class="card-body" style="padding:0;overflow:auto;max-height:65vh">
-          <table class="table">
-            <thead><tr><th>Campaign</th><th>Grade</th><th>Shortage SKU</th><th>Shortage MT</th><th>Status</th></tr></thead>
-            <tbody id="materialBody"></tbody>
-          </table>
-        </div></div>
+        <div class="material-split-container">
+          <div class="material-tree-panel">
+            <div class="material-tree-header">Campaigns & Plants</div>
+            <div class="material-tree" id="materialTree"></div>
+          </div>
+          <div class="material-split-divider" id="materialDivider"></div>
+          <div class="material-detail-panel">
+            <div id="materialDetailContent"></div>
+          </div>
+        </div>
       </section>
 
       <section class="page" id="page-capacity">
@@ -363,6 +367,24 @@ function activatePage(page){
   document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active', el.id === 'page-' + page));
   document.querySelectorAll('#topTabs .tab').forEach(el=>el.classList.toggle('active', el.dataset.page === page));
   document.querySelectorAll('#dockNav .dock-btn').forEach(el=>el.classList.toggle('active', el.dataset.page === page));
+  if(page === 'material') initMaterialResizable();
+}
+function initMaterialResizable(){
+  const divider = qs('materialDivider');
+  if(!divider) return;
+  let isResizing = false;
+  divider.addEventListener('mousedown', ()=>{ isResizing = true; });
+  document.addEventListener('mouseup', ()=>{ isResizing = false; });
+  document.addEventListener('mousemove', (e)=>{
+    if(!isResizing) return;
+    const container = divider.parentElement;
+    const rect = container.getBoundingClientRect();
+    const newWidth = e.clientX - rect.left;
+    const minWidth = 200, maxWidth = rect.width - 300;
+    if(newWidth >= minWidth && newWidth <= maxWidth){
+      container.children[0].style.flex = '0 0 '+newWidth+'px';
+    }
+  });
 }
 document.querySelectorAll('#topTabs .tab, #dockNav .dock-btn').forEach(btn=>btn.addEventListener('click', ()=>activatePage(btn.dataset.page)));
 document.querySelectorAll('[data-page-link]').forEach(btn=>btn.addEventListener('click', ()=>activatePage(btn.dataset.pageLink)));
@@ -662,21 +684,78 @@ function deriveMaterialRows(){
 }
 function renderMaterial(){
   const rows = (state.material && state.material.length ? state.material : deriveMaterialRows());
-  const body = qs('materialBody');
-  if(!rows.length){ body.innerHTML = '<tr><td colspan="5">No material rows loaded.</td></tr>'; return; }
+  if(!rows.length){ qs('materialDetailContent').innerHTML = '<div class="material-detail-empty">No material data loaded.</div>'; return; }
+
   const critical = rows.filter(r=>['CRITICAL','BLOCKED'].includes(String(r.Status || '').toUpperCase())).length;
   const held = rows.filter(r=>String(r.Status || '').toUpperCase().includes('HOLD')).length;
   setText('matOk', Math.max(rows.length - held - critical, 0));
   setText('matLow', held);
   setText('matCrit', critical);
   setText('matHeld', held);
-  body.innerHTML = rows.map(r=>'<tr>'+
-    '<td><strong>'+escapeHtml(r.Campaign_ID || '—')+'</strong></td>'+
-    '<td>'+escapeHtml(r.Grade || '—')+'</td>'+
-    '<td>'+escapeHtml(r.Material_SKU || '—')+'</td>'+
-    '<td>'+escapeHtml(r.Required_Qty || r.Shortage_Qty || '—')+'</td>'+
-    '<td>'+badgeForStatus(r.Status || 'OK')+'</td>'+
-  '</tr>').join('');
+
+  buildMaterialTree(rows);
+}
+
+function buildMaterialTree(rows){
+  const campaigns = {};
+  rows.forEach(r=>{
+    const cid = r.Campaign_ID || 'Unknown';
+    if(!campaigns[cid]) campaigns[cid] = {id:cid, grade:r.Grade, rows:[]};
+    campaigns[cid].rows.push(r);
+  });
+
+  const tree = qs('materialTree');
+  tree.innerHTML = Object.values(campaigns).map(camp=>{
+    return '<div class="tree-item">'+
+      '<div class="tree-node campaign" onclick="selectMaterialCampaign(this,'+escapeHtml(JSON.stringify(camp).replace(/'/g,"&#39;"))+')" data-campaign="'+escapeHtml(camp.id)+'">'+
+        '<div class="tree-toggle leaf"></div>'+
+        '<div class="tree-node-icon">📦</div>'+
+        '<span>'+escapeHtml(camp.id)+' · '+escapeHtml(camp.grade)+'</span>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+
+  if(Object.keys(campaigns).length > 0){
+    const firstCampaign = Object.values(campaigns)[0];
+    renderMaterialDetail(firstCampaign);
+  }
+}
+
+function selectMaterialCampaign(el, campaignData){
+  document.querySelectorAll('.tree-node.campaign').forEach(n=>n.classList.remove('selected'));
+  el.classList.add('selected');
+  renderMaterialDetail(campaignData);
+}
+
+function renderMaterialDetail(campaign){
+  const rows = campaign.rows || [];
+  if(!rows.length){
+    qs('materialDetailContent').innerHTML = '<div class="material-detail-empty">No materials for this campaign.</div>';
+    return;
+  }
+  const campaignId = campaign.id || 'Unknown';
+  const grade = campaign.grade || '—';
+  const totalQty = rows.reduce((a,r)=>a+num(r.Required_Qty || r.Shortage_Qty || 0),0);
+  const shortageQty = rows.filter(r=>String(r.Status||'').toUpperCase().includes('SHORT')).reduce((a,r)=>a+num(r.Required_Qty || r.Shortage_Qty || 0),0);
+  const holdQty = rows.filter(r=>String(r.Status||'').toUpperCase().includes('HOLD')).reduce((a,r)=>a+num(r.Required_Qty || r.Shortage_Qty || 0),0);
+
+  qs('materialDetailContent').innerHTML = '<div class="material-detail-header">'+
+    '<div class="material-detail-title">'+escapeHtml(campaignId)+'</div>'+
+    '<div class="material-detail-subtitle">'+escapeHtml(grade)+' - Material requirements for campaign</div>'+
+  '</div>'+
+  '<div class="material-detail-stats">'+
+    '<div class="material-detail-stat"><div class="material-detail-stat-label">Total Demand</div><div class="material-detail-stat-value">'+totalQty.toFixed(1)+' MT</div></div>'+
+    '<div class="material-detail-stat"><div class="material-detail-stat-label">Shortage</div><div class="material-detail-stat-value">'+shortageQty.toFixed(1)+' MT</div></div>'+
+    '<div class="material-detail-stat"><div class="material-detail-stat-label">On Hold</div><div class="material-detail-stat-value">'+holdQty.toFixed(1)+' MT</div></div>'+
+  '</div>'+
+  '<table class="material-detail-table"><thead><tr><th>Material SKU</th><th>Required</th><th>Available</th><th>Status</th></tr></thead><tbody>'+
+    rows.map(r=>'<tr>'+
+      '<td><strong>'+escapeHtml(r.Material_SKU || r.Shortage_SKU || '—')+'</strong></td>'+
+      '<td>'+num(r.Required_Qty || r.Shortage_Qty || 0).toFixed(1)+' MT</td>'+
+      '<td>'+num(r.Available_Qty || 0).toFixed(1)+' MT</td>'+
+      '<td>'+badgeForStatus(r.Status || 'OK')+'</td>'+
+    '</tr>').join('')+
+  '</tbody></table>';
 }
 function renderCapacity(){
   const rows = [...(state.capacity||[])].sort((a,b)=>num(b['Utilisation_%'] || b.utilisation) - num(a['Utilisation_%'] || a.utilisation));
