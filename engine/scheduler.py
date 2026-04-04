@@ -20,6 +20,20 @@ except ModuleNotFoundError:  # pragma: no cover - environment-dependent import
 from engine.campaign import billet_family_for_grade, rm_minutes_for_qty, needs_vd_for_grade, _get_heat_size_mt
 from engine.config import get_config
 
+# Cycle times are now config-driven (read from Algorithm_Config)
+# Defaults are embedded for backward compatibility
+def _get_cycle_times():
+    """Get all cycle times from Algorithm_Config."""
+    config = get_config()
+    return {
+        'EAF': config.get_duration_minutes('CYCLE_TIME_EAF_MIN', 90),
+        'LRF': config.get_duration_minutes('CYCLE_TIME_LRF_MIN', 40),
+        'VD': config.get_duration_minutes('CYCLE_TIME_VD_MIN', 45),
+        'CCM_130': config.get_duration_minutes('CYCLE_TIME_CCM_130_MIN', 50),
+        'CCM_150': config.get_duration_minutes('CYCLE_TIME_CCM_150_MIN', 60),
+    }
+
+# Legacy constants for backward compatibility (don't use directly)
 EAF_TIME = 90
 LRF_TIME = 40
 VD_TIME = 45
@@ -46,7 +60,13 @@ DEFAULT_MACHINE_GROUPS = {
     "CCM": ["CCM-01", "CCM-02"],
     "RM": ["RM-01", "RM-02"],
 }
+# Queue violation weight now config-driven (from Algorithm_Config)
+# Legacy constant for backward compatibility
 QUEUE_VIOLATION_WEIGHT = 500
+
+def _get_queue_violation_weight() -> int:
+    """Get queue violation penalty weight from Algorithm_Config."""
+    return get_config().get_weight('OBJECTIVE_QUEUE_VIOLATION_WEIGHT', 500)
 
 
 def _floor_hour(ts: datetime) -> datetime:
@@ -207,17 +227,21 @@ def _operation_duration(profile: dict | None, *, include_setup: bool = False) ->
 
 
 def _ccm_time(grade: str) -> int:
-    return CCM_130 if billet_family_for_grade(grade) == "BIL-130" else CCM_150
+    """Get CCM cycle time for grade based on billet family and config."""
+    cycles = _get_cycle_times()
+    return cycles['CCM_130'] if billet_family_for_grade(grade) == "BIL-130" else cycles['CCM_150']
 
 
 def _priority_weight(priority_rank_value: int) -> int:
+    """Get lateness weight multiplier for priority rank from Algorithm_Config."""
+    config = get_config()
     if priority_rank_value <= 1:
-        return 4
+        return config.get_weight('PRIORITY_WEIGHT_URGENT', 4)
     if priority_rank_value == 2:
-        return 3
+        return config.get_weight('PRIORITY_WEIGHT_HIGH', 3)
     if priority_rank_value == 3:
-        return 2
-    return 1
+        return config.get_weight('PRIORITY_WEIGHT_NORMAL', 2)
+    return config.get_weight('PRIORITY_WEIGHT_LOW', 1)
 
 
 def _section_display(section_value, sections_covered: str = "") -> str:
@@ -319,23 +343,23 @@ def build_operation_times(
     op_lookup: dict[str, str] | None = None,
     allow_defaults: bool = False,
 ) -> dict[str, dict[str, float]]:
-    defaults = (
-        {
-            "EAF": {"cycle": EAF_TIME, "setup": 30.0},
-            "LRF": {"cycle": LRF_TIME, "setup": 10.0},
-            "VD": {"cycle": VD_TIME, "setup": 15.0},
+    if allow_defaults:
+        cycles = _get_cycle_times()
+        defaults = {
+            "EAF": {"cycle": cycles['EAF'], "setup": 30.0},
+            "LRF": {"cycle": cycles['LRF'], "setup": 10.0},
+            "VD": {"cycle": cycles['VD'], "setup": 15.0},
             "CCM": {"cycle": float(_ccm_time(grade)), "setup": 20.0},
             "RM": {"cycle": 0.0, "setup": 40.0},
         }
-        if allow_defaults
-        else {
+    else:
+        defaults = {
             "EAF": {"cycle": 0.0, "setup": 0.0},
             "LRF": {"cycle": 0.0, "setup": 0.0},
             "VD": {"cycle": 0.0, "setup": 0.0},
             "CCM": {"cycle": 0.0, "setup": 0.0},
             "RM": {"cycle": 0.0, "setup": 0.0},
         }
-    )
 
     if routing is None or getattr(routing, "empty", True):
         routing_rows_available = False
@@ -1099,7 +1123,7 @@ def schedule(
                         else:
                             q_viol = model.NewIntVar(0, max_time, f"qviol_{cid}_{heat_idx + 1}_{previous_op}_{op}")
                             model.Add(q_viol >= op_task["start"] - (previous_task["end"] + transfer_gap + max_queue))
-                            objective_terms.append((q_viol, QUEUE_VIOLATION_WEIGHT))  # Proportional: q_viol = violation_magnitude
+                            objective_terms.append((q_viol, _get_queue_violation_weight()))  # Proportional: q_viol = violation_magnitude
 
                 previous_task = op_task
                 previous_op = op
