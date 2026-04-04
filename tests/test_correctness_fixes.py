@@ -60,7 +60,7 @@ class TestBOMExplosionAndNetting:
         })
         
         # Act
-        result = explode_bom_details(demand, bom, on_structure_error="log")
+        result = explode_bom_details(demand, bom, on_structure_error="record")
         
         # Assert
         assert not result["feasible"], "Cyclic BOM should be infeasible"
@@ -86,10 +86,12 @@ class TestBOMExplosionAndNetting:
         assert len(netted) == 2
         # RM-A: 100 required - 30 available = 70 net
         rm_a = netted[netted["SKU_ID"] == "RM-A"].iloc[0]
-        assert rm_a["Required_Qty"] == 70.0, "Should net out inventory cover"
+        assert rm_a["Net_Req"] == 70.0, "Should net out inventory cover"
+        assert rm_a["Gross_Req"] == 100.0, "Gross should remain unchanged"
         # RM-B: 50 required - 0 available = 50 net
         rm_b = netted[netted["SKU_ID"] == "RM-B"].iloc[0]
-        assert rm_b["Required_Qty"] == 50.0, "Should keep full required with no inventory"
+        assert rm_b["Net_Req"] == 50.0, "Should keep full required with no inventory"
+        assert rm_b["Gross_Req"] == 50.0, "Gross should remain unchanged"
 
 
 class TestMaterialSimulation:
