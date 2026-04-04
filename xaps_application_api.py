@@ -23,10 +23,13 @@ Run:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
+import time
 import traceback
+import uuid
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -38,7 +41,7 @@ from flask_cors import CORS
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from engine.bom_explosion import consolidate_demand, explode_bom_details, net_requirements
+from engine.bom_explosion import consolidate_demand, explode_bom_details, net_requirements, simulate_material_commit
 from engine.campaign import build_campaigns
 from engine.capacity import capacity_map, compute_demand_hours
 from engine.ctp import capable_to_promise
@@ -46,7 +49,9 @@ from engine.excel_store import ExcelStore
 from engine.scheduler import schedule
 from engine.workbook_schema import SHEETS
 
-WORKBOOK = Path(os.getenv("WORKBOOK_PATH", str(Path(__file__).parent / "APS_BF_SMS_RM.xlsx")))
+raw_workbook_path = os.getenv("WORKBOOK_PATH", str(Path(__file__).parent / "APS_BF_SMS_RM.xlsx"))
+raw_workbook_path = raw_workbook_path.strip().strip('"').strip("'")
+WORKBOOK = Path(raw_workbook_path)
 HEADER_ROW = 2
 PORT = int(os.getenv("PORT", "5000"))
 
@@ -140,13 +145,28 @@ def _sheet_items(api_name: str, **kwargs) -> List[Dict[str, Any]]:
 
 
 def _read_sheet(sheet: str, required: list | None = None) -> pd.DataFrame:
-    df = pd.read_excel(WORKBOOK, sheet_name=sheet, header=HEADER_ROW, dtype=str)
-    df = df.dropna(how="all").reset_index(drop=True)
-    if required:
-        df = df.dropna(subset=[c for c in required if c in df.columns], how="all")
-    return df
-
-
+    """Read Excel sheet with retry logic for file locking issues."""
+    max_retries = 3
+    retry_delay = 0.5  # seconds
+    last_error: Exception | None = None
+    
+    for attempt in range(max_retries):
+        try:
+            df = pd.read_excel(WORKBOOK, sheet_name=sheet, header=HEADER_ROW, dtype=str)
+            df = df.dropna(how="all").reset_index(drop=True)
+            if required:
+                df = df.dropna(subset=[c for c in required if c in df.columns], how="all")
+            return df
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                # File might be locked, wait and retry
+                time.sleep(retry_delay)
+    
+    # If we get here, all retries failed
+    if last_error:
+        raise last_error
+    raise RuntimeError("Failed to read Excel sheet after multiple retries")
 def _read_config() -> dict:
     try:
         df = _read_sheet("Config", ["Key"])
@@ -225,6 +245,91 @@ def _load_all() -> dict:
 
 _state: dict = {"last_run": None, "campaigns": [], "heat_schedule": pd.DataFrame(), "camp_schedule": pd.DataFrame(), "capacity": pd.DataFrame(), "solver_status": "NOT RUN", "solver_detail": "", "error": None}
 
+# Run artifact storage - tracks all planning runs with full context
+_run_artifacts: Dict[str, Dict[str, Any]] = {}  # run_id -> artifact
+_active_run_id: Optional[str] = None  # Currently active run
+
+
+def _create_run_artifact(
+    config: Dict,
+    campaigns: List[Dict],
+    heat_schedule: pd.DataFrame,
+    campaign_schedule: pd.DataFrame,
+    capacity_map_df: pd.DataFrame,
+    solver_status: str,
+    solver_detail: str,
+    warnings: List[str] | None = None,
+    degraded_flags: Dict[str, bool] | None = None,
+) -> str:
+    """Create a canonical planning run artifact with full context.
+    
+    Returns the run_id for reference and storage.
+    """
+    run_id = str(uuid.uuid4())
+    created_at = datetime.now().isoformat()
+    
+    # Compute config snapshot for reproducibility
+    config_snapshot = {k: v for k, v in (config or {}).items()}
+    
+    # Extract key planning parameters
+    allow_default_masters = config_snapshot.get('Allow_Default_Masters', False)
+    campaign_serialization_mode = config_snapshot.get('Campaign_Serialization_Mode', 'STANDARD')
+    
+    # Build artifact
+    artifact = {
+        "run_id": run_id,
+        "created_at": created_at,
+        "workbook_path": str(WORKBOOK),
+        "input_snapshot": {
+            "campaign_count": len(campaigns),
+            "solver_config": {
+                "solver_status": solver_status,
+                "solver_detail": solver_detail,
+                "allow_default_masters": allow_default_masters,
+                "campaign_serialization_mode": campaign_serialization_mode,
+            }
+        },
+        "config_snapshot": config_snapshot,
+        "results": {
+            "campaigns": campaigns,
+            "heat_schedule": heat_schedule.to_dict('records') if not heat_schedule.empty else [],
+            "campaign_schedule": campaign_schedule.to_dict('records') if not campaign_schedule.empty else [],
+            "capacity": capacity_map_df.to_dict('records') if not capacity_map_df.empty else [],
+        },
+        "solver_metadata": {
+            "status": solver_status,
+            "detail": solver_detail,
+        },
+        "warnings": warnings or [],
+        "degraded_flags": degraded_flags or {
+            "default_masters_used": allow_default_masters,
+            "greedy_fallback": solver_status in {"GREEDY", "GREEDY_FALLBACK"},
+            "material_incomplete": False,
+            "inventory_lineage_degraded": False,
+        },
+    }
+    
+    # Store artifact
+    _run_artifacts[run_id] = artifact
+    
+    return run_id
+
+
+def _get_active_run_artifact() -> Dict[str, Any] | None:
+    """Get the currently active planning run artifact."""
+    if _active_run_id and _active_run_id in _run_artifacts:
+        return _run_artifacts[_active_run_id]
+    return None
+
+
+def _set_active_run_artifact(run_id: str) -> bool:
+    """Set the active run artifact by ID."""
+    global _active_run_id
+    if run_id in _run_artifacts:
+        _active_run_id = run_id
+        return True
+    return False
+
 
 def _campaigns_to_view(campaigns: list, camp_df: pd.DataFrame | None) -> list:
     result = []
@@ -273,6 +378,115 @@ def _capacity_rows() -> List[Dict[str, Any]]:
     if "capacity-map" in SHEETS:
         return _sheet_items("capacity-map")
     return []
+
+
+def _material_plan_payload() -> Dict[str, Any]:
+    """Parse Material Plan sheet and return structured campaign/plant hierarchy."""
+    # First priority: use calculated material plan from last schedule run
+    if _state.get("material_plan_data"):
+        return _state["material_plan_data"]
+    
+    if "material-plan" not in SHEETS:
+        return {"summary": {}, "campaigns": []}
+    
+    try:
+        rows = _sheet_items("material-plan")
+        if not rows:
+            return {"summary": {}, "campaigns": []}
+        
+        # For now, derive a basic structure from flat rows
+        # Group by campaign
+        campaigns_dict = {}
+        
+        for row in rows:
+            camp_id = str(row.get('Campaign_ID') or row.get('campaign_id') or 'UNKNOWN').strip()
+            
+            # Skip placeholder/instruction rows
+            if camp_id.startswith('Run') or camp_id == 'UNKNOWN' or not camp_id:
+                continue
+            
+            if camp_id not in campaigns_dict:
+                campaigns_dict[camp_id] = {
+                    "campaign_id": camp_id,
+                    "grade": str(row.get('Grade') or row.get('grade') or ''),
+                    "release_status": str(row.get('Release_Status') or row.get('release_status') or 'OPEN'),
+                    "required_qty": 0,
+                    "plants": {}
+                }
+            
+            # Get plant info
+            plant = str(row.get('Plant') or row.get('plant') or 'UNKNOWN')
+            if plant not in campaigns_dict[camp_id]["plants"]:
+                campaigns_dict[camp_id]["plants"][plant] = {
+                    "plant": plant,
+                    "required_qty": 0,
+                    "inventory_covered_qty": 0,
+                    "rows": []
+                }
+            
+            # Parse numeric values
+            try:
+                req_qty = float(row.get('Required_Qty') or row.get('required_qty') or 0)
+            except (ValueError, TypeError):
+                req_qty = 0
+            
+            try:
+                avail_qty = float(row.get('Available_Before') or row.get('available_before') or 0)
+            except (ValueError, TypeError):
+                avail_qty = 0
+            
+            # Build detail row
+            detail_row = {
+                "material_type": str(row.get('Material_Type') or row.get('material_type') or ''),
+                "material_sku": str(row.get('Material_SKU') or row.get('material_sku') or ''),
+                "material_name": str(row.get('Material_Name') or row.get('material_name') or ''),
+                "required_qty": req_qty,
+                "available_before": avail_qty,
+                "consumed": _safe(row.get('Consumed') or row.get('consumed')),
+                "remaining_after": _safe(row.get('Remaining_After') or row.get('remaining_after')),
+                "status": str(row.get('Status') or row.get('status') or 'OK')
+            }
+            
+            campaigns_dict[camp_id]["plants"][plant]["rows"].append(detail_row)
+            campaigns_dict[camp_id]["plants"][plant]["required_qty"] += req_qty
+            campaigns_dict[camp_id]["plants"][plant]["inventory_covered_qty"] += avail_qty
+            campaigns_dict[camp_id]["required_qty"] += req_qty
+        
+        # Convert plants dict to list
+        campaigns_list = []
+        for camp_id, camp_data in campaigns_dict.items():
+            camp_data["plants"] = list(camp_data["plants"].values())
+            campaigns_list.append(camp_data)
+        
+        # Build summary
+        total_required = sum(c.get('required_qty', 0) for c in campaigns_list)
+        total_inventory = sum(
+            sum(p.get('inventory_covered_qty', 0) for p in c.get('plants', []))
+            for c in campaigns_list
+        )
+        make_convert = total_required - total_inventory
+        released_count = sum(1 for c in campaigns_list if 'RELEASED' in str(c.get('release_status', '')).upper())
+        held_count = sum(1 for c in campaigns_list if 'HOLD' in str(c.get('release_status', '')).upper())
+        
+        summary = {
+            "Campaigns": len(campaigns_list),
+            "Released": released_count,
+            "Held": held_count,
+            "Shortage Lines": sum(1 for c in campaigns_list for p in c.get('plants', []) for r in p.get('rows', []) if 'SHORT' in str(r.get('status', '')).upper()),
+            "Total Required Qty": total_required,
+            "Inventory Covered Qty": total_inventory,
+            "Make / Convert Qty": max(0, make_convert)
+        }
+        
+        return {
+            "summary": summary,
+            "campaigns": campaigns_list
+        }
+    except Exception as e:
+        print(f"Error parsing material plan: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return {"summary": {}, "campaigns": []}
 
 
 def _material_rows() -> List[Dict[str, Any]]:
@@ -332,7 +546,31 @@ def _output_sheet(section: str) -> Optional[str]:
 def health():
     exists = WORKBOOK.exists()
     mtime = datetime.fromtimestamp(WORKBOOK.stat().st_mtime).isoformat() if exists else None
-    return _jsonify({"ok": exists, "workbook": str(WORKBOOK), "workbook_mtime": mtime, **_dashboard_payload()})
+
+    workbook_ok = False
+    workbook_error = None
+
+    if exists:
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(WORKBOOK, read_only=True, data_only=True)
+            wb.close()
+            workbook_ok = True
+        except Exception as e:
+            workbook_error = str(e)
+
+    return _jsonify({
+        "ok": exists and workbook_ok,
+        "api": "up",
+        "workbook": str(WORKBOOK),
+        "workbook_exists": exists,
+        "workbook_ok": workbook_ok,
+        "workbook_mtime": mtime,
+        "workbook_error": workbook_error,
+        "last_run": _state.get("last_run"),
+        "solver_status": _state.get("solver_status", "NOT RUN"),
+        "solver_detail": _state.get("solver_detail", ""),
+    }, 200 if exists else 500)
 
 
 @app.route('/api/data/dashboard')
@@ -376,18 +614,252 @@ def data_capacity():
 
 @app.route('/api/run/bom', methods=['POST'])
 def run_bom_api():
+    """Explode BOM through multi-level structure and net against inventory.
+    
+    Returns:
+    - gross_bom: Exploded BOM before netting
+    - net_bom: Exploded and netted against inventory
+    - structure_errors: List of BOM structure problems (cycles, max depth)
+    - feasible: Whether BOM structure is valid
+    - rows: Count of net rows
+    """
     try:
         d = _load_all()
         demand = consolidate_demand(d['sales_orders'])
         din = demand[['SKU_ID', 'Total_Qty']].rename(columns={'Total_Qty': 'Required_Qty'})
-        gross = explode_bom_details(din, d['bom'])
-        netted = net_requirements(gross, d['inventory'])
-        return _jsonify({"bom": _df_to_records(netted), "rows": len(netted)})
+        
+        # Explode BOM - returns dict with structured result
+        explosion_result = explode_bom_details(din, d['bom'])
+        gross_bom_df = explosion_result.get('exploded', pd.DataFrame())
+        structure_errors = explosion_result.get('structure_errors', [])
+        feasible = explosion_result.get('feasible', True)
+        
+        # Net against inventory using the exploded DataFrame
+        netted = net_requirements(gross_bom_df, d['inventory'])
+        
+        return _jsonify({
+            "gross_bom": _df_to_records(gross_bom_df),
+            "net_bom": _df_to_records(netted),
+            "structure_errors": structure_errors,
+            "feasible": feasible,
+            "rows": len(netted)
+        })
     except Exception as e:
         return _jsonify({"error": str(e), "trace": traceback.format_exc()}, 500)
 
 
+def _enrich_campaigns_with_material_data(campaigns: List[Dict], bom: pd.DataFrame, inventory: pd.DataFrame | dict) -> List[Dict]:
+    """Enrich campaigns with actual material simulation results.
+    
+    For each campaign with production orders, simulates material commit to populate:
+    - inventory_before, inventory_after
+    - material_consumed, material_gross_requirements
+    - material_shortages, material_structure_errors
+    - material_feasible flag
+    
+    This replaces placeholder/fake data with real BOM explosion results.
+    """
+    enriched = []
+    
+    for campaign in campaigns:
+        enriched_camp = dict(campaign)
+        material_status = str(campaign.get('material_status', 'UNREVIEWED')).strip()
+        
+        # Extract production demand from campaign's production orders
+        production_orders = campaign.get('production_orders', [])
+        if not production_orders:
+            enriched.append(enriched_camp)
+            continue
+        
+        # Build demand DataFrame from production orders
+        demand_rows = []
+        for po in production_orders:
+            sku_id = str(po.get('sku_id') or po.get('SKU_ID') or '')
+            qty_mt = float(po.get('qty_mt') or po.get('Qty_MT') or 0.0)
+            if sku_id and qty_mt > 1e-6:
+                demand_rows.append({'SKU_ID': sku_id, 'Required_Qty': qty_mt})
+        
+        if not demand_rows:
+            enriched.append(enriched_camp)
+            continue
+        
+        # Simulate material commit for this campaign's demand
+        try:
+            demand_df = pd.DataFrame(demand_rows)
+            result = simulate_material_commit(
+                demand=demand_df,
+                bom=bom,
+                inventory=inventory,
+                max_levels=10,
+                on_structure_error='log'  # Don't hard-fail on BOM issues; log them instead
+            )
+            
+            # Extract results
+            enriched_camp['inventory_before'] = campaign.get('inventory_before', {})
+            enriched_camp['inventory_after'] = result.get('inventory_after', {})
+            enriched_camp['material_consumed'] = result.get('consumed', {})
+            enriched_camp['material_gross_requirements'] = result.get('gross_requirements', {})
+            enriched_camp['material_shortages'] = result.get('shortages', {})
+            enriched_camp['material_structure_errors'] = result.get('structure_errors', [])
+            enriched_camp['material_feasible'] = result.get('feasible', True)
+            
+            # Update material status based on simulation results
+            if not result.get('feasible', True):
+                enriched_camp['material_status'] = 'STRUCTURE_ERROR'
+            elif result.get('shortages', {}):
+                enriched_camp['material_status'] = 'SHORTAGE'
+            elif material_status == 'UNREVIEWED':
+                enriched_camp['material_status'] = 'OK'
+            
+        except Exception as e:
+            # If simulation fails, mark campaign as degraded but don't crash
+            enriched_camp['material_status'] = 'SIMULATION_ERROR'
+            enriched_camp['material_structure_errors'] = [{'type': 'SIMULATION_ERROR', 'message': str(e)}]
+            enriched_camp['material_feasible'] = False
+            print(f"Error simulating material for campaign {campaign.get('campaign_id')}: {e}", file=sys.stderr)
+        
+        enriched.append(enriched_camp)
+    
+    return enriched
+
+
+def _calculate_material_plan(campaigns: List[Dict], bom: pd.DataFrame, inventory: pd.DataFrame, skus: pd.DataFrame) -> Dict[str, Any]:
+    """Build material plan response from enriched campaign data.
+    
+    NOTE: This function now uses material data enriched during scheduling.
+    For each campaign, it structures the material results for API consumption.
+    """
+    try:
+        campaigns_data = []
+        
+        for camp in campaigns:
+            camp_id = str(camp.get('campaign_id') or camp.get('Campaign_ID') or '')
+            if not camp_id:
+                continue
+            
+            grade = str(camp.get('grade') or camp.get('Grade') or '')
+            release_status = str(camp.get('release_status') or camp.get('Release_Status') or 'OPEN')
+            req_qty = float(camp.get('total_coil_mt') or camp.get('total_mt') or camp.get('Total_MT') or 0)
+            material_status = str(camp.get('material_status') or 'UNREVIEWED')
+            shortages = camp.get('material_shortages', {})
+            consumed = camp.get('material_consumed', {})
+            structure_errors = camp.get('material_structure_errors', [])
+            feasible = camp.get('material_feasible', True)
+            
+            # Build summary for this campaign
+            shortage_qty = sum(float(v or 0) for v in shortages.values())
+            has_shortage = shortage_qty > 1e-6
+            
+            # Determine status based on material check results
+            if not feasible:
+                display_status = 'STRUCTURE_ERROR'
+            elif has_shortage:
+                display_status = 'SHORTAGE'
+            else:
+                display_status = 'MAKE / CONVERT' if req_qty > 1e-6 else 'OK'
+            
+            # Build plants view (for now, aggregate as single plant)
+            plants_dict = {}
+            plant_name = 'Production RM'
+            
+            plants_dict[plant_name] = {
+                "plant": plant_name,
+                "required_qty": req_qty,
+                "shortage_qty": shortage_qty,
+                "inventory_covered_qty": req_qty - shortage_qty,
+                "material_status": material_status,
+                "structure_errors": structure_errors,
+                "feasible": feasible,
+                "rows": []
+            }
+            
+            # Add shortage detail rows
+            for sku_id, shortage_amount in shortages.items():
+                if shortage_amount > 1e-6:
+                    shortage_row = {
+                        "material_type": "Raw Material",
+                        "material_sku": sku_id,
+                        "material_name": f"Shortage: {sku_id}",
+                        "required_qty": shortage_amount,
+                        "available_before": 0,
+                        "consumed": 0,
+                        "remaining_after": -shortage_amount,
+                        "status": f"SHORT {shortage_amount:.2f}MT"
+                    }
+                    plants_dict[plant_name]["rows"].append(shortage_row)
+            
+            # If there are no shortages but there are gross requirements, show consumed items
+            if not shortages and consumed:
+                for sku_id, consumed_amount in consumed.items():
+                    if consumed_amount > 1e-6:
+                        consumed_row = {
+                            "material_type": "Raw Material",
+                            "material_sku": sku_id,
+                            "material_name": f"Consumed: {sku_id}",
+                            "required_qty": consumed_amount,
+                            "available_before": consumed_amount,
+                            "consumed": consumed_amount,
+                            "remaining_after": 0,
+                            "status": "CONSUMED"
+                        }
+                        plants_dict[plant_name]["rows"].append(consumed_row)
+            
+            camp_data = {
+                "campaign_id": camp_id,
+                "grade": grade,
+                "release_status": release_status,
+                "material_status": material_status,
+                "required_qty": req_qty,
+                "shortage_qty": shortage_qty,
+                "feasible": feasible,
+                "structure_errors": structure_errors,
+                "plants": list(plants_dict.values())
+            }
+            campaigns_data.append(camp_data)
+        
+        # Build summary
+        total_required = sum(c.get('required_qty', 0) for c in campaigns_data)
+        total_shortages = sum(c.get('shortage_qty', 0) for c in campaigns_data)
+        total_covered = total_required - total_shortages
+        released_count = sum(1 for c in campaigns_data if 'RELEASED' in str(c.get('release_status', '')).upper())
+        held_count = sum(1 for c in campaigns_data if 'HOLD' in str(c.get('release_status', '')).upper())
+        shortage_count = sum(1 for c in campaigns_data if c.get('shortage_qty', 0) > 1e-6)
+        error_count = sum(1 for c in campaigns_data if not c.get('feasible', True))
+        
+        summary = {
+            "Campaigns": len(campaigns_data),
+            "Released": released_count,
+            "Held": held_count,
+            "Shortage Lines": shortage_count,
+            "BOM Structure Errors": error_count,
+            "Total Required Qty": round(total_required, 2),
+            "Inventory Covered Qty": round(total_covered, 2),
+            "Shortage Qty": round(total_shortages, 2),
+            "Make / Convert Qty": max(0, round(total_required - total_covered, 2))
+        }
+        
+        return {
+            "summary": summary,
+            "campaigns": campaigns_data,
+            "detail_level": "campaign"  # Indicates this is campaign-level, not plant-level detail
+        }
+    except Exception as e:
+        print(f"Error calculating material plan: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return {"summary": {"error": str(e)}, "campaigns": []}
+
+
 @app.route('/api/run/schedule', methods=['POST'])
+def run_schedule():
+    """Schedule API endpoint - executes scheduling and returns complete planning result.
+    
+    This endpoint is identical to /api/aps/schedule/run and should remain in sync.
+    Accepts optional body parameters: horizon (days), solver_sec (seconds).
+    """
+    return run_schedule_api()
+
+
 def run_schedule_api():
     try:
         d = _load_all()
@@ -408,15 +880,43 @@ def run_schedule_api():
         s_detail = result.get('solver_detail', 'CP_SAT_NA')
         demand_hrs = compute_demand_hours(released, d['resources'], routing=d['routing'])
         cap_df = capacity_map(demand_hrs, d['resources'], horizon_days=horizon)
+        
+        # Enrich campaigns with actual material simulation results
+        enriched_campaigns = _enrich_campaigns_with_material_data(campaigns, d['bom'], d['inventory'])
+        
+        # Calculate material plan from enriched campaigns with real material data
+        _state['material_plan_data'] = _calculate_material_plan(enriched_campaigns, d['bom'], d['inventory'], d['skus'])
+        
+        # Create canonical run artifact with full planning context
+        run_id = _create_run_artifact(
+            config=config,
+            campaigns=enriched_campaigns,
+            heat_schedule=heat_df,
+            campaign_schedule=camp_df,
+            capacity_map_df=cap_df,
+            solver_status=solver,
+            solver_detail=s_detail,
+            warnings=[],
+            degraded_flags={}
+        )
+        _set_active_run_artifact(run_id)
+        
         _state['last_run'] = datetime.now().isoformat()
-        _state['campaigns'] = campaigns
+        _state['run_id'] = run_id  # Track active run in legacy _state
+        _state['campaigns'] = enriched_campaigns  # Store enriched campaigns with material data
         _state['heat_schedule'] = heat_df
         _state['camp_schedule'] = camp_df
         _state['capacity'] = cap_df
         _state['solver_status'] = solver
         _state['solver_detail'] = s_detail
         _state['error'] = None
-        return _jsonify({**_dashboard_payload(), 'campaigns': _campaigns_to_view(campaigns, camp_df), 'gantt': _df_to_records(heat_df), 'capacity': _df_to_records(cap_df)})
+        return _jsonify({
+            **_dashboard_payload(), 
+            'campaigns': _campaigns_to_view(enriched_campaigns, camp_df), 
+            'gantt': _df_to_records(heat_df), 
+            'capacity': _df_to_records(cap_df),
+            'run_id': run_id  # Include run_id in response for client tracking
+        })
     except Exception as e:
         _state['error'] = str(e)
         return _jsonify({"error": str(e), "trace": traceback.format_exc()}, 500)
@@ -623,13 +1123,33 @@ def aps_capacity_bottlenecks():
 
 @app.route('/api/aps/material/plan')
 def aps_material_plan():
-    return _jsonify({"items": _material_rows()})
+    return _jsonify(_material_plan_payload())
 
 
 @app.route('/api/aps/material/holds')
 def aps_material_holds():
     items = [x for x in _material_rows() if str(x.get('Status', '')).upper() not in {'', 'OK', 'AVAILABLE', 'COVERED'}]
     return _jsonify({"items": items, "total": len(items)})
+
+
+@app.route('/api/aps/clear-outputs', methods=['POST'])
+def aps_clear_outputs():
+    """Clear all calculated output data from state."""
+    try:
+        # Reset all calculated state variables
+        _state['campaigns'] = []
+        _state['heat_schedule'] = None
+        _state['camp_schedule'] = None
+        _state['capacity'] = None
+        _state['material_plan_data'] = None
+        _state['last_run'] = None
+        _state['solver_status'] = 'CLEARED'
+        _state['solver_detail'] = ''
+        _state['error'] = None
+        return _jsonify({"ok": True, "message": "All outputs cleared"})
+    except Exception as e:
+        _state['error'] = str(e)
+        return _jsonify({"error": str(e), "trace": traceback.format_exc()}, 500)
 
 
 @app.route('/api/aps/ctp/check', methods=['POST'])

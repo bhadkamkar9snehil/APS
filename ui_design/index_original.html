@@ -1,0 +1,2336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>SteelAPS — Advanced Planning & Scheduling</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+/* ── Reset ──────────────────────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  /* Shell */
+  --navy:#111827; --navy-mid:#1f2937; --navy-lt:#374151;
+  /* Brand */
+  --blue:#f97316; --blue-lt:#fdba74; --blue-pale:#fff7ed;
+  /* System info */
+  --teal:#0f766e; --teal-lt:#ccfbf1;
+  /* Semantic */
+  --green:#15803d; --green-lt:#dcfce7; --green-mid:#16a34a;
+  --amber:#b45309; --amber-lt:#fef3c7;
+  --red:#dc2626; --red-lt:#fee2e2;
+  --orange:#ea580c; --orange-lt:#ffedd5;
+  --purple:#6d28d9; --purple-lt:#ede9fe;
+  /* Neutrals */
+  --grey-50:#fbfcfe; --grey-100:#f4f7fb; --grey-200:#e6ebf2;
+  --grey-300:#cfd8e3; --grey-500:#66758a; --grey-700:#344256; --grey-900:#0f172a;
+  /* Process colours */
+  --eaf:#c2410c; --lrf:#6d28d9; --vd:#0f766e; --ccm:#15803d; --rm:#8b5e34;
+  --sidebar-w:13.125rem; --topbar-h:3.25rem;
+  --r:0.1875rem; --r-sm:0.125rem; --r-lg:0.25rem;
+  --shadow:0 0.0625rem 0.25rem rgba(15,23,42,.08);
+  --shadow-md:0 0.375rem 1.125rem rgba(15,23,42,.14);
+  font-family:'Inter',system-ui,sans-serif;
+  font-size:0.8125rem; color:var(--grey-900); background:var(--grey-100);
+}
+
+/* ── App Shell ──────────────────────────────────────────────────────────── */
+#app{display:flex;height:100vh;overflow:hidden}
+
+/* ── Sidebar ────────────────────────────────────────────────────────────── */
+#sidebar{
+  width:var(--sidebar-w); background:linear-gradient(180deg,#0f172a 0%, #111827 100%);
+  display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;
+  border-right:0.0625rem solid rgba(255,255,255,.06);
+}
+.sb-brand{
+  height:var(--topbar-h); padding:0 1rem;
+  display:flex;align-items:center;gap:0.625rem;
+  border-bottom:0.0625rem solid rgba(255,255,255,.08);
+}
+.sb-mark{
+  width:1.875rem;height:1.875rem;border-radius:var(--r);
+  background:linear-gradient(135deg,var(--blue) 0%,var(--teal) 100%);
+  display:flex;align-items:center;justify-content:center;
+  font-weight:900;font-size:0.75rem;color:#fff;letter-spacing:.03em;flex-shrink:0;
+}
+.sb-brand .bt{color:#fff;font-size:0.7812rem;font-weight:700;display:block;letter-spacing:.01em;}
+.sb-brand .bs{color:rgba(255,255,255,.38);font-size:0.625rem;}
+.sb-section{padding:0.875rem 0 0.1875rem 1rem;font-size:0.5938rem;font-weight:700;letter-spacing:.10em;color:rgba(255,255,255,.28);text-transform:uppercase;}
+.nav-item{
+  display:flex;align-items:center;gap:0.5625rem;
+  padding:0.5rem 0.875rem 0.5rem 1rem;cursor:pointer;
+  color:rgba(255,255,255,.60);font-size:0.75rem;
+  border-left:0.1875rem solid transparent;transition:all .13s;user-select:none;
+}
+.nav-item:hover{background:rgba(255,255,255,.07);color:#fff;}
+.nav-item.active{background:rgba(61,107,196,.22);border-left-color:var(--blue);color:#fff;font-weight:600;}
+.nav-icon{width:1rem;text-align:center;flex-shrink:0;opacity:.8;}
+.nav-badge{
+  margin-left:auto;background:var(--red);color:#fff;
+  font-size:0.5938rem;font-weight:700;border-radius:var(--r-sm);padding:0.0625rem 0.3125rem;
+}
+.nav-badge.am{background:var(--amber);}
+.nav-badge.gr{background:var(--green-mid);}
+.sb-footer{
+  margin-top:auto;padding:0.75rem 1rem;
+  border-top:0.0625rem solid rgba(255,255,255,.08);
+  font-size:0.6562rem;color:rgba(255,255,255,.32);line-height:1.7;
+}
+.sb-footer strong{color:rgba(255,255,255,.55);}
+
+/* ── Main ───────────────────────────────────────────────────────────────── */
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0;}
+
+/* ── Topbar ─────────────────────────────────────────────────────────────── */
+#topbar{
+  height:var(--topbar-h);background:#fff;
+  border-bottom:0.0625rem solid var(--grey-200);
+  display:flex;align-items:center;gap:0.625rem;
+  padding:0 1.25rem;flex-shrink:0;
+  box-shadow:0 0.0625rem 0.1875rem rgba(0,0,0,.06);
+}
+#topbar .page-title{font-size:0.875rem;font-weight:700;color:var(--navy);white-space:nowrap;}
+#topbar .page-sub{font-size:0.6875rem;color:var(--grey-500);white-space:nowrap;}
+#topbar .sp{flex:1;min-width:0.375rem;}
+.top-chip{
+  display:flex;align-items:center;gap:0.3125rem;
+  background:#fff;border:0.0625rem solid var(--grey-200); box-shadow:0 0.0625rem 0.125rem rgba(15,23,42,.04);
+  border-radius:var(--r);padding:0.1875rem 0.5625rem;font-size:0.6875rem;color:var(--grey-700);
+  white-space:nowrap;flex-shrink:0;font-weight:500;
+}
+.top-chip .dot{width:0.375rem;height:0.375rem;border-radius:50%;}
+.dot-g{background:var(--green-mid);}
+.dot-a{background:var(--amber);}
+.dot-r{background:var(--red);}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+.btn{
+  display:inline-flex;align-items:center;gap:0.3125rem;
+  padding:0.375rem 0.8125rem;border-radius:var(--r);border:none;cursor:pointer;
+  font-size:0.75rem;font-weight:600;font-family:inherit;
+  transition:all .13s;letter-spacing:.01em;white-space:nowrap;flex-shrink:0;
+}
+.btn-primary{background:var(--blue);color:#fff;box-shadow:0 0.25rem 0.625rem rgba(249,115,22,.18);}
+.btn-primary:hover{background:var(--navy-lt);}
+.btn-success{background:var(--green-mid);color:#fff;box-shadow:0 0.25rem 0.625rem rgba(22,163,74,.16);}
+.btn-success:hover{background:var(--green);}
+.btn-warning{background:var(--amber);color:#fff;}
+.btn-danger{background:var(--red);color:#fff;}
+.btn-outline{background:#fff;color:var(--grey-700);border:0.0625rem solid var(--grey-300);}
+.btn-outline:hover{background:var(--grey-50);}
+.btn-sm{padding:0.25rem 0.5625rem;font-size:0.6875rem;}
+.btn:disabled{opacity:.5;cursor:default;}
+
+/* ── Screens ────────────────────────────────────────────────────────────── */
+#screens{flex:1;overflow-y:auto;overflow-x:hidden;background:var(--grey-100);}
+.screen{display:none;padding:1rem 1.25rem;}
+.screen.active{display:block;}
+
+/* ── Cards ──────────────────────────────────────────────────────────────── */
+.card{background:#fff;border-radius:0.375rem;border:0.0625rem solid var(--grey-200);box-shadow:var(--shadow);}
+.card-header{
+  padding:0.75rem 1rem 0.625rem;display:flex;align-items:center;gap:0.5rem;
+  border-bottom:0.0625rem solid var(--grey-200);
+}
+.card-header h3{font-size:0.7812rem;font-weight:700;color:var(--navy);flex:1;}
+.card-header .lbl{font-size:0.625rem;font-weight:700;letter-spacing:.06em;color:var(--grey-500);text-transform:uppercase;}
+.card-body{padding:0.875rem 1rem;}
+
+/* ── KPI Tiles ──────────────────────────────────────────────────────────── */
+.kpi-row{display:grid;grid-template-columns:repeat(5,1fr);gap:0.75rem;margin-bottom:0.875rem;}
+.kpi{
+  background:#fff;border-radius:var(--r-lg);border:0.0625rem solid var(--grey-200);
+  box-shadow:var(--shadow);padding:0.875rem 1rem;position:relative;overflow:hidden;
+}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:0.1875rem;}
+.kpi.b::before{background:var(--blue);}
+.kpi.g::before{background:var(--green-mid);}
+.kpi.a::before{background:var(--amber);}
+.kpi.r::before{background:var(--red);}
+.kpi.t::before{background:var(--teal);}
+.kpi-lbl{font-size:0.5938rem;font-weight:700;letter-spacing:.07em;color:var(--grey-500);text-transform:uppercase;}
+.kpi-val{font-size:1.75rem;font-weight:800;color:var(--navy);line-height:1.1;margin:0.125rem 0;}
+.kpi-val.g{color:var(--green-mid);}
+.kpi-val.a{color:var(--amber);}
+.kpi-val.r{color:var(--red);}
+.kpi-sub{font-size:0.6875rem;color:var(--grey-500);}
+.kpi-dn{color:var(--red);font-size:0.6875rem;font-weight:600;}
+.kpi-up{color:var(--green-mid);font-size:0.6875rem;font-weight:600;}
+
+/* ── Hero Strip ─────────────────────────────────────────────────────────── */
+.hero{
+  background:linear-gradient(180deg,#ffffff 0%, #f8fbff 100%);
+  border:0.0625rem solid var(--grey-200);
+  border-left:0.25rem solid var(--blue);
+  border-radius:0.375rem;
+  padding:0.875rem 1.125rem;
+  display:flex;align-items:center;gap:0;
+  margin-bottom:0.875rem;position:relative;overflow:hidden;
+  box-shadow:var(--shadow);
+}
+.hero::before{content:'';position:absolute;right:-1.75rem;top:-1.75rem;width:7.5rem;height:7.5rem;border-radius:50%;background:rgba(15,118,110,.05);}
+.hero-left{min-width:0;flex-shrink:0;padding-right:1.125rem;}
+.hero-title{color:var(--grey-900);font-size:1.125rem;font-weight:800;letter-spacing:.02em;line-height:1;white-space:nowrap;}
+.hero-sub{color:var(--grey-500);font-size:0.6875rem;margin-top:0.25rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:17.5rem;}
+.hero-stat{
+  display:flex;flex-direction:column;align-items:center;
+  padding:0 1.25rem;border-left:0.0625rem solid var(--grey-200);flex-shrink:0;
+}
+.hero-stat-val{font-size:1.375rem;font-weight:800;color:var(--grey-900);line-height:1;}
+.hero-stat-lbl{font-size:0.5625rem;color:var(--grey-500);text-transform:uppercase;letter-spacing:.08em;margin-top:0.25rem;}
+.hero-sp{flex:1;}
+.hero-meta{text-align:right;flex-shrink:0;padding-left:1.25rem;}
+.hero-clock{font-size:0.875rem;font-weight:700;color:var(--grey-900);}
+.hero-run{font-size:0.625rem;color:var(--grey-500);margin-top:0.125rem;}
+.hero-solver{
+  display:inline-flex;align-items:center;gap:0.25rem;
+  background:var(--blue-pale);border:0.0625rem solid var(--blue-lt);border-radius:62.4375rem;
+  padding:0.1875rem 0.5rem;font-size:0.625rem;color:var(--orange);margin-top:0.375rem;font-weight:700;
+}
+
+/* ── Status Badges ──────────────────────────────────────────────────────── */
+.badge{
+  display:inline-flex;align-items:center;gap:0.1875rem;
+  padding:0.125rem 0.4375rem;border-radius:var(--r-sm);
+  font-size:0.625rem;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+}
+.b-released{background:var(--green-lt);color:#155724;}
+.b-held    {background:var(--amber-lt);color:#7a5200;}
+.b-running {background:#cce5ff;color:#003d7a;}
+.b-late    {background:var(--red-lt);color:#7a1c24;}
+.b-eaf     {background:#ddeeff;color:#1a3a6e;}
+.b-lrf     {background:#fdeedd;color:#7a3a00;}
+.b-vd      {background:#ede8ff;color:#3a007a;}
+.b-ccm     {background:var(--green-lt);color:#155724;}
+.b-rm      {background:var(--amber-lt);color:#7a5200;}
+
+/* ── Utilisation Bar ────────────────────────────────────────────────────── */
+.util-wrap{display:flex;align-items:center;gap:0.5rem;}
+.util-track{flex:1;height:0.4375rem;background:var(--grey-200);border-radius:0.125rem;overflow:hidden;}
+.util-fill{height:100%;border-radius:0.125rem;transition:width .5s ease;}
+.util-fill.ok  {background:linear-gradient(90deg,var(--green-mid) 0%,var(--teal) 100%);}
+.util-fill.high{background:linear-gradient(90deg,var(--amber) 0%,var(--orange) 100%);}
+.util-fill.over{background:linear-gradient(90deg,var(--red) 0%,#e74c3c 100%);}
+.util-pct{width:2.125rem;font-size:0.6875rem;font-weight:700;color:var(--grey-700);text-align:right;}
+
+/* ── 3-col dashboard layout ──────────────────────────────────────────────── */
+.dash-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.875rem;margin-bottom:0.875rem;}
+.dash-bot {display:grid;grid-template-columns:1fr 1fr;gap:0.875rem;}
+
+/* ── Gantt ──────────────────────────────────────────────────────────────── */
+.gantt-wrap{overflow:auto;border:0.0625rem solid var(--grey-200);border-radius:var(--r-lg);background:#fff;}
+.gantt-hdr{display:flex;background:var(--navy);position:sticky;top:0;z-index:10;}
+.gantt-res-col{width:9.25rem;flex-shrink:0;font-size:0.5938rem;font-weight:700;letter-spacing:.06em;color:rgba(255,255,255,.45);padding:0.5625rem 0.75rem;border-right:0.0625rem solid rgba(255,255,255,.1);text-transform:uppercase;}
+.gantt-days{flex:1;display:flex;}
+.gantt-day{flex:1;text-align:center;padding:0.25rem 0 0.125rem;color:rgba(255,255,255,.75);font-size:0.6875rem;font-weight:600;border-right:0.0625rem solid rgba(255,255,255,.08);}
+.gantt-day small{display:block;font-size:0.5625rem;color:rgba(255,255,255,.4);font-weight:400;}
+.gantt-row{display:flex;border-bottom:0.0625rem solid var(--grey-100);min-height:2.625rem;align-items:center;transition:background .1s;}
+.gantt-row:hover{background:var(--grey-50);}
+.gantt-res-lbl{width:9.25rem;flex-shrink:0;padding:0.4375rem 0.75rem;border-right:0.0625rem solid var(--grey-200);}
+.gantt-res-lbl .rid{font-size:0.75rem;font-weight:700;color:var(--navy);}
+.gantt-res-lbl .rop{font-size:0.625rem;color:var(--grey-500);}
+.gantt-tl{flex:1;position:relative;min-height:2.625rem;background-image:repeating-linear-gradient(90deg,transparent,transparent calc(100%/7 - 0.0625rem),var(--grey-100) calc(100%/7 - 0.0625rem),var(--grey-100) calc(100%/7));}
+.gantt-job{
+  position:absolute;top:0.3125rem;height:1.75rem;border-radius:var(--r-sm);
+  display:flex;align-items:center;padding:0 0.4375rem;font-size:0.625rem;font-weight:600;color:#fff;
+  cursor:grab;overflow:hidden;white-space:nowrap;box-shadow:0 0.0625rem 0.25rem rgba(0,0,0,.2);
+  transition:top .1s,height .1s,box-shadow .1s;user-select:none;
+}
+.gantt-job:hover{top:0.1875rem;height:2rem;box-shadow:0 0.1875rem 0.625rem rgba(0,0,0,.3);z-index:5;}
+.gantt-job.locked{background-image:repeating-linear-gradient(45deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 0.25rem,rgba(255,255,255,.18) 0.25rem,rgba(255,255,255,.18) 0.375rem);}
+.gantt-job.eaf{background:var(--eaf);}
+.gantt-job.lrf{background:var(--lrf);}
+.gantt-job.vd {background:var(--vd);}
+.gantt-job.ccm{background:var(--ccm);}
+.gantt-job.rm {background:var(--rm);}
+.now-line{position:absolute;top:0;bottom:0;width:0.125rem;background:var(--red);z-index:8;pointer-events:none;}
+.now-line::before{content:'NOW';position:absolute;top:-1.0625rem;left:50%;transform:translateX(-50%);background:var(--red);color:#fff;font-size:0.5312rem;font-weight:700;padding:0.0625rem 0.25rem;border-radius:var(--r-sm);}
+
+/* ── Tables ─────────────────────────────────────────────────────────────── */
+.tbl{width:100%;border-collapse:collapse;}
+.tbl th{background:var(--grey-100);padding:0.4375rem 0.6875rem;font-size:0.5938rem;font-weight:700;letter-spacing:.05em;color:var(--grey-700);text-transform:uppercase;text-align:left;border-bottom:0.125rem solid var(--grey-200);white-space:nowrap;}
+.tbl td{padding:0.5625rem 0.6875rem;border-bottom:0.0625rem solid var(--grey-100);font-size:0.75rem;vertical-align:middle;}
+.tbl tr:last-child td{border-bottom:none;}
+.tbl tr:hover td{background:var(--blue-pale);}
+.tbl-navy th{background:var(--navy);color:rgba(255,255,255,.8);border-bottom:none;}
+.tbl-navy tr:hover td{background:var(--blue-pale);}
+.camp-row-running td{border-left:0.1875rem solid var(--blue);}
+.camp-row-released td{border-left:0.1875rem solid var(--green-mid);}
+.camp-row-held td{border-left:0.1875rem solid var(--amber);}
+.camp-row-late td{border-left:0.1875rem solid var(--red);}
+
+/* ── Margin bar ─────────────────────────────────────────────────────────── */
+.mbar{height:0.3125rem;border-radius:var(--r-sm);display:inline-block;vertical-align:middle;}
+.mbar.ok{background:var(--green-mid);}
+.mbar.warn{background:var(--amber);}
+.mbar.late{background:var(--red);}
+
+/* ── Op legend chips ────────────────────────────────────────────────────── */
+.op-chips{display:flex;gap:0.375rem;flex-wrap:wrap;}
+.op-chip{display:flex;align-items:center;gap:0.25rem;padding:0.1875rem 0.5rem;border-radius:var(--r-sm);font-size:0.625rem;font-weight:700;color:#fff;}
+.op-chip.eaf{background:var(--eaf);}
+.op-chip.lrf{background:var(--lrf);}
+.op-chip.vd {background:var(--vd);}
+.op-chip.ccm{background:var(--ccm);}
+.op-chip.rm {background:var(--rm);}
+
+/* ── Filter chips ────────────────────────────────────────────────────────── */
+.fbar{display:flex;gap:0.375rem;align-items:center;flex-wrap:wrap;}
+.fchip{padding:0.25rem 0.6875rem;border-radius:var(--r-sm);border:0.0625rem solid var(--grey-300);background:#fff;font-size:0.6875rem;cursor:pointer;font-weight:500;transition:all .13s;}
+.fchip.active{background:var(--blue);color:#fff;border-color:var(--blue);}
+.fchip:hover:not(.active){background:var(--blue-pale);}
+select.sel{padding:0.25rem 0.5625rem;border:0.0625rem solid var(--grey-300);border-radius:var(--r);font-size:0.75rem;font-family:inherit;background:#fff;cursor:pointer;}
+input.inp{padding:0.3125rem 0.5625rem;border:0.0625rem solid var(--grey-300);border-radius:var(--r);font-size:0.75rem;font-family:inherit;}
+
+/* ── Donut ───────────────────────────────────────────────────────────────── */
+.donut-wrap{position:relative;display:inline-flex;align-items:center;justify-content:center;}
+.donut-center{position:absolute;text-align:center;pointer-events:none;}
+.donut-val{font-size:1.25rem;font-weight:800;color:var(--navy);line-height:1;}
+.donut-lbl{font-size:0.5938rem;color:var(--grey-500);}
+
+/* ── Legend ──────────────────────────────────────────────────────────────── */
+.legend{display:flex;gap:0.75rem;flex-wrap:wrap;}
+.legend-item{display:flex;align-items:center;gap:0.25rem;font-size:0.6875rem;color:var(--grey-700);}
+.ldot{width:0.5625rem;height:0.5625rem;border-radius:var(--r-sm);flex-shrink:0;}
+
+/* ── Heatmap ─────────────────────────────────────────────────────────────── */
+.hmap-cell{text-align:center;padding:0.3125rem 0.3125rem;border-radius:var(--r-sm);font-size:0.6875rem;font-weight:500;border:0.0625rem solid rgba(0,0,0,.04);}
+
+/* ── Section divider ─────────────────────────────────────────────────────── */
+.sec-title{font-size:0.625rem;font-weight:700;letter-spacing:.07em;color:var(--grey-500);text-transform:uppercase;margin:1rem 0 0.5rem;display:flex;align-items:center;gap:0.5rem;}
+.sec-title::after{content:'';flex:1;height:0.0625rem;background:var(--grey-200);}
+
+/* ── Alert panel ─────────────────────────────────────────────────────────── */
+.alert-item{display:flex;align-items:flex-start;gap:0.5625rem;padding:0.5625rem 0.75rem;border-radius:var(--r-lg);margin-bottom:0.4375rem;}
+.alert-item.high{background:var(--red-lt);border-left:0.1875rem solid var(--red);}
+.alert-item.med {background:var(--amber-lt);border-left:0.1875rem solid var(--amber);}
+.alert-item.info{background:var(--blue-pale);border-left:0.1875rem solid var(--blue);}
+.alert-icon{font-size:0.875rem;flex-shrink:0;margin-top:0.0625rem;}
+.alert-title{font-size:0.75rem;font-weight:700;color:var(--navy);}
+.alert-desc{font-size:0.6875rem;color:var(--grey-700);margin-top:0.0625rem;}
+
+/* ── Campaign card ────────────────────────────────────────────────────────── */
+.camp-card{
+  background:#fff;border-radius:var(--r-lg);border:0.0625rem solid var(--grey-200);
+  box-shadow:var(--shadow);display:grid;
+  grid-template-columns:8.75rem 6.25rem 6.25rem 6.875rem 1fr;
+  gap:1rem;align-items:center;padding:0.875rem 1rem;
+  border-left:0.25rem solid var(--grey-300);margin-bottom:0.5rem;
+}
+.camp-card.running {border-left-color:var(--blue);}
+.camp-card.released{border-left-color:var(--green-mid);}
+.camp-card.held    {border-left-color:var(--amber);}
+.camp-card.late    {border-left-color:var(--red);}
+
+/* ── CTP ─────────────────────────────────────────────────────────────────── */
+.ctp-box{border-radius:var(--r-lg);border:0.125rem solid var(--green-mid);background:var(--green-lt);padding:0.875rem 1rem;display:none;}
+.ctp-box.infeasible{border-color:var(--red);background:var(--red-lt);}
+.ctp-box.hold{border-color:var(--amber);background:var(--amber-lt);}
+
+/* ── Loading overlay ─────────────────────────────────────────────────────── */
+.loading{opacity:.5;pointer-events:none;transition:opacity .2s;}
+.spinner{
+  display:inline-block;width:0.875rem;height:0.875rem;border:0.125rem solid rgba(255,255,255,.3);
+  border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+.pulse{animation:pulse 1.5s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:.4}50%{opacity:.9}}
+
+/* ── Scenario comparison ─────────────────────────────────────────────────── */
+.sc-card{background:#fff;border-radius:var(--r-lg);border:0.0625rem solid var(--grey-200);box-shadow:var(--shadow);padding:1rem;border-top:0.1875rem solid var(--blue);}
+.sc-row{display:flex;justify-content:space-between;font-size:0.75rem;padding:0.25rem 0;border-bottom:0.0625rem solid var(--grey-100);}
+.sc-row:last-of-type{border-bottom:none;}
+
+/* ── Drop zones ─────────────────────────────────────────────────────────── */
+.drop-zone{padding:0.6875rem 0.8125rem;border-radius:var(--r-lg);border:0.125rem dashed var(--grey-300);background:#fff;transition:.15s;cursor:default;margin-bottom:0.4375rem;}
+.drop-zone:hover{border-color:var(--teal);}
+.drop-zone.drag-over{border-color:var(--teal);background:var(--teal-lt);}
+.drop-zone.dropped{border-color:var(--green-mid);border-style:solid;}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar{width:0.3125rem;height:0.3125rem}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--grey-300);border-radius:0.125rem}
+::-webkit-scrollbar-thumb:hover{background:var(--grey-500)}
+
+/* ── Tooltip ─────────────────────────────────────────────────────────────── */
+#tt{
+  position:fixed;background:var(--navy);color:#fff;border-radius:var(--r);padding:0.5625rem 0.75rem;
+  font-size:0.6875rem;line-height:1.65;box-shadow:var(--shadow-md);z-index:999;pointer-events:none;display:none;max-width:13.125rem;
+}
+#tt strong{display:block;font-size:0.75rem;border-bottom:0.0625rem solid rgba(255,255,255,.2);padding-bottom:0.25rem;margin-bottom:0.25rem;}
+
+/* Master Data Tabs */
+.md-tab{
+  padding:0.625rem 1rem;background:none;border:none;border-bottom:0.125rem solid transparent;
+  color:var(--grey-500);font-weight:600;font-size:0.75rem;cursor:pointer;transition:all .2s;
+}
+.md-tab:hover{color:var(--grey-700);background:var(--grey-50)}
+.md-tab.active{color:var(--blue);border-bottom-color:var(--blue);background:none}
+.md-pane{animation:fadeIn .3s ease-out}
+
+/* ── Equipment Dispatch ─────────────────────────────────────────────────── */
+.dispatch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(21.25rem,1fr));gap:0.875rem;}
+.machine-card{
+  background:#fff;border-radius:0.375rem;border:0.0625rem solid var(--grey-200);
+  box-shadow:var(--shadow);overflow:hidden;
+}
+.machine-card-hdr{
+  display:flex;align-items:center;gap:0.625rem;padding:0.625rem 0.875rem;
+  border-bottom:0.0625rem solid var(--grey-200);
+}
+.machine-badge{
+  width:2.25rem;height:2.25rem;border-radius:0.375rem;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:0.5625rem;font-weight:800;color:#fff;letter-spacing:.04em;
+}
+.machine-badge.eaf{background:var(--eaf);}
+.machine-badge.lrf{background:var(--lrf);}
+.machine-badge.vd {background:var(--vd);}
+.machine-badge.ccm{background:var(--ccm);}
+.machine-badge.rm {background:var(--rm);}
+.machine-name{font-size:0.8125rem;font-weight:700;color:var(--navy);}
+.machine-op  {font-size:0.625rem;color:var(--grey-500);margin-top:0.0625rem;}
+.machine-util-pill{
+  margin-left:auto;padding:0.125rem 0.5rem;border-radius:62.4375rem;
+  font-size:0.625rem;font-weight:700;
+}
+.machine-util-pill.ok  {background:var(--green-lt);color:var(--green);}
+.machine-util-pill.high{background:var(--amber-lt);color:var(--amber);}
+.machine-util-pill.over{background:var(--red-lt);color:var(--red);}
+.machine-jobs{padding:0.5rem;display:flex;flex-direction:column;gap:0.1875rem;max-height:20rem;overflow-y:auto;}
+.disp-job{
+  display:grid;grid-template-columns:1.75rem 1fr auto;align-items:center;gap:0.5rem;
+  padding:0.4375rem 0.5625rem;border-radius:0.25rem;border-left:0.1875rem solid transparent;
+  background:var(--grey-50);transition:background .1s;
+  cursor:default;
+}
+.disp-job:hover{background:var(--grey-100);}
+.disp-job.running{background:#eff8ff;border-left-color:#2563eb;}
+.disp-job.late   {background:var(--red-lt);border-left-color:var(--red);}
+.disp-job.viol   {background:var(--amber-lt);border-left-color:var(--amber);}
+.disp-seq{font-size:0.625rem;font-weight:800;color:var(--grey-500);text-align:center;}
+.disp-info{min-width:0;}
+.disp-camp{font-size:0.6875rem;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.disp-detail{font-size:0.625rem;color:var(--grey-500);margin-top:0.0625rem;display:flex;gap:0.375rem;align-items:center;}
+.disp-time{font-size:0.625rem;font-weight:600;color:var(--grey-700);text-align:right;white-space:nowrap;}
+.disp-dur{display:inline-block;width:0.625rem;height:0.625rem;border-radius:0.125rem;flex-shrink:0;}
+.disp-dur.eaf{background:var(--eaf);}
+.disp-dur.lrf{background:var(--lrf);}
+.disp-dur.vd {background:var(--vd);}
+.disp-dur.ccm{background:var(--ccm);}
+.disp-dur.rm {background:var(--rm);}
+.disp-viol-tag{
+  display:inline-flex;align-items:center;gap:0.1875rem;
+  background:var(--amber-lt);color:var(--amber);
+  font-size:0.5625rem;font-weight:700;padding:0.0625rem 0.3125rem;border-radius:0.125rem;
+}
+.machine-footer{
+  padding:0.375rem 0.875rem;border-top:0.0625rem solid var(--grey-100);
+  display:flex;align-items:center;gap:0.625rem;font-size:0.625rem;color:var(--grey-500);
+  background:var(--grey-50);
+}
+.mf-stat{display:flex;align-items:center;gap:0.25rem;}
+/* Timeline bar inside machine card */
+.machine-tl-wrap{padding:0.5rem 0.875rem 0.625rem;border-bottom:0.0625rem solid var(--grey-100);}
+.machine-tl-bar{
+  height:0.5rem;background:var(--grey-200);border-radius:0.25rem;
+  position:relative;overflow:hidden;
+}
+.machine-tl-seg{
+  position:absolute;top:0;bottom:0;border-radius:0.125rem;
+  transition:width .3s,left .3s;
+}
+/* Dispatch summary ribbon */
+.disp-ribbon{
+  display:flex;gap:0.625rem;flex-wrap:wrap;margin-bottom:0.875rem;
+}
+.disp-ribbon-card{
+  flex:1;min-width:8.125rem;background:#fff;border-radius:0.375rem;
+  border:0.0625rem solid var(--grey-200);box-shadow:var(--shadow);
+  padding:0.625rem 0.875rem;
+  display:flex;align-items:center;gap:0.625rem;
+}
+.disp-ribbon-icon{
+  width:2rem;height:2rem;border-radius:0.375rem;display:flex;align-items:center;
+  justify-content:center;font-size:0.875rem;flex-shrink:0;
+}
+.disp-ribbon-val{font-size:1.25rem;font-weight:800;color:var(--navy);line-height:1;}
+.disp-ribbon-lbl{font-size:0.625rem;color:var(--grey-500);margin-top:0.125rem;}
+/* Filter bar for dispatch */
+.disp-fbar{display:flex;gap:0.5rem;margin-bottom:0.875rem;align-items:center;flex-wrap:wrap;}
+</style>
+</head>
+<body>
+<div id="app">
+
+<!-- SIDEBAR -->
+<aside id="sidebar">
+  <div class="sb-brand">
+    <div class="sb-mark">APS</div>
+    <div><span class="bt">X-APS</span><span class="bs"></span></div>
+  </div>
+
+  <div class="sb-section">Planning</div>
+  <div class="nav-item active" onclick="nav('dashboard')">
+    <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
+    Dashboard
+  </div>
+  <div class="nav-item" onclick="nav('campaigns')">
+    <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><rect x="1" y="4" width="14" height="3" rx="1"/><rect x="1" y="9" width="14" height="3" rx="1"/><rect x="1" y="1" width="2" height="14" rx="1"/></svg>
+    Campaigns
+    <span class="nav-badge am" id="nb-held">—</span>
+  </div>
+  <div class="nav-item" onclick="nav('gantt')">
+    <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><rect x="1" y="2" width="8" height="3" rx="1"/><rect x="5" y="7" width="9" height="3" rx="1"/><rect x="2" y="12" width="6" height="3" rx="1"/></svg>
+    Gantt Schedule
+  </div>
+  <div class="nav-item" onclick="nav('orders')">
+    <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><rect x="1" y="1" width="14" height="2" rx="1"/><rect x="1" y="5" width="14" height="2" rx="1"/><rect x="1" y="9" width="14" height="2" rx="1"/><rect x="1" y="13" width="8" height="2" rx="1"/></svg>
+    Sales Orders
+    <span class="nav-badge" id="nb-orders">—</span>
+  </div>
+
+  <div class="sb-section">Analysis</div>
+  <div class="nav-item" onclick="nav('capacity')">
+    <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><rect x="1" y="8" width="3" height="7" rx="1"/><rect x="6" y="5" width="3" height="10" rx="1"/><rect x="11" y="2" width="3" height="13" rx="1"/></svg>
+    Capacity Map
+  </div>
+  <div class="nav-item" onclick="nav('material')">
+    <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><path d="M8 1L1 5v6l7 4 7-4V5z" fill-opacity=".3"/><path d="M8 1L1 5l7 4 7-4z"/></svg>
+    Material Plan
+  </div>
+  <div class="nav-item" onclick="nav('dispatch')">
+    <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><rect x="1" y="2" width="14" height="2" rx="1"/><rect x="1" y="6" width="10" height="2" rx="1"/><rect x="1" y="10" width="12" height="2" rx="1"/><rect x="1" y="14" width="7" height="2" rx="1"/></svg>
+    Equipment Dispatch
+    <span class="nav-badge gr" id="nb-dispatch" style="display:none">—</span>
+  </div>
+  <div class="nav-item" onclick="nav('ctp')">
+    <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><circle cx="8" cy="8" r="7" fill-opacity=".2"/><path d="M8 4v5l3 2" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>
+    CTP Check
+  </div>
+  <div class="nav-item" onclick="nav('scenarios')">
+    <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><path d="M1 12 L5 6 L9 9 L13 3" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"/><circle cx="5" cy="6" r="1.5"/><circle cx="9" cy="9" r="1.5"/><circle cx="13" cy="3" r="1.5"/></svg>
+    Scenarios
+  </div>
+
+  <div class="sb-section">Configuration</div>
+  <div class="nav-item" onclick="nav('masterdata')">
+    <svg class="nav-icon" viewBox="0 0 16 16" fill="currentColor" width="16" height="16"><rect x="1" y="1" width="14" height="3" rx="1"/><rect x="1" y="6" width="14" height="3" rx="1"/><rect x="1" y="11" width="14" height="3" rx="1"/></svg>
+    Master Data
+  </div>
+
+  <div class="sb-footer">
+    <div>Horizon: <strong id="sb-horizon">14 days</strong></div>
+    <div>Engine: <strong>OR-Tools CP-SAT</strong></div>
+    <div style="display:flex;align-items:center;gap:5px;margin-top:2px">
+      <div id="sb-status-dot" style="width:7px;height:7px;border-radius:50%;background:var(--grey-500);flex-shrink:0"></div>
+      <span id="sb-status-label" style="color:rgba(255,255,255,.55);font-size:10.5px">Not run</span>
+    </div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div id="main">
+  <div id="topbar">
+    <div>
+      <div class="page-title" id="page-title">Dashboard</div>
+      <div class="page-sub" id="page-sub">Live planning overview · 14-day horizon</div>
+    </div>
+    <div class="sp"></div>
+    <div class="top-chip" id="chip-solver-wrap"><div class="dot" id="chip-solver-dot" style="background:var(--grey-300)"></div><span id="chip-solver">API Connected</span></div>
+    <div class="top-chip"><div class="dot dot-a"></div><span id="chip-held">— on hold</span></div>
+    <div class="top-chip"><div class="dot dot-r"></div><span id="chip-late">— late</span></div>
+    <div style="display:flex;align-items:stretch;border-radius:var(--r);overflow:hidden;box-shadow:0 4px 10px rgba(249,115,22,.18);flex-shrink:0">
+      <button class="btn btn-primary" id="btn-run" onclick="runSchedule()" style="border-radius:0;box-shadow:none">Run Schedule</button>
+      <select id="solver-depth" style="background:var(--blue);color:#fff;border:none;border-left:1px solid rgba(255,255,255,.25);padding:0 6px;font-size:11px;cursor:pointer;font-weight:600;outline:none">
+        <option value="30">Fast (30s)</option>
+        <option value="60" selected>Standard (60s)</option>
+        <option value="120">Deep (120s)</option>
+        <option value="300">Full (5min)</option>
+      </select>
+    </div>
+  </div>
+
+  <div id="screens">
+
+  <!-- ═══ DASHBOARD ══════════════════════════════════════════════════════ -->
+  <div class="screen active" id="screen-dashboard">
+
+    <div class="hero" id="hero">
+      <div class="hero-left">
+        <div class="hero-title">X-APS</div>
+        <div class="hero-sub">Advanced Planning System</div>
+      </div>
+      <div class="hero-stat"><div class="hero-stat-val" id="h-heats">—</div><div class="hero-stat-lbl">Heats</div></div>
+      <div class="hero-stat"><div class="hero-stat-val" id="h-mt" style="color:var(--green-mid)">—</div><div class="hero-stat-lbl">MT Planned</div></div>
+      <div class="hero-stat"><div class="hero-stat-val" id="h-ot" style="color:var(--amber)">—%</div><div class="hero-stat-lbl">On-Time</div></div>
+      <div class="hero-stat"><div class="hero-stat-val" id="h-late" style="color:var(--red)">—</div><div class="hero-stat-lbl">Late</div></div>
+      <div class="hero-sp"></div>
+      <div class="hero-meta">
+        <div class="hero-clock" id="h-clock">—</div>
+        <div class="hero-run" id="h-lastrun">No run yet</div>
+        <div class="hero-solver" id="h-solver" style="cursor:pointer" title="Click to re-run">NOT RUN</div>
+      </div>
+    </div>
+
+    <!-- KPI row -->
+    <div class="kpi-row">
+      <div class="kpi b"><div class="kpi-lbl">Campaigns</div><div class="kpi-val" id="k-camps">—</div><div class="kpi-sub" id="k-camps-sub">Loading…</div></div>
+      <div class="kpi g"><div class="kpi-lbl">Heats Planned</div><div class="kpi-val g" id="k-heats">—</div><div class="kpi-sub" id="k-heats-sub">—</div></div>
+      <div class="kpi a"><div class="kpi-lbl">On-Time Delivery</div><div class="kpi-val a" id="k-ot">—%</div><div class="kpi-sub" id="k-ot-sub">—</div></div>
+      <div class="kpi r"><div class="kpi-lbl">Late Campaigns</div><div class="kpi-val r" id="k-late">—</div><div class="kpi-sub" id="k-late-sub">—</div></div>
+      <div class="kpi t"><div class="kpi-lbl">Throughput</div><div class="kpi-val" id="k-tput">—</div><div class="kpi-sub">MT / day avg</div></div>
+    </div>
+
+    <div class="dash-grid" style="grid-template-columns:1fr 1fr 1fr;gap:0.875rem;margin-bottom:0.875rem">
+      <!-- Campaign status donut -->
+      <div class="card" style="display:flex;flex-direction:column">
+        <div class="card-header"><h3>Campaign Status</h3><span class="lbl" id="cs-total">— total</span></div>
+        <div class="card-body" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2rem">
+          <div class="donut-wrap" style="width:100%;display:flex;justify-content:center">
+            <svg style="width:100%;height:100%;max-width:12.5rem;max-height:12.5rem" viewBox="0 0 100 100" id="donut-svg">
+               <circle cx="50" cy="50" r="38" fill="none" stroke="var(--grey-200)" stroke-width="12"/>
+               <circle cx="50" cy="50" r="38" fill="none" stroke="var(--green-mid)" stroke-width="12" stroke-dasharray="0 239" stroke-linecap="round" id="donut-rel"/>
+               <circle cx="50" cy="50" r="38" fill="none" stroke="var(--amber)" stroke-width="12" stroke-dasharray="0 239" stroke-linecap="round" id="donut-held"/>
+               <circle cx="50" cy="50" r="38" fill="none" stroke="var(--red)" stroke-width="12" stroke-dasharray="0 239" stroke-linecap="round" id="donut-late"/>
+            </svg>
+            <div class="donut-center"><div class="donut-val" id="donut-val" style="font-size:2.5rem;font-weight:900;line-height:1.2;color:var(--navy)">—</div><div class="donut-lbl" style="font-size:0.75rem;letter-spacing:0.05em;text-transform:uppercase">total</div></div>
+          </div>
+          <div style="display:flex;gap:1.25rem;flex-wrap:wrap;justify-content:center" id="donut-legend">
+            <div class="legend-item" style="font-size:0.875rem"><div class="ldot" style="background:var(--green-mid);width:0.625rem;height:0.625rem"></div>Released <strong id="dl-rel" style="margin-left:0.25rem">—</strong></div>
+            <div class="legend-item" style="font-size:0.875rem"><div class="ldot" style="background:var(--amber);width:0.625rem;height:0.625rem"></div>Held <strong id="dl-held" style="margin-left:0.25rem">—</strong></div>
+            <div class="legend-item" style="font-size:0.875rem"><div class="ldot" style="background:var(--blue);width:0.625rem;height:0.625rem"></div>Running <strong style="margin-left:0.25rem">1</strong></div>
+            <div class="legend-item" style="font-size:0.875rem"><div class="ldot" style="background:var(--red);width:0.625rem;height:0.625rem"></div>Late <strong id="dl-late" style="margin-left:0.25rem">—</strong></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bottleneck + Throughput -->
+      <div class="card" style="display:flex;flex-direction:column">
+        <div class="card-header"><h3>Bottleneck Analysis</h3><span class="lbl" id="bn-lbl">—</span></div>
+        <div class="card-body" style="flex:1;display:flex;flex-direction:column">
+          <div id="bn-content" style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:auto">
+            <div style="font-size:0.6875rem;color:var(--grey-500)">Run Schedule to identify bottleneck resource.</div>
+          </div>
+          <div class="sec-title" style="margin-top:0.75rem">Daily Throughput (MT)</div>
+          <div id="tput-chart" style="display:flex;align-items:flex-end;gap:0.1875rem;min-height:3.5rem;flex:1"></div>
+          <div class="legend" style="margin-top:0.5rem">
+            <div class="legend-item"><div class="ldot" style="background:var(--eaf)"></div>SMS</div>
+            <div class="legend-item"><div class="ldot" style="background:var(--rm)"></div>RM</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Planning Alerts -->
+      <div class="card" style="display:flex;flex-direction:column">
+        <div class="card-header"><h3>Planning Alerts</h3><span class="lbl" id="alert-count">—</span></div>
+        <div class="card-body" id="alert-list" style="flex:1;overflow-y:auto;min-height:0;padding:0.625rem 0.75rem">
+          <div class="alert-item info"><div class="alert-icon">i</div><div><div class="alert-title">No run yet</div><div class="alert-desc">Click Run Schedule to generate the plan</div></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Campaign Gantt Widget (Dashboard View) -->
+    <div class="card" style="margin-bottom:0.875rem;border-left:0.25rem solid var(--blue)">
+      <div class="card-header">
+        <h3>Campaign Timeline Overview</h3>
+        <span class="lbl">14-day execution horizon</span>
+      </div>
+      <div class="card-body" style="padding:0">
+        <div id="dash-camp-gantt" style="min-height:9.375rem;max-height:22.5rem;overflow-y:auto;background:#fbfcfe;padding:1rem;overflow-x:auto;display:flex;flex-direction:column;gap:0.5rem">
+          <div style="text-align:center;color:var(--grey-500);padding:2rem">Run Schedule to populate Campaign Timeline.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom row -->
+    <div class="dash-bot" style="grid-template-columns:3fr 1fr;gap:0.875rem">
+      <!-- Campaign Release Queue -->
+      <div class="card">
+        <div class="card-header"><h3>Campaign Release Queue</h3><button class="btn btn-outline btn-sm" onclick="nav('campaigns')">View All</button></div>
+        <div style="overflow-x:auto;border-radius:0 0 var(--r-lg) var(--r-lg)">
+          <table class="tbl" id="camp-queue-tbl">
+            <thead><tr><th>Campaign</th><th>Grade</th><th>MT</th><th>Due</th><th>Margin</th><th>Status</th></tr></thead>
+            <tbody id="camp-queue-body"><tr><td colspan="6" style="text-align:center;color:var(--grey-500);padding:1.25rem">Run Schedule to load</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Resource Utilisation -->
+      <div class="card">
+        <div class="card-header"><h3>Resource Utilisation</h3><span class="lbl">14-day</span></div>
+        <div class="card-body" id="util-list" style="display:flex;flex-direction:column;gap:0.5rem">
+          <div class="pulse" style="height:0.75rem;background:var(--grey-100);border-radius:0.125rem;margin:0.25rem 0"></div>
+          <div class="pulse" style="height:0.75rem;background:var(--grey-100);border-radius:0.125rem;margin:0.25rem 0"></div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /dashboard -->
+
+
+  <!-- ═══ GANTT ══════════════════════════════════════════════════════════ -->
+  <div class="screen" id="screen-gantt">
+    <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+      <div class="fbar">
+        <span class="fchip active" onclick="ganttFilter(this,'all')">All</span>
+        <span class="fchip" onclick="ganttFilter(this,'sms')">SMS</span>
+        <span class="fchip" onclick="ganttFilter(this,'rm')">RM</span>
+      </div>
+      <div class="sp" style="flex:1"></div>
+      <div class="op-chips">
+        <div class="op-chip eaf">EAF Melting</div>
+        <div class="op-chip lrf">LRF Refining</div>
+        <div class="op-chip vd">VD Degassing</div>
+        <div class="op-chip ccm">CCM Casting</div>
+        <div class="op-chip rm">RM Rolling</div>
+      </div>
+      <select class="sel" id="gantt-days-sel" onchange="buildGantt()">
+        <option value="7">7-Day View</option>
+        <option value="14" selected>14-Day View</option>
+      </select>
+    </div>
+    <div style="font-size:11px;color:var(--grey-500);margin-bottom:8px;display:flex;align-items:center;gap:12px">
+      <span>Drag movable jobs to reschedule · Hover for details · Hatched = locked (running)</span>
+      <span style="display:flex;align-items:center;gap:4px;margin-left:auto"><div style="width:16px;height:9px;border-radius:1px;background:repeating-linear-gradient(45deg,var(--blue) 0,var(--blue) 3px,#6690d4 3px,#6690d4 6px)"></div>Locked</span>
+      <span style="display:flex;align-items:center;gap:4px"><div style="width:16px;height:9px;border-radius:1px;background:var(--blue)"></div>Movable</span>
+    </div>
+    <div class="gantt-wrap" id="gantt-wrap" style="max-height:calc(100vh - 180px)">
+      <div id="gantt-grid"><div style="padding:40px;text-align:center;color:var(--grey-500)">Run Schedule first to populate the Gantt.</div></div>
+    </div>
+    <div id="tt"></div>
+  </div>
+
+
+  <!-- ═══ CAMPAIGNS ══════════════════════════════════════════════════════ -->
+  <div class="screen" id="screen-campaigns">
+    <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+      <div class="fbar">
+        <span class="fchip active" onclick="campFilter(this,'all')">All</span>
+        <span class="fchip" onclick="campFilter(this,'released')">Released</span>
+        <span class="fchip" onclick="campFilter(this,'held')">Held</span>
+        <span class="fchip" onclick="campFilter(this,'late')">Late</span>
+      </div>
+      <div style="flex:1"></div>
+      <button class="btn btn-primary" onclick="runSchedule()">Re-run Schedule</button>
+    </div>
+    <div id="camp-cards"></div>
+  </div>
+
+
+  <!-- ═══ ORDERS ══════════════════════════════════════════════════════════ -->
+  <div class="screen" id="screen-orders">
+    <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;flex-wrap:wrap">
+      <input class="inp" id="so-search" placeholder="Search SO / Grade / Customer…" style="width:210px" oninput="filterOrders()">
+      <select class="sel" id="so-prio" onchange="filterOrders()"><option value="">All Priorities</option><option>URGENT</option><option>HIGH</option><option>NORMAL</option></select>
+      <select class="sel" id="so-grade" onchange="filterOrders()"><option value="">All Grades</option></select>
+      <div style="flex:1"></div>
+      <button class="btn btn-success btn-sm" onclick="openAddOrder()">New Order</button>
+      <span style="font-size:11px;color:var(--grey-500)">Select rows, drag to campaign</span>
+      <button class="btn btn-primary btn-sm" id="assign-btn" disabled onclick="assignSelected()">Assign to Campaign</button>
+    </div>
+    <div style="display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:14px">
+      <div class="card" style="overflow:hidden">
+        <div class="card-header"><h3>Open Sales Orders</h3><span class="lbl" id="so-count-lbl">—</span></div>
+        <div style="overflow:auto;max-height:calc(100vh - 220px)">
+          <table class="tbl tbl-navy" id="so-tbl" style="min-width:760px">
+            <thead><tr><th style="width:26px"></th><th>SO ID</th><th>Customer</th><th>Grade</th><th>Sect.</th><th>Qty MT</th><th>Due</th><th>Prio</th><th>Campaign</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="so-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:8px">Campaign Drop Zones</div>
+        <div id="drop-zones"></div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══ CAPACITY ════════════════════════════════════════════════════════ -->
+  <div class="screen" id="screen-capacity">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+      <div class="kpi b" style="flex-direction:row;display:flex;align-items:center;gap:16px;padding:14px 18px">
+        <div><div class="kpi-lbl">Bottleneck Resource</div><div class="kpi-val" id="cap-bn" style="font-size:20px">—</div><div class="kpi-sub" id="cap-bn-sub">—</div></div>
+      </div>
+      <div class="kpi g"><div class="kpi-lbl">Avg Utilisation (SMS)</div><div class="kpi-val g" id="cap-avg">—%</div><div class="kpi-sub">Healthy range 70-90%</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <h3>Resource Capacity Heat Map</h3><span class="lbl">14-day · utilisation %</span>
+        <div style="margin-left:auto;display:flex;gap:6px;align-items:center;font-size:10px">
+          <div style="width:12px;height:12px;background:#d4edda;border-radius:1px"></div>OK
+          <div style="width:12px;height:12px;background:#fff0c2;border-radius:1px"></div>High
+          <div style="width:12px;height:12px;background:#fde8e6;border-radius:1px"></div>Over
+        </div>
+      </div>
+      <div class="card-body" style="overflow-x:auto"><div id="cap-heatmap"><div style="color:var(--grey-500)">Run Schedule first.</div></div></div>
+    </div>
+    <div class="sec-title" style="margin-top:16px">Grade Transition Cost Matrix (changeover minutes)</div>
+    <div class="card"><div class="card-body" id="changeover-matrix"></div></div>
+  </div>
+
+
+  <!-- ═══ MATERIAL ════════════════════════════════════════════════════════ -->
+  <div class="screen" id="screen-material">
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px">
+      <div class="kpi g"><div class="kpi-lbl">Materials OK</div><div class="kpi-val g" id="mat-ok">—</div></div>
+      <div class="kpi a"><div class="kpi-lbl">Low Stock</div><div class="kpi-val a" id="mat-low">—</div></div>
+      <div class="kpi r"><div class="kpi-lbl">Critical / Blocked</div><div class="kpi-val r" id="mat-crit">—</div></div>
+      <div class="kpi b"><div class="kpi-lbl">Campaigns Held</div><div class="kpi-val" id="mat-held">—</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>Campaign Material Commit</h3><span class="lbl">sequence-aware</span></div>
+      <div style="overflow:auto;max-height:calc(100vh - 260px)">
+        <table class="tbl" id="mat-tbl">
+          <thead><tr><th>Campaign</th><th>Grade</th><th>Shortage SKU</th><th>Shortage MT</th><th>Status</th></tr></thead>
+          <tbody id="mat-body"><tr><td colspan="5" style="text-align:center;color:var(--grey-500);padding:20px">Run Schedule to load</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══ CTP ══════════════════════════════════════════════════════════════ -->
+  <div class="screen" id="screen-ctp">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start">
+      <div class="card">
+        <div class="card-header"><h3>Capable-to-Promise Check</h3></div>
+        <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+          <div>
+            <label style="font-size:11px;font-weight:700;color:var(--grey-700);display:block;margin-bottom:4px">SKU / Product</label>
+            <select class="sel" id="ctp-sku" style="width:100%"><option value="">Loading SKUs…</option></select>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div>
+              <label style="font-size:11px;font-weight:700;color:var(--grey-700);display:block;margin-bottom:4px">Quantity (MT)</label>
+              <input class="inp" id="ctp-qty" value="120" style="width:100%">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:700;color:var(--grey-700);display:block;margin-bottom:4px">Requested Date</label>
+              <input class="inp" type="date" id="ctp-date" style="width:100%">
+            </div>
+          </div>
+          <button class="btn btn-primary" id="ctp-btn" onclick="runCTP()">Run CTP Check</button>
+          <div class="ctp-box" id="ctp-result"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3>Recent CTP Requests</h3></div>
+        <div style="overflow:hidden">
+          <table class="tbl" id="ctp-hist">
+            <thead><tr><th>SKU</th><th>Qty</th><th>Requested</th><th>Earliest</th><th>Margin</th><th>Feasible</th></tr></thead>
+            <tbody id="ctp-hist-body"><tr><td colspan="6" style="text-align:center;color:var(--grey-500);padding:20px">No requests yet</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══ SCENARIOS ════════════════════════════════════════════════════════ -->
+  <div class="screen" id="screen-scenarios">
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px">
+      <div class="sc-card" style="border-top-color:var(--blue)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><strong>Baseline</strong><span class="badge b-running">ACTIVE</span></div>
+        <div class="sc-row"><span style="color:var(--grey-500)">Campaigns</span><strong id="sc0-camps">—</strong></div>
+        <div class="sc-row"><span style="color:var(--grey-500)">Released</span><strong id="sc0-rel">—</strong></div>
+        <div class="sc-row"><span style="color:var(--grey-500)">On-Time</span><strong id="sc0-ot">—</strong></div>
+        <div class="sc-row"><span style="color:var(--grey-500)">Late</span><strong id="sc0-late">—</strong></div>
+        <div class="sc-row"><span style="color:var(--grey-500)">MT Planned</span><strong id="sc0-mt">—</strong></div>
+      </div>
+      <div class="sc-card" style="border-top-color:var(--green-mid)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><strong>+10% Demand Spike</strong><span class="lbl">what-if</span></div>
+        <div class="sc-row"><span style="color:var(--grey-500)">Campaigns</span><strong>—</strong></div>
+        <div class="sc-row"><span style="color:var(--grey-500)">Released</span><strong>—</strong></div>
+        <div class="sc-row"><span style="color:var(--grey-500)">On-Time</span><strong style="color:var(--amber)">—</strong></div>
+        <div class="sc-row"><span style="color:var(--grey-500)">Late</span><strong style="color:var(--red)">—</strong></div>
+        <div class="sc-row"><span style="color:var(--grey-500)">MT Planned</span><strong>—</strong></div>
+        <button class="btn btn-success btn-sm" style="margin-top:10px">Apply Scenario</button>
+      </div>
+      <div class="sc-card" style="border-top-color:var(--amber)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><strong>CCM-01 Down 8h</strong><span class="lbl">what-if</span></div>
+        <div class="sc-row"><span style="color:var(--grey-500)">Campaigns</span><strong>—</strong></div>
+        <div class="sc-row"><span style="color:var(--grey-500)">Released</span><strong>—</strong></div>
+        <div class="sc-row"><span style="color:var(--grey-500)">On-Time</span><strong style="color:var(--red)">—</strong></div>
+        <div class="sc-row"><span style="color:var(--grey-500)">Late</span><strong style="color:var(--red)">—</strong></div>
+        <div class="sc-row"><span style="color:var(--grey-500)">MT Planned</span><strong>—</strong></div>
+        <button class="btn btn-warning btn-sm" style="margin-top:10px">Apply Scenario</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>Scenario KPI Comparison</h3></div>
+      <div class="card-body"><div id="sc-chart" style="display:flex;gap:28px;align-items:flex-end;height:140px;padding:0 12px"></div>
+        <div class="legend" style="margin-top:10px;justify-content:center">
+          <div class="legend-item"><div class="ldot" style="background:var(--blue)"></div>Baseline</div>
+          <div class="legend-item"><div class="ldot" style="background:var(--green-mid)"></div>+10% Demand</div>
+          <div class="legend-item"><div class="ldot" style="background:var(--amber)"></div>CCM Down 8h</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══ EQUIPMENT DISPATCH ═════════════════════════════════════════════ -->
+  <div class="screen" id="screen-dispatch">
+
+    <!-- Ribbon KPIs -->
+    <div class="disp-ribbon" id="disp-ribbon">
+      <div class="disp-ribbon-card">
+        <div class="disp-ribbon-icon" style="background:var(--blue-pale)">🏭</div>
+        <div><div class="disp-ribbon-val" id="dr-machines">—</div><div class="disp-ribbon-lbl">Machines active</div></div>
+      </div>
+      <div class="disp-ribbon-card">
+        <div class="disp-ribbon-icon" style="background:var(--green-lt)">🔥</div>
+        <div><div class="disp-ribbon-val" id="dr-heats">—</div><div class="disp-ribbon-lbl">Total heats</div></div>
+      </div>
+      <div class="disp-ribbon-card">
+        <div class="disp-ribbon-icon" style="background:var(--amber-lt)">⚠️</div>
+        <div><div class="disp-ribbon-val" id="dr-viol">—</div><div class="disp-ribbon-lbl">Queue violations</div></div>
+      </div>
+      <div class="disp-ribbon-card">
+        <div class="disp-ribbon-icon" style="background:var(--red-lt)">🔴</div>
+        <div><div class="disp-ribbon-val" id="dr-running">—</div><div class="disp-ribbon-lbl">Running now</div></div>
+      </div>
+      <div class="disp-ribbon-card">
+        <div class="disp-ribbon-icon" style="background:var(--teal-lt)">📦</div>
+        <div><div class="disp-ribbon-val" id="dr-mt">—</div><div class="disp-ribbon-lbl">MT dispatched</div></div>
+      </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="disp-fbar">
+      <div class="fbar">
+        <span class="fchip active" onclick="dispFilter(this,'all')">All</span>
+        <span class="fchip" onclick="dispFilter(this,'sms')">SMS</span>
+        <span class="fchip" onclick="dispFilter(this,'rm')">Rolling</span>
+      </div>
+      <div style="flex:1"></div>
+      <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--grey-500)">
+        <div style="width:10px;height:10px;border-radius:2px;background:#2563eb"></div>Running now
+        <div style="width:10px;height:10px;border-radius:2px;background:var(--amber);margin-left:6px"></div>Queue violation
+        <div style="width:10px;height:10px;border-radius:2px;background:var(--red);margin-left:6px"></div>Late
+      </div>
+      <select class="sel" id="disp-camp-filter" onchange="renderDispatch()">
+        <option value="">All Campaigns</option>
+      </select>
+      <select class="sel" id="disp-day-filter" onchange="renderDispatch()">
+        <option value="">All Days</option>
+        <option value="0">Today</option>
+        <option value="1">Tomorrow</option>
+        <option value="2">Day 3</option>
+        <option value="7">Next 7 days</option>
+      </select>
+    </div>
+
+    <!-- Machine cards grid -->
+    <div class="dispatch-grid" id="dispatch-grid">
+      <div style="grid-column:1/-1;padding:48px;text-align:center;color:var(--grey-500)">
+        <div style="font-size:32px;margin-bottom:12px">🏭</div>
+        <div style="font-size:14px;font-weight:700;color:var(--grey-700)">No Schedule Loaded</div>
+        <div style="font-size:12px;margin-top:4px">Run Schedule to populate the equipment dispatch view.</div>
+      </div>
+    </div>
+
+  </div><!-- /dispatch -->
+
+  <!-- ═══ MASTER DATA ════════════════════════════════════════════ -->
+  <div class="screen" id="screen-masterdata">
+
+    <!-- Solver insight banner -->
+    <div id="solver-insight-banner" style="
+      background:linear-gradient(135deg,#1e40af 0%,#1d4ed8 100%);
+      border-radius:6px;padding:14px 18px;color:#fff;
+      display:flex;align-items:center;gap:16px;margin-bottom:16px;
+    ">
+      <div style="font-size:28px">⚙️</div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:700">Solver Status: <span id="md-solver-status">—</span></div>
+        <div id="md-solver-why" style="font-size:11px;opacity:.8;margin-top:3px">The solver runs OR-Tools CP-SAT. If CP-SAT cannot find a feasible solution within the time limit, it falls back to a greedy heuristic.</div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:11px;opacity:.7">Time limit</div>
+        <div id="md-solver-limit" style="font-size:18px;font-weight:800">60s</div>
+        <div id="md-solver-quality" style="font-size:10px;margin-top:2px"></div>
+      </div>
+    </div>
+
+    <!-- Tab bar -->
+    <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:2px solid var(--grey-200)">
+      <button class="md-tab active" onclick="mdTab(this,'md-config')" id="mdt-config">Config</button>
+      <button class="md-tab" onclick="mdTab(this,'md-resources')" id="mdt-resources">Resource Master</button>
+      <button class="md-tab" onclick="mdTab(this,'md-routing')" id="mdt-routing">Routing</button>
+      <button class="md-tab" onclick="mdTab(this,'md-queue')" id="mdt-queue">Queue Times</button>
+      <button class="md-tab" onclick="mdTab(this,'md-changeover')" id="mdt-changeover">Changeover Matrix</button>
+      <button class="md-tab" onclick="mdTab(this,'md-skus')" id="mdt-skus">SKU Master</button>
+    </div>
+
+    <!-- Config tab -->
+    <div id="md-config" class="md-pane">
+      <div class="card">
+        <div class="card-header"><h3>System Configuration</h3><span class="lbl">Config sheet · read-only</span></div>
+        <div style="overflow:auto;max-height:calc(100vh - 280px)">
+          <table class="tbl" id="md-config-tbl">
+            <thead><tr><th style="width:220px">Key</th><th>Value</th><th>Description</th></tr></thead>
+            <tbody id="md-config-body"><tr><td colspan="3" style="text-align:center;color:var(--grey-500);padding:20px">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resource Master tab -->
+    <div id="md-resources" class="md-pane" style="display:none">
+      <div class="card">
+        <div class="card-header"><h3>Resource Master</h3><span class="lbl" id="md-res-count">—</span></div>
+        <div style="overflow:auto;max-height:calc(100vh - 280px)">
+          <table class="tbl" id="md-res-tbl">
+            <thead><tr><th>Resource ID</th><th>Name</th><th>Operation Group</th><th>Plant</th><th>Avail Hrs/Day</th><th>Max Cap MT/Hr</th><th>Status</th></tr></thead>
+            <tbody id="md-res-body"><tr><td colspan="7" style="text-align:center;color:var(--grey-500);padding:20px">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Routing tab -->
+    <div id="md-routing" class="md-pane" style="display:none">
+      <div class="card">
+        <div class="card-header"><h3>Routing</h3><span class="lbl" id="md-routing-count">—</span></div>
+        <div style="overflow:auto;max-height:calc(100vh - 280px)">
+          <table class="tbl" id="md-routing-tbl">
+            <thead><tr><th>SKU ID</th><th>Grade</th><th>Op Seq</th><th>Operation</th><th>Cycle (min/heat)</th><th>Setup (min)</th><th>Transfer (min)</th><th>Optional?</th></tr></thead>
+            <tbody id="md-routing-body"><tr><td colspan="8" style="text-align:center;color:var(--grey-500);padding:20px">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Queue Times tab -->
+    <div id="md-queue" class="md-pane" style="display:none">
+      <div class="card">
+        <div class="card-header"><h3>Queue Times</h3><span class="lbl">inter-operation timing rules</span></div>
+        <div style="overflow:auto;max-height:calc(100vh - 280px)">
+          <table class="tbl" id="md-queue-tbl">
+            <thead><tr><th>From Operation</th><th>To Operation</th><th>Min Queue (min)</th><th>Max Queue (min)</th><th>Enforcement</th></tr></thead>
+            <tbody id="md-queue-body"><tr><td colspan="5" style="text-align:center;color:var(--grey-500);padding:20px">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Changeover Matrix tab -->
+    <div id="md-changeover" class="md-pane" style="display:none">
+      <div class="card">
+        <div class="card-header"><h3>Grade Changeover Matrix</h3><span class="lbl">minutes · from grade (row) → to grade (col)</span></div>
+        <div class="card-body" style="overflow-x:auto" id="md-changeover-body">
+          <div style="color:var(--grey-500);font-size:11px">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SKU Master tab -->
+    <div id="md-skus" class="md-pane" style="display:none">
+      <div class="card">
+        <div class="card-header"><h3>SKU Master</h3><span class="lbl" id="md-sku-count">—</span></div>
+        <div style="overflow:auto;max-height:calc(100vh - 280px)">
+          <table class="tbl" id="md-sku-tbl">
+            <thead><tr><th>SKU ID</th><th>SKU Name</th><th>Category</th><th>Grade</th><th>Section mm</th><th>Billet Family</th><th>Route Variant</th></tr></thead>
+            <tbody id="md-sku-body"><tr><td colspan="7" style="text-align:center;color:var(--grey-500);padding:20px">Loading…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /masterdata -->
+
+  </div><!-- /screens -->
+</div><!-- /main -->
+</div><!-- /app -->
+
+<script>
+const API = 'http://localhost:5000';
+let _state = {campaigns:[], gantt:[], capacity:[], orders:[]};
+let _selectedSOs = new Set();
+let _ctpHistory = [];
+
+// ── Nav ──────────────────────────────────────────────────────────────────────
+const pageInfo = {
+  dashboard:  ['Dashboard','Live planning overview · 14-day horizon'],
+  gantt:      ['Gantt Schedule','Finite schedule · drag to reschedule'],
+  campaigns:  ['Campaigns','Campaign release queue · material status'],
+  orders:     ['Sales Orders','Open demand · drag-assign to campaigns'],
+  capacity:   ['Capacity Map','Resource utilisation · 14-day horizon'],
+  material:   ['Material Plan','Campaign-by-campaign material commit'],
+  ctp:        ['CTP Check','Capable-to-Promise · ghost campaign simulation'],
+  scenarios:  ['Scenarios','What-if scenario comparison'],
+  dispatch:   ['Equipment Dispatch','Machine-by-machine job sequence · real-time execution view'],
+  masterdata: ['Master Data','Configuration, SKU, and routing settings'],
+};
+function nav(id) {
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+  const sc = document.getElementById('screen-'+id);
+  if(sc) sc.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n=>{
+    const oc = n.getAttribute('onclick')||'';
+    if(oc.includes("'"+id+"'")) n.classList.add('active');
+  });
+  const [t,s] = pageInfo[id]||[id,''];
+  document.getElementById('page-title').textContent = t;
+  document.getElementById('page-sub').textContent   = s;
+  // Lazy-render screens when navigated to
+  if(id==='gantt' && _state.gantt.length) buildGantt();
+  if(id==='orders') renderOrders();
+  if(id==='capacity') renderCapacity();
+  if(id==='material') renderMaterial();
+  if(id==='dispatch') renderDispatch();
+  if(id==='masterdata') loadMasterData();
+}
+
+// ── API fetch ────────────────────────────────────────────────────────────────
+async function apiFetch(url, opts={}) {
+  const r = await fetch(API+url, {headers:{'Content-Type':'application/json'},...opts});
+  const d = await r.json();
+  if(!r.ok) throw new Error(d.error||'API error '+r.status);
+  return d;
+}
+
+// ── Run Schedule ─────────────────────────────────────────────────────────────
+async function runSchedule() {
+  const btn = document.getElementById('btn-run');
+  btn.innerHTML = '<span class="spinner"></span> Running…';
+  btn.disabled = true;
+  try {
+    const depth = document.getElementById('solver-depth').value||'60';
+    const d = await apiFetch('/api/run/schedule',{method:'POST',body:JSON.stringify({time_limit: parseInt(depth)}) });
+    _state.campaigns = d.campaigns || [];
+    _state.gantt     = d.gantt     || [];
+    _state.capacity  = d.capacity  || [];
+    updateDashboard(d);
+    updateTopChips(d);
+    renderCampaignCards();
+    updateSidebarStatus(d.solver_status, d.solver_detail);
+    // Rebuild gantt if on that screen
+    if(document.getElementById('screen-gantt').classList.contains('active')) buildGantt();
+    if(document.getElementById('screen-capacity').classList.contains('active')) renderCapacity();
+    if(document.getElementById('screen-material').classList.contains('active')) renderMaterial();
+    if(document.getElementById('screen-dispatch').classList.contains('active')) renderDispatch();
+    // Update dispatch badge
+    const violCount = (d.gantt||[]).filter(j=>j.Queue_Violation&&j.Queue_Violation!=='OK'&&j.Queue_Violation!=='').length;
+    const nb = document.getElementById('nb-dispatch');
+    if(nb){nb.textContent=violCount||'';nb.style.display=violCount?'':'none';}
+    // Update scenario baseline
+    document.getElementById('sc0-camps').textContent = d.campaigns_total;
+    document.getElementById('sc0-rel').textContent   = d.campaigns_released;
+    document.getElementById('sc0-ot').textContent    = d.on_time_pct+'%';
+    document.getElementById('sc0-late').textContent  = d.campaigns_late;
+    document.getElementById('sc0-mt').textContent    = d.total_mt+' MT';
+  } catch(e) {
+    alert('Schedule error: '+e.message);
+  } finally {
+    btn.innerHTML = 'Run Schedule';
+    btn.disabled = false;
+  }
+}
+
+// ── Dashboard update ─────────────────────────────────────────────────────────
+function updateDashboard(d) {
+  // Hero
+  set('h-heats', d.total_heats||'—');
+  set('h-mt',    d.total_mt != null ? d.total_mt.toLocaleString() : '—');
+  const otPct = d.on_time_pct != null ? d.on_time_pct : null;
+  set('h-ot', otPct != null ? otPct+'%' : '—%');
+  // Colour on-time: green>=80, amber>=50, red<50
+  const otEl = document.getElementById('h-ot');
+  if(otEl && otPct != null) otEl.style.color = otPct>=80?'var(--green-mid)':otPct>=50?'var(--amber)':'var(--red)';
+  set('h-late',  d.campaigns_late != null ? d.campaigns_late : '—');
+  set('h-lastrun', 'Last run: '+fmtNow());
+
+  // KPI tiles
+  const rel = d.campaigns_released||0, held = d.campaigns_held||0;
+  set('k-camps',     d.campaigns_total||'—');
+  set('k-camps-sub', `${rel} released · ${held} held`);
+  set('k-heats',     d.total_heats||'—');
+  set('k-heats-sub', `~${d.total_mt||0} MT · 14 days`);
+  set('k-ot',        otPct != null ? otPct+'%' : '—%');
+  set('k-late',      d.campaigns_late||0);
+  set('k-late-sub',  d.campaigns_late ? 'Review campaign queue' : 'All on track');
+  set('k-tput',      d.throughput_mt_day||'—');
+
+  // Donut
+  updateDonut(d);
+
+  // Utilisation bars
+  renderUtilList(d.utilisation||[]);
+
+  // Bottleneck
+  renderBottleneck(d);
+
+  // Alerts
+  renderAlerts(d.shortage_alerts||[], d);
+
+  // Campaign queue mini-table
+  renderCampQueueTable(_state.campaigns);
+
+  // Throughput placeholder
+  buildTputChart(d.total_mt, d.total_heats);
+
+  // Dashboard Campaign Gantt
+  if (_state.gantt && _state.gantt.length > 0) {
+    renderDashCampGantt();
+  } else {
+    // If not loaded yet, fetch it and render
+    apiFetch('/api/data/gantt').then(dg => {
+      _state.gantt = dg.jobs || [];
+      renderDashCampGantt();
+    }).catch(()=>{});
+  }
+}
+
+
+function set(id, val) {
+  const el = document.getElementById(id);
+  if(el) el.textContent = val;
+}
+
+function fmtNow() {
+  const now = new Date();
+  const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${String(now.getDate()).padStart(2,'0')}-${months[now.getMonth()]} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+}
+
+function fmtDate(iso) {
+  if(!iso) return '—';
+  const d = new Date(iso);
+  if(isNaN(d)) return iso;
+  const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${d.getDate()}-${months[d.getMonth()]}`;
+}
+
+// ── Topbar chips ─────────────────────────────────────────────────────────────
+function updateTopChips(d) {
+  set('chip-solver', d.solver_status||'—');
+  set('chip-held',   (d.campaigns_held||'—')+' on hold');
+  set('chip-late',   (d.campaigns_late||'—')+' late');
+  set('nb-held',     d.campaigns_held||'—');
+  set('nb-orders',   _state.orders.length||'—');
+}
+
+function updateSidebarStatus(st) {
+  set('sb-status', st||'—');
+}
+
+// ── Donut update ──────────────────────────────────────────────────────────────
+function updateDonut(d) {
+  const total = d.campaigns_total||1;
+  const circ  = 239; // 2*pi*38
+  const rel   = ((d.campaigns_released||0)/total)*circ;
+  const held  = ((d.campaigns_held||0)/total)*circ;
+  const late  = ((d.campaigns_late||0)/total)*circ;
+
+  const setArc = (id, len, offset) => {
+    const el = document.getElementById(id);
+    if(el){el.setAttribute('stroke-dasharray',`${len} ${circ}`);el.setAttribute('stroke-dashoffset',offset);}
+  };
+  // Start offset = 60 (top)
+  setArc('donut-rel', rel, 60);
+  setArc('donut-held', held, 60-rel);
+  setArc('donut-late', late, 60-rel-held);
+
+  set('donut-val', total);
+  set('cs-total',  total+' total');
+  set('dl-rel',    d.campaigns_released||0);
+  set('dl-held',   d.campaigns_held||0);
+  set('dl-late',   d.campaigns_late||0);
+}
+
+// ── Utilisation list ──────────────────────────────────────────────────────────
+function renderUtilList(list) {
+  const el = document.getElementById('util-list');
+  if(!el) return;
+  // Filter out BF
+  const rows = list.filter(r=>r.resource_id && !r.resource_id.startsWith('BF'));
+  if(!rows.length){el.innerHTML='<div style="color:var(--grey-500);font-size:11px">No data</div>';return;}
+  el.innerHTML = rows.slice(0,6).map(r=>{
+    const u = Math.min(r.utilisation||0, 110);
+    const cls = u>100?'over':u>85?'high':'ok';
+    const opBadge = r.operation ? `<span class="badge b-${(r.operation||'').toLowerCase().slice(0,3)}">${r.operation}</span>` : '';
+    return `<div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:3px;align-items:center">
+        <span style="font-size:11px;font-weight:600;color:var(--navy)">${r.resource_id}</span>
+        ${opBadge}
+      </div>
+      <div class="util-wrap">
+        <div class="util-track"><div class="util-fill ${cls}" style="width:${Math.min(u,100)}%"></div></div>
+        <span class="util-pct" style="color:${u>100?'var(--red)':u>85?'var(--amber)':'var(--grey-700)'}">${Math.round(r.utilisation||0)}%</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Alerts ────────────────────────────────────────────────────────────────────
+function renderAlerts(shortages, d) {
+  const el = document.getElementById('alert-list');
+  if(!el) return;
+  let items = [];
+  if(d.campaigns_late>0)  items.push({cls:'high', icon:'!', title:`${d.campaigns_late} Late Campaign${d.campaigns_late>1?'s':''}`, desc:'Review campaign queue for overdue orders'});
+  if(d.campaigns_held>0)  items.push({cls:'med',  icon:'!', title:`${d.campaigns_held} Campaigns on Material Hold`, desc:`${shortages.length} material shortage(s) blocking release`});
+  shortages.slice(0,3).forEach(s=>
+    items.push({cls:s.severity==='HIGH'?'high':'med', icon:'i', title:`${s.sku_id} Short`, desc:`${s.shortage_qty} MT short · blocking ${s.campaign_id}`})
+  );
+  if(d.solver_status&&d.solver_status!=='OPTIMAL'&&d.solver_status!=='NOT RUN')
+    items.push({cls:'med', icon:'i', title:`Solver: ${d.solver_status}`, desc:'Plan may not be optimal — check bottleneck resources'});
+  if(!items.length) items.push({cls:'info',icon:'i',title:'Plan Healthy',desc:'No material holds, late campaigns, or constraint violations'});
+  set('alert-count', items.length + ' alerts');
+  el.innerHTML = items.map(a=>`<div class="alert-item ${a.cls}"><div class="alert-icon">${a.icon}</div><div><div class="alert-title">${a.title}</div><div class="alert-desc">${a.desc}</div></div></div>`).join('');
+}
+
+// ── Bottleneck ────────────────────────────────────────────────────────────────
+function renderBottleneck(d) {
+  const el = document.getElementById('bn-content');
+  if(!el) return;
+  set('bn-lbl', d.max_utilisation ? d.max_utilisation+'% peak' : '—');
+  if(!d.bottleneck){el.innerHTML='<div style="font-size:11px;color:var(--grey-500)">Run Schedule to identify bottleneck.</div>';return;}
+  set('cap-bn', d.bottleneck);
+  set('cap-bn-sub', (d.max_utilisation||0)+'% — '+(d.max_utilisation>100?'OVERLOADED':'high demand'));
+  const util = (d.utilisation||[]).filter(r=>!r.resource_id?.startsWith('BF'));
+  el.innerHTML = `
+    <div style="background:${d.max_utilisation>100?'var(--red-lt)':'var(--amber-lt)'};border-radius:var(--r-lg);padding:10px 12px;border-left:3px solid ${d.max_utilisation>100?'var(--red)':'var(--amber)'}">
+      <div style="font-size:14px;font-weight:800;color:var(--navy)">${d.bottleneck}</div>
+      <div style="font-size:11px;color:var(--grey-700)">Peak load: <strong>${d.max_utilisation}%</strong> ${d.max_utilisation>100?'— overloaded':'— high'}</div>
+    </div>
+    ${util.sort((a,b)=>(b.utilisation||0)-(a.utilisation||0)).slice(0,4).map(r=>`
+      <div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;font-weight:600;color:var(--navy);margin-bottom:2px">
+          <span>${r.resource_id}</span><span style="color:${(r.utilisation||0)>100?'var(--red)':(r.utilisation||0)>85?'var(--amber)':'var(--grey-500)'}">${Math.round(r.utilisation||0)}%</span>
+        </div>
+        <div class="util-track"><div class="util-fill ${(r.utilisation||0)>100?'over':(r.utilisation||0)>85?'high':'ok'}" style="width:${Math.min(r.utilisation||0,100)}%"></div></div>
+      </div>`).join('')}`;
+}
+
+// ── Campaign queue mini-table ─────────────────────────────────────────────────
+function renderCampQueueTable(camps) {
+  const el = document.getElementById('camp-queue-body');
+  if(!el) return;
+  if(!camps.length){el.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--grey-500);padding:16px">No campaigns yet</td></tr>';return;}
+  const statusClass = s=>s==='RELEASED'?'b-released':s==='MATERIAL HOLD'?'b-held':s==='LATE'?'b-late':'b-running';
+  const rowClass = s=>s==='RELEASED'?'camp-row-released':s==='MATERIAL HOLD'?'camp-row-held':s==='LATE'?'camp-row-late':'camp-row-running';
+  el.innerHTML = camps.slice(0,6).map(c=>{
+    const st = (c.Release_Status||c.release_status||'').toUpperCase();
+    const margin = c.Margin_Hrs != null ? parseFloat(c.Margin_Hrs) : null;
+    const mbar = margin==null?'—':margin<0
+      ?`<div class="mbar late" style="width:30px"></div> <span style="color:var(--red);font-weight:700">${Math.round(margin)}h</span>`
+      :margin<24
+      ?`<div class="mbar warn" style="width:20px"></div> <span style="color:var(--amber);font-weight:700">+${Math.round(margin)}h</span>`
+      :`<div class="mbar ok" style="width:${Math.min(60,Math.round(margin/2))}px"></div> <span style="color:var(--green-mid);font-weight:700">+${Math.round(margin)}h</span>`;
+    return `<tr class="${rowClass(st)}">
+      <td><strong>${c.campaign_id}</strong></td>
+      <td>${c.grade||'—'}</td>
+      <td>${c.total_mt||'—'}</td>
+      <td>${fmtDate(c.Due_Date)}</td>
+      <td style="white-space:nowrap">${mbar}</td>
+      <td><span class="badge ${statusClass(st)}">${st||'—'}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Throughput chart ──────────────────────────────────────────────────────────
+function buildTputChart(totalMt, totalHeats) {
+  const el = document.getElementById('tput-chart');
+  if(!el) return;
+  // Generate synthetic per-day distribution from total
+  const sms = Math.round((totalMt||3000)/14);
+  const rm  = Math.round(sms*0.85);
+  const days = Array.from({length:14},(_,i)=>[Math.round(sms*(0.8+Math.random()*.4)),Math.round(rm*(0.8+Math.random()*.4))]);
+  const max = Math.max(...days.map(d=>d[0]+d[1]));
+  
+  // Clean up and construct flex responsive bars
+  el.innerHTML = '';
+  el.style.cssText = 'display:flex;align-items:flex-end;gap:0.1875rem;height:100%;min-height:5rem;padding-top:0.5rem';
+  
+  days.forEach(([s,r]) => {
+    const col = document.createElement('div');
+    col.style.cssText = 'flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:0.0625rem';
+    
+    // Use relative percentage heights to constrain within the parent container's dynamic boundaries
+    col.innerHTML = `
+      <div style="width:100%;height:${(s/max)*95}%;background:var(--eaf);border-radius:0.125rem 0.125rem 0 0;min-height:0.25rem" title="SMS: ${s} MT"></div>
+      <div style="width:100%;height:${(r/max)*95}%;background:var(--rm);border-radius:0 0 0.125rem 0.125rem;min-height:0.25rem" title="RM: ${r} MT"></div>
+    `;
+    el.appendChild(col);
+  });
+}
+
+function ganttFilter(el, f) {
+  document.querySelectorAll('#screen-gantt .fchip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  _ganttFilter = f;
+  buildGantt();
+}
+
+function buildGantt() {
+  const grid = document.getElementById('gantt-grid');
+  if(!grid) return;
+  const jobs = _state.gantt;
+  const days  = parseInt(document.getElementById('gantt-days-sel')?.value||'14');
+
+  if(!jobs.length){grid.innerHTML='<div style="padding:40px;text-align:center;color:var(--grey-500)">Run Schedule to populate.</div>';return;}
+
+  // Determine timeline window
+  const starts = jobs.map(j=>new Date(j.Planned_Start)).filter(d=>!isNaN(d));
+  const t0 = starts.length ? new Date(Math.min(...starts)) : new Date();
+  t0.setHours(0,0,0,0);
+  const tEnd = new Date(t0.getTime() + days*86400000);
+  const horizonMs = days*86400000;
+
+  // Group by resource
+  const resources = [...new Set(jobs.map(j=>j.Resource_ID))].filter(Boolean).sort((a,b)=>{
+    const order = ['BF','EAF','LRF','VD','CCM','RM'];
+    const ga = order.findIndex(o=>a.startsWith(o));
+    const gb = order.findIndex(o=>b.startsWith(o));
+    return (ga===-1?99:ga)-(gb===-1?99:gb) || a.localeCompare(b);
+  });
+
+  const filterFn = r=>{
+    if(_ganttFilter==='sms') return !r.startsWith('RM') && !r.startsWith('BF');
+    if(_ganttFilter==='rm')  return r.startsWith('RM');
+    return !r.startsWith('BF');
+  };
+  const visResources = resources.filter(filterFn);
+
+  // Day labels
+  const dayLabels = Array.from({length:days},(_,i)=>{
+    const d = new Date(t0.getTime()+i*86400000);
+    const months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return `${d.getDate()}<small>${months[d.getMonth()]}</small>`;
+  });
+
+  grid.innerHTML = '';
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.className = 'gantt-hdr';
+  hdr.innerHTML = `<div class="gantt-res-col">Resource</div><div class="gantt-days">${dayLabels.map(d=>`<div class="gantt-day">${d}</div>`).join('')}</div>`;
+  grid.appendChild(hdr);
+
+  const nowMs = Date.now() - t0.getTime();
+
+  visResources.forEach(resId=>{
+    const resJobs = jobs.filter(j=>j.Resource_ID===resId);
+    const op = (resJobs[0]?.Operation||'').toUpperCase();
+    const opLabel = {EAF:'Melting',LRF:'Refining',VD:'Degassing',CCM:'Casting',RM:'Rolling',MELTING:'Melting',REFINING:'Refining',DEGASSING:'Degassing',CASTING:'Casting',ROLLING:'Rolling'}[op]||op;
+
+    const row = document.createElement('div');
+    row.className = 'gantt-row';
+    row.innerHTML = `<div class="gantt-res-lbl"><div class="rid">${resId}</div><div class="rop">${opLabel}</div></div>`;
+
+    const tl = document.createElement('div');
+    tl.className = 'gantt-tl';
+
+    // NOW line
+    if(nowMs>0 && nowMs<horizonMs){
+      const nl = document.createElement('div');
+      nl.className = 'now-line';
+      nl.style.left = (nowMs/horizonMs*100)+'%';
+      tl.appendChild(nl);
+    }
+
+    // Job bars
+    resJobs.forEach(job=>{
+      const s = new Date(job.Planned_Start);
+      const e = new Date(job.Planned_End);
+      if(isNaN(s)||isNaN(e)) return;
+      const left  = Math.max(0,(s-t0)/horizonMs*100);
+      const width = Math.max(0.5,(e-s)/horizonMs*100);
+      if(left>100) return;
+
+      const opRaw = (job.Operation||'').toUpperCase();
+      const cls = OP_CLS[opRaw]||'eaf';
+      const locked = ['RUNNING','LOCKED','FROZEN'].includes((job.Status||'').toUpperCase());
+
+      const bar = document.createElement('div');
+      bar.className = `gantt-job ${cls}${locked?' locked':''}`;
+      bar.style.left  = left+'%';
+      bar.style.width = Math.min(width,100-left)+'%';
+      bar.innerHTML   = `<span>${job.Campaign||''}</span><span style="opacity:.7;margin-left:3px;font-size:9px">H${job.Heat_No||''}</span>`;
+      bar.draggable   = !locked;
+
+      bar.addEventListener('mouseenter', e=>{
+        const tt = document.getElementById('tt');
+        const durH = job.Duration_Hrs!=null ? parseFloat(job.Duration_Hrs).toFixed(1)+'h' : '—';
+        tt.innerHTML = `<strong>${job.Campaign} · Heat ${job.Heat_No||'—'}</strong>
+          Resource: ${job.Resource_ID}<br>
+          Op: ${job.Operation}<br>
+          Start: ${fmtDate(job.Planned_Start)}<br>
+          End: ${fmtDate(job.Planned_End)}<br>
+          Duration: ${durH}<br>
+          Grade: ${job.Grade||'—'}<br>
+          ${job.Queue_Violation&&job.Queue_Violation!=='OK'?`<span style="color:var(--amber)">Queue: ${job.Queue_Violation}</span><br>`:''}
+          ${locked?'LOCKED (running)':'Drag to reschedule'}`;
+        tt.style.display='block';
+      });
+      bar.addEventListener('mousemove', ev=>{
+        const tt=document.getElementById('tt');
+        tt.style.left=(ev.clientX+14)+'px';tt.style.top=(ev.clientY-10)+'px';
+      });
+      bar.addEventListener('mouseleave',()=>{document.getElementById('tt').style.display='none';});
+      tl.appendChild(bar);
+    });
+
+    row.appendChild(tl);
+    grid.appendChild(row);
+  });
+}
+
+// ── Campaign cards ────────────────────────────────────────────────────────────
+let _campFilter='all';
+function campFilter(el,f){
+  document.querySelectorAll('#screen-campaigns .fchip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active'); _campFilter=f; renderCampaignCards();
+}
+
+function renderCampaignCards() {
+  const el = document.getElementById('camp-cards');
+  if(!el) return;
+  let camps = _state.campaigns;
+  if(_campFilter==='released') camps=camps.filter(c=>(c.release_status||'').toUpperCase()==='RELEASED');
+  else if(_campFilter==='held') camps=camps.filter(c=>(c.release_status||'').toUpperCase()==='MATERIAL HOLD');
+  else if(_campFilter==='late') camps=camps.filter(c=>(c.Status||'').toUpperCase()==='LATE');
+  if(!camps.length){el.innerHTML='<div style="padding:30px;text-align:center;color:var(--grey-500)">No campaigns. Run Schedule first.</div>';return;}
+
+  const statusCls = s=>({RELEASED:'released','MATERIAL HOLD':'held',LATE:'late',RUNNING:'running',}[s]||'held');
+  const badgeCls  = s=>({RELEASED:'b-released','MATERIAL HOLD':'b-held',LATE:'b-late',RUNNING:'b-running',}[s]||'b-held');
+
+  el.innerHTML = camps.map(c=>{
+    const st = (c.Release_Status||c.release_status||'').toUpperCase();
+    const scls = statusCls(st);
+    const margin = c.Margin_Hrs != null ? parseFloat(c.Margin_Hrs) : null;
+    const marginTxt = margin==null?'— (held)':margin<0?`${Math.round(margin)}h overdue`:margin<24?`+${Math.round(margin)}h margin`:`+${Math.round(margin)}h margin`;
+    const marginColor = margin==null?'var(--grey-500)':margin<0?'var(--red)':margin<24?'var(--amber)':'var(--green-mid)';
+    const shortageHtml = c.shortages?.length ? c.shortages.slice(0,2).map(s=>`<span style="background:var(--red-lt);color:var(--red);border-radius:var(--r-sm);padding:2px 6px;font-size:10px;font-weight:600">${s.sku_id} −${s.qty}MT</span>`).join(' ') : '';
+    const soHtml = (c.so_list||[]).slice(0,3).map(s=>`<span style="background:var(--blue-pale);color:var(--blue);border-radius:var(--r-sm);padding:2px 6px;font-size:10px;font-weight:600">${s}</span>`).join(' ')
+      + (c.so_list?.length>3?`<span style="color:var(--grey-500);font-size:10px"> +${c.so_list.length-3} more</span>`:'');
+    const actions = scls==='held'?`<button class="btn btn-warning btn-sm">Resolve Hold</button>`
+      : scls==='released'?`<button class="btn btn-success btn-sm">Release to Floor</button>`
+      : `<button class="btn btn-outline btn-sm">View Live</button>`;
+    return `<div class="camp-card ${scls}">
+      <div><div style="font-size:15px;font-weight:800;color:var(--navy)">${c.campaign_id}</div><div style="font-size:11px;color:var(--grey-500)">${c.grade||'—'} ${c.needs_vd?'· VD':''}</div></div>
+      <div><div style="font-size:10px;color:var(--grey-500);margin-bottom:2px">Volume</div><div style="font-weight:700;color:var(--navy)">${c.total_mt} MT</div><div style="font-size:10px;color:var(--grey-500)">${c.heats} heats</div></div>
+      <div><div style="font-size:10px;color:var(--grey-500);margin-bottom:2px">Due</div><div style="font-weight:700;color:var(--navy)">${fmtDate(c.Due_Date)}</div><div style="font-size:11px;font-weight:600;color:${marginColor}">${marginTxt}</div></div>
+      <div><div style="font-size:10px;color:var(--grey-500);margin-bottom:4px">Status</div><span class="badge ${badgeCls(st)}">${st||'—'}</span>${shortageHtml?`<br><div style="margin-top:4px">${shortageHtml}</div>`:''}</div>
+      <div><div style="font-size:10px;color:var(--grey-500);margin-bottom:4px">Orders</div><div style="display:flex;flex-wrap:wrap;gap:3px">${soHtml}</div><div style="display:flex;gap:6px;margin-top:8px">${actions}<button class="btn btn-outline btn-sm" onclick="nav('gantt')">View Gantt</button></div></div>
+    </div>`;
+  }).join('');
+}
+
+// ── Orders ────────────────────────────────────────────────────────────────────
+async function loadOrders() {
+  try{
+    const d = await apiFetch('/api/data/orders');
+    _state.orders = d.orders||[];
+    // Populate grade filter
+    const grades=[...new Set(_state.orders.map(o=>o.Grade).filter(Boolean))].sort();
+    const grSel=document.getElementById('so-grade');
+    if(grSel) grades.forEach(g=>{const o=document.createElement('option');o.textContent=g;grSel.appendChild(o);});
+    set('nb-orders', _state.orders.length);
+    renderOrders();
+  }catch(e){console.warn('Orders load:',e);}
+}
+
+function filterOrders(){renderOrders();}
+
+function renderOrders() {
+  const tbody = document.getElementById('so-body');
+  if(!tbody) return;
+  const q    = (document.getElementById('so-search')?.value||'').toLowerCase();
+  const prio = document.getElementById('so-prio')?.value||'';
+  const grade= document.getElementById('so-grade')?.value||'';
+
+  let rows = _state.orders.filter(o=>{
+    if(q && ![o.SO_ID,o.Customer,o.Grade,o.SKU_ID].some(v=>(v||'').toLowerCase().includes(q))) return false;
+    if(prio && (o.Priority||'').toUpperCase()!==prio) return false;
+    if(grade && o.Grade!==grade) return false;
+    return true;
+  });
+
+  set('so-count-lbl', rows.length+' orders');
+
+  const prioDot = p=>{
+    const c={URGENT:'var(--red)',HIGH:'var(--amber)',NORMAL:'var(--green-mid)'}[(p||'').toUpperCase()]||'var(--grey-300)';
+    return `<span title="${p}" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${c}"></span>`;
+  };
+  const campCell = c=>c&&c!==''?`<span style="background:var(--blue-pale);color:var(--blue);border-radius:var(--r-sm);padding:1px 6px;font-size:10px;font-weight:600">${c}</span>`:'—';
+  const statusStyle=s=>({LATE:'color:var(--red);font-weight:700','MATERIAL HOLD':'color:var(--amber);font-weight:700','OPEN':'','CONFIRMED':''}[s?.toUpperCase()]||'');
+
+  tbody.innerHTML = rows.map(o=>`
+    <tr draggable="true" data-so="${o.SO_ID||''}" ondragstart="soDragStart(event,'${o.SO_ID}')">
+      <td><input type="checkbox" onchange="soCheck(this,'${o.SO_ID}')"></td>
+      <td><strong>${o.SO_ID||''}</strong></td>
+      <td>${o.Customer||'—'}</td>
+      <td>${o.Grade||'—'}</td>
+      <td>${o.Section_mm||'—'}</td>
+      <td>${o.Order_Qty_MT||'—'}</td>
+      <td>${fmtDate(o.Delivery_Date)}</td>
+      <td>${prioDot(o.Priority)}</td>
+      <td>${campCell(o.Campaign_ID)}</td>
+      <td><span style="${statusStyle(o.Status)}">${o.Status||'Open'}</span></td>
+      <td><button class="btn btn-outline btn-sm" onclick="editOrder('${o.SO_ID||''}')">Edit</button> <button class="btn btn-danger btn-sm" onclick="deleteOrder('${o.SO_ID||''}')">Delete</button></td>
+    </tr>`).join('');
+
+  renderDropZones();
+}
+
+function soCheck(cb, id){
+  if(cb.checked) _selectedSOs.add(id); else _selectedSOs.delete(id);
+  document.getElementById('assign-btn').disabled=_selectedSOs.size===0;
+}
+
+function soDragStart(ev, soId){ev.dataTransfer.setData('so_id', soId);}
+
+async function assignSelected(){
+  const cid=prompt('Enter Campaign ID to assign selected SOs to:');
+  if(!cid) return;
+  const assignments=[..._selectedSOs].map(so_id=>({so_id,campaign_id:cid}));
+  try{
+    const d=await apiFetch('/api/orders/assign',{method:'POST',body:JSON.stringify({assignments})});
+    alert(`Assigned ${d.updated} order(s) to ${cid}`);
+    _selectedSOs.clear();
+    document.getElementById('assign-btn').disabled=true;
+    await loadOrders();
+  }catch(e){alert('Assign error: '+e.message);}
+}
+
+function renderDropZones(){
+  const el=document.getElementById('drop-zones');
+  if(!el) return;
+  const camps=_state.campaigns.filter(c=>['RELEASED','MATERIAL HOLD'].includes((c.release_status||'').toUpperCase()));
+  if(!camps.length){el.innerHTML='<div style="color:var(--grey-500);font-size:11px;padding:10px">Run Schedule first to see campaigns.</div>';return;}
+  el.innerHTML=camps.map(c=>`
+    <div class="drop-zone" data-camp="${c.campaign_id}"
+      ondragover="event.preventDefault();this.classList.add('drag-over')"
+      ondragleave="this.classList.remove('drag-over')"
+      ondrop="soDrop(event,'${c.campaign_id}');this.classList.remove('drag-over')">
+      <div style="font-size:12px;font-weight:700;color:var(--navy)">${c.campaign_id} · ${c.grade}</div>
+      <div style="font-size:10px;color:var(--grey-500)">${c.total_mt} MT · ${c.heats} heats</div>
+      <div style="font-size:10px;color:var(--grey-400);margin-top:4px">Drop orders here to assign</div>
+    </div>`).join('');
+}
+
+async function soDrop(ev, campId){
+  ev.preventDefault();
+  const soId=ev.dataTransfer.getData('so_id');
+  if(!soId) return;
+  try{
+    await apiFetch('/api/orders/assign',{method:'POST',body:JSON.stringify({assignments:[{so_id:soId,campaign_id:campId}]})});
+    const zone=document.querySelector(`.drop-zone[data-camp="${campId}"]`);
+    if(zone){zone.classList.add('dropped');const pill=document.createElement('span');pill.style.cssText='display:inline-block;background:var(--blue-pale);color:var(--blue);border-radius:var(--r-sm);padding:1px 6px;font-size:10px;font-weight:600;margin:3px 2px';pill.textContent=soId;zone.appendChild(pill);}
+    await loadOrders();
+  }catch(e){alert('Assign error: '+e.message);}
+}
+
+async function openAddOrder(){
+  const so_id = prompt('Enter new SO_ID (unique)');
+  if(!so_id) return;
+  const sku = prompt('SKU_ID', '');
+  const customer = prompt('Customer', '');
+  const grade = prompt('Grade', '');
+  const qty = prompt('Order Qty MT', '0');
+  const due = prompt('Delivery Date (YYYY-MM-DD)', '');
+  const status = prompt('Status (Open/Confirmed)', 'Open');
+  const priority = prompt('Priority (URGENT/HIGH/NORMAL)', 'NORMAL');
+  try {
+    await apiFetch('/api/orders', {
+      method: 'POST',
+      body: JSON.stringify({
+        SO_ID: so_id,
+        SKU_ID: sku,
+        Customer: customer,
+        Grade: grade,
+        Order_Qty_MT: parseFloat(qty)||0,
+        Delivery_Date: due,
+        Status: status,
+        Priority: priority,
+      }),
+    });
+    await loadOrders();
+    alert('Order created: ' + so_id);
+  } catch(e) {
+    alert('Create order failed: ' + e.message);
+  }
+}
+
+async function editOrder(so_id){
+  const order = _state.orders.find(o=>(o.SO_ID||'').toString()===so_id.toString());
+  if(!order){alert('Order not found');return;}
+  const sku = prompt('SKU_ID', order.SKU_ID || '');
+  const customer = prompt('Customer', order.Customer || '');
+  const grade = prompt('Grade', order.Grade || '');
+  const qty = prompt('Order Qty MT', order.Order_Qty_MT || '0');
+  const due = prompt('Delivery Date (YYYY-MM-DD)', order.Delivery_Date||'');
+  const status = prompt('Status (Open/Confirmed)', order.Status || 'Open');
+  const priority = prompt('Priority (URGENT/HIGH/NORMAL)', order.Priority || 'NORMAL');
+  try {
+    await apiFetch('/api/orders/' + encodeURIComponent(so_id), {
+      method: 'PUT',
+      body: JSON.stringify({
+        SKU_ID: sku,
+        Customer: customer,
+        Grade: grade,
+        Order_Qty_MT: parseFloat(qty)||0,
+        Delivery_Date: due,
+        Status: status,
+        Priority: priority,
+      }),
+    });
+    await loadOrders();
+    alert('Order updated: ' + so_id);
+  } catch(e) {
+    alert('Update order failed: ' + e.message);
+  }
+}
+
+async function deleteOrder(so_id){
+  if(!confirm('Delete order '+so_id+'?')) return;
+  try {
+    await apiFetch('/api/orders/' + encodeURIComponent(so_id), {method:'DELETE'});
+    await loadOrders();
+    alert('Order deleted: ' + so_id);
+  } catch(e){
+    alert('Delete order failed: ' + e.message);
+  }
+}
+
+// ── Capacity ──────────────────────────────────────────────────────────────────
+function renderCapacity(){
+  const cap=_state.capacity;
+  const hm=document.getElementById('cap-heatmap');
+  if(!hm) return;
+  if(!cap.length){hm.innerHTML='<div style="color:var(--grey-500)">Run Schedule first.</div>';return;}
+
+  // Filter non-BF
+  const rows=cap.filter(r=>!r.Resource_ID?.startsWith('BF'));
+  if(!rows.length) return;
+
+  // Summary KPIs
+  const utils=rows.map(r=>parseFloat(r['Utilisation_%']||0));
+  const maxUtil=Math.max(...utils);
+  const avgUtil=Math.round(utils.reduce((a,b)=>a+b,0)/utils.length);
+  const bn=rows.sort((a,b)=>(b['Utilisation_%']||0)-(a['Utilisation_%']||0))[0];
+  set('cap-bn',  bn?.Resource_ID||'—');
+  set('cap-bn-sub', Math.round(bn?.['Utilisation_%']||0)+'% — '+(parseFloat(bn?.['Utilisation_%']||0)>100?'OVERLOADED':'high demand'));
+  set('cap-avg', avgUtil+'%');
+
+  // Heatmap table with rich visualization
+  const colHeat=v=>{const n=parseFloat(v||0);return n>100?'background:#fde8e6;color:var(--red);font-weight:700':n>85?'background:#fff0c2;color:var(--amber);font-weight:600':n>50?'background:#d4edda;color:var(--green)':'background:#eef3fb;color:var(--grey-700)';};
+  
+  // Helper to draw an inline horizontal distribution bar
+  const drawBar = (val, max, color) => {
+    if(!val || val==='—') return '—';
+    const num = parseFloat(val);
+    const pct = Math.min(100, Math.max(0, (num/max)*100));
+    return `<div style="display:flex;align-items:center;gap:0.375rem">
+              <span style="min-width:2.5rem;text-align:right">${num.toFixed(1)}</span>
+              <div style="flex:1;height:0.375rem;background:var(--grey-200);border-radius:0.125rem;overflow:hidden">
+                <div style="width:${pct}%;height:100%;background:${color};border-radius:0.125rem"></div>
+              </div>
+            </div>`;
+  };
+
+  const tbl=document.createElement('table');tbl.style.cssText='width:100%;border-collapse:collapse;font-size:0.75rem';
+  const hrow=document.createElement('tr');
+  hrow.innerHTML=`<th style="text-align:left;padding:0.5rem 0.75rem;font-size:0.625rem;color:var(--grey-500);font-weight:700;text-transform:uppercase">Resource</th>`+
+    ['Avail','Demand','Process','Setup','Changeover','Idle','Overload','Util%','Status'].map(h=>`<th style="text-align:center;padding:0.5rem 0.5rem;font-size:0.625rem;color:var(--grey-500);font-weight:700;text-transform:uppercase">${h}</th>`).join('');
+  tbl.appendChild(hrow);
+  
+  const maxAvail = Math.max(...rows.map(r=>parseFloat(r.Avail_Hrs_14d||0)));
+  const maxIdle = Math.max(...rows.map(r=>parseFloat(r.Idle_Hrs||0)));
+  const maxOverload = Math.max(...rows.map(r=>parseFloat(r.Overload_Hrs||0)));
+
+  rows.forEach(r=>{
+    const tr=document.createElement('tr');
+    tr.style.cssText='border-bottom:0.0625rem solid var(--grey-100);transition:background 0.2s';
+    tr.onmouseover = () => tr.style.background = 'var(--blue-pale)';
+    tr.onmouseout = () => tr.style.background = 'transparent';
+    const u=parseFloat(r['Utilisation_%']||0);
+    const cellTpl = (content, style='text-align:center;padding:0.5rem') => `<td style="${style}">${content}</td>`;
+    
+    tr.innerHTML= cellTpl(`<strong>${r.Resource_ID}</strong>`, 'padding:0.5rem 0.75rem;font-weight:600;color:var(--navy);white-space:nowrap') +
+      cellTpl(drawBar(r.Avail_Hrs_14d, maxAvail, 'var(--grey-500)'), 'min-width:7.5rem;padding:0.5rem') +
+      cellTpl(drawBar(r.Demand_Hrs, maxAvail, u>100?'var(--red)':'var(--blue)'), 'min-width:7.5rem;padding:0.5rem') +
+      cellTpl(r.Process_Hrs||'—') +
+      cellTpl(r.Setup_Hrs||'—') +
+      cellTpl(r.Changeover_Hrs||'—') +
+      cellTpl(drawBar(r.Idle_Hrs, maxIdle, 'var(--green-mid)'), 'min-width:7.5rem;padding:0.5rem') +
+      cellTpl(parseFloat(r.Overload_Hrs||0)>0 ? drawBar(r.Overload_Hrs, maxOverload, 'var(--red)') : '—', 'min-width:7.5rem;padding:0.5rem') +
+      cellTpl(`<span style="${colHeat(u)};padding:0.1875rem 0.5rem;border-radius:0.75rem;font-weight:700;box-shadow:0 0.125rem 0.25rem rgba(0,0,0,0.05)">${Math.round(u)}%</span>`) +
+      cellTpl(`<span style="font-size:0.625rem;opacity:0.7">${r.Status||'—'}</span>`);
+    tbl.appendChild(tr);
+  });
+  hm.innerHTML='';hm.appendChild(tbl);
+
+  // Changeover matrix placeholder
+  buildChangeoverMatrix();
+}
+
+function buildChangeoverMatrix(){
+  const el=document.getElementById('changeover-matrix');
+  if(!el) return;
+  const grades=['SAE 1008','SAE 1018','SAE 1035','SAE 1045','SAE 1065','SAE 1080'];
+  const cost=(g1,g2)=>g1===g2?0:Math.abs(grades.indexOf(g1)-grades.indexOf(g2))*15+20;
+  
+  // Use HSL for dynamic subtle heatmap colors
+  const heatColor=v=>{
+    if(v===0) return 'background:var(--grey-100);color:var(--grey-500);border:0.0625rem solid transparent';
+    const intensity = Math.min(100, (v/100)*100);
+    // Green to Red gradient based on cost
+    const hue = Math.max(0, 120 - intensity * 1.2); 
+    return `background:hsl(${hue}, 85%, 92%);color:hsl(${hue}, 85%, 25%);border:0.0625rem solid hsl(${hue}, 85%, 85%)`;
+  };
+
+  let html=`<div style="overflow-x:auto;padding:0.625rem 0"><table style="border-collapse:separate;border-spacing:0.1875rem;font-size:0.6875rem;margin:0 auto"><tr><th></th>${grades.map(g=>`<th style="padding:0.375rem 0.625rem;color:var(--grey-500);font-weight:700;font-size:0.5625rem;text-transform:uppercase;white-space:nowrap">${g.replace('SAE ','')}</th>`).join('')}</tr>`;
+  
+  grades.forEach(g1=>{
+    html+=`<tr><td style="padding:0.375rem 0.625rem;font-weight:600;color:var(--navy);font-size:0.625rem;text-align:right;white-space:nowrap">${g1.replace('SAE ','')}</td>`;
+    grades.forEach(g2=>{
+      const v=cost(g1,g2);
+      html+=`<td style="padding:0.375rem 0.5rem;text-align:center;${heatColor(v)};border-radius:0.25rem;cursor:default;transition:transform 0.15s,box-shadow 0.15s" onmouseover="this.style.transform='scale(1.05)';this.style.boxShadow='0 0.125rem 0.375rem rgba(0,0,0,0.1)'" onmouseout="this.style.transform='scale(1)';this.style.boxShadow='none'" title="${g1} to ${g2}: ${v} min">${v} min</td>`;
+    });
+    html+='</tr>';
+  });
+  html+='</table></div>';
+  el.innerHTML=html;
+}
+
+// ── Material ──────────────────────────────────────────────────────────────────
+function renderMaterial(){
+  const camps=_state.campaigns;
+  const held=camps.filter(c=>(c.release_status||'').toUpperCase()==='MATERIAL HOLD');
+  const allShortages=held.flatMap(c=>c.shortages||[]);
+  set('mat-ok', camps.length-held.length);
+  set('mat-low', allShortages.filter(s=>s.qty<20).length);
+  set('mat-crit', allShortages.filter(s=>s.qty>=20).length);
+  set('mat-held', held.length);
+  const tbody=document.getElementById('mat-body');
+  if(!tbody) return;
+  if(!camps.length){tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--grey-500);padding:20px">Run Schedule first</td></tr>';return;}
+  tbody.innerHTML=camps.map(c=>{
+    const st=(c.release_status||'').toUpperCase();
+    const rowCls=st==='RELEASED'?'camp-row-released':st==='MATERIAL HOLD'?'camp-row-held':'';
+    const shortageCell=c.shortages?.length
+      ? c.shortages.map(s=>`<span style="background:var(--red-lt);color:var(--red);border-radius:var(--r-sm);padding:1px 6px;font-size:10px;font-weight:600">${s.sku_id}</span>`).join(' ')
+      : '<span style="color:var(--green-mid)">None</span>';
+    const shortageQty=c.shortages?.length ? c.shortages.map(s=>`${s.qty} MT`).join(', ') : '—';
+    const badge=st==='RELEASED'?'b-released':st==='MATERIAL HOLD'?'b-held':'b-running';
+    return `<tr class="${rowCls}">
+      <td><strong>${c.campaign_id}</strong></td>
+      <td>${c.grade||'—'}</td>
+      <td>${shortageCell}</td>
+      <td>${shortageQty}</td>
+      <td><span class="badge ${badge}">${st||'—'}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── CTP ───────────────────────────────────────────────────────────────────────
+async function loadSKUs(){
+  try{
+    const d=await apiFetch('/api/data/skus');
+    const sel=document.getElementById('ctp-sku');
+    if(!sel) return;
+    sel.innerHTML='<option value="">Select SKU…</option>';
+    (d.skus||[]).forEach(s=>{const o=document.createElement('option');o.value=s.sku_id;o.textContent=`${s.sku_id} · ${s.sku_name}`;sel.appendChild(o);});
+  }catch(e){console.warn('SKU load:',e);}
+}
+
+async function runCTP(){
+  const btn=document.getElementById('ctp-btn');
+  btn.innerHTML='<span class="spinner"></span> Checking…';btn.disabled=true;
+  const skuId=document.getElementById('ctp-sku')?.value||'';
+  const qty=parseFloat(document.getElementById('ctp-qty')?.value||'100');
+  const date=document.getElementById('ctp-date')?.value||'';
+  const res=document.getElementById('ctp-result');
+  if(!skuId){alert('Select a SKU first');btn.innerHTML='Run CTP Check';btn.disabled=false;return;}
+  try{
+    const d=await apiFetch('/api/run/ctp',{method:'POST',body:JSON.stringify({sku_id:skuId,qty_mt:qty,requested_date:date})});
+    const feasible=d.feasible||d.plant_completion_feasible;
+    const hasGaps=(d.material_gaps||[]).length>0;
+    const cls=hasGaps?'hold':feasible?'':'infeasible';
+    const lbl=hasGaps?'MATERIAL HOLD':feasible?'FEASIBLE':'NOT FEASIBLE';
+    const ldColor=hasGaps?'var(--amber)':feasible?'var(--green-mid)':'var(--red)';
+    res.className='ctp-box '+cls;res.style.display='block';
+    res.innerHTML=`<div style="font-size:13px;font-weight:800;color:${ldColor};margin-bottom:8px">${lbl}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px">
+        <div><span style="color:var(--grey-500)">Earliest Delivery</span><br><strong>${fmtDate(d.earliest_delivery)||'—'}</strong></div>
+        <div><span style="color:var(--grey-500)">Margin</span><br><strong style="color:${feasible?'var(--green-mid)':'var(--red)'}">${d.lateness_days!=null?Math.round(d.lateness_days*24)+'h':'—'}</strong></div>
+        <div><span style="color:var(--grey-500)">Joins Campaign</span><br><strong>${d.joins_campaign||'New'}</strong></div>
+        <div><span style="color:var(--grey-500)">Bottleneck</span><br><strong>${d.bottleneck_resource||d.terminal_resource||'—'}</strong></div>
+        ${(d.material_gaps||[]).length?`<div style="grid-column:1/-1;margin-top:4px"><span style="color:var(--grey-500)">Material Gaps</span><br>${d.material_gaps.map(g=>`<span style="background:var(--red-lt);color:var(--red);border-radius:var(--r-sm);padding:1px 6px;font-size:10px;font-weight:600">${g.sku_id} −${g.shortage_qty}MT</span>`).join(' ')}</div>`:''}
+      </div>`;
+    // Add to history
+    _ctpHistory.unshift({sku:skuId,qty,requested:date,earliest:d.earliest_delivery,margin:d.lateness_days,feasible});
+    renderCTPHistory();
+  }catch(e){res.className='ctp-box infeasible';res.style.display='block';res.innerHTML=`<div style="font-weight:700;color:var(--red)">Error</div><div style="font-size:11px">${e.message}</div>`;}
+  finally{btn.innerHTML='Run CTP Check';btn.disabled=false;}
+}
+
+function renderCTPHistory(){
+  const el=document.getElementById('ctp-hist-body');
+  if(!el) return;
+  if(!_ctpHistory.length){el.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--grey-500);padding:20px">No requests yet</td></tr>';return;}
+  el.innerHTML=_ctpHistory.slice(0,6).map(h=>`<tr>
+    <td>${h.sku}</td><td>${h.qty}</td><td>${fmtDate(h.requested)}</td><td>${fmtDate(h.earliest)||'—'}</td>
+    <td style="color:${h.margin!=null&&h.margin<0?'var(--red)':'var(--green-mid)'};font-weight:700">${h.margin!=null?Math.round(h.margin*24)+'h':'—'}</td>
+    <td><span class="badge ${h.feasible?'b-released':'b-late'}">${h.feasible?'Yes':'No'}</span></td>
+  </tr>`).join('');
+}
+
+// ── Live clock ────────────────────────────────────────────────────────────────
+function updateClock(){
+  const el=document.getElementById('h-clock');
+  if(el) el.textContent=fmtNow();
+}
+
+// ── Scenario chart (static demo) ─────────────────────────────────────────────
+function buildScenarioChart(){
+  const el=document.getElementById('sc-chart');
+  if(!el) return;
+  const metrics=[
+    {lbl:'On-Time %',vals:[86,74,57],scale:100},
+    {lbl:'MT Planned',vals:[4200,4620,3780],scale:5000},
+    {lbl:'Released',vals:[9,9,7],scale:12},
+    {lbl:'Late',vals:[1,3,4],scale:6},
+  ];
+  const colors=['var(--blue)','var(--green-mid)','var(--amber)'];
+  el.innerHTML='';
+  metrics.forEach(m=>{
+    const grp=document.createElement('div');
+    grp.style.cssText='display:flex;flex-direction:column;align-items:center;gap:5px;flex:1';
+    const bars=document.createElement('div');
+    bars.style.cssText='display:flex;align-items:flex-end;gap:4px;height:110px';
+    m.vals.forEach((v,i)=>{
+      const b=document.createElement('div');
+      const h=Math.max((v/m.scale)*100,3);
+      b.style.cssText=`width:22px;border-radius:var(--r-sm) var(--r-sm) 0 0;background:${colors[i]};height:${h}px;position:relative`;
+      const lbl=document.createElement('div');
+      lbl.style.cssText='position:absolute;top:-16px;left:50%;transform:translateX(-50%);font-size:9.5px;font-weight:700;color:var(--navy);white-space:nowrap';
+      lbl.textContent=v+(m.lbl.includes('%')?'%':'');
+      b.appendChild(lbl);bars.appendChild(b);
+    });
+    const lbl=document.createElement('div');
+    lbl.style.cssText='font-size:9.5px;color:var(--grey-500);text-align:center;margin-top:2px';
+    lbl.textContent=m.lbl;
+    grp.appendChild(bars);grp.appendChild(lbl);el.appendChild(grp);
+  });
+}
+
+// ── Health check ─────────────────────────────────────────────────────────────
+async function checkHealth(){
+  try{
+    const d=await apiFetch('/api/health');
+    if(d.solver_status&&d.solver_status!=='NOT RUN') updateSidebarStatus(d.solver_status, d.solver_detail);
+    if(d.solver_status==='NOT RUN') {
+      set('chip-solver','API Connected');
+      document.getElementById('chip-solver-dot').style.background='var(--green-mid)';
+    }
+  }catch(e){
+    set('chip-solver','API Offline');
+    document.getElementById('chip-solver-dot').style.background='var(--red)';
+    document.getElementById('btn-run').disabled=true;
+    document.getElementById('btn-run').textContent='API Offline';
+  }
+}
+
+// ── Solver Status ────────────────────────────────────────────────────────────
+function updateSidebarStatus(status, detail='') {
+  const lbl = document.getElementById('sb-status-label');
+  const dot = document.getElementById('sb-status-dot');
+  const mdStatus = document.getElementById('md-solver-status');
+  const mdQuality = document.getElementById('md-solver-quality');
+  const chipTxt = document.getElementById('chip-solver');
+  const chipDot = document.getElementById('chip-solver-dot');
+  const chipWrap = document.getElementById('chip-solver-wrap');
+  const heroBadge = document.getElementById('h-solver');
+
+  let text = 'Ready', color = 'var(--grey-500)', chip = 'No plan';
+  if (status === 'OPTIMAL') { text = 'Optimal'; color = 'var(--green-mid)'; chip = 'Optimal Plan'; }
+  else if (status === 'FEASIBLE') { text = 'Feasible'; color = 'var(--amber)'; chip = 'Feasible Plan'; }
+  else if (status === 'GREEDY') { text = 'Heuristic'; color = '#f97316'; chip = 'Fast Heuristic'; } // orange
+  else if (status === 'INFEASIBLE' || status === 'ERROR') { text = 'No solution'; color = 'var(--red)'; chip = 'Infeasible'; }
+
+  if(lbl) { lbl.textContent = text; lbl.style.color = '#fff'; }
+  if(dot) dot.style.background = color;
+  if(chipTxt) chipTxt.textContent = chip;
+  if(chipDot) chipDot.style.background = color;
+  if(chipWrap) chipWrap.style.boxShadow = `0 0 0 1px ${color}40, 0 1px 4px ${color}30`;
+  
+  if(mdStatus) {
+    mdStatus.textContent = text;
+    mdStatus.style.color = color;
+  }
+  if(mdQuality) mdQuality.textContent = detail ? '('+detail+')' : '';
+
+  if(heroBadge) {
+    heroBadge.textContent = chip;
+    heroBadge.style.color = color;
+    heroBadge.style.borderColor = color;
+    heroBadge.style.background = `${color}15`;
+  }
+}
+
+// ── Master Data ──────────────────────────────────────────────────────────────
+function mdTab(btn, tabId) {
+  document.querySelectorAll('.md-tab').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.md-pane').forEach(p=>p.style.display='none');
+  btn.classList.add('active');
+  document.getElementById(tabId).style.display='block';
+}
+
+async function loadMasterData() {
+  const tblConfig = document.getElementById('md-config-body');
+  if(!tblConfig || tblConfig.dataset.loaded) return; // cache
+  
+  try {
+    const d = await apiFetch('/api/data/config');
+    
+    // Config
+    if (d.config) {
+      tblConfig.innerHTML = d.config.map(r=>`<tr>
+        <td style="font-weight:700;color:var(--navy)">${r.Key}</td>
+        <td>${r.Value}</td><td style="color:var(--grey-500);font-size:11px">${r.Description||'—'}</td>
+      </tr>`).join('');
+      tblConfig.dataset.loaded = 'true';
+    }
+
+    // Resources
+    if (d.resources) {
+      set('md-res-count', d.resources.length);
+      document.getElementById('md-res-body').innerHTML = d.resources.map(r=>`<tr>
+        <td style="font-weight:700"><span class="badge" style="background:var(--blue);color:#fff">${r.Resource_ID}</span></td>
+        <td>${r.Name||'—'}</td><td>${r.Operation_Group||'—'}</td>
+        <td>${r.Plant||'—'}</td><td>${r.Avail_Hrs_Day||'24'}</td>
+        <td>${r.Max_Cap_MT_Hr||'—'}</td>
+        <td><span style="color:${(r.Status||'').toUpperCase()==='INACTIVE'?'var(--red)':'var(--green-mid)'}">${r.Status||'Active'}</span></td>
+      </tr>`).join('');
+    }
+
+    // Routing
+    if (d.routing) {
+      set('md-routing-count', d.routing.length);
+      document.getElementById('md-routing-body').innerHTML = d.routing.map(r=>`<tr>
+        <td style="font-weight:600">${r.SKU_ID||'—'}</td>
+        <td>${r.Grade||'—'}</td><td style="color:var(--grey-500)">${r.Op_Seq||'—'}</td>
+        <td style="font-weight:700;color:var(--navy)">${r.Operation||'—'}</td>
+        <td>${r.Cycle_Time_Min_Heat||'—'}</td><td>${r.Setup_Time_Min||'—'}</td>
+        <td>${r.Transfer_Time_Min||'—'}</td>
+        <td><span style="color:${(r.Is_Optional||'').toUpperCase()==='Y'?'var(--amber)':'var(--grey-500)'}">${r.Is_Optional||'N'}</span></td>
+      </tr>`).join('');
+    }
+
+    // Queue Times
+    if (d.queue) {
+      document.getElementById('md-queue-body').innerHTML = d.queue.map(q=>`<tr>
+        <td style="font-weight:700">${q.From_Operation||'—'}</td><td style="font-weight:700">${q.To_Operation||'—'}</td>
+        <td>${q.Min_Queue_Min||'0'}</td><td>${q.Max_Queue_Min||'∞'}</td>
+        <td><span class="badge ${q.Enforcement==='Soft'?'b-held':'b-released'}">${q.Enforcement||'Hard'}</span></td>
+      </tr>`).join('');
+    }
+
+    // SKU Master
+    if (d.skus) {
+      set('md-sku-count', d.skus.length);
+      document.getElementById('md-sku-body').innerHTML = d.skus.map(s=>`<tr>
+        <td style="font-weight:700">${s.SKU_ID||'—'}</td><td>${s.SKU_Name||'—'}</td>
+        <td style="color:var(--grey-500)">${s.Category||'—'}</td><td>${s.Grade||'—'}</td>
+        <td>${s.Section_mm||'—'}</td><td>${s.Billet_Family||'—'}</td>
+        <td style="color:var(--blue)">${s.Route_Variant||'—'}</td>
+      </tr>`).join('');
+    }
+
+  } catch(e) {
+    console.error('Master data load error:', e);
+    tblConfig.innerHTML = `<tr><td colspan="3" style="color:var(--red);text-align:center">Error loading data: ${e.message}</td></tr>`;
+  }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+// ── Equipment Dispatch ────────────────────────────────────────────────────────
+const OP_LABEL = {EAF:'EAF Melting',LRF:'LRF Refining',VD:'VD Degassing',CCM:'CCM Casting',RM:'RM Rolling',
+  MELTING:'EAF Melting',REFINING:'LRF Refining',DEGASSING:'VD Degassing',CASTING:'CCM Casting',ROLLING:'RM Rolling'};
+const OP_SHORT = {EAF:'EAF',LRF:'LRF',VD:'VD',CCM:'CCM',RM:'RM',
+  MELTING:'EAF',REFINING:'LRF',DEGASSING:'VD',CASTING:'CCM',ROLLING:'RM'};
+let _dispFilter = 'all';
+
+function dispFilter(el, f) {
+  document.querySelectorAll('#screen-dispatch .fchip').forEach(c=>c.classList.remove('active'));
+  el.classList.add('active');
+  _dispFilter = f;
+  renderDispatch();
+}
+
+function _dispJobDay(job) {
+  const s = new Date(job.Planned_Start);
+  const t0 = new Date(); t0.setHours(0,0,0,0);
+  return isNaN(s) ? -1 : Math.floor((s - t0) / 86400000);
+}
+
+function renderDispatch() {
+  const grid = document.getElementById('dispatch-grid');
+  if (!grid) return;
+
+  const jobs = _state.gantt || [];
+  if (!jobs.length) {
+    grid.innerHTML = `<div style="grid-column:1/-1;padding:48px;text-align:center;color:var(--grey-500)">
+      <div style="font-size:32px;margin-bottom:12px">🏭</div>
+      <div style="font-size:14px;font-weight:700;color:var(--grey-700)">No Schedule Loaded</div>
+      <div style="font-size:12px;margin-top:4px">Run Schedule to populate the equipment dispatch view.</div>
+    </div>`;
+    return;
+  }
+
+  // Filters
+  const campF = document.getElementById('disp-camp-filter')?.value || '';
+  const dayF  = document.getElementById('disp-day-filter')?.value;
+
+  let filtered = jobs.filter(j => !j.Resource_ID?.startsWith('BF'));
+  if (_dispFilter === 'sms') filtered = filtered.filter(j => !j.Resource_ID?.startsWith('RM'));
+  if (_dispFilter === 'rm')  filtered = filtered.filter(j =>  j.Resource_ID?.startsWith('RM'));
+  if (campF) filtered = filtered.filter(j => j.Campaign === campF);
+  if (dayF !== '' && dayF != null) {
+    const maxDay = parseInt(dayF);
+    filtered = filtered.filter(j => { const d = _dispJobDay(j); return d >= 0 && d <= maxDay; });
+  }
+
+  // Group by resource
+  const resMap = {};
+  filtered.forEach(j => {
+    const r = j.Resource_ID || 'UNKNOWN';
+    if (!resMap[r]) resMap[r] = [];
+    resMap[r].push(j);
+  });
+
+  // Sort within each machine by start time
+  const resOrder = ['EAF','LRF','VD','CCM','RM'];
+  const sortedRes = Object.keys(resMap).sort((a,b) => {
+    const ga = resOrder.findIndex(o => a.startsWith(o));
+    const gb = resOrder.findIndex(o => b.startsWith(o));
+    return (ga===-1?99:ga)-(gb===-1?99:gb) || a.localeCompare(b);
+  });
+  sortedRes.forEach(r => resMap[r].sort((a,b) => new Date(a.Planned_Start)-new Date(b.Planned_Start)));
+
+  // Ribbon stats
+  const allViol = filtered.filter(j => j.Queue_Violation && j.Queue_Violation !== 'OK' && j.Queue_Violation !== '');
+  const now = Date.now();
+  const running = filtered.filter(j => {
+    const s = new Date(j.Planned_Start), e = new Date(j.Planned_End);
+    return !isNaN(s) && !isNaN(e) && s <= now && e >= now;
+  });
+  const totalMt = filtered.reduce((s,j) => s+(parseFloat(j.Qty_MT)||0), 0);
+  set('dr-machines', sortedRes.length);
+  set('dr-heats',    filtered.length);
+  set('dr-viol',     allViol.length);
+  set('dr-running',  running.length);
+  set('dr-mt',       Math.round(totalMt)+' MT');
+
+  // Populate campaign filter dropdown
+  const campSel = document.getElementById('disp-camp-filter');
+  if (campSel && campSel.options.length === 1) {
+    const camps = [...new Set(jobs.map(j=>j.Campaign).filter(Boolean))].sort();
+    camps.forEach(c => { const o=document.createElement('option');o.value=c;o.textContent=c;campSel.appendChild(o); });
+  }
+
+  // Determine timeline window for minimap
+  const allStarts = filtered.map(j=>new Date(j.Planned_Start)).filter(d=>!isNaN(d));
+  const allEnds   = filtered.map(j=>new Date(j.Planned_End)).filter(d=>!isNaN(d));
+  const tMin = allStarts.length ? new Date(Math.min(...allStarts)) : new Date();
+  const tMax = allEnds.length   ? new Date(Math.max(...allEnds))   : new Date(tMin.getTime()+86400000);
+  const tSpan = tMax - tMin || 1;
+
+  // Op colour segments for mini timeline
+  const opColors = {EAF:'var(--eaf)',LRF:'var(--lrf)',VD:'var(--vd)',CCM:'var(--ccm)',RM:'var(--rm)',
+    MELTING:'var(--eaf)',REFINING:'var(--lrf)',DEGASSING:'var(--vd)',CASTING:'var(--ccm)',ROLLING:'var(--rm)'};
+
+  // Build cards
+  grid.innerHTML = sortedRes.map(resId => {
+    const rJobs = resMap[resId];
+    const opRaw = (rJobs[0]?.Operation||'').toUpperCase();
+    const opCls = OP_SHORT[opRaw]?.toLowerCase() || 'eaf';
+    const opLabel = OP_LABEL[opRaw] || resId;
+    const opShort = OP_SHORT[opRaw] || '??';
+
+    // Utilisation: time scheduled / total span
+    const totalSched = rJobs.reduce((s,j)=>{
+      const dur = new Date(j.Planned_End)-new Date(j.Planned_Start);
+      return s+(isNaN(dur)?0:dur);
+    },0);
+    const utilPct = Math.round(totalSched/tSpan*100);
+    const utilCls = utilPct>90?'over':utilPct>70?'high':'ok';
+
+    // Violation and late counts
+    const violJobs    = rJobs.filter(j=>j.Queue_Violation&&j.Queue_Violation!=='OK'&&j.Queue_Violation!=='');
+    const runningJobs = rJobs.filter(j=>{
+      const s=new Date(j.Planned_Start),e=new Date(j.Planned_End);
+      return !isNaN(s)&&!isNaN(e)&&s<=now&&e>=now;
+    });
+
+    // Mini timeline segments
+    const tlSegs = rJobs.map(j=>{
+      const s=new Date(j.Planned_Start), e=new Date(j.Planned_End);
+      if(isNaN(s)||isNaN(e)) return '';
+      const left  = Math.max(0,((s-tMin)/tSpan)*100);
+      const width = Math.max(0.3,((e-s)/tSpan)*100);
+      const isRun = s<=now&&e>=now;
+      const col = isRun?'#2563eb':(opColors[opRaw]||'var(--grey-500)');
+      return `<div class="machine-tl-seg" style="left:${left}%;width:${Math.min(width,100-left)}%;background:${col};opacity:${isRun?1:.75}"></div>`;
+    }).join('');
+
+    // Job rows
+    const jobRows = rJobs.map((j,idx)=>{
+      const startDt = new Date(j.Planned_Start);
+      const endDt   = new Date(j.Planned_End);
+      const startStr = isNaN(startDt)?'—':`${String(startDt.getDate()).padStart(2,'0')}-${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][startDt.getMonth()]} ${String(startDt.getHours()).padStart(2,'0')}:${String(startDt.getMinutes()).padStart(2,'0')}`;
+      const endStr   = isNaN(endDt)?'—'  :`${String(endDt.getHours()).padStart(2,'0')}:${String(endDt.getMinutes()).padStart(2,'0')}`;
+      const durH = j.Duration_Hrs!=null?parseFloat(j.Duration_Hrs).toFixed(1)+'h':'—';
+      const isRun   = !isNaN(startDt)&&!isNaN(endDt)&&startDt<=now&&endDt>=now;
+      const hasViol = j.Queue_Violation&&j.Queue_Violation!=='OK'&&j.Queue_Violation!=='';
+      const rowCls  = isRun?'running':hasViol?'viol':'';
+      const violTag = hasViol?`<span class="disp-viol-tag">⚠ Queue</span>`:'';
+      const runTag  = isRun?`<span style="background:#dbeafe;color:#1e40af;font-size:9px;font-weight:700;padding:1px 5px;border-radius:2px">▶ NOW</span>`:'';
+      return `<div class="disp-job ${rowCls}">
+        <div class="disp-seq">${idx+1}</div>
+        <div class="disp-info">
+          <div class="disp-camp">${j.Campaign||'—'} <span style="color:var(--grey-500);font-weight:400">H${j.Heat_No||'?'}</span></div>
+          <div class="disp-detail">
+            <div class="disp-dur ${opCls}"></div>
+            <span>${j.Grade||'—'}</span>
+            ${j.Qty_MT?`<span style="font-weight:600;color:var(--navy)">${parseFloat(j.Qty_MT).toFixed(0)} MT</span>`:''}           ${violTag}${runTag}
+          </div>
+        </div>
+        <div class="disp-time">${startStr}<br><span style="color:var(--grey-500)">→ ${endStr} (${durH})</span></div>
+      </div>`;
+    }).join('');
+
+    return `<div class="machine-card">
+      <div class="machine-card-hdr">
+        <div class="machine-badge ${opCls}">${opShort}</div>
+        <div>
+          <div class="machine-name">${resId}</div>
+          <div class="machine-op">${opLabel}</div>
+        </div>
+        <div class="machine-util-pill ${utilCls}">${utilPct}% loaded</div>
+      </div>
+      <div class="machine-tl-wrap">
+        <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--grey-500);margin-bottom:4px">
+          <span>${fmtDate(tMin.toISOString())}</span><span>${rJobs.length} jobs</span><span>${fmtDate(tMax.toISOString())}</span>
+        </div>
+        <div class="machine-tl-bar">${tlSegs}
+          ${(now>=tMin&&now<=tMax)?`<div style="position:absolute;top:0;bottom:0;width:2px;background:var(--red);left:${((now-tMin)/tSpan*100).toFixed(1)}%;z-index:5"></div>`:''}
+        </div>
+      </div>
+      <div class="machine-jobs">${jobRows}</div>
+      <div class="machine-footer">
+        <div class="mf-stat"><span style="color:var(--navy);font-weight:700">${rJobs.length}</span>&nbsp;heats</div>
+        <div class="mf-stat">·&nbsp;<span style="color:var(--navy);font-weight:700">${Math.round(rJobs.reduce((s,j)=>s+(parseFloat(j.Qty_MT)||0),0))}</span>&nbsp;MT</div>
+        ${runningJobs.length?`<div class="mf-stat">·&nbsp;<span style="color:#2563eb;font-weight:700">${runningJobs.length} running</span></div>`:''}
+        ${violJobs.length?`<div class="mf-stat">·&nbsp;<span style="color:var(--amber);font-weight:700">${violJobs.length} queue alerts</span></div>`:''}
+        <div style="margin-left:auto;font-size:9.5px;color:var(--grey-500)">${utilPct}% utilised</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+
+// ── Dashboard Campaign Gantt ──────────────────────────────────────────────────
+function renderDashCampGantt() {
+  const container = document.getElementById('dash-camp-gantt');
+  if (!container) return;
+  const jobs = (_state.gantt || []).filter(j => j.Planned_Start && j.Planned_End && j.Campaign);
+  
+  if (!jobs.length) {
+    container.innerHTML = '<div style="text-align:center;color:var(--grey-500);padding:2rem">No Campaign Schedule data available</div>';
+    return;
+  }
+
+  // Aggregate by Campaign
+  const cMap = {};
+  jobs.forEach(j => {
+    const c = j.Campaign;
+    if (!cMap[c]) cMap[c] = { start: new Date('2099-01-01'), end: new Date('1970-01-01'), mt: 0, jobs: [] };
+    const s = new Date(j.Planned_Start), e = new Date(j.Planned_End);
+    if (!isNaN(s) && s < cMap[c].start) cMap[c].start = s;
+    if (!isNaN(e) && e > cMap[c].end) cMap[c].end = e;
+    cMap[c].mt += parseFloat(j.Qty_MT) || 0;
+    cMap[c].jobs.push(j);
+  });
+
+  const campaigns = Object.keys(cMap).map(k => ({
+    id: k,
+    start: cMap[k].start,
+    end: cMap[k].end,
+    mt: cMap[k].mt,
+    jobs: cMap[k].jobs
+  })).sort((a,b) => a.start - b.start);
+
+  if(!campaigns.length) return;
+
+  const tMin = new Date(Math.min(...campaigns.map(c => c.start)));
+  const tMax = new Date(Math.max(...campaigns.map(c => c.end)));
+  const span = tMax - tMin || 1;
+
+  let html = `<div style="position:relative;width:100%;height:100%;min-width:30rem;display:flex;flex-direction:column;gap:0.5rem">`;
+  
+  // Header with timeline info
+  html += `<div style="display:flex;justify-content:space-between;border-bottom:0.0625rem solid var(--grey-200);padding-bottom:0.25rem;font-size:0.625rem;color:var(--grey-500);text-transform:uppercase;font-weight:700">
+             <span>${fmtDate(tMin.toISOString())}</span>
+             <span>Campaign Execution Path</span>
+             <span>${fmtDate(tMax.toISOString())}</span>
+           </div>`;
+
+  campaigns.forEach((c, idx) => {
+    const left = ((c.start - tMin) / span) * 100;
+    const width = Math.max(0.5, ((c.end - c.start) / span) * 100);
+    const color = `hsl(${(idx * 137.5) % 360}, 75%, 60%)`;
+    
+    const durH = ((c.end - c.start) / 3600000).toFixed(1);
+
+    html += `
+    <div style="display:flex;align-items:center;min-height:1.75rem;position:relative;margin-bottom:0.125rem">
+      <div style="width:4.5rem;font-size:0.6875rem;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${c.id}">${c.id}</div>
+      <div style="flex:1;position:relative;height:100%;background:rgba(0,0,0,0.02);border-radius:0.125rem">
+        <div style="position:absolute;left:${left}%;width:${width}%;height:1.25rem;top:0.25rem;background:${color};border-radius:0.125rem;opacity:0.85;box-shadow:0 0.125rem 0.25rem rgba(0,0,0,0.08);display:flex;align-items:center;padding:0 0.25rem;overflow:hidden;white-space:nowrap" title="${c.id} | ${c.mt.toFixed(0)} MT | ${durH} hrs">
+           <span style="font-size:0.55rem;color:#fff;font-weight:800;text-shadow:0 0.0625rem 0.125rem rgba(0,0,0,0.3)">${c.mt.toFixed(0)} MT</span>
+        </div>
+      </div>
+    </div>`;
+  });
+
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+window.addEventListener('DOMContentLoaded',()=>{
+  // Set CTP date default
+  const today=new Date();
+  today.setDate(today.getDate()+14);
+  const el=document.getElementById('ctp-date');
+  if(el) el.value=today.toISOString().split('T')[0];
+
+  checkHealth();
+  loadOrders();
+  loadSKUs();
+  buildScenarioChart();
+  updateClock();
+  // Pre-load gantt data for dispatch view
+  apiFetch('/api/data/gantt').then(d=>{
+    _state.gantt = d.jobs||[];
+    const nb = document.getElementById('nb-dispatch');
+    const violCount = _state.gantt.filter(j=>j.Queue_Violation&&j.Queue_Violation!=='OK'&&j.Queue_Violation!=='').length;
+    if(nb){nb.textContent=violCount||'';nb.style.display=violCount?'':'none';}
+  }).catch(()=>{});
+  setInterval(updateClock,30000);
+});
+</script>
+</body>
+</html>
