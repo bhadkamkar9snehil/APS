@@ -1704,6 +1704,7 @@ def run_schedule_api():
             config=config,
             skus=d['skus'],
         )
+
         released = [c for c in campaigns if str(c.get('release_status', '')).upper() == 'RELEASED']
 
         result = schedule(
