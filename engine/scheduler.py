@@ -17,7 +17,8 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - environment-dependent import
     cp_model = None
 
-from engine.campaign import HEAT_SIZE_MT, billet_family_for_grade, rm_minutes_for_qty, needs_vd_for_grade
+from engine.campaign import billet_family_for_grade, rm_minutes_for_qty, needs_vd_for_grade, _get_heat_size_mt
+from engine.config import get_config
 
 EAF_TIME = 90
 LRF_TIME = 40
@@ -700,7 +701,8 @@ def _rm_duration(
     changeover = max(int(round(changeover_minutes or 0)), 0) if add_changeover_to_duration else 0
     if cycle > 0:
         setup = routing_setup if include_setup else 0
-        duration = (cycle * (qty_mt / HEAT_SIZE_MT)) + setup + changeover
+        heat_size = _get_heat_size_mt()
+        duration = (cycle * (qty_mt / heat_size)) + setup + changeover
         return max(1, int(round(duration)))
     if not allow_defaults:
         raise ValueError(
@@ -1340,7 +1342,7 @@ def schedule(
                         "Planned_End": end_dt.strftime("%Y-%m-%d %H:%M"),
                         "Duration_Hrs": round((solver.Value(task["end"]) - solver.Value(task["start"])) / 60, 2),
                         "Heat_No": heat_idx + 1,
-                        "Qty_MT": HEAT_SIZE_MT,
+                        "Qty_MT": _get_heat_size_mt(),
                         "Queue_Violation": queue_status,
                         "Status": status_text,
                         "_sort_start": start_dt,
@@ -1639,7 +1641,7 @@ def _greedy_fallback(
                         "Planned_End": end_dt.strftime("%Y-%m-%d %H:%M"),
                         "Duration_Hrs": round((end_min - start_min) / 60, 2),
                         "Heat_No": heat_idx + 1,
-                        "Qty_MT": HEAT_SIZE_MT,
+                        "Qty_MT": _get_heat_size_mt(),
                         "Queue_Violation": queue_status,
                         "Status": status_text,
                         "_sort_start": start_dt,
