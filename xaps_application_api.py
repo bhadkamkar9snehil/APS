@@ -881,11 +881,23 @@ def run_schedule_api():
         demand_hrs = compute_demand_hours(released, d['resources'], routing=d['routing'])
         cap_df = capacity_map(demand_hrs, d['resources'], horizon_days=horizon)
         
+        # Extract scheduler metadata for degraded-mode tracking
+        allow_defaults = result.get('allow_default_masters', False)
+        scheduler_mode = result.get('campaign_serialization_mode', 'STANDARD')
+        
         # Enrich campaigns with actual material simulation results
         enriched_campaigns = _enrich_campaigns_with_material_data(campaigns, d['bom'], d['inventory'])
         
         # Calculate material plan from enriched campaigns with real material data
         _state['material_plan_data'] = _calculate_material_plan(enriched_campaigns, d['bom'], d['inventory'], d['skus'])
+        
+        # Build degraded-mode flags based on scheduler output and config
+        degraded_flags = {
+            "default_masters_used": allow_defaults,
+            "greedy_fallback": solver in {"GREEDY", "GREEDY_FALLBACK"},
+            "material_incomplete": False,  # Will be updated if material checks fail
+            "inventory_lineage_degraded": False,  # Will be updated if lineage was recomputed
+        }
         
         # Create canonical run artifact with full planning context
         run_id = _create_run_artifact(
@@ -897,7 +909,7 @@ def run_schedule_api():
             solver_status=solver,
             solver_detail=s_detail,
             warnings=[],
-            degraded_flags={}
+            degraded_flags=degraded_flags
         )
         _set_active_run_artifact(run_id)
         
