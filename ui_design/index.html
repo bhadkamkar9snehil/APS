@@ -264,27 +264,25 @@
       </section>
 
       <section class="page" id="page-bom">
-        <div class="page-header"><div><div class="page-title">BOM Explosion</div><div class="page-sub">End-to-end material requirements grouped by plant, process stage, and material type.</div></div>
+        <div class="page-header"><div><div class="page-title">BOM Explosion</div><div class="page-sub">Material requirements breakdown by production stage and finished goods.</div></div>
           <div class="page-actions"><button class="btn primary" id="bomRunBtn">Run BOM Explosion</button></div>
         </div>
-        <div class="page-content">
-          <div class="filters">
-            <button class="subtab active" data-bom-filter="all">All</button>
-            <button class="subtab" data-bom-filter="output">RM Output</button>
-            <button class="subtab" data-bom-filter="byproduct">Byproduct</button>
-            <button class="subtab" data-bom-filter="eaf">EAF Output</button>
+        <div class="bom-summary-strip" id="bomSummaryStrip" style="display:none">
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiLinesVal">—</span><span class="kpi-label">Items</span></div>
+          <div class="bom-kpi covered"><span class="kpi-val" id="bomKpiCoveredVal">—</span><span class="kpi-label">Covered</span></div>
+          <div class="bom-kpi short"><span class="kpi-val" id="bomKpiShortVal">—</span><span class="kpi-label">Short</span></div>
+          <div class="bom-kpi partial"><span class="kpi-val" id="bomKpiPartialVal">—</span><span class="kpi-label">Partial</span></div>
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiGrossVal">—</span><span class="kpi-label">Gross MT</span></div>
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiNetVal">—</span><span class="kpi-label">Net MT</span></div>
+        </div>
+        <div class="bom-split-container">
+          <div class="bom-tree-panel">
+            <div class="bom-tree-header">Production Stages</div>
+            <div class="bom-tree" id="bomTree"></div>
           </div>
-          <div class="bom-summary-strip" id="bomSummaryStrip" style="display:none;flex-shrink:0">
-            <div class="bom-kpi"><span class="kpi-val" id="bomKpiLinesVal">—</span><span class="kpi-label">SKU Lines</span></div>
-            <div class="bom-kpi short"><span class="kpi-val" id="bomKpiShortVal">—</span><span class="kpi-label">Short</span></div>
-            <div class="bom-kpi partial"><span class="kpi-val" id="bomKpiPartialVal">—</span><span class="kpi-label">Partial</span></div>
-            <div class="bom-kpi covered"><span class="kpi-val" id="bomKpiCoveredVal">—</span><span class="kpi-label">Covered</span></div>
-            <div class="bom-kpi byproduct"><span class="kpi-val" id="bomKpiByproductVal">—</span><span class="kpi-label">Byproduct</span></div>
-            <div class="bom-kpi"><span class="kpi-val" id="bomKpiGrossVal">—</span><span class="kpi-label">Gross Req MT</span></div>
-            <div class="bom-kpi"><span class="kpi-val" id="bomKpiNetVal">—</span><span class="kpi-label">Net Req MT</span></div>
-          </div>
-          <div id="bomGroupedContainer" style="flex:1;overflow:auto;min-height:0">
-            <div class="material-empty">No BOM data. Run BOM Explosion first.</div>
+          <div class="bom-split-divider" id="bomDivider"></div>
+          <div class="bom-detail-panel">
+            <div id="bomDetailContent"></div>
           </div>
         </div>
       </section>
@@ -393,6 +391,24 @@ async function apiFetch(url, opts={}){
 function activatePage(page){
   document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active', el.id === 'page-' + page));
   document.querySelectorAll('#topTabs .tab').forEach(el=>el.classList.toggle('active', el.dataset.page === page));
+  if(page === 'bom') initBomResizable();
+}
+function initBomResizable(){
+  const divider = qs('bomDivider');
+  if(!divider) return;
+  let isResizing = false;
+  divider.addEventListener('mousedown', ()=>{ isResizing = true; });
+  document.addEventListener('mouseup', ()=>{ isResizing = false; });
+  document.addEventListener('mousemove', (e)=>{
+    if(!isResizing) return;
+    const container = divider.parentElement;
+    const rect = container.getBoundingClientRect();
+    const newWidth = e.clientX - rect.left;
+    const minWidth = 200, maxWidth = rect.width - 300;
+    if(newWidth >= minWidth && newWidth <= maxWidth){
+      container.children[0].style.flex = '0 0 '+newWidth+'px';
+    }
+  });
 }
 document.querySelectorAll('#topTabs .tab').forEach(btn=>btn.addEventListener('click', ()=>activatePage(btn.dataset.page)));
 document.querySelectorAll('[data-page-link]').forEach(btn=>btn.addEventListener('click', ()=>activatePage(btn.dataset.pageLink)));
@@ -1068,99 +1084,111 @@ function bomStatusBadgeClass(status){
 }
 
 function renderBomGrouped(){
-  const container = qs('bomGroupedContainer');
   if(!state.bomGrouped || !state.bomGrouped.length){
-    container.innerHTML = '<div class="material-empty">No BOM data. Run BOM Explosion first.</div>';
+    qs('bomDetailContent').innerHTML = '<div class="bom-detail-empty">No BOM data. Run BOM Explosion first.</div>';
+    return;
+  }
+  buildBomTree(state.bomGrouped);
+}
+
+function buildBomTree(data){
+  const tree = qs('bomTree');
+  tree.innerHTML = data.map(plant=>{
+    const mtItems = plant.material_types || [];
+    return '<div class="bom-tree-item">'+
+      '<div class="bom-tree-node" onclick="toggleBomNode(this); selectBomStage(this,'+escapeHtml(JSON.stringify(plant).replace(/'/g,"&#39;"))+')" data-plant="'+escapeHtml(plant.plant)+'">'+
+        '<div class="bom-tree-toggle collapsed"></div>'+
+        '<div class="bom-tree-icon">🏭</div>'+
+        '<span>'+escapeHtml(plant.plant)+'</span>'+
+        '<span style="margin-left:auto;font-size:.7rem;color:var(--text-faint)">'+mtItems.length+'</span>'+
+      '</div>'+
+      '<div class="bom-tree-children">'+
+        mtItems.map(mt=>'<div class="bom-tree-item">'+
+          '<div class="bom-tree-node" onclick="selectBomMaterialType(this,'+escapeHtml(JSON.stringify({plant:plant.plant,materialType:mt}).replace(/'/g,"&#39;"))+')" data-plant="'+escapeHtml(plant.plant)+'" data-type="'+escapeHtml(mt.material_type)+'">'+
+            '<div class="bom-tree-toggle leaf"></div>'+
+            '<div class="bom-tree-icon">📊</div>'+
+            '<span>'+escapeHtml(mt.material_type)+'</span>'+
+            '<span style="margin-left:auto;font-size:.7rem;color:var(--text-faint)">'+mt.row_count+'</span>'+
+          '</div>'+
+        '</div>').join('')+
+      '</div>'+
+    '</div>';
+  }).join('');
+
+  if(data.length > 0 && data[0].material_types && data[0].material_types.length > 0){
+    selectBomMaterialType(null, {plant:data[0].plant, materialType:data[0].material_types[0]});
+  }
+}
+
+function toggleBomNode(el){
+  const toggle = el.querySelector('.bom-tree-toggle');
+  const children = el.nextElementSibling;
+  if(toggle.classList.contains('collapsed')){
+    toggle.classList.remove('collapsed');
+    toggle.classList.add('expanded');
+    children.classList.add('open');
+  } else {
+    toggle.classList.add('collapsed');
+    toggle.classList.remove('expanded');
+    children.classList.remove('open');
+  }
+}
+
+function selectBomMaterialType(el, data){
+  if(el) {
+    document.querySelectorAll('.bom-tree-node').forEach(n=>n.classList.remove('selected'));
+    el.classList.add('selected');
+  }
+  renderBomDetail(data.plant, data.materialType);
+}
+
+function selectBomStage(el, plantData){
+  renderBomDetail(plantData.plant, null);
+}
+
+function renderBomDetail(plant, materialType){
+  const plantData = state.bomGrouped.find(p=>p.plant === plant);
+  if(!plantData){
+    qs('bomDetailContent').innerHTML = '<div class="bom-detail-empty">No data selected.</div>';
     return;
   }
 
-  const filterBtn = document.querySelector('[data-bom-filter].active');
-  const filter = filterBtn ? filterBtn.getAttribute('data-bom-filter') : 'all';
+  const rows = materialType ? (materialType.rows || []) : [];
+  const totalGross = materialType ? (materialType.gross_req || 0) : (plantData.gross_req || 0);
+  const totalNet = materialType ? (materialType.net_req || 0) : (plantData.net_req || 0);
+  const totalProduced = materialType ? (materialType.produced_qty || 0) : (plantData.produced_qty || 0);
+  const covered = rows.filter(r=>r.status==='COVERED').length;
+  const short = rows.filter(r=>r.status==='SHORT').length;
+  const partial = rows.filter(r=>r.status==='PARTIAL SHORT').length;
 
-  let filtered = state.bomGrouped;
-  if(filter === 'output') filtered = filtered.filter(p=>p.plant === 'Rolling Mill');
-  if(filter === 'byproduct') filtered = filtered.filter(p=>p.material_types.some(m=>m.material_type.includes('Byproduct')));
-  if(filter === 'eaf') filtered = filtered.filter(p=>['SMS', 'EAF'].includes(p.plant));
+  let html = '<div class="bom-detail-header">'+
+    '<div class="bom-detail-title">'+escapeHtml(plant)+'</div>';
+  if(materialType) html += '<div class="bom-detail-subtitle">'+escapeHtml(materialType.material_type)+'</div>';
+  html += '</div>'+
+    '<div class="bom-detail-stats">'+
+      '<div class="bom-detail-stat"><div class="bom-detail-stat-label">Gross Req</div><div class="bom-detail-stat-value">'+totalGross.toFixed(1)+' MT</div></div>'+
+      '<div class="bom-detail-stat"><div class="bom-detail-stat-label">Produced</div><div class="bom-detail-stat-value">'+totalProduced.toFixed(1)+' MT</div></div>'+
+      '<div class="bom-detail-stat"><div class="bom-detail-stat-label">Net Req</div><div class="bom-detail-stat-value">'+totalNet.toFixed(1)+' MT</div></div>'+
+    '</div>';
 
-  const html = filtered.map(plant=>{
-    const plantHtml = `
-      <div class="material-campaign">
-        <div class="material-plant-head">
-          <div class="material-plant-name">${escapeHtml(plant.plant)}</div>
-          <div class="material-plant-stats">
-            <div class="material-plant-stat">
-              <span class="stat-label">Gross Req</span>
-              <span class="stat-value">${(plant.gross_req || 0).toFixed(1)}</span>
-            </div>
-            <div class="material-plant-stat">
-              <span class="stat-label">Produced</span>
-              <span class="stat-value">${(plant.produced_qty || 0).toFixed(1)}</span>
-            </div>
-            <div class="material-plant-stat">
-              <span class="stat-label">Net Req</span>
-              <span class="stat-value">${(plant.net_req || 0).toFixed(1)}</span>
-            </div>
-            <div class="material-plant-stat">
-              <span class="stat-label">Lines</span>
-              <span class="stat-value">${plant.row_count}</span>
-            </div>
-          </div>
-        </div>
-        ${plant.material_types.map(mt=>{
-          return `
-            <div class="bom-type-header">
-              <div class="bom-type-name">${escapeHtml(mt.material_type)}</div>
-              <div class="bom-type-stats">
-                <span>${(mt.gross_req || 0).toFixed(1)} MT</span>
-                <span class="text-faint">| ${mt.row_count} materials</span>
-              </div>
-            </div>
-            <table class="material-detail-table">
-              <thead>
-                <tr>
-                  <th>SKU ID</th>
-                  <th>SKU Name</th>
-                  <th>Level</th>
-                  <th>Gross Req</th>
-                  <th>Available</th>
-                  <th>Covered</th>
-                  <th>Net Req</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${mt.rows.map(r=>`
-                  <tr>
-                    <td>${escapeHtml(r.sku_id)}</td>
-                    <td>${escapeHtml(r.sku_name || r.sku_id)}</td>
-                    <td>${r.bom_level}</td>
-                    <td>${(r.gross_req || 0).toFixed(1)}</td>
-                    <td>${(r.available_before || 0).toFixed(1)}</td>
-                    <td>${(r.covered_by_stock || 0).toFixed(1)}</td>
-                    <td>${(r.net_req || 0).toFixed(1)}</td>
-                    <td><span class="material-status-badge ${bomStatusBadgeClass(r.status)}">${escapeHtml(r.status)}</span></td>
-                  </tr>
-                `).join('')}
-              </tbody>
-            </table>
-          `;
-        }).join('')}
-      </div>
-    `;
-    return plantHtml;
-  }).join('');
+  if(!materialType) {
+    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.75rem">'+
+      plantData.material_types.map(mt=>'<div class="bom-section-title" style="grid-column:span 1;margin:0;cursor:pointer;background:var(--panel);border:1px solid var(--border);border-left:3px solid #7c3aed" onclick="selectBomMaterialType(this,'+escapeHtml(JSON.stringify({plant:plant,materialType:mt}).replace(/'/g,"&#39;"))+')" data-plant="'+escapeHtml(plant)+'" data-type="'+escapeHtml(mt.material_type)+'" style="grid-column:span 1">'+escapeHtml(mt.material_type)+'<br><span style="font-size:.65rem;font-weight:400;color:var(--text-faint)">'+mt.row_count+' items</span></div>').join('')+
+    '</div>';
+  } else {
+    html += '<div class="bom-items-list">'+
+      rows.map(r=>'<div class="bom-item">'+
+        '<div class="bom-item-row"><div><div class="bom-item-label">SKU</div><div class="bom-item-value">'+escapeHtml(r.sku_id)+'</div></div><div><div class="bom-item-label">Parent</div><div class="bom-item-value">'+escapeHtml(r.parent_skus)+'</div></div></div>'+
+        '<div class="bom-item-row"><div><div class="bom-item-label">Gross Req</div><div class="bom-item-value">'+r.gross_req.toFixed(1)+' MT</div></div><div><div class="bom-item-label">Available</div><div class="bom-item-value">'+r.available_before.toFixed(1)+' MT</div></div></div>'+
+        '<div class="bom-item-row-last"><div><div class="bom-item-label">Net Req</div><div class="bom-item-value">'+r.net_req.toFixed(1)+' MT</div></div><div><span class="bom-item-badge '+bomStatusBadgeClass(r.status)+'">'+escapeHtml(r.status)+'</span></div><div><span class="bom-item-badge '+r.flow_type.toLowerCase()+'">'+escapeHtml(r.flow_type)+'</span></div></div>'+
+      '</div>').join('')+
+    '</div>';
+  }
 
-  container.innerHTML = html || '<div class="material-empty">No matching BOM records for selected filter.</div>';
+  qs('bomDetailContent').innerHTML = html;
 }
-function hookBomFilters(){
-  document.querySelectorAll('[data-bom-filter]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      document.querySelectorAll('[data-bom-filter]').forEach(b=>b.classList.remove('active'));
-      btn.classList.add('active');
-      renderBomGrouped();
-    });
-  });
-}
+
+function hookBomFilters(){}
 async function applyScenarioByName(name){
   try{
     await apiFetch('/api/aps/scenarios/apply', {method:'POST', body: JSON.stringify({scenario: name})});
