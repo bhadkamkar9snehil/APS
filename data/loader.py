@@ -5,6 +5,7 @@ import pandas as pd
 from pathlib import Path
 
 EXCEL_PATH = Path(__file__).parent.parent / "APS_BF_SMS_RM.xlsm"
+EXCEL_XLSX_PATH = Path(__file__).parent.parent / "APS_BF_SMS_RM.xlsx"
 
 
 def load_all(path=None) -> dict:
@@ -48,6 +49,9 @@ def load_all(path=None) -> dict:
         except Exception:
             data[key] = pd.DataFrame()
 
+    # Load algorithm configuration from Algorithm_Config sheet
+    _load_algorithm_config()
+
     if "Status" in data["sales_orders"].columns:
         data["sales_orders"]["Status"] = data["sales_orders"]["Status"].fillna("Open")
     else:
@@ -58,6 +62,28 @@ def load_all(path=None) -> dict:
         data["sales_orders"]["Section_mm"], errors="coerce").fillna(6.5)
 
     return data
+
+
+def _load_algorithm_config() -> None:
+    """Load algorithm configuration from Algorithm_Config sheet."""
+    try:
+        # Try to load from .xlsx first (new format with Algorithm_Config sheet)
+        config_path = EXCEL_XLSX_PATH if EXCEL_XLSX_PATH.exists() else EXCEL_PATH
+        xls = pd.ExcelFile(config_path)
+
+        if "Algorithm_Config" in xls.sheet_names:
+            config_df = xls.parse("Algorithm_Config", header=0)
+            from engine.config import load_algorithm_config
+            config = load_algorithm_config(config_df)
+            print(f"[CONFIG] Loaded {len(config.all_params())} algorithm parameters from Algorithm_Config sheet")
+            return
+    except Exception as e:
+        print(f"[CONFIG] Warning: Could not load Algorithm_Config sheet: {e}")
+
+    # If no config sheet found, system will use code defaults
+    from engine.config import get_config
+    _ = get_config()
+    print("[CONFIG] Using default algorithm configuration (no Algorithm_Config sheet found)")
 
 
 def validate(data: dict) -> list:
