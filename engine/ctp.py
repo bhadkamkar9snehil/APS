@@ -162,6 +162,11 @@ def _net_inventory_after_committed_details(campaigns: list, inventory) -> dict:
 
 
 def _frozen_jobs_from_campaigns(campaigns: list) -> dict:
+    """Extract frozen jobs from campaigns with scheduled_jobs field (legacy).
+    
+    NOTE: This is deprecated in favor of _frozen_jobs_from_schedule_dataframe
+    which builds from actual schedule output DataFrames. Kept for compatibility.
+    """
     frozen = {}
     for camp in campaigns:
         for job in camp.get("scheduled_jobs", []) or []:
@@ -174,6 +179,52 @@ def _frozen_jobs_from_campaigns(campaigns: list) -> dict:
                 "Planned_End": job.get("Planned_End"),
                 "Status": str(job.get("Status", "LOCKED") or "LOCKED").strip(),
             }
+    return frozen
+
+
+def _frozen_jobs_from_schedule_dataframe(schedule_df: pd.DataFrame | None) -> dict:
+    """Build frozen jobs from schedule output DataFrame.
+    
+    This is the proper way to extract frozen jobs after scheduling, as it uses
+    the actual schedule output rather than campaign.scheduled_jobs field which may
+    not be populated.
+    
+    Args:
+        schedule_df: Output DataFrame from scheduler with columns like Job_ID, Resource_ID, etc.
+        
+    Returns:
+        Dict mapping job_id -> {Resource_ID, Planned_Start, Planned_End, Status}
+    """
+    frozen = {}
+    
+    if schedule_df is None or getattr(schedule_df, "empty", True):
+        return frozen
+    
+    for _, row in schedule_df.iterrows():
+        job_id = str(row.get("Job_ID") or row.get("job_id") or "").strip()
+        if not job_id:
+            continue
+        
+        # Extract timing information from schedule
+        planned_start = row.get("Planned_Start") or row.get("planned_start")
+        planned_end = row.get("Planned_End") or row.get("planned_end")
+        
+        # Try to convert to datetime if they're strings
+        try:
+            if isinstance(planned_start, str):
+                planned_start = pd.to_datetime(planned_start)
+            if isinstance(planned_end, str):
+                planned_end = pd.to_datetime(planned_end)
+        except Exception:
+            pass
+        
+        frozen[job_id] = {
+            "Resource_ID": str(row.get("Resource_ID") or row.get("resource_id") or "").strip(),
+            "Planned_Start": planned_start,
+            "Planned_End": planned_end,
+            "Status": "LOCKED",  # Jobs from schedule are always locked/committed
+        }
+    
     return frozen
 
 
@@ -563,24 +614,51 @@ def _derive_bottleneck(ghost_rows: pd.DataFrame) -> tuple[str | None, dict]:
 
 
 def _schedule_confidence(schedule_result: dict, inventory_lineage_status: str, material_hold: bool) -> tuple[str, list[str]]:
+    """Compute promise confidence with strict degradation rules.
+    
+    Rule 6.3: Confidence is strictly lowered when:
+    - Inventory lineage is degraded (recomputed, conservative blend, etc.)
+    - Schedule basis is greedy fallback (not CP-SAT)
+    - Default masters were used
+    - Material check was skipped or failed
+    """
     flags = []
     solver_status = _safe_str(schedule_result.get("solver_status")).upper()
     solver_detail = _safe_str(schedule_result.get("solver_detail")).upper()
-    if solver_status in HEURISTIC_SOLVER_STATUSES:
+    
+    # Flag degradation sources
+    is_greedy = solver_status in HEURISTIC_SOLVER_STATUSES
+    has_degraded_lineage = inventory_lineage_status in DEGRADED_INVENTORY_LINEAGE_STATUSES
+    has_default_masters = bool(schedule_result.get("allow_default_masters"))
+    has_master_data_risk = "MASTER" in solver_detail or "RESOURCE" in solver_detail or "ROUTING" in solver_detail
+    
+    if is_greedy:
         flags.append("HEURISTIC_SCHEDULE")
-    if inventory_lineage_status in DEGRADED_INVENTORY_LINEAGE_STATUSES:
+    if has_degraded_lineage:
         flags.append("DEGRADED_INVENTORY_LINEAGE")
-    if bool(schedule_result.get("allow_default_masters")):
+    if has_default_masters:
         flags.append("DEFAULT_MASTER_DATA_ALLOWED")
     if material_hold:
         flags.append("MATERIAL_BLOCK")
-    if "MASTER" in solver_detail or "RESOURCE" in solver_detail or "ROUTING" in solver_detail:
+    if has_master_data_risk:
         flags.append("MASTER_DATA_RISK")
 
-    if "MASTER_DATA_RISK" in flags:
+    # STRICT RULES: Mandatory confidence downgrade conditions
+    # Rule: HIGH confidence only if all of these are false:
+    # - Master data risk flag
+    # - Material hold
+    
+    if has_master_data_risk or material_hold:
         return "LOW", flags
-    if solver_status in HEURISTIC_SOLVER_STATUSES or inventory_lineage_status in DEGRADED_INVENTORY_LINEAGE_STATUSES:
+    
+    # MEDIUM when any of these degradations exist:
+    # - Heuristic/greedy schedule (not CP-SAT optimization)
+    # - Degraded inventory lineage
+    # - Default masters allowed
+    if is_greedy or has_degraded_lineage or has_default_masters:
         return "MEDIUM", flags
+    
+    # Otherwise HIGH confidence
     return "HIGH", flags
 
 
