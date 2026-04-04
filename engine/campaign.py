@@ -386,8 +386,8 @@ def _normalize_sales_orders(
 
     so["Order_Qty_MT"] = pd.to_numeric(so["Order_Qty_MT"], errors="coerce").fillna(0.0)
     so["Section_mm"] = pd.to_numeric(so["Section_mm"], errors="coerce")
-    so["Delivery_Date"] = pd.to_datetime(so["Delivery_Date"])
-    so["Order_Date"] = pd.to_datetime(so["Order_Date"])
+    so["Delivery_Date"] = pd.to_datetime(so["Delivery_Date"], errors="coerce")
+    so["Order_Date"] = pd.to_datetime(so["Order_Date"], errors="coerce")
     so["Priority"] = so["Priority"].fillna("NORMAL").astype(str).str.upper().str.strip()
     so["Priority_Rank"] = so["Priority"].map(priority_rank).fillna(9).astype(int)
     so["Campaign_Group"] = so["Campaign_Group"].fillna(so["Grade"]).astype(str).str.strip()

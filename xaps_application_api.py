@@ -376,6 +376,13 @@ def _load_all() -> dict:
     so_raw = _read_sheet("Sales_Orders", ["SO_ID", "SKU_ID"])
     # Filter out rows where SO_ID is NaN or 'nan' string (header/description rows)
     so_raw = so_raw[so_raw["SO_ID"].notna() & (so_raw["SO_ID"] != 'nan')].reset_index(drop=True)
+
+    # Deduplicate by SO_ID - keep first occurrence, warn if duplicates found
+    dupe_sos = so_raw[so_raw.duplicated(subset=["SO_ID"], keep=False)]["SO_ID"].unique()
+    if len(dupe_sos) > 0:
+        print(f"[WARNING] Duplicate SO_IDs found: {list(dupe_sos)}. Keeping first occurrence only.")
+    so_raw = so_raw.drop_duplicates(subset=["SO_ID"], keep="first").reset_index(drop=True)
+
     res = _read_sheet("Resource_Master", ["Resource_ID"])
     skus = _read_sheet("SKU_Master", ["SKU_ID"])
     routing = _read_sheet("Routing", ["SKU_ID", "Operation"])

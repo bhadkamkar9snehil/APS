@@ -78,7 +78,7 @@
             </div>
             <div class="card">
               <div class="card-header"><div><div class="card-title">Campaign release queue</div><div class="card-sub">Sorted by due date from the application API.</div></div></div>
-              <div class="card-body" style="padding:0">
+              <div class="card-body" style="padding:0;overflow:auto;max-height:35vh">
                 <table class="table">
                   <thead><tr><th>Campaign</th><th>Grade</th><th>MT</th><th>Due</th><th>Margin</th><th>Status</th></tr></thead>
                   <tbody id="releaseQueueBody"><tr><td colspan="6">Loading…</td></tr></tbody>
@@ -150,7 +150,7 @@
         <div class="orders-layout">
           <div class="card">
             <div class="card-header"><div><div class="card-title">Open sales orders</div><div class="card-sub" id="ordersCount">—</div></div></div>
-            <div class="card-body" style="padding:0;overflow:auto">
+            <div class="card-body" style="padding:0;overflow:auto;max-height:65vh">
               <table class="table">
                 <thead><tr><th></th><th>SO ID</th><th>Customer</th><th>Grade</th><th>Qty MT</th><th>Due</th><th>Priority</th><th>Campaign</th><th>Status</th><th>Actions</th></tr></thead>
                 <tbody id="ordersBody"></tbody>
@@ -183,7 +183,7 @@
           <div class="metric danger"><div class="metric-label">Critical</div><div class="metric-value" id="matCrit">—</div></div>
           <div class="metric"><div class="metric-label">Held campaigns</div><div class="metric-value" id="matHeld">—</div></div>
         </div>
-        <div class="card"><div class="card-body" style="padding:0">
+        <div class="card"><div class="card-body" style="padding:0;overflow:auto;max-height:65vh">
           <table class="table">
             <thead><tr><th>Campaign</th><th>Grade</th><th>Shortage SKU</th><th>Shortage MT</th><th>Status</th></tr></thead>
             <tbody id="materialBody"></tbody>
@@ -198,7 +198,7 @@
           <div class="metric"><div class="metric-label">Average utilisation</div><div class="metric-value" id="capAvg">—</div><div class="metric-sub">Across visible resources</div></div>
         </div>
         <div class="card"><div class="card-header"><div><div class="card-title">Capacity map</div><div class="card-sub">Includes data from <code class="inline">/api/aps/capacity/map</code> and <code class="inline">/api/aps/capacity/bottlenecks</code>.</div></div></div>
-          <div class="card-body" style="padding:0;overflow:auto">
+          <div class="card-body" style="padding:0;overflow:auto;max-height:65vh">
             <table class="table">
               <thead><tr><th>Resource</th><th>Operation</th><th>Demand Hrs</th><th>Avail Hrs</th><th>Util %</th><th>Status</th></tr></thead>
               <tbody id="capacityBody"></tbody>
@@ -212,7 +212,7 @@
         <div class="grid-3" style="margin-bottom:.75rem" id="scenarioCards"></div>
         <div class="card">
           <div class="card-header"><div><div class="card-title">Scenario list</div><div class="card-sub">Workbook-backed scenario rows.</div></div><button class="btn success" id="newScenarioBtn">Add Scenario</button></div>
-          <div class="card-body" style="padding:0;overflow:auto">
+          <div class="card-body" style="padding:0;overflow:auto;max-height:55vh">
             <table class="table">
               <thead><tr><th>Key</th><th>Value</th><th>Actions</th></tr></thead>
               <tbody id="scenarioTableBody"></tbody>
@@ -240,7 +240,7 @@
           </div>
           <div class="card">
             <div class="card-header"><div><div class="card-title">Recent CTP activity</div><div class="card-sub">Merged request and output history.</div></div></div>
-            <div class="card-body" style="padding:0">
+            <div class="card-body" style="padding:0;overflow:auto;max-height:50vh">
               <table class="table">
                 <thead><tr><th>SKU</th><th>Qty</th><th>Requested</th><th>Earliest</th><th>Margin</th><th>Feasible</th></tr></thead>
                 <tbody id="ctpHistoryBody"></tbody>
@@ -274,7 +274,7 @@
         </div>
         <div class="card">
           <div class="card-header"><div><div class="card-title" id="masterTitle">Master Data</div><div class="card-sub">Section rows loaded from <code class="inline">/api/aps/masterdata</code>.</div></div></div>
-          <div class="card-body" style="padding:0;overflow:auto">
+          <div class="card-body" style="padding:0;overflow:auto;max-height:70vh">
             <table class="table">
               <thead id="masterHead"></thead>
               <tbody id="masterBody"></tbody>
