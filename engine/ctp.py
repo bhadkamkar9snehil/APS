@@ -14,6 +14,7 @@ import pandas as pd
 
 from engine.bom_explosion import inventory_map
 from engine.campaign import build_campaigns, _heats_needed_from_lines
+from engine.config import get_config
 from engine.scheduler import schedule
 
 COMMITTED_STATUSES = {"RELEASED", "RUNNING LOCK"}
@@ -72,6 +73,36 @@ def _config_flag(config: dict | None, key: str, default: str = "N") -> bool:
 def _config_float(config: dict | None, key: str, default: float) -> float:
     value = pd.to_numeric(pd.Series([(config or {}).get(key, default)]), errors="coerce").iloc[0]
     return float(default if pd.isna(value) else value)
+
+
+def _get_ctp_score_stock_only() -> float:
+    """Get CTP score for stock-only promise from Algorithm_Config."""
+    return get_config().get_float('CTP_SCORE_STOCK_ONLY', 60.0)
+
+
+def _get_ctp_score_merge_campaign() -> float:
+    """Get CTP score for merging with existing campaign from Algorithm_Config."""
+    return get_config().get_float('CTP_SCORE_MERGE_CAMPAIGN', 10.0)
+
+
+def _get_ctp_score_new_campaign() -> float:
+    """Get CTP score for creating new campaign from Algorithm_Config."""
+    return get_config().get_float('CTP_SCORE_NEW_CAMPAIGN', 4.0)
+
+
+def _get_ctp_mergeable_score_threshold() -> float:
+    """Get minimum score threshold to consider merge viable from Algorithm_Config."""
+    return get_config().get_float('CTP_MERGEABLE_SCORE_THRESHOLD', 55.0)
+
+
+def _get_ctp_inventory_zero_tolerance() -> float:
+    """Get inventory zero tolerance threshold from Algorithm_Config."""
+    return get_config().get_float('CTP_INVENTORY_ZERO_TOLERANCE', 1e-9)
+
+
+def _get_ctp_merge_penalty() -> float:
+    """Get penalty for non-selection of merge option from Algorithm_Config."""
+    return get_config().get_float('CTP_MERGE_PENALTY', 1.0)
 
 
 def _normalize_inventory_snapshot(snapshot) -> dict | None:
@@ -416,18 +447,18 @@ def _score_join_candidate(target_campaign: dict, ghost_campaigns: list, requeste
     ghost = ghost_campaigns[0]
 
     if _campaign_matches_join_target(ghost, target_campaign):
-        score += 60.0
+        score += _get_ctp_score_stock_only()
     else:
         reasons.append("ATTRIBUTE_MISMATCH")
 
     ghost_sections = sorted({round(_coerce_float(o.get("section_mm"), 0.0), 3) for c in ghost_campaigns for o in c.get("production_orders", [])})
     target_sections = sorted({round(_coerce_float(o.get("section_mm"), 0.0), 3) for o in target_campaign.get("production_orders", [])})
     if ghost_sections and target_sections and set(ghost_sections).issubset(set(target_sections)):
-        score += 10.0
+        score += _get_ctp_score_merge_campaign()
     elif ghost_sections and target_sections and not set(ghost_sections).intersection(set(target_sections)):
         reasons.append("SECTION_INCOMPATIBLE")
     else:
-        score += 4.0
+        score += _get_ctp_score_new_campaign()
 
     target_due = _coerce_timestamp(target_campaign.get("due_date"))
     if target_due is not None:
@@ -443,7 +474,7 @@ def _score_join_candidate(target_campaign: dict, ghost_campaigns: list, requeste
         reasons.append("TARGET_NOT_COMMITTED")
 
     if target_campaign.get("material_status") == "READY":
-        score += 4.0
+        score += _get_ctp_score_new_campaign()
 
     available_headroom = max(
         _config_float(None, "dummy", 0.0),
@@ -455,7 +486,7 @@ def _score_join_candidate(target_campaign: dict, ghost_campaigns: list, requeste
     return {
         "candidate_id": target_id or None,
         "score": round(score, 2),
-        "mergeable": score >= 55.0 and "ATTRIBUTE_MISMATCH" not in reasons and "SECTION_INCOMPATIBLE" not in reasons,
+        "mergeable": score >= _get_ctp_mergeable_score_threshold() and "ATTRIBUTE_MISMATCH" not in reasons and "SECTION_INCOMPATIBLE" not in reasons,
         "reasons": reasons,
     }
 
@@ -909,7 +940,7 @@ def _evaluate_scenario(
         scenario_name=scenario_name,
     )
 
-    if qty_mt <= 1e-9:
+    if qty_mt <= _get_ctp_inventory_zero_tolerance():
         result.update(
             {
                 "decision_class": "PROMISE_CONFIRMED_STOCK_ONLY",
