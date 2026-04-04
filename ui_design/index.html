@@ -13,28 +13,34 @@
 <div class="app">
   <div class="shell">
     <div class="top">
-      <div class="brand-row">
-        <div class="brand">APS</div>
-        <div class="summary-grid">
-          <div class="metric"><div class="metric-label">Campaigns</div><div class="metric-value" id="summaryCampaigns">—</div><div class="metric-sub" id="summaryCampaignsSub">Loading…</div></div>
-          <div class="metric success"><div class="metric-label">Heats planned</div><div class="metric-value" id="summaryHeats">—</div><div class="metric-sub" id="summaryHeatsSub">—</div></div>
-          <div class="metric"><div class="metric-label">MT planned</div><div class="metric-value" id="summaryMt">—</div><div class="metric-sub" id="summaryMtSub">14-day horizon</div></div>
-          <div class="metric warn"><div class="metric-label">On-time</div><div class="metric-value" id="summaryOt">—</div><div class="metric-sub" id="summaryOtSub">—</div></div>
-          <div class="metric danger"><div class="metric-label">Late</div><div class="metric-value" id="summaryLate">—</div><div class="metric-sub" id="summaryLateSub">—</div></div>
+      <div class="top-summary">
+        <div class="brand-row">
+          <div class="brand">APS</div>
+          <div class="summary-grid">
+            <div class="metric"><div class="metric-label">Campaigns</div><div class="metric-value" id="summaryCampaigns">—</div><div class="metric-sub" id="summaryCampaignsSub">Loading…</div></div>
+            <div class="metric success"><div class="metric-label">Heats planned</div><div class="metric-value" id="summaryHeats">—</div><div class="metric-sub" id="summaryHeatsSub">—</div></div>
+            <div class="metric"><div class="metric-label">MT planned</div><div class="metric-value" id="summaryMt">—</div><div class="metric-sub" id="summaryMtSub">14-day horizon</div></div>
+            <div class="metric warn"><div class="metric-label">On-time</div><div class="metric-value" id="summaryOt">—</div><div class="metric-sub" id="summaryOtSub">—</div></div>
+            <div class="metric danger"><div class="metric-label">Late</div><div class="metric-value" id="summaryLate">—</div><div class="metric-sub" id="summaryLateSub">—</div></div>
+          </div>
         </div>
       </div>
-      <div class="actions">
-        <div class="chip" id="chipApi"><span class="dot"></span><span id="chipApiText">API unknown</span></div>
-        <div class="chip success" id="chipSolver"><span class="dot"></span><span id="chipSolverText">Solver —</span></div>
-        <div class="chip warn"><span class="dot"></span><span id="chipHeld">— on hold</span></div>
-        <div class="chip danger"><span class="dot"></span><span id="chipLate">— late</span></div>
-        <select class="sel" id="solverDepth">
-          <option value="30">Fast 30s</option>
-          <option value="60" selected>Standard 60s</option>
-          <option value="120">Deep 120s</option>
-          <option value="300">Full 5m</option>
-        </select>
-        <button class="btn primary" id="runBtn">Run Schedule</button>
+      <div class="top-controls">
+        <div class="status-group">
+          <div class="chip" id="chipApi"><span class="dot"></span><span id="chipApiText">API unknown</span></div>
+          <div class="chip success" id="chipSolver"><span class="dot"></span><span id="chipSolverText">Solver —</span></div>
+          <div class="chip warn"><span class="dot"></span><span id="chipHeld">— on hold</span></div>
+          <div class="chip danger"><span class="dot"></span><span id="chipLate">— late</span></div>
+        </div>
+        <div class="control-group">
+          <select class="sel" id="solverDepth">
+            <option value="30">Fast 30s</option>
+            <option value="60" selected>Standard 60s</option>
+            <option value="120">Deep 120s</option>
+            <option value="300">Full 5m</option>
+          </select>
+          <button class="btn btn-primary" id="runBtn">Run Schedule</button>
+        </div>
       </div>
     </div>
 

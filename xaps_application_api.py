@@ -277,6 +277,21 @@ def _load_all() -> dict:
 
 
 _state: dict = {"last_run": None, "campaigns": [], "heat_schedule": pd.DataFrame(), "camp_schedule": pd.DataFrame(), "capacity": pd.DataFrame(), "solver_status": "NOT RUN", "solver_detail": "", "error": None}
+"""
+=== PHASE 1 DEMOTION (Task 6): _state is COMPATIBILITY CACHE ONLY ===
+_state is NO LONGER AUTHORITATIVE.
+Primary truth source is now the active run artifact via _active_run_* utility readers.
+
+Reasons for demotion:
+1. Run artifacts provide immutable, timestamped records
+2. Multiple active runs would require a dict-of-dicts; _state is single-state
+3. Artifact-backed reads allow switching active run to change all downstream outputs
+4. Legacy code may still read from _state; mirror active run to maintain backward compat
+
+Usage:
+- Read paths: Use _active_run_*() utilities instead of direct _state reads
+- Write paths: Update _state AFTER creating artifact (synchronization, not truth)
+"""
 
 # Run artifact storage - tracks all planning runs with full context
 _run_artifacts: Dict[str, Dict[str, Any]] = {}  # run_id -> artifact
@@ -364,6 +379,147 @@ def _set_active_run_artifact(run_id: str) -> bool:
     return False
 
 
+# === ACTIVE RUN READER UTILITIES (Task 1) ===
+# These normalize reading from the active run artifact as the authoritative source.
+# They replace direct reads from _state or workbook fallbacks.
+
+def _active_run_campaigns() -> List[Dict[str, Any]]:
+    """Get campaigns from active run artifact, fall back to _state, then workbook.
+    
+    Read order:
+    1. Active run artifact results
+    2. Legacy _state (compatibility cache)
+    3. Workbook sheet
+    """
+    artifact = _get_active_run_artifact()
+    if artifact and artifact.get("results", {}).get("campaigns"):
+        return artifact["results"]["campaigns"]
+    
+    if _state.get("campaigns"):
+        return _state["campaigns"]
+    
+    # Fallback: load from workbook
+    try:
+        if "campaign-schedule" in SHEETS:
+            camp_df = _read_sheet(OUTPUT_SECTION_TO_SHEET.get("campaigns", "campaign-schedule"))
+            return _df_to_records(camp_df) if camp_df is not None and not camp_df.empty else []
+    except Exception:
+        pass
+    
+    return []
+
+
+def _active_run_heat_schedule() -> pd.DataFrame:
+    """Get heat schedule from active run artifact.
+    
+    Read order:
+    1. Active run artifact results
+    2. Legacy _state (compatibility cache)
+    3. Workbook sheet
+    """
+    artifact = _get_active_run_artifact()
+    if artifact and artifact.get("results", {}).get("heat_schedule"):
+        records = artifact["results"]["heat_schedule"]
+        return pd.DataFrame(records) if records else pd.DataFrame()
+    
+    if _state.get("heat_schedule") is not None and not _state["heat_schedule"].empty:
+        return _state["heat_schedule"]
+    
+    # Fallback: load from workbook
+    try:
+        if OUTPUT_SECTION_TO_SHEET.get("schedule", "schedule-output") in SHEETS:
+            return _read_sheet(OUTPUT_SECTION_TO_SHEET.get("schedule", "schedule-output"))
+    except Exception:
+        pass
+    
+    return pd.DataFrame()
+
+
+def _active_run_campaign_schedule() -> pd.DataFrame:
+    """Get campaign schedule from active run artifact."""
+    artifact = _get_active_run_artifact()
+    if artifact and artifact.get("results", {}).get("campaign_schedule"):
+        records = artifact["results"]["campaign_schedule"]
+        return pd.DataFrame(records) if records else pd.DataFrame()
+    
+    if _state.get("camp_schedule") is not None and not _state["camp_schedule"].empty:
+        return _state["camp_schedule"]
+    
+    return pd.DataFrame()
+
+
+def _active_run_capacity() -> pd.DataFrame:
+    """Get capacity from active run artifact.
+    
+    Read order:
+    1. Active run artifact results
+    2. Legacy _state (compatibility cache)
+    3. Workbook sheet
+    """
+    artifact = _get_active_run_artifact()
+    if artifact and artifact.get("results", {}).get("capacity"):
+        records = artifact["results"]["capacity"]
+        return pd.DataFrame(records) if records else pd.DataFrame()
+    
+    if _state.get("capacity") is not None and not _state["capacity"].empty:
+        return _state["capacity"]
+    
+    # Fallback: load from workbook
+    try:
+        if OUTPUT_SECTION_TO_SHEET.get("capacity", "capacity-map") in SHEETS:
+            return _read_sheet(OUTPUT_SECTION_TO_SHEET.get("capacity", "capacity-map"))
+    except Exception:
+        pass
+    
+    return pd.DataFrame()
+
+
+def _active_run_material() -> Dict[str, Any]:
+    """Get material plan from active run artifact or calculated state.
+    
+    Returns dict with:
+    - campaigns: list of campaign material records
+    - detail_level: "campaign" (canonical campaigns have material fields)
+    """
+    artifact = _get_active_run_artifact()
+    if artifact:
+        # Extract material-like info from artifact campaigns
+        campaigns = artifact.get("results", {}).get("campaigns", [])
+        return {
+            "campaigns": campaigns,
+            "detail_level": "campaign",  # Material comes from campaign-level fields
+            "run_id": artifact.get("run_id"),
+            "created_at": artifact.get("created_at"),
+        }
+    
+    # Fallback: use legacy state
+    if _state.get("material_plan_data"):
+        return _state["material_plan_data"]
+    
+    return {"campaigns": [], "detail_level": "campaign"}
+
+
+def _active_run_solver_metadata() -> Dict[str, Any]:
+    """Get solver metadata from active run artifact."""
+    artifact = _get_active_run_artifact()
+    if artifact:
+        return {
+            "solver_status": artifact.get("solver_metadata", {}).get("status", "UNKNOWN"),
+            "solver_detail": artifact.get("solver_metadata", {}).get("detail", ""),
+            "degraded_flags": artifact.get("degraded_flags", {}),
+            "run_id": artifact.get("run_id"),
+            "created_at": artifact.get("created_at"),
+        }
+    
+    # Fallback: legacy state
+    return {
+        "solver_status": _state.get("solver_status", "UNKNOWN"),
+        "solver_detail": _state.get("solver_detail", ""),
+        "degraded_flags": {},
+        "run_id": _state.get("run_id"),
+    }
+
+
 def _campaigns_to_view(campaigns: list, camp_df: pd.DataFrame | None) -> list:
     result = []
     for c in campaigns:
@@ -390,26 +546,66 @@ def _campaigns_to_view(campaigns: list, camp_df: pd.DataFrame | None) -> list:
 
 
 def _campaign_rows() -> List[Dict[str, Any]]:
+    """Get campaigns from active run artifact [primary], _state [compatibility], or workbook [fallback].
+    
+    This ensures campaigns endpoint always reflects the authoritative active run.
+    """
+    # PRIMARY: Use active run artifact
+    artifact_campaigns = _active_run_campaigns()
+    if artifact_campaigns:
+        camp_df = _active_run_campaign_schedule()
+        return _campaigns_to_view(artifact_campaigns, camp_df if camp_df is not None and not camp_df.empty else None)
+    
+    # COMPATIBILITY: Use legacy _state as fallback
     if _state["campaigns"]:
         return _campaigns_to_view(_state["campaigns"], _state["camp_schedule"])
+    
+    # WORKBOOK: Last resort fallback
     if "campaign-schedule" in SHEETS:
         return _sheet_items("campaign-schedule")
+    
     return []
 
 
 def _schedule_rows() -> List[Dict[str, Any]]:
+    """Get schedule rows from active run artifact [primary], _state [compatibility], or workbook [fallback].
+    
+    This ensures schedule endpoint always reflects the authoritative active run.
+    """
+    # PRIMARY: Use active run artifact
+    heat_df = _active_run_heat_schedule()
+    if heat_df is not None and not heat_df.empty:
+        return _df_to_records(heat_df)
+    
+    # COMPATIBILITY: Use legacy _state as fallback
     if _state["heat_schedule"] is not None and not _state["heat_schedule"].empty:
         return _df_to_records(_state["heat_schedule"])
+    
+    # WORKBOOK: Last resort fallback
     if "schedule-output" in SHEETS:
         return _sheet_items("schedule-output")
+    
     return []
 
 
 def _capacity_rows() -> List[Dict[str, Any]]:
+    """Get capacity rows from active run artifact [primary], _state [compatibility], or workbook [fallback].
+    
+    This ensures capacity endpoint always reflects the authoritative active run.
+    """
+    # PRIMARY: Use active run artifact
+    cap_df = _active_run_capacity()
+    if cap_df is not None and not cap_df.empty:
+        return _df_to_records(cap_df)
+    
+    # COMPATIBILITY: Use legacy _state as fallback
     if _state["capacity"] is not None and not _state["capacity"].empty:
         return _df_to_records(_state["capacity"])
+    
+    # WORKBOOK: Last resort fallback
     if "capacity-map" in SHEETS:
         return _sheet_items("capacity-map")
+    
     return []
 
 
@@ -545,21 +741,73 @@ def _dispatch_rows() -> List[Dict[str, Any]]:
 
 
 def _dashboard_payload() -> Dict[str, Any]:
+    """Build dashboard payload from active run artifact [primary] or _state [compatibility].
+    
+    === PHASE 1 FIX (Task 5): Use artifact-backed reads ===
+    Primary source is now active run artifact via reader utilities.
+    """
+    # === PRIMARY: Use active run utilities ===
     campaigns = _campaign_rows()
     capacity = _capacity_rows()
-    material = _material_rows()
-    total_mt = sum(float(x.get("Total_MT") or x.get("total_mt") or 0) for x in campaigns)
-    total_heats = sum(float(x.get("Heats") or x.get("heats") or 0) for x in campaigns)
-    released = sum(1 for x in campaigns if str(x.get("Release_Status") or x.get("release_status") or "").upper() == "RELEASED")
-    held = sum(1 for x in campaigns if "HOLD" in str(x.get("Release_Status") or x.get("release_status") or x.get("Status") or "").upper())
+    material_data = _active_run_material()
+    solver_meta = _active_run_solver_metadata()
+    
+    total_mt = sum(float(x.get("total_mt") or 0) for x in campaigns)
+    total_heats = sum(float(x.get("heats") or 0) for x in campaigns)
+    released = sum(1 for x in campaigns if str(x.get("release_status") or "").upper() == "RELEASED")
+    held = sum(1 for x in campaigns if "HOLD" in str(x.get("release_status") or "").upper())
     late = sum(1 for x in campaigns if str(x.get("Status") or "").upper() == "LATE")
-    bottleneck = max(capacity, key=lambda x: float(x.get("Utilisation_%") or 0)) if capacity else None
+    
+    # Find bottleneck resource
+    bottleneck = None
+    if capacity:
+        bottleneck = max(capacity, key=lambda x: float(x.get("Utilisation_%") or 0))
+    
+    # Extract shortage alerts from campaign material fields
     alerts = []
-    for row in material:
-        status = str(row.get("Status") or "").upper()
-        if status not in {"", "OK", "AVAILABLE", "COVERED"}:
-            alerts.append({"campaign_id": row.get("Campaign_ID"), "sku_id": row.get("Material_SKU", row.get("SKU_ID")), "shortage_qty": row.get("Required_Qty", row.get("Shortage_Qty")), "severity": "HIGH" if status in {"CRITICAL", "BLOCKED", "SHORT"} else "MEDIUM"})
-    return {"solver_status": _state["solver_status"] or "WORKBOOK", "solver_detail": _state.get("solver_detail", ""), "last_run": _state["last_run"], "campaigns_total": len(campaigns), "campaigns_released": released, "campaigns_held": held, "campaigns_late": late, "total_heats": total_heats, "total_mt": round(total_mt, 1), "on_time_pct": round(100 * max(0, len(campaigns) - late) / max(len(campaigns), 1), 1) if campaigns else 0.0, "throughput_mt_day": round(total_mt / 14, 1) if total_mt else 0.0, "bottleneck": bottleneck.get("Resource_ID") if bottleneck else None, "max_utilisation": bottleneck.get("Utilisation_%") if bottleneck else None, "shortage_alerts": alerts, "utilisation": [{"resource_id": r.get("Resource_ID"), "resource_name": r.get("Resource_Name", r.get("Resource_ID")), "utilisation": r.get("Utilisation_%"), "demand_hrs": r.get("Demand_Hrs"), "avail_hrs": r.get("Avail_Hrs_14d"), "status": r.get("Status"), "operation": r.get("Operation_Group", "")} for r in capacity]}
+    for camp in material_data.get("campaigns", []):
+        shortages = camp.get("material_shortages", {})
+        for sku_id, shortage_qty in shortages.items():
+            if shortage_qty > 1e-6:
+                alerts.append({
+                    "campaign_id": camp.get("campaign_id"),
+                    "sku_id": sku_id,
+                    "shortage_qty": shortage_qty,
+                    "severity": "HIGH"
+                })
+    
+    return {
+        "solver_status": solver_meta.get("solver_status", "WORKBOOK"),
+        "solver_detail": solver_meta.get("solver_detail", ""),
+        "degraded_flags": solver_meta.get("degraded_flags", {}),
+        "run_id": solver_meta.get("run_id"),
+        "active_run_created_at": solver_meta.get("created_at"),
+        "last_run": _state.get("last_run"),
+        "campaigns_total": len(campaigns),
+        "campaigns_released": released,
+        "campaigns_held": held,
+        "campaigns_late": late,
+        "total_heats": total_heats,
+        "total_mt": round(total_mt, 1),
+        "on_time_pct": round(100 * max(0, len(campaigns) - late) / max(len(campaigns), 1), 1) if campaigns else 0.0,
+        "throughput_mt_day": round(total_mt / 14, 1) if total_mt else 0.0,
+        "bottleneck": bottleneck.get("Resource_ID") if bottleneck else None,
+        "max_utilisation": bottleneck.get("Utilisation_%") if bottleneck else None,
+        "shortage_alerts": alerts,
+        "utilisation": [
+            {
+                "resource_id": r.get("Resource_ID"),
+                "resource_name": r.get("Resource_Name", r.get("Resource_ID")),
+                "utilisation": r.get("Utilisation_%"),
+                "demand_hrs": r.get("Demand_Hrs"),
+                "avail_hrs": r.get("Avail_Hrs_14d"),
+                "status": r.get("Status"),
+                "operation": r.get("Operation_Group", "")
+            }
+            for r in capacity
+        ],
+        "material": material_data.get("summary", {}),
+    }
 
 
 def _masterdata_payload() -> Dict[str, Any]:
@@ -647,7 +895,10 @@ def _validate_workbook_schema() -> Dict[str, Any]:
 
 @app.route('/api/health')
 def health():
-    """Health check endpoint with workbook schema validation."""
+    """Health check endpoint with workbook schema validation and run artifact metadata.
+    
+    === PHASE 1 (Task 8): Proves artifact-backed reads ===
+    """
     exists = WORKBOOK.exists()
     mtime = datetime.fromtimestamp(WORKBOOK.stat().st_mtime).isoformat() if exists else None
 
@@ -668,6 +919,20 @@ def health():
             workbook_error = str(e)
     
     active_run = _get_active_run_artifact()
+    
+    # Verify artifact-backed reads are working
+    artifact_backed_reads = active_run is not None
+    
+    # Count results in active run to prove it's populated
+    active_run_campaign_count = 0
+    active_run_schedule_row_count = 0
+    active_run_capacity_row_count = 0
+    if active_run:
+        active_run_campaign_count = len(active_run.get("results", {}).get("campaigns", []))
+        schedule_records = active_run.get("results", {}).get("heat_schedule", [])
+        active_run_schedule_row_count = len(schedule_records) if isinstance(schedule_records, list) else 0
+        capacity_records = active_run.get("results", {}).get("capacity", [])
+        active_run_capacity_row_count = len(capacity_records) if isinstance(capacity_records, list) else 0
 
     return _jsonify({
         "ok": exists and workbook_ok and schema_validation.get("valid", True),
@@ -678,11 +943,22 @@ def health():
         "workbook_mtime": mtime,
         "workbook_error": workbook_error,
         "schema": schema_validation,
+        
+        # === Active run metadata (Task 8) ===
+        "active_run_exists": artifact_backed_reads,
+        "active_run_id": active_run.get("run_id") if active_run else None,
+        "active_run_created_at": active_run.get("created_at") if active_run else None,
+        "active_run_campaign_count": active_run_campaign_count,
+        "active_run_schedule_row_count": active_run_schedule_row_count,
+        "active_run_capacity_row_count": active_run_capacity_row_count,
+        "artifact_backed_reads": artifact_backed_reads,  # System is reading from active run
+        "active_run_degraded_flags": active_run.get("degraded_flags") if active_run else None,
+        
+        # Legacy fields for compatibility
         "last_run": _state.get("last_run"),
         "run_id": _state.get("run_id"),
         "solver_status": _state.get("solver_status", "NOT RUN"),
         "solver_detail": _state.get("solver_detail", ""),
-        "active_run_degraded_flags": active_run.get("degraded_flags") if active_run else None,
     }, 200 if exists and workbook_ok else 500)
 
 
@@ -778,86 +1054,32 @@ def run_bom_api():
         )[0]
 
 
-def _enrich_campaigns_with_material_data(campaigns: List[Dict], bom: pd.DataFrame, inventory: pd.DataFrame | dict) -> List[Dict]:
-    """Enrich campaigns with actual material simulation results.
-    
-    For each campaign with production orders, simulates material commit to populate:
-    - inventory_before, inventory_after
-    - material_consumed, material_gross_requirements
-    - material_shortages, material_structure_errors
-    - material_feasible flag
-    
-    This replaces placeholder/fake data with real BOM explosion results.
-    """
-    enriched = []
-    
-    for campaign in campaigns:
-        enriched_camp = dict(campaign)
-        material_status = str(campaign.get('material_status', 'UNREVIEWED')).strip()
-        
-        # Extract production demand from campaign's production orders
-        production_orders = campaign.get('production_orders', [])
-        if not production_orders:
-            enriched.append(enriched_camp)
-            continue
-        
-        # Build demand DataFrame from production orders
-        demand_rows = []
-        for po in production_orders:
-            sku_id = str(po.get('sku_id') or po.get('SKU_ID') or '')
-            qty_mt = float(po.get('qty_mt') or po.get('Qty_MT') or 0.0)
-            if sku_id and qty_mt > 1e-6:
-                demand_rows.append({'SKU_ID': sku_id, 'Required_Qty': qty_mt})
-        
-        if not demand_rows:
-            enriched.append(enriched_camp)
-            continue
-        
-        # Simulate material commit for this campaign's demand
-        try:
-            demand_df = pd.DataFrame(demand_rows)
-            result = simulate_material_commit(
-                demand=demand_df,
-                bom=bom,
-                inventory=inventory,
-                max_levels=10,
-                on_structure_error='log'  # Don't hard-fail on BOM issues; log them instead
-            )
-            
-            # Extract results
-            enriched_camp['inventory_before'] = campaign.get('inventory_before', {})
-            enriched_camp['inventory_after'] = result.get('inventory_after', {})
-            enriched_camp['material_consumed'] = result.get('consumed', {})
-            enriched_camp['material_gross_requirements'] = result.get('gross_requirements', {})
-            enriched_camp['material_shortages'] = result.get('shortages', {})
-            enriched_camp['material_structure_errors'] = result.get('structure_errors', [])
-            enriched_camp['material_feasible'] = result.get('feasible', True)
-            
-            # Update material status based on simulation results
-            if not result.get('feasible', True):
-                enriched_camp['material_status'] = 'STRUCTURE_ERROR'
-            elif result.get('shortages', {}):
-                enriched_camp['material_status'] = 'SHORTAGE'
-            elif material_status == 'UNREVIEWED':
-                enriched_camp['material_status'] = 'OK'
-            
-        except Exception as e:
-            # If simulation fails, mark campaign as degraded but don't crash
-            enriched_camp['material_status'] = 'SIMULATION_ERROR'
-            enriched_camp['material_structure_errors'] = [{'type': 'SIMULATION_ERROR', 'message': str(e)}]
-            enriched_camp['material_feasible'] = False
-            print(f"Error simulating material for campaign {campaign.get('campaign_id')}: {e}", file=sys.stderr)
-        
-        enriched.append(enriched_camp)
-    
-    return enriched
+# === PHASE 1 REMOVAL: _enrich_campaigns_with_material_data (DEPRECATED) ===
+# This function is NO LONGER USED. Campaigns already have canonical material
+# fields from build_campaigns() sequential material simulation.
+# Re-simulating afterward causes inconsistency and wastes resources.
+# See run_schedule_api() which uses campaigns as-is from build.
 
 
-def _calculate_material_plan(campaigns: List[Dict], bom: pd.DataFrame, inventory: pd.DataFrame, skus: pd.DataFrame) -> Dict[str, Any]:
-    """Build material plan response from enriched campaign data.
+def _calculate_material_plan(campaigns: List[Dict], detail_level: str = "campaign", run_id: str | None = None) -> Dict[str, Any]:
+    """Build material plan response from canonical campaign material fields.
     
-    NOTE: This function now uses material data enriched during scheduling.
-    For each campaign, it structures the material results for API consumption.
+    === PHASE 1 FIX (Task 3): Pure transformer ===
+    - Does NOT re-simulate material
+    - Does NOT synthesize plants
+    - Returns campaign-level material data from authoritative campaign fields
+    - detail_level = "campaign" signals that plant-level modeling doesn't exist
+    
+    Args:
+        campaigns: List of campaign dicts (already have material_* fields from build)
+        detail_level: Always "campaign" for now (no plant-level modeling)
+        run_id: Optional run_id for traceability
+    
+    Returns dict with:
+        - campaigns: campaign-level material records
+        - detail_level: "campaign" 
+        - summary: aggregated shortage/feasibility metrics
+        - run_id: optional
     """
     try:
         campaigns_data = []
@@ -870,84 +1092,55 @@ def _calculate_material_plan(campaigns: List[Dict], bom: pd.DataFrame, inventory
             grade = str(camp.get('grade') or camp.get('Grade') or '')
             release_status = str(camp.get('release_status') or camp.get('Release_Status') or 'OPEN')
             req_qty = float(camp.get('total_coil_mt') or camp.get('total_mt') or camp.get('Total_MT') or 0)
+            
+            # === Use canonical campaign material fields (populated during build) ===
             material_status = str(camp.get('material_status') or 'UNREVIEWED')
             shortages = camp.get('material_shortages', {})
-            consumed = camp.get('material_consumed', {})
+            material_consumed = camp.get('material_consumed', {})
+            material_gross_requirements = camp.get('material_gross_requirements', {})
             structure_errors = camp.get('material_structure_errors', [])
-            feasible = camp.get('material_feasible', True)
+            feasible = not structure_errors and not shortages  # Material feasible if no errors/shortages
             
-            # Build summary for this campaign
+            # Compute shortage totals
             shortage_qty = sum(float(v or 0) for v in shortages.values())
-            has_shortage = shortage_qty > 1e-6
             
-            # Determine status based on material check results
-            if not feasible:
-                display_status = 'STRUCTURE_ERROR'
-            elif has_shortage:
-                display_status = 'SHORTAGE'
-            else:
-                display_status = 'MAKE / CONVERT' if req_qty > 1e-6 else 'OK'
-            
-            # Build plants view (for now, aggregate as single plant)
-            plants_dict = {}
-            plant_name = 'Production RM'
-            
-            plants_dict[plant_name] = {
-                "plant": plant_name,
-                "required_qty": req_qty,
-                "shortage_qty": shortage_qty,
-                "inventory_covered_qty": req_qty - shortage_qty,
-                "material_status": material_status,
-                "structure_errors": structure_errors,
-                "feasible": feasible,
-                "rows": []
-            }
-            
-            # Add shortage detail rows
-            for sku_id, shortage_amount in shortages.items():
+            # Convert shortages to detail rows (no fake plant wrapping)
+            detail_rows = []
+            for sku_id, shortage_amount in (shortages or {}).items():
                 if shortage_amount > 1e-6:
-                    shortage_row = {
-                        "material_type": "Raw Material",
-                        "material_sku": sku_id,
-                        "material_name": f"Shortage: {sku_id}",
-                        "required_qty": shortage_amount,
-                        "available_before": 0,
-                        "consumed": 0,
-                        "remaining_after": -shortage_amount,
-                        "status": f"SHORT {shortage_amount:.2f}MT"
-                    }
-                    plants_dict[plant_name]["rows"].append(shortage_row)
+                    detail_rows.append({
+                        "sku_id": sku_id,
+                        "shortage_qty": round(float(shortage_amount), 2),
+                        "type": "SHORTAGE"
+                    })
             
-            # If there are no shortages but there are gross requirements, show consumed items
-            if not shortages and consumed:
-                for sku_id, consumed_amount in consumed.items():
-                    if consumed_amount > 1e-6:
-                        consumed_row = {
-                            "material_type": "Raw Material",
-                            "material_sku": sku_id,
-                            "material_name": f"Consumed: {sku_id}",
-                            "required_qty": consumed_amount,
-                            "available_before": consumed_amount,
-                            "consumed": consumed_amount,
-                            "remaining_after": 0,
-                            "status": "CONSUMED"
-                        }
-                        plants_dict[plant_name]["rows"].append(consumed_row)
+            # Include consumed materials for visibility
+            for sku_id, consumed_amount in (material_consumed or {}).items():
+                if consumed_amount > 1e-6:
+                    detail_rows.append({
+                        "sku_id": sku_id,
+                        "consumed_qty": round(float(consumed_amount), 2),
+                        "type": "CONSUMED"
+                    })
             
+            # Campaign-level material record  
             camp_data = {
                 "campaign_id": camp_id,
                 "grade": grade,
                 "release_status": release_status,
+                "required_qty": round(req_qty, 2),
+                "shortage_qty": round(shortage_qty, 2),
                 "material_status": material_status,
-                "required_qty": req_qty,
-                "shortage_qty": shortage_qty,
                 "feasible": feasible,
                 "structure_errors": structure_errors,
-                "plants": list(plants_dict.values())
+                "material_shortages": shortages,
+                "material_consumed": material_consumed,
+                "material_gross_requirements": material_gross_requirements,
+                "detail_rows": detail_rows  # Raw material details without plant wrapping
             }
             campaigns_data.append(camp_data)
         
-        # Build summary
+        # Aggregate summary
         total_required = sum(c.get('required_qty', 0) for c in campaigns_data)
         total_shortages = sum(c.get('shortage_qty', 0) for c in campaigns_data)
         total_covered = total_required - total_shortages
@@ -965,19 +1158,19 @@ def _calculate_material_plan(campaigns: List[Dict], bom: pd.DataFrame, inventory
             "Total Required Qty": round(total_required, 2),
             "Inventory Covered Qty": round(total_covered, 2),
             "Shortage Qty": round(total_shortages, 2),
-            "Make / Convert Qty": max(0, round(total_required - total_covered, 2))
         }
         
         return {
-            "summary": summary,
             "campaigns": campaigns_data,
-            "detail_level": "campaign"  # Indicates this is campaign-level, not plant-level detail
+            "detail_level": detail_level,  # Signal: this is campaign-level data
+            "summary": summary,
+            "run_id": run_id,
         }
     except Exception as e:
-        print(f"Error calculating material plan: {e}", file=sys.stderr)
+        print(f"Error building material plan: {e}", file=sys.stderr)
         import traceback
         traceback.print_exc()
-        return {"summary": {"error": str(e)}, "campaigns": []}
+        return {"campaigns": [], "detail_level": "campaign", "summary": {}, "run_id": run_id}
 
 
 @app.route('/api/run/schedule', methods=['POST'])
@@ -1001,7 +1194,11 @@ def run_schedule_api():
         body = request.get_json(silent=True) or {}
         horizon = int(body.get('horizon', horizon))
         sec_lim = float(body.get('solver_sec', body.get('time_limit', sec_lim)))
+        
+        # Build campaigns - already includes sequential material simulation
+        # These campaigns have authoritative material_* fields computed during build
         campaigns = build_campaigns(d['sales_orders'], min_campaign_mt=min_cmt, max_campaign_mt=max_cmt, inventory=d['inventory'], bom=d['bom'], config=config, skus=d['skus'])
+        
         released = [c for c in campaigns if str(c.get('release_status', '')).upper() == 'RELEASED']
         result = schedule(campaigns, d['resources'], planning_horizon_days=horizon, planning_start=datetime.now(), routing=d['routing'], queue_times=d['queue_times'], config=config, solver_time_limit_sec=sec_lim)
         heat_df = result.get('heat_schedule', pd.DataFrame())
@@ -1015,11 +1212,14 @@ def run_schedule_api():
         allow_defaults = result.get('allow_default_masters', False)
         scheduler_mode = result.get('campaign_serialization_mode', 'STANDARD')
         
-        # Enrich campaigns with actual material simulation results
-        enriched_campaigns = _enrich_campaigns_with_material_data(campaigns, d['bom'], d['inventory'])
+        # === PHASE 1 FIX (Tasks 2 & 3): Use campaigns AS-IS ===
+        # DO NOT re-simulate material. The campaigns already have authoritative
+        # material_ fields from sequential simulation during build.
+        # Direct use ensures consistency and stops resource waste.
+        canonical_campaigns = campaigns
         
-        # Calculate material plan from enriched campaigns with real material data
-        _state['material_plan_data'] = _calculate_material_plan(enriched_campaigns, d['bom'], d['inventory'], d['skus'])
+        # Build material plan (pure transformer from campaign fields)
+        _state['material_plan_data'] = _calculate_material_plan(canonical_campaigns, detail_level="campaign", run_id=None)
         
         # Build degraded-mode flags based on scheduler output and config
         degraded_flags = {
@@ -1032,7 +1232,7 @@ def run_schedule_api():
         # Create canonical run artifact with full planning context
         run_id = _create_run_artifact(
             config=config,
-            campaigns=enriched_campaigns,
+            campaigns=canonical_campaigns,
             heat_schedule=heat_df,
             campaign_schedule=camp_df,
             capacity_map_df=cap_df,
@@ -1043,9 +1243,12 @@ def run_schedule_api():
         )
         _set_active_run_artifact(run_id)
         
+        # Update material plan with run_id
+        _state['material_plan_data'] = _calculate_material_plan(canonical_campaigns, detail_level="campaign", run_id=run_id)
+        
         _state['last_run'] = datetime.now().isoformat()
         _state['run_id'] = run_id  # Track active run in legacy _state
-        _state['campaigns'] = enriched_campaigns  # Store enriched campaigns with material data
+        _state['campaigns'] = canonical_campaigns  # Use canonical campaigns (material already populated)
         _state['heat_schedule'] = heat_df
         _state['camp_schedule'] = camp_df
         _state['capacity'] = cap_df
@@ -1054,7 +1257,7 @@ def run_schedule_api():
         _state['error'] = None
         return _jsonify({
             **_dashboard_payload(), 
-            'campaigns': _campaigns_to_view(enriched_campaigns, camp_df), 
+            'campaigns': _campaigns_to_view(canonical_campaigns, camp_df), 
             'gantt': _df_to_records(heat_df), 
             'capacity': _df_to_records(cap_df),
             'run_id': run_id  # Include run_id in response for client tracking
