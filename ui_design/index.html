@@ -177,30 +177,21 @@
 
       <section class="page" id="page-material">
         <div class="page-header"><div><div class="page-title">Material</div><div class="page-sub">Campaign-by-campaign material allocation and shortage trace.</div></div></div>
-        <div class="page-content">
-          <div class="grid-4" style="margin-bottom:.75rem;flex-shrink:0">
-            <div class="metric success"><div class="metric-label">Materials OK</div><div class="metric-value" id="matOk">—</div></div>
-            <div class="metric warn"><div class="metric-label">On Hold</div><div class="metric-value" id="matHeld">—</div></div>
-            <div class="metric danger"><div class="metric-label">Critical</div><div class="metric-value" id="matCrit">—</div></div>
-            <div class="metric"><div class="metric-label">Campaigns</div><div class="metric-value" id="matCampaigns">—</div></div>
+        <div class="grid-4" style="margin-bottom:.75rem">
+          <div class="metric success"><div class="metric-label">OK</div><div class="metric-value" id="matOk">—</div></div>
+          <div class="metric warn"><div class="metric-label">Low / hold</div><div class="metric-value" id="matLow">—</div></div>
+          <div class="metric danger"><div class="metric-label">Critical</div><div class="metric-value" id="matCrit">—</div></div>
+          <div class="metric"><div class="metric-label">Held campaigns</div><div class="metric-value" id="matHeld">—</div></div>
+        </div>
+        <div class="material-split-container">
+          <div class="material-tree-panel">
+            <div class="material-tree-header">Campaigns</div>
+            <div class="material-tree" id="materialTree"></div>
           </div>
-
-          <div class="card material-summary-card" style="flex-shrink:0">
-            <div class="card-header"><div><div class="card-title">Material Summary</div></div></div>
-            <div class="card-body">
-              <div class="material-summary-grid" id="materialSummaryGrid">
-                <div><span class="material-label">Campaigns</span><span class="material-number" id="sumCampaigns">—</span></div>
-                <div><span class="material-label">Released</span><span class="material-number" id="sumReleased">—</span></div>
-                <div><span class="material-label">Held</span><span class="material-number" id="sumHeld">—</span></div>
-                <div><span class="material-label">Shortage Lines</span><span class="material-number" id="sumShortage">—</span></div>
-                <div><span class="material-label">Required Qty</span><span class="material-number" id="sumRequired">—</span></div>
-                <div><span class="material-label">Inventory Covered</span><span class="material-number" id="sumInventory">—</span></div>
-                <div><span class="material-label">Make / Convert</span><span class="material-number" id="sumMakeConvert">—</span></div>
-              </div>
-            </div>
+          <div class="material-split-divider" id="materialDivider"></div>
+          <div class="material-detail-panel">
+            <div id="materialDetailContent"></div>
           </div>
-
-          <div id="materialCampaigns" style="margin-top:.75rem;flex:1;overflow:auto;min-height:0"></div>
         </div>
       </section>
 
@@ -391,7 +382,26 @@ async function apiFetch(url, opts={}){
 function activatePage(page){
   document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active', el.id === 'page-' + page));
   document.querySelectorAll('#topTabs .tab').forEach(el=>el.classList.toggle('active', el.dataset.page === page));
+  if(page === 'material') initMaterialResizable();
   if(page === 'bom') initBomResizable();
+}
+
+function initMaterialResizable(){
+  const divider = qs('materialDivider');
+  if(!divider) return;
+  let isResizing = false;
+  divider.addEventListener('mousedown', ()=>{ isResizing = true; });
+  document.addEventListener('mouseup', ()=>{ isResizing = false; });
+  document.addEventListener('mousemove', (e)=>{
+    if(!isResizing) return;
+    const container = divider.parentElement;
+    const rect = container.getBoundingClientRect();
+    const newWidth = e.clientX - rect.left;
+    const minWidth = 200, maxWidth = rect.width - 300;
+    if(newWidth >= minWidth && newWidth <= maxWidth){
+      container.children[0].style.flex = '0 0 '+newWidth+'px';
+    }
+  });
 }
 function initBomResizable(){
   const divider = qs('bomDivider');
@@ -690,106 +700,100 @@ function deriveMaterialRows(){
   });
 }
 function renderMaterial(){
-  const material = state.material || { summary: {}, campaigns: [] };
-  const summary = material.summary || {};
+  const material = state.material || { campaigns: [] };
   const campaigns_data = material.campaigns || [];
-  
-  // Update KPI cards
+
   const held_campaigns = campaigns_data.filter(c=>String(c.release_status||'').toUpperCase().includes('HOLD')).length;
   const ok_campaigns = campaigns_data.length - held_campaigns;
   setText('matOk', ok_campaigns);
+  setText('matLow', held_campaigns);
+  setText('matCrit', 0);
   setText('matHeld', held_campaigns);
-  setText('matCrit', 0); // Can be computed from shortage lines if available
-  setText('matCampaigns', campaigns_data.length);
-  
-  // Update summary card
-  setText('sumCampaigns', summary.Campaigns || campaigns_data.length || '—');
-  setText('sumReleased', summary.Released || campaigns_data.filter(c=>String(c.release_status||'').toUpperCase()==='RELEASED').length || '—');
-  setText('sumHeld', summary.Held || held_campaigns || '—');
-  setText('sumShortage', summary['Shortage Lines'] || '—');
-  setText('sumRequired', (summary['Total Required Qty'] || 0).toLocaleString('en-US', {maximumFractionDigits:2}));
-  setText('sumInventory', (summary['Inventory Covered Qty'] || 0).toLocaleString('en-US', {maximumFractionDigits:2}));
-  setText('sumMakeConvert', (summary['Make / Convert Qty'] || 0).toLocaleString('en-US', {maximumFractionDigits:2}));
-  
-  // Render campaigns
-  const campaignsContainer = qs('materialCampaigns');
-  if(!campaigns_data.length){
-    campaignsContainer.innerHTML = '<div class="material-empty">Run Schedule to populate material allocation and shortage trace.</div>';
+
+  buildMaterialTree(campaigns_data);
+}
+
+function buildMaterialTree(campaigns){
+  state.materialCampaigns = campaigns;
+  const tree = qs('materialTree');
+  if(!campaigns.length){
+    tree.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--text-faint);font-size:.8rem">No campaigns</div>';
+    qs('materialDetailContent').innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-faint)">Run Schedule to populate</div>';
     return;
   }
-  
-  campaignsContainer.innerHTML = campaigns_data.map(camp=>{
-    const is_released = String(camp.release_status||'').toUpperCase()==='RELEASED';
-    const camp_class = is_released ? 'released' : 'held';
-    
-    return `<div class="material-campaign ${camp_class}">
-      <div class="material-campaign-head">
-        <div class="material-campaign-head-title">
-          <div class="cmp-id">${escapeHtml(camp.campaign_id||'—')}</div>
-          <div class="cmp-grade">${escapeHtml(camp.grade||'—')}</div>
-        </div>
-        <div class="material-campaign-head-badge">
-          ${badgeForStatus(camp.release_status||'OPEN')}
-          <span style="font-size:.75rem;color:var(--text-soft);font-weight:600">${(camp.required_qty||0).toLocaleString('en-US',{maximumFractionDigits:2})} MT</span>
-        </div>
-      </div>
-      <div>
-        ${(camp.plants||[]).map(plant=>`
-          <div class="material-plant">
-            <div class="material-plant-head">
-              <div class="material-plant-name">${escapeHtml(plant.plant||'UNKNOWN')}</div>
-              <div class="material-plant-stats">
-                <div class="material-plant-stat">
-                  <div class="stat-label">Required</div>
-                  <div class="stat-value">${(plant.required_qty||0).toLocaleString('en-US',{maximumFractionDigits:2})} MT</div>
-                </div>
-                <div class="material-plant-stat">
-                  <div class="stat-label">From Inventory</div>
-                  <div class="stat-value">${(plant.inventory_covered_qty||0).toLocaleString('en-US',{maximumFractionDigits:2})} MT</div>
-                </div>
-              </div>
-            </div>
-            <div style="overflow-x:auto">
-              <table class="material-detail-table">
-                <thead>
-                  <tr>
-                    <th>Material Type</th>
-                    <th>SKU</th>
-                    <th>Material Name</th>
-                    <th style="text-align:right">Required</th>
-                    <th style="text-align:right">Available</th>
-                    <th style="text-align:right">Consumed</th>
-                    <th style="text-align:right">Remaining</th>
-                    <th style="text-align:center">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${(plant.rows||[]).map(row=>{
-                    const status_upper = String(row.status||'').toUpperCase();
-                    let status_class = 'stock';
-                    if(status_upper.includes('MAKE') || status_upper.includes('CONVERT')) status_class = 'makeconvert';
-                    if(status_upper.includes('SHORT') || status_upper.includes('CRITICAL')) status_class = 'short';
-                    if(status_upper.includes('BLOCKED')) status_class = 'blocked';
-                    
-                    return `<tr>
-                      <td>${escapeHtml(row.material_type||'')}</td>
-                      <td><code class="inline">${escapeHtml(row.material_sku||'')}</code></td>
-                      <td>${escapeHtml(row.material_name||'')}</td>
-                      <td style="text-align:right">${(row.required_qty||0).toLocaleString('en-US',{maximumFractionDigits:2})}</td>
-                      <td style="text-align:right">${(row.available_before||0).toLocaleString('en-US',{maximumFractionDigits:2})}</td>
-                      <td style="text-align:right">${(row.consumed||0).toLocaleString('en-US',{maximumFractionDigits:2})}</td>
-                      <td style="text-align:right">${(row.remaining_after||0).toLocaleString('en-US',{maximumFractionDigits:2})}</td>
-                      <td style="text-align:center"><span class="material-status-badge ${status_class}">${escapeHtml(row.status||'OK')}</span></td>
-                    </tr>`;
-                  }).join('')}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        `).join('')}
-      </div>
-    </div>`;
+
+  tree.innerHTML = campaigns.map((camp,idx)=>{
+    return '<div class="tree-item">'+
+      '<div class="tree-node campaign" onclick="selectMaterialCampaign(this,'+idx+')" data-campaign="'+escapeHtml(camp.campaign_id || 'unknown')+'">'+
+        '<div class="tree-toggle leaf"></div>'+
+        '<div class="tree-node-icon">📦</div>'+
+        '<span>'+escapeHtml((camp.campaign_id||'—')+' · '+(camp.grade||'—'))+'</span>'+
+      '</div>'+
+    '</div>';
   }).join('');
+
+  if(campaigns.length > 0) selectMaterialCampaign(null, 0);
+}
+
+function selectMaterialCampaign(el, idx){
+  if(el) {
+    document.querySelectorAll('.tree-node.campaign').forEach(n=>n.classList.remove('selected'));
+    el.classList.add('selected');
+  }
+  const campaign = state.materialCampaigns[idx];
+  renderMaterialDetail(campaign);
+}
+
+function renderMaterialDetail(campaign){
+  if(!campaign || !campaign.plants || !campaign.plants.length){
+    qs('materialDetailContent').innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-faint)">No material data</div>';
+    return;
+  }
+
+  const totalRequired = campaign.plants.reduce((a,p)=>a+(p.required_qty||0), 0);
+  const totalCovered = campaign.plants.reduce((a,p)=>a+(p.inventory_covered_qty||0), 0);
+  const totalShortage = totalRequired - totalCovered;
+
+  let html = '<div style="margin-bottom:1.5rem">'+
+    '<div style="font-size:1.05rem;font-weight:800;color:var(--text);margin-bottom:.3rem">'+escapeHtml(campaign.campaign_id||'—')+'</div>'+
+    '<div style="font-size:.8rem;color:var(--text-soft);margin-bottom:.8rem">'+escapeHtml(campaign.grade||'—')+' · '+badgeForStatus(campaign.release_status||'OPEN')+'</div>'+
+    '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;margin-bottom:1.5rem">'+
+      '<div style="padding:.75rem;background:var(--panel-soft);border-radius:.6rem;border:1px solid var(--border-soft)">'+
+        '<div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:700">Total Required</div>'+
+        '<div style="font-size:1.1rem;font-weight:800;color:var(--text);margin-top:.3rem">'+totalRequired.toFixed(1)+' MT</div>'+
+      '</div>'+
+      '<div style="padding:.75rem;background:var(--panel-soft);border-radius:.6rem;border:1px solid var(--border-soft)">'+
+        '<div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:700">From Inventory</div>'+
+        '<div style="font-size:1.1rem;font-weight:800;color:var(--text);margin-top:.3rem">'+totalCovered.toFixed(1)+' MT</div>'+
+      '</div>'+
+      '<div style="padding:.75rem;background:var(--panel-soft);border-radius:.6rem;border:1px solid var(--border-soft)">'+
+        '<div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:700">Shortage</div>'+
+        '<div style="font-size:1.1rem;font-weight:800;color:'+(totalShortage>0?'var(--danger)':'var(--success)')+';margin-top:.3rem">'+totalShortage.toFixed(1)+' MT</div>'+
+      '</div>'+
+    '</div>'+
+  '</div>';
+
+  html += campaign.plants.map(plant=>{
+    const plantRequired = plant.required_qty || 0;
+    const plantCovered = plant.inventory_covered_qty || 0;
+    return '<div style="margin-bottom:1.5rem">'+
+      '<div style="font-size:.9rem;font-weight:700;padding:.6rem .8rem;background:var(--panel-soft);border-left:3px solid #7c3aed;margin-bottom:.75rem">'+escapeHtml(plant.plant||'UNKNOWN')+'</div>'+
+      '<div style="display:flex;flex-direction:column;gap:.5rem">'+
+        (plant.rows||[]).map(row=>'<div style="padding:.6rem .8rem;background:var(--panel-soft);border:1px solid var(--border-soft);border-radius:.5rem;font-size:.8rem">'+
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.3rem">'+
+            '<div><div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:600">SKU</div><div style="font-weight:600;color:var(--text)">'+escapeHtml(row.material_sku||'—')+'</div></div>'+
+            '<div><div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:600">Required</div><div style="font-weight:600;color:var(--text)">'+(row.required_qty||0).toFixed(1)+' MT</div></div>'+
+          '</div>'+
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.3rem">'+
+            '<div><div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:600">Available</div><div style="font-weight:600;color:var(--text)">'+(row.available_before||0).toFixed(1)+' MT</div></div>'+
+            '<div><div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:600">Status</div><span style="display:inline-block;padding:.2rem .5rem;border-radius:.3rem;font-size:.7rem;font-weight:700;text-transform:uppercase;background:'+(row.status==='STOCK'?'rgba(34,197,94,.15)':row.status==='SHORT'?'rgba(220,38,38,.15)':'rgba(217,119,6,.15)');color:'+(row.status==='STOCK'?'#16a34a':row.status==='SHORT'?'#dc2626':'#d97706')+'">'+escapeHtml(row.status||'OK')+'</span></div>'+
+          '</div>'+
+        '</div>').join('')+
+      '</div>'+
+    '</div>';
+  }).join('');
+
+  qs('materialDetailContent').innerHTML = html;
 }
 function renderCapacity(){
   const rows = [...(state.capacity||[])].sort((a,b)=>num(b['Utilisation_%'] || b.utilisation) - num(a['Utilisation_%'] || a.utilisation));

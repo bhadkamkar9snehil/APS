@@ -1902,6 +1902,27 @@ code.inline {
 .bom-item-badge.input{border:1px solid rgba(124,58,237,.3);color:#7c3aed}
 .bom-item-badge.byproduct{border:1px solid rgba(37,99,235,.3);color:#2563eb}
 
+/* Material Split Panel Layout */
+.material-split-container{display:flex;gap:0;height:calc(100vh - 400px);background:#fff}
+.material-tree-panel{flex:0 0 280px;border:1px solid var(--border);border-radius:1rem;display:flex;flex-direction:column;background:var(--panel);overflow:hidden}
+.material-tree-header{padding:.75rem 1rem;background:var(--panel-muted);border-bottom:1px solid var(--border-soft);font-size:.8rem;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.05em}
+.material-tree{flex:1;overflow:auto;padding:.5rem}
+.material-split-divider{flex:0 0 1px;background:var(--border);cursor:col-resize;transition:background .2s}
+.material-split-divider:hover{background:#7c3aed}
+.material-detail-panel{flex:1;border:1px solid var(--border);border-radius:1rem;display:flex;flex-direction:column;background:var(--panel);overflow:hidden;margin-left:.5rem}
+#materialDetailContent{flex:1;overflow:auto;padding:1rem}
+
+/* Tree Navigation */
+.tree-item{margin:0;padding:0;list-style:none}
+.tree-node{display:flex;align-items:center;padding:.4rem .5rem;font-size:.8rem;cursor:pointer;user-select:none;color:var(--text);border-radius:.4rem}
+.tree-node:hover{background:var(--panel-soft)}
+.tree-node.selected{background:#f4efff;color:#7c3aed;font-weight:600}
+.tree-toggle{display:inline-flex;align-items:center;justify-content:center;width:1.2rem;height:1.2rem;margin-right:.2rem;font-size:.6rem;color:var(--text-faint);cursor:pointer;flex-shrink:0}
+.tree-toggle.collapsed::before{content:'▶'}
+.tree-toggle.expanded::before{content:'▼'}
+.tree-toggle.leaf{visibility:hidden}
+.tree-node-icon{width:.8rem;height:.8rem;margin-right:.3rem;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;font-size:.65rem}
+
 @media (max-width:760px) {
   .app {
     padding: .5rem
