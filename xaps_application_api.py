@@ -374,6 +374,8 @@ def _read_queue_times() -> dict:
 def _load_all() -> dict:
     config = _read_config()
     so_raw = _read_sheet("Sales_Orders", ["SO_ID", "SKU_ID"])
+    # Filter out rows where SO_ID is NaN or 'nan' string (header/description rows)
+    so_raw = so_raw[so_raw["SO_ID"].notna() & (so_raw["SO_ID"] != 'nan')].reset_index(drop=True)
     res = _read_sheet("Resource_Master", ["Resource_ID"])
     skus = _read_sheet("SKU_Master", ["SKU_ID"])
     routing = _read_sheet("Routing", ["SKU_ID", "Operation"])
@@ -399,8 +401,8 @@ def _load_all() -> dict:
     bom = _num(bom, "Yield_Pct", 100.0)
     bom = _num(bom, "Level", 1.0)
 
-    so_raw["Delivery_Date"] = pd.to_datetime(so_raw.get("Delivery_Date"), errors="coerce")
-    so_raw["Order_Date"] = pd.to_datetime(so_raw.get("Order_Date"), errors="coerce")
+    so_raw["Delivery_Date"] = pd.to_datetime(so_raw.get("Delivery_Date"), format="mixed", errors="coerce")
+    so_raw["Order_Date"] = pd.to_datetime(so_raw.get("Order_Date"), format="mixed", errors="coerce")
     so_raw["Status"] = so_raw.get("Status", "Open").fillna("Open")
     so_raw = _num(so_raw, "Order_Qty_MT", 0.0)
     so_raw = _num(so_raw, "Section_mm", 6.5)
