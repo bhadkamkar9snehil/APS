@@ -6,7 +6,40 @@ from collections import defaultdict
 
 import pandas as pd
 
+from engine.config import get_config
 
+
+# Config-driven BOM parameters
+def _get_input_flow_types() -> set[str]:
+    """Get input flow types from Algorithm_Config."""
+    flow_list = get_config().get_list('INPUT_FLOW_TYPES', ['', 'INPUT', 'CONSUME', 'CONSUMED', 'REQUIRED'])
+    return set(flow_list)
+
+
+def _get_byproduct_flow_types() -> set[str]:
+    """Get byproduct flow types from Algorithm_Config."""
+    flow_list = get_config().get_list('BYPRODUCT_FLOW_TYPES', ['BYPRODUCT', 'OUTPUT', 'CO_PRODUCT', 'COPRODUCT', 'WASTE'])
+    return set(flow_list)
+
+
+def _get_byproduct_inventory_mode_default() -> str:
+    """Get default byproduct inventory mode from Algorithm_Config."""
+    return get_config().get('BYPRODUCT_INVENTORY_MODE', 'deferred')
+
+
+def _get_yield_bounds() -> tuple[float, float]:
+    """Get yield min/max bounds from Algorithm_Config."""
+    min_yield = get_config().get_percentage('YIELD_MIN_BOUND_PCT', 1) / 100
+    max_yield = get_config().get_percentage('YIELD_MAX_BOUND_PCT', 100) / 100
+    return (min_yield, max_yield)
+
+
+def _get_zero_tolerance_threshold() -> float:
+    """Get zero tolerance threshold from Algorithm_Config."""
+    return get_config().get_float('ZERO_TOLERANCE_THRESHOLD', 0.000001)
+
+
+# Legacy constants for backward compatibility
 INPUT_FLOW_TYPES = {"", "INPUT", "CONSUME", "CONSUMED", "REQUIRED"}
 BYPRODUCT_FLOW_TYPES = {"BYPRODUCT", "OUTPUT", "CO_PRODUCT", "COPRODUCT", "WASTE"}
 OFFICIAL_BOM_EXPLOSION_API = "explode_bom_details"
@@ -51,21 +84,22 @@ def _bom_rows_for_flow_types(bom: pd.DataFrame, flow_types: set[str]) -> pd.Data
 
 
 def _input_bom_rows(bom: pd.DataFrame) -> pd.DataFrame:
-    return _bom_rows_for_flow_types(bom, INPUT_FLOW_TYPES)
+    return _bom_rows_for_flow_types(bom, _get_input_flow_types())
 
 
 def _byproduct_bom_rows(bom: pd.DataFrame) -> pd.DataFrame:
-    return _bom_rows_for_flow_types(bom, BYPRODUCT_FLOW_TYPES)
+    return _bom_rows_for_flow_types(bom, _get_byproduct_flow_types())
 
 
 def _effective_yield(bom_row) -> float:
-    """Return decimal yield fraction [0.01, 1.0], preferring Yield_Pct over Scrap_%."""
+    """Return decimal yield fraction, preferring Yield_Pct over Scrap_%, bounded by config."""
+    min_yield, max_yield = _get_yield_bounds()
     yp = pd.to_numeric(bom_row.get("Yield_Pct"), errors="coerce")
     if pd.notna(yp):
-        return max(0.01, min(1.0, float(yp) / 100.0))
+        return max(min_yield, min(max_yield, float(yp) / 100.0))
     scrap = pd.to_numeric(bom_row.get("Scrap_%"), errors="coerce")
     if pd.notna(scrap):
-        return max(0.01, min(1.0, 1.0 - (float(scrap) / 100.0)))
+        return max(min_yield, min(max_yield, 1.0 - (float(scrap) / 100.0)))
     return 1.0
 
 
@@ -92,9 +126,11 @@ def _normalize_structure_error_mode(on_structure_error: str = "raise") -> str:
 
 
 def _normalize_byproduct_inventory_mode(
-    byproduct_inventory_mode: str = PRODUCTION_BYPRODUCT_INVENTORY_MODE,
+    byproduct_inventory_mode: str | None = None,
 ) -> str:
-    mode = str(byproduct_inventory_mode or PRODUCTION_BYPRODUCT_INVENTORY_MODE).strip().lower()
+    if byproduct_inventory_mode is None:
+        byproduct_inventory_mode = _get_byproduct_inventory_mode_default()
+    mode = str(byproduct_inventory_mode or _get_byproduct_inventory_mode_default()).strip().lower()
     aliases = {
         "immediate": "immediate",
         "available_immediately": "immediate",
