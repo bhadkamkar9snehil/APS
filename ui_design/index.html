@@ -12,38 +12,6 @@
 <body>
 <div class="app">
   <div class="shell">
-    <div class="top">
-      <div class="top-summary">
-        <div class="brand-row">
-          <div class="brand">APS</div>
-          <div class="summary-grid">
-            <div class="metric"><div class="metric-label">Campaigns</div><div class="metric-value" id="summaryCampaigns">—</div><div class="metric-sub" id="summaryCampaignsSub">Loading…</div></div>
-            <div class="metric success"><div class="metric-label">Heats planned</div><div class="metric-value" id="summaryHeats">—</div><div class="metric-sub" id="summaryHeatsSub">—</div></div>
-            <div class="metric"><div class="metric-label">MT planned</div><div class="metric-value" id="summaryMt">—</div><div class="metric-sub" id="summaryMtSub">14-day horizon</div></div>
-            <div class="metric warn"><div class="metric-label">On-time</div><div class="metric-value" id="summaryOt">—</div><div class="metric-sub" id="summaryOtSub">—</div></div>
-            <div class="metric danger"><div class="metric-label">Late</div><div class="metric-value" id="summaryLate">—</div><div class="metric-sub" id="summaryLateSub">—</div></div>
-          </div>
-        </div>
-      </div>
-      <div class="top-controls">
-        <div class="status-group">
-          <div class="chip" id="chipApi"><span class="dot"></span><span id="chipApiText">API unknown</span></div>
-          <div class="chip success" id="chipSolver"><span class="dot"></span><span id="chipSolverText">Solver —</span></div>
-          <div class="chip warn"><span class="dot"></span><span id="chipHeld">— on hold</span></div>
-          <div class="chip danger"><span class="dot"></span><span id="chipLate">— late</span></div>
-        </div>
-        <div class="control-group">
-          <select class="sel" id="solverDepth">
-            <option value="30">Fast 30s</option>
-            <option value="60" selected>Standard 60s</option>
-            <option value="120">Deep 120s</option>
-            <option value="300">Full 5m</option>
-          </select>
-          <button class="btn btn-primary" id="runBtn">Run Schedule</button>
-        </div>
-      </div>
-    </div>
-
     <div class="navbar">
       <div class="tabs" id="topTabs">
         <button class="tab active" data-page="dashboard"><span class="tab-code">DB</span>Dashboard</button>
@@ -58,29 +26,58 @@
         <button class="tab" data-page="bom"><span class="tab-code">BM</span>BOM Explosion</button>
         <button class="tab" data-page="master"><span class="tab-code">MD</span>Master Data</button>
       </div>
-      <div class="page-actions">
-        <button class="btn ghost" id="horizonBtn">14-day horizon</button>
-        <button class="btn ghost" id="routeBtn">Route manifest</button>
+    </div>
+
+    <div class="top">
+      <div class="top-controls">
+        <div class="status-group">
+          <div class="chip" id="chipApi"><span class="dot"></span><span id="chipApiText">API unknown</span></div>
+          <div class="chip success" id="chipSolver"><span class="dot"></span><span id="chipSolverText">Solver —</span></div>
+          <div class="chip warn"><span class="dot"></span><span id="chipHeld">— on hold</span></div>
+          <div class="chip danger"><span class="dot"></span><span id="chipLate">— late</span></div>
+        </div>
+        <div class="control-group">
+          <select class="sel" id="horizonSelect">
+            <option value="7">7 Days Horizon</option>
+            <option value="14" selected>14 Days Horizon</option>
+            <option value="21">21 Days Horizon</option>
+            <option value="30">30 Days Horizon</option>
+          </select>
+          <select class="sel" id="solverDepth">
+            <option value="30">Fast 30s</option>
+            <option value="60" selected>Standard 60s</option>
+            <option value="120">Deep 120s</option>
+            <option value="300">Full 5m</option>
+          </select>
+          <button class="btn primary" id="runBtn">Run Schedule</button>
+        </div>
+      </div>
+      <div class="top-summary">
+        <div class="brand-row">
+          <div class="summary-grid">
+            <div class="metric"><div class="metric-label">Campaigns</div><div class="metric-value" id="summaryCampaigns">—</div><div class="metric-sub" id="summaryCampaignsSub">Loading…</div></div>
+            <div class="metric success"><div class="metric-label">Heats planned</div><div class="metric-value" id="summaryHeats">—</div><div class="metric-sub" id="summaryHeatsSub">—</div></div>
+            <div class="metric"><div class="metric-label">MT planned</div><div class="metric-value" id="summaryMt">—</div><div class="metric-sub" id="summaryMtSub">14-day horizon</div></div>
+            <div class="metric"><div class="metric-label">Throughput</div><div class="metric-value" id="summaryThroughput">—</div><div class="metric-sub">MT/day average</div></div>
+            <div class="metric warn"><div class="metric-label">On-time</div><div class="metric-value" id="summaryOt">—</div><div class="metric-sub" id="summaryOtSub">—</div></div>
+            <div class="metric danger"><div class="metric-label">Late</div><div class="metric-value" id="summaryLate">—</div><div class="metric-sub" id="summaryLateSub">—</div></div>
+          </div>
+        </div>
       </div>
     </div>
 
     <div class="body">
       <section class="page active" id="page-dashboard">
         <div class="page-header">
-          <div><div class="page-title">Dashboard</div><div class="page-sub">Iframe shell using the denser concept, now backed by the X-APS application API.</div></div>
+          <div><div class="page-title">Dashboard</div></div>
         </div>
 
-        <div class="kpi-grid">
-          <div class="card kpi-card"><div class="metric-label">Campaigns</div><div class="metric-value" id="dbCampaigns">—</div><div class="metric-sub" id="dbCampaignsSub">—</div></div>
-          <div class="card kpi-card"><div class="metric-label">Heats planned</div><div class="metric-value" id="dbHeats">—</div><div class="metric-sub" id="dbHeatsSub">—</div></div>
-          <div class="card kpi-card"><div class="metric-label">On-time delivery</div><div class="metric-value" id="dbOt">—</div><div class="metric-sub" id="dbOtSub">—</div></div>
-          <div class="card kpi-card"><div class="metric-label">Throughput</div><div class="metric-value" id="dbThroughput">—</div><div class="metric-sub">MT/day average</div></div>
-        </div>
+
 
         <div class="split">
           <div class="stack">
             <div class="card">
-              <div class="card-header"><div><div class="card-title">Campaign timeline overview</div><div class="card-sub">Release queue rendered from live campaign + gantt payloads.</div></div><button class="btn" data-page-link="schedule">Open schedule</button></div>
+            <div class="card-header"><div><div class="card-title">Campaign timeline overview</div></div><button class="btn ghost" data-page-link="schedule">Open schedule</button></div>
               <div class="card-body"><div id="dashboardTimeline" class="timeline-list"><div class="notice">Run Schedule to populate campaign execution timeline.</div></div></div>
             </div>
             <div class="card">
@@ -108,16 +105,7 @@
               <div class="card-body"><div class="alerts" id="alertsList"></div></div>
             </div>
 
-            <div class="card">
-              <div class="card-header"><div><div class="card-title">Route coverage</div><div class="card-sub">Detected backend route families.</div></div></div>
-              <div class="card-body">
-                <div class="grid-2">
-                  <div class="metric"><div class="metric-label">Legacy routes</div><div class="metric-value" id="legacyRouteCount">—</div></div>
-                  <div class="metric"><div class="metric-label">Application routes</div><div class="metric-value" id="appRouteCount">—</div></div>
-                </div>
-                <div class="notice" id="routePreview">Waiting for route manifest.</div>
-              </div>
-            </div>
+
           </div>
         </div>
       </section>
@@ -150,65 +138,70 @@
           <div><div class="page-title">Sales Orders</div><div class="page-sub">List, create, update, delete, and assign through the application API.</div></div>
           <div class="page-actions"><button class="btn success" id="newOrderBtn">New Order</button><button class="btn primary" id="assignOrdersBtn" disabled>Assign Selected</button></div>
         </div>
-        <div class="filters">
-          <input class="inp" id="orderSearch" placeholder="Search SO / Grade / Customer…" />
-          <select class="sel" id="orderPriority"><option value="">All priorities</option><option>URGENT</option><option>HIGH</option><option>NORMAL</option></select>
-          <select class="sel" id="orderGrade"><option value="">All grades</option></select>
-        </div>
-        <div class="orders-layout">
-          <div class="card">
-            <div class="card-header"><div><div class="card-title">Open sales orders</div><div class="card-sub" id="ordersCount">—</div></div></div>
-            <div class="card-body" style="padding:0;overflow:auto">
-              <table class="table">
-                <thead><tr><th></th><th>SO ID</th><th>Customer</th><th>Grade</th><th>Qty MT</th><th>Due</th><th>Priority</th><th>Campaign</th><th>Status</th><th>Actions</th></tr></thead>
-                <tbody id="ordersBody"></tbody>
-              </table>
-            </div>
+        <div class="page-content">
+          <div class="filters">
+            <input class="inp" id="orderSearch" placeholder="Search SO / Grade / Customer…" />
+            <select class="sel" id="orderPriority"><option value="">All priorities</option><option>URGENT</option><option>HIGH</option><option>NORMAL</option></select>
+            <select class="sel" id="orderGrade"><option value="">All grades</option></select>
           </div>
-          <div class="card">
-            <div class="card-header"><div><div class="card-title">Campaign drop zones</div><div class="card-sub">Drag or bulk-assign orders.</div></div></div>
-            <div class="card-body" id="dropZones"></div>
+          <div class="orders-layout" style="flex:1;overflow:auto;min-height:0">
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Open sales orders</div><div class="card-sub" id="ordersCount">—</div></div></div>
+              <div class="card-body" style="padding:0;overflow:auto">
+                <table class="table">
+                  <thead><tr><th></th><th>SO ID</th><th>Customer</th><th>Grade</th><th>Qty MT</th><th>Due</th><th>Priority</th><th>Campaign</th><th>Status</th><th>Actions</th></tr></thead>
+                  <tbody id="ordersBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Campaign drop zones</div><div class="card-sub">Drag or bulk-assign orders.</div></div></div>
+              <div class="card-body" id="dropZones"></div>
+            </div>
           </div>
         </div>
       </section>
 
       <section class="page" id="page-dispatch">
         <div class="page-header"><div><div class="page-title">Dispatch</div><div class="page-sub">Machine-by-machine execution cards from dispatch board and schedule rows.</div></div></div>
-        <div class="grid-4" style="margin-bottom:.75rem">
-          <div class="metric"><div class="metric-label">Machines active</div><div class="metric-value" id="dispatchMachines">—</div></div>
-          <div class="metric"><div class="metric-label">Jobs visible</div><div class="metric-value" id="dispatchJobs">—</div></div>
-          <div class="metric"><div class="metric-label">Queue violations</div><div class="metric-value" id="dispatchViolations">—</div></div>
-          <div class="metric"><div class="metric-label">MT dispatched</div><div class="metric-value" id="dispatchMt">—</div></div>
+        <div class="page-content">
+          <div class="grid-4" style="margin-bottom:.75rem;flex-shrink:0">
+            <div class="metric"><div class="metric-label">Machines active</div><div class="metric-value" id="dispatchMachines">—</div></div>
+            <div class="metric"><div class="metric-label">Jobs visible</div><div class="metric-value" id="dispatchJobs">—</div></div>
+            <div class="metric"><div class="metric-label">Queue violations</div><div class="metric-value" id="dispatchViolations">—</div></div>
+            <div class="metric"><div class="metric-label">MT dispatched</div><div class="metric-value" id="dispatchMt">—</div></div>
+          </div>
+          <div class="dispatch-grid" id="dispatchGrid" style="flex:1;overflow:auto;min-height:0"><div class="notice">Run Schedule to populate the dispatch view.</div></div>
         </div>
-        <div class="dispatch-grid" id="dispatchGrid"><div class="notice">Run Schedule to populate the dispatch view.</div></div>
       </section>
 
       <section class="page" id="page-material">
         <div class="page-header"><div><div class="page-title">Material</div><div class="page-sub">Campaign-by-campaign material allocation and shortage trace.</div></div></div>
-        
-        <div class="grid-4" style="margin-bottom:.75rem">
-          <div class="metric success"><div class="metric-label">Materials OK</div><div class="metric-value" id="matOk">—</div></div>
-          <div class="metric warn"><div class="metric-label">On Hold</div><div class="metric-value" id="matHeld">—</div></div>
-          <div class="metric danger"><div class="metric-label">Critical</div><div class="metric-value" id="matCrit">—</div></div>
-          <div class="metric"><div class="metric-label">Campaigns</div><div class="metric-value" id="matCampaigns">—</div></div>
-        </div>
+        <div class="page-content">
+          <div class="grid-4" style="margin-bottom:.75rem;flex-shrink:0">
+            <div class="metric success"><div class="metric-label">Materials OK</div><div class="metric-value" id="matOk">—</div></div>
+            <div class="metric warn"><div class="metric-label">On Hold</div><div class="metric-value" id="matHeld">—</div></div>
+            <div class="metric danger"><div class="metric-label">Critical</div><div class="metric-value" id="matCrit">—</div></div>
+            <div class="metric"><div class="metric-label">Campaigns</div><div class="metric-value" id="matCampaigns">—</div></div>
+          </div>
 
-        <div class="card material-summary-card">
-          <div class="card-header"><div><div class="card-title">Material Summary</div></div></div>
-          <div class="card-body">
-            <div class="material-summary-grid" id="materialSummaryGrid">
-              <div><span class="material-label">Campaigns</span><span class="material-number" id="sumCampaigns">—</span></div>
-              <div><span class="material-label">Released</span><span class="material-number" id="sumReleased">—</span></div>
-              <div><span class="material-label">Held</span><span class="material-number" id="sumHeld">—</span></div>
-              <div><span class="material-label">Shortage Lines</span><span class="material-number" id="sumShortage">—</span></div>
-              <div><span class="material-label">Required Qty</span><span class="material-number" id="sumRequired">—</span></div>
-              <div><span class="material-label">Inventory Covered</span><span class="material-number" id="sumInventory">—</span></div>
-              <div><span class="material-label">Make / Convert</span><span class="material-number" id="sumMakeConvert">—</span></div>
+          <div class="card material-summary-card" style="flex-shrink:0">
+            <div class="card-header"><div><div class="card-title">Material Summary</div></div></div>
+            <div class="card-body">
+              <div class="material-summary-grid" id="materialSummaryGrid">
+                <div><span class="material-label">Campaigns</span><span class="material-number" id="sumCampaigns">—</span></div>
+                <div><span class="material-label">Released</span><span class="material-number" id="sumReleased">—</span></div>
+                <div><span class="material-label">Held</span><span class="material-number" id="sumHeld">—</span></div>
+                <div><span class="material-label">Shortage Lines</span><span class="material-number" id="sumShortage">—</span></div>
+                <div><span class="material-label">Required Qty</span><span class="material-number" id="sumRequired">—</span></div>
+                <div><span class="material-label">Inventory Covered</span><span class="material-number" id="sumInventory">—</span></div>
+                <div><span class="material-label">Make / Convert</span><span class="material-number" id="sumMakeConvert">—</span></div>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div id="materialCampaigns" style="margin-top:.75rem"></div>
+          <div id="materialCampaigns" style="margin-top:.75rem;flex:1;overflow:auto;min-height:0"></div>
+        </div>
       </section>
 
       <section class="page" id="page-capacity">
@@ -274,70 +267,65 @@
         <div class="page-header"><div><div class="page-title">BOM Explosion</div><div class="page-sub">End-to-end material requirements grouped by plant, process stage, and material type.</div></div>
           <div class="page-actions"><button class="btn primary" id="bomRunBtn">Run BOM Explosion</button></div>
         </div>
-        <div class="filters">
-          <button class="subtab active" data-bom-filter="all">All</button>
-          <button class="subtab" data-bom-filter="output">RM Output</button>
-          <button class="subtab" data-bom-filter="byproduct">Byproduct</button>
-          <button class="subtab" data-bom-filter="eaf">EAF Output</button>
-        </div>
-        <div class="card">
-          <div class="card-header"><div><div class="card-title" id="bomTitle">BOM Explosion Output</div><div class="card-sub" id="bomSub">Updated by plant, process stage, and material type.</div></div></div>
-          <div class="card-body" style="padding:0;overflow:auto">
-            <table class="table">
-              <thead id="bomHead"></thead>
-              <tbody id="bomBody"></tbody>
-            </table>
+        <div class="page-content">
+          <div class="filters">
+            <button class="subtab active" data-bom-filter="all">All</button>
+            <button class="subtab" data-bom-filter="output">RM Output</button>
+            <button class="subtab" data-bom-filter="byproduct">Byproduct</button>
+            <button class="subtab" data-bom-filter="eaf">EAF Output</button>
+          </div>
+          <div class="bom-summary-strip" id="bomSummaryStrip" style="display:none;flex-shrink:0">
+            <div class="bom-kpi"><span class="kpi-val" id="bomKpiLinesVal">—</span><span class="kpi-label">SKU Lines</span></div>
+            <div class="bom-kpi short"><span class="kpi-val" id="bomKpiShortVal">—</span><span class="kpi-label">Short</span></div>
+            <div class="bom-kpi partial"><span class="kpi-val" id="bomKpiPartialVal">—</span><span class="kpi-label">Partial</span></div>
+            <div class="bom-kpi covered"><span class="kpi-val" id="bomKpiCoveredVal">—</span><span class="kpi-label">Covered</span></div>
+            <div class="bom-kpi byproduct"><span class="kpi-val" id="bomKpiByproductVal">—</span><span class="kpi-label">Byproduct</span></div>
+            <div class="bom-kpi"><span class="kpi-val" id="bomKpiGrossVal">—</span><span class="kpi-label">Gross Req MT</span></div>
+            <div class="bom-kpi"><span class="kpi-val" id="bomKpiNetVal">—</span><span class="kpi-label">Net Req MT</span></div>
+          </div>
+          <div id="bomGroupedContainer" style="flex:1;overflow:auto;min-height:0">
+            <div class="material-empty">No BOM data. Run BOM Explosion first.</div>
           </div>
         </div>
       </section>
 
       <section class="page" id="page-master">
         <div class="page-header"><div><div class="page-title">Master Data</div><div class="page-sub">All workbook sections surfaced through the application API.</div></div></div>
-        <div class="toolbar">
-          <select class="sel" id="masterSection">
-            <option value="config">Config</option>
-            <option value="resources">Resources</option>
-            <option value="routing">Routing</option>
-            <option value="queue">Queue</option>
-            <option value="changeover">Changeover</option>
-            <option value="skus">SKUs</option>
-            <option value="bom">BOM</option>
-            <option value="inventory">Inventory</option>
-            <option value="campaign-config">Campaign Config</option>
-            <option value="scenarios">Scenarios</option>
-          </select>
-          <button class="btn" id="masterRefreshBtn">Refresh</button>
-          <button class="btn success" id="masterAddBtn">Add Row</button>
-          <button class="btn" id="masterEditBtn">Patch Row</button>
-          <button class="btn danger" id="masterDeleteBtn">Delete Row</button>
-          <button class="btn warning" id="masterBulkBtn">Bulk Replace</button>
-          <span class="master-toolbar-note" id="masterSelectionNote">No row selected.</span>
-        </div>
-        <div class="card">
-          <div class="card-header"><div><div class="card-title" id="masterTitle">Master Data</div><div class="card-sub">Section rows loaded from <code class="inline">/api/aps/masterdata</code>.</div></div></div>
-          <div class="card-body" style="padding:0;overflow:auto">
-            <table class="table">
-              <thead id="masterHead"></thead>
-              <tbody id="masterBody"></tbody>
-            </table>
+        <div class="page-content">
+          <div class="toolbar">
+            <select class="sel" id="masterSection">
+              <option value="config">Config</option>
+              <option value="resources">Resources</option>
+              <option value="routing">Routing</option>
+              <option value="queue">Queue</option>
+              <option value="changeover">Changeover</option>
+              <option value="skus">SKUs</option>
+              <option value="bom">BOM</option>
+              <option value="inventory">Inventory</option>
+              <option value="campaign-config">Campaign Config</option>
+              <option value="scenarios">Scenarios</option>
+            </select>
+            <button class="btn ghost" id="masterRefreshBtn">Refresh</button>
+            <button class="btn success" id="masterAddBtn">Add Row</button>
+            <button class="btn ghost" id="masterEditBtn">Patch Row</button>
+            <button class="btn danger" id="masterDeleteBtn">Delete Row</button>
+            <button class="btn warn" id="masterBulkBtn">Bulk Replace</button>
+            <span class="master-toolbar-note" id="masterSelectionNote">No row selected.</span>
+          </div>
+          <div class="card" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+            <div class="card-header"><div><div class="card-title" id="masterTitle">Master Data</div><div class="card-sub">Section rows loaded from <code class="inline">/api/aps/masterdata</code>.</div></div></div>
+            <div class="card-body" style="padding:0;overflow:auto;flex:1;min-height:0">
+              <table class="table">
+                <thead id="masterHead"></thead>
+                <tbody id="masterBody"></tbody>
+              </table>
+            </div>
           </div>
         </div>
       </section>
     </div>
 
-    <div class="dock" id="dockNav">
-      <button class="dock-btn active" data-page="dashboard">DB</button>
-      <button class="dock-btn" data-page="orders">SO</button>
-      <button class="dock-btn" data-page="campaigns">CP</button>
-      <button class="dock-btn" data-page="schedule">GS</button>
-      <button class="dock-btn" data-page="dispatch">EQ</button>
-      <button class="dock-btn" data-page="material">MT</button>
-      <button class="dock-btn" data-page="capacity">CM</button>
-      <button class="dock-btn" data-page="scenarios">WF</button>
-      <button class="dock-btn" data-page="ctp">CT</button>
-      <button class="dock-btn" data-page="bom">BM</button>
-      <button class="dock-btn" data-page="master">MD</button>
-    </div>
+
   </div>
 </div>
 
@@ -348,7 +336,7 @@
         <div id="masterModalTitle" style="font-size:1rem;font-weight:850;color:var(--text)">Edit Master Data</div>
         <div id="masterModalSub" style="font-size:.75rem;color:var(--text-soft);margin-top:.125rem"></div>
       </div>
-      <button class="btn" id="masterModalCloseBtn">Close</button>
+      <button class="btn ghost" id="masterModalCloseBtn">Close</button>
     </div>
     <div class="master-form-body">
       <form id="masterForm">
@@ -362,7 +350,7 @@
       </div>
     </div>
     <div class="master-form-foot">
-      <button class="btn" id="masterModalCancelBtn" type="button">Cancel</button>
+      <button class="btn ghost" id="masterModalCancelBtn" type="button">Cancel</button>
       <button class="btn primary" id="masterSaveBtn" type="submit" form="masterForm">Save</button>
     </div>
   </div>
@@ -372,7 +360,11 @@
 const API = 'http://localhost:5000';
 const MASTER_KEYS = {config:'Key',resources:'Resource_ID',routing:'SKU_ID',queue:'From_Operation',changeover:'From \\ To',skus:'SKU_ID',bom:'BOM_ID',inventory:'SKU_ID','campaign-config':'Grade',scenarios:'Parameter'};
 const MASTER_LABELS = {config:'Config',resources:'Resource Master',routing:'Routing',queue:'Queue Times',changeover:'Changeover Matrix',skus:'SKU Master',bom:'BOM',inventory:'Inventory','campaign-config':'Campaign Config',scenarios:'Scenarios'};
-const state = {overview:null,campaigns:[],gantt:[],capacity:[],material:[],orders:[],dispatch:[],scenarios:[],ctpRequests:[],ctpOutput:[],master:{},selectedOrders:new Set(),selectedMasterKey:null,masterMode:'create',campFilter:'all',routeManifest:null};
+const state = { 
+  orders:[], campaigns:[], capacity:[], scenario_metrics:[], scenarios:[], bom:[], 
+  routeManifest:null, selectedOrders:new Set(), selectedMasterKey:null, masterMode:'create', 
+  campFilter:'all', horizon: 14 
+};
 
 function qs(id){ return document.getElementById(id); }
 function setText(id,v){ const el=qs(id); if(el) el.textContent = v; }
@@ -401,9 +393,8 @@ async function apiFetch(url, opts={}){
 function activatePage(page){
   document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active', el.id === 'page-' + page));
   document.querySelectorAll('#topTabs .tab').forEach(el=>el.classList.toggle('active', el.dataset.page === page));
-  document.querySelectorAll('#dockNav .dock-btn').forEach(el=>el.classList.toggle('active', el.dataset.page === page));
 }
-document.querySelectorAll('#topTabs .tab, #dockNav .dock-btn').forEach(btn=>btn.addEventListener('click', ()=>activatePage(btn.dataset.page)));
+document.querySelectorAll('#topTabs .tab').forEach(btn=>btn.addEventListener('click', ()=>activatePage(btn.dataset.page)));
 document.querySelectorAll('[data-page-link]').forEach(btn=>btn.addEventListener('click', ()=>activatePage(btn.dataset.pageLink)));
 
 async function checkHealth(){
@@ -416,19 +407,7 @@ async function checkHealth(){
     setText('chipApiText', 'API unavailable');
   }
 }
-async function loadRouteManifest(){
-  try{
-    const d = await apiFetch('/api/meta/xaps/routes');
-    state.routeManifest = d;
-    setText('legacyRouteCount', (d.legacy||[]).length);
-    setText('appRouteCount', (d.application||[]).length);
-    const preview = (d.application||[]).slice(0,6).join(' · ');
-    qs('routePreview').textContent = preview || 'No route manifest returned.';
-  }catch(e){
-    setText('legacyRouteCount','—'); setText('appRouteCount','—');
-    qs('routePreview').textContent = 'Route manifest unavailable: ' + e.message;
-  }
-}
+
 function hydrateSummary(summary){
   const total = num(summary.campaigns_total);
   const released = num(summary.campaigns_released);
@@ -437,28 +416,23 @@ function hydrateSummary(summary){
   const heats = num(summary.total_heats);
   const mt = num(summary.total_mt);
   const ot = summary.on_time_pct == null ? '—' : num(summary.on_time_pct).toFixed(1) + '%';
+  const throughput = summary.throughput_mt_day != null ? num(summary.throughput_mt_day).toFixed(1) : '—';
 
   setText('summaryCampaigns', total || '—');
   setText('summaryCampaignsSub', released + ' released · ' + held + ' held');
   setText('summaryHeats', heats || '—');
   setText('summaryHeatsSub', mt ? (mt.toLocaleString() + ' MT') : '—');
   setText('summaryMt', mt ? mt.toLocaleString() : '—');
-  setText('summaryMtSub', (summary.throughput_mt_day != null ? num(summary.throughput_mt_day).toFixed(1) : '—') + ' MT/day');
+  setText('summaryMtSub', '14-day horizon');
+  setText('summaryThroughput', throughput);
   setText('summaryOt', ot);
   setText('summaryOtSub', summary.solver_status || '—');
   setText('summaryLate', late || '—');
   setText('summaryLateSub', summary.bottleneck ? ('Bottleneck ' + summary.bottleneck) : 'No bottleneck yet');
+
   setText('chipSolverText', 'Solver ' + (summary.solver_status || '—'));
   setText('chipHeld', held + ' on hold');
   setText('chipLate', late + ' late');
-
-  setText('dbCampaigns', total || '—');
-  setText('dbCampaignsSub', released + ' released · ' + held + ' held');
-  setText('dbHeats', heats || '—');
-  setText('dbHeatsSub', mt ? (mt.toLocaleString() + ' MT over horizon') : '—');
-  setText('dbOt', ot);
-  setText('dbOtSub', formatStatus(summary.solver_detail) || '—');
-  setText('dbThroughput', summary.throughput_mt_day != null ? num(summary.throughput_mt_day).toFixed(1) : '—');
 }
 function renderReleaseQueue(){
   const rows = [...(state.campaigns||[])].sort((a,b)=>String(a.Due_Date || '').localeCompare(String(b.Due_Date || ''))).slice(0,8);
@@ -534,8 +508,8 @@ function renderCampaigns(){
         '<div><div class="metric-label">Due</div><div class="card-title">'+escapeHtml(fmtDate(c.Due_Date))+'</div><div class="page-sub">'+escapeHtml(c.Margin_Hrs == null ? '—' : ((num(c.Margin_Hrs)>=0?'+':'') + Math.round(num(c.Margin_Hrs)) + 'h margin'))+'</div></div>'+
         '<div><div class="metric-label">Status</div>'+badgeForStatus(status)+'</div>'+
         '<div style="display:flex;gap:.45rem;justify-content:flex-end;flex-wrap:wrap">'+
-          '<button class="btn" onclick="updateCampaignStatus(\''+escapeHtml(cid)+'\', \'Release_Status\', \'RELEASED\')">Release</button>'+
-          '<button class="btn" onclick="updateCampaignStatus(\''+escapeHtml(cid)+'\', \'Release_Status\', \'MATERIAL HOLD\')">Hold</button>'+
+          '<button class="btn success" onclick="updateCampaignStatus(\''+escapeHtml(cid)+'\', \'Release_Status\', \'RELEASED\')">Release</button>'+
+          '<button class="btn warn" onclick="updateCampaignStatus(\''+escapeHtml(cid)+'\', \'Release_Status\', \'MATERIAL HOLD\')">Hold</button>'+
           '<button class="btn ghost" onclick="activatePage(\'schedule\')">Schedule</button>'+
         '</div>'+
       '</div>'+
@@ -954,7 +928,10 @@ async function runSchedule(){
   btn.innerHTML = '<span class="spinner"></span> Running…';
   btn.disabled = true;
   try{
-    await apiFetch('/api/aps/schedule/run', {method:'POST', body: JSON.stringify({time_limit: Number(qs('solverDepth').value || 60)})});
+    await apiFetch('/api/aps/schedule/run', {method:'POST', body: JSON.stringify({
+      time_limit: Number(qs('solverDepth').value || 60),
+      horizon_days: Number(state.horizon || 14)
+    })});
     await loadApplicationState();
     await loadOrdersOnly();
   }catch(e){
@@ -1060,53 +1037,127 @@ async function runBom(){
   btn.disabled = true;
   try{
     const d = await apiFetch('/api/run/bom', {method:'POST'});
-    state.bom = d.bom || [];
-    setText('bomSub', (d.rows || 0) + ' lines calculated from sales orders and inventories.');
-    renderBomExplosion();
-  }catch(e){ 
-    qs('bomBody').innerHTML = '<tr><td colspan="10" class="notice">BOM Explosion failed: ' + escapeHtml(e.message) + '</td></tr>';
+    state.bomGrouped = d.grouped_bom || [];
+    state.bomSummary = d.summary || {};
+    state.bomFlat = d.net_bom || [];
+    setText('bomSub', (d.rows || 0) + ' SKU lines · ' + (d.structure_errors?.length || 0) + ' structure errors');
+    renderBomSummary();
+    renderBomGrouped();
+  }catch(e){
+    qs('bomGroupedContainer').innerHTML = '<div class="material-empty">BOM Explosion failed: ' + escapeHtml(e.message) + '</div>';
   }
   finally{ btn.innerHTML = old; btn.disabled = false; }
 }
-function renderBomExplosion(){
-  const body = qs('bomBody');
-  const head = qs('bomHead');
-  if(!state.bom || !state.bom.length){ 
-    body.innerHTML = '<tr><td colspan="10">No BOM data. Run BOM Explosion first.</td></tr>';
-    head.innerHTML = '';
+
+function renderBomSummary(){
+  if(!state.bomSummary) return;
+  const s = state.bomSummary;
+  setText('bomKpiLinesVal', String(s.total_sku_lines || 0));
+  setText('bomKpiShortVal', String(s.short_lines || 0));
+  setText('bomKpiPartialVal', String(s.partial_lines || 0));
+  setText('bomKpiCoveredVal', String(s.covered_lines || 0));
+  setText('bomKpiByproductVal', String(s.byproduct_lines || 0));
+  setText('bomKpiGrossVal', ((s.total_gross_req || 0) / 1000).toFixed(1) + 'k');
+  setText('bomKpiNetVal', ((s.total_net_req || 0) / 1000).toFixed(1) + 'k');
+  qs('bomSummaryStrip').style.display = 'flex';
+}
+
+function bomStatusBadgeClass(status){
+  const m = {'COVERED': 'covered', 'PARTIAL SHORT': 'partial', 'SHORT': 'short', 'BYPRODUCT': 'byproduct'};
+  return m[status] || 'short';
+}
+
+function renderBomGrouped(){
+  const container = qs('bomGroupedContainer');
+  if(!state.bomGrouped || !state.bomGrouped.length){
+    container.innerHTML = '<div class="material-empty">No BOM data. Run BOM Explosion first.</div>';
     return;
   }
-  
-  const sampleRow = state.bom[0];
-  const cols = Object.keys(sampleRow).filter(k=>!k.startsWith('_'));
-  const keyFields = ['SKU_ID', 'Parent_SKU', 'Child_SKU', 'BOM_Level', 'Effect_Yield', 'Qty_Per', 'Required_Qty', 'Gross_Req', 'Available', 'Net_Req', 'Plant', 'Material_Type', 'Stage', 'Status'];
-  const displayCols = keyFields.filter(k=>cols.includes(k) || sampleRow.hasOwnProperty(k));
-  
-  if(displayCols.length === 0) return;
-  
-  head.innerHTML = '<tr>' + displayCols.map(c=>'<th>'+escapeHtml(c.replace(/_/g,' '))+'</th>').join('') + '</tr>';
-  
-  let filtered = [...state.bom];
+
   const filterBtn = document.querySelector('[data-bom-filter].active');
   const filter = filterBtn ? filterBtn.getAttribute('data-bom-filter') : 'all';
-  if(filter === 'output') filtered = filtered.filter(r=>String(r.Material_Type || '').toUpperCase().includes('OUTPUT'));
-  if(filter === 'byproduct') filtered = filtered.filter(r=>String(r.Material_Type || '').toUpperCase().includes('BYPRODUCT'));
-  if(filter === 'eaf') filtered = filtered.filter(r=>String(r.Plant || '').toUpperCase().includes('EAF'));
-  
-  body.innerHTML = filtered.slice(0, 500).map((r,idx)=>{
-    return '<tr>' + displayCols.map(col=>{
-      let v = r[col];
-      if(typeof v === 'number') v = v.toFixed(v > 100 ? 1 : 2);
-      return '<td>'+escapeHtml(String(v ?? '—'))+'</td>';
-    }).join('') + '</tr>';
-  }).join('') || '<tr><td colspan="'+displayCols.length+'">No matching BOM records.</td></tr>';
+
+  let filtered = state.bomGrouped;
+  if(filter === 'output') filtered = filtered.filter(p=>p.plant === 'Rolling Mill');
+  if(filter === 'byproduct') filtered = filtered.filter(p=>p.material_types.some(m=>m.material_type.includes('Byproduct')));
+  if(filter === 'eaf') filtered = filtered.filter(p=>['SMS', 'EAF'].includes(p.plant));
+
+  const html = filtered.map(plant=>{
+    const plantHtml = `
+      <div class="material-campaign">
+        <div class="material-plant-head">
+          <div class="material-plant-name">${escapeHtml(plant.plant)}</div>
+          <div class="material-plant-stats">
+            <div class="material-plant-stat">
+              <span class="stat-label">Gross Req</span>
+              <span class="stat-value">${(plant.gross_req || 0).toFixed(1)}</span>
+            </div>
+            <div class="material-plant-stat">
+              <span class="stat-label">Produced</span>
+              <span class="stat-value">${(plant.produced_qty || 0).toFixed(1)}</span>
+            </div>
+            <div class="material-plant-stat">
+              <span class="stat-label">Net Req</span>
+              <span class="stat-value">${(plant.net_req || 0).toFixed(1)}</span>
+            </div>
+            <div class="material-plant-stat">
+              <span class="stat-label">Lines</span>
+              <span class="stat-value">${plant.row_count}</span>
+            </div>
+          </div>
+        </div>
+        ${plant.material_types.map(mt=>{
+          return `
+            <div class="bom-type-header">
+              <div class="bom-type-name">${escapeHtml(mt.material_type)}</div>
+              <div class="bom-type-stats">
+                <span>${(mt.gross_req || 0).toFixed(1)} MT</span>
+                <span class="text-faint">| ${mt.row_count} materials</span>
+              </div>
+            </div>
+            <table class="material-detail-table">
+              <thead>
+                <tr>
+                  <th>SKU ID</th>
+                  <th>SKU Name</th>
+                  <th>Level</th>
+                  <th>Gross Req</th>
+                  <th>Available</th>
+                  <th>Covered</th>
+                  <th>Net Req</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${mt.rows.map(r=>`
+                  <tr>
+                    <td>${escapeHtml(r.sku_id)}</td>
+                    <td>${escapeHtml(r.sku_name || r.sku_id)}</td>
+                    <td>${r.bom_level}</td>
+                    <td>${(r.gross_req || 0).toFixed(1)}</td>
+                    <td>${(r.available_before || 0).toFixed(1)}</td>
+                    <td>${(r.covered_by_stock || 0).toFixed(1)}</td>
+                    <td>${(r.net_req || 0).toFixed(1)}</td>
+                    <td><span class="material-status-badge ${bomStatusBadgeClass(r.status)}">${escapeHtml(r.status)}</span></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          `;
+        }).join('')}
+      </div>
+    `;
+    return plantHtml;
+  }).join('');
+
+  container.innerHTML = html || '<div class="material-empty">No matching BOM records for selected filter.</div>';
 }
 function hookBomFilters(){
   document.querySelectorAll('[data-bom-filter]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       document.querySelectorAll('[data-bom-filter]').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
-      renderBomExplosion();
+      renderBomGrouped();
     });
   });
 }
@@ -1250,8 +1301,14 @@ qs('masterBulkBtn').addEventListener('click', openMasterBulk);
 qs('masterModalCloseBtn').addEventListener('click', closeMasterModal);
 qs('masterModalCancelBtn').addEventListener('click', closeMasterModal);
 qs('masterForm').addEventListener('submit', submitMasterForm);
-qs('routeBtn').addEventListener('click', loadRouteManifest);
+
 qs('patchJobBtn').addEventListener('click', patchJob);
+qs('horizonSelect').addEventListener('change', (e)=>{
+  state.horizon = Number(e.target.value);
+  setText('summaryMtSub', state.horizon + '-day horizon');
+  const d = new Date(Date.now() + state.horizon*86400000);
+  qs('ctpDate').value = d.toISOString().slice(0,10);
+});
 document.querySelectorAll('[data-camp-filter]').forEach(btn=>btn.addEventListener('click', ()=>{
   document.querySelectorAll('[data-camp-filter]').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
@@ -1260,10 +1317,10 @@ document.querySelectorAll('[data-camp-filter]').forEach(btn=>btn.addEventListene
 }));
 
 document.addEventListener('DOMContentLoaded', async ()=>{
-  const d = new Date(Date.now() + 14*86400000);
+  qs('horizonSelect').value = state.horizon;
+  const d = new Date(Date.now() + state.horizon*86400000);
   qs('ctpDate').value = d.toISOString().slice(0,10);
   await checkHealth();
-  await loadRouteManifest();
   await loadOrdersOnly();
   await loadSkusForCtp();
   await loadApplicationState();
