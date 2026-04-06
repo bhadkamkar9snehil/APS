@@ -15,6 +15,7 @@
   <div class="shell">
     <div class="navbar">
       <div class="tabs" id="topTabs">
+        <!-- Main Planning Workflow Tabs -->
         <button class="tab active" data-page="dashboard">Dashboard</button>
         <button class="tab" data-page="orders">Sales Orders</button>
         <button class="tab" data-page="planning-pool">Order Pool</button>
@@ -22,15 +23,25 @@
         <button class="tab" data-page="heat-builder">Heat Builder</button>
         <button class="tab" data-page="finite-scheduler">Scheduler</button>
         <button class="tab" data-page="release-board">Release</button>
-        <button class="tab" data-page="campaigns">Campaigns</button>
-        <button class="tab" data-page="schedule">Schedule</button>
-        <button class="tab" data-page="dispatch">Dispatch</button>
-        <button class="tab" data-page="material">Material</button>
-        <button class="tab" data-page="capacity">Capacity</button>
-        <button class="tab" data-page="ctp">CTP</button>
-        <button class="tab" data-page="scenarios">Scenarios</button>
-        <button class="tab" data-page="bom">BOM Explosion</button>
-        <button class="tab" data-page="master">Master Data</button>
+
+        <!-- Spacer -->
+        <div style="flex:1"></div>
+
+        <!-- More Tools Menu -->
+        <div style="position:relative;display:inline-block">
+          <button class="tab" id="moreToolsBtn" style="min-width:0">⋮ More</button>
+          <div id="moreToolsMenu" style="display:none;position:absolute;top:100%;right:0;background:var(--card-bg);border:1px solid var(--border);border-radius:.25rem;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:100;min-width:150px">
+            <button class="tab" data-page="campaigns" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">Campaigns</button>
+            <button class="tab" data-page="schedule" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">Schedule</button>
+            <button class="tab" data-page="dispatch" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">Dispatch</button>
+            <button class="tab" data-page="material" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">Material</button>
+            <button class="tab" data-page="capacity" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">Capacity</button>
+            <button class="tab" data-page="ctp" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">CTP</button>
+            <button class="tab" data-page="scenarios" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">Scenarios</button>
+            <button class="tab" data-page="bom" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">BOM</button>
+            <button class="tab" data-page="master" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">Master Data</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -599,9 +610,30 @@ function initBomResizable(){
   });
 }
 
+// Tab click handler
 document.querySelectorAll('#topTabs .tab').forEach(btn=>btn.addEventListener('click', ()=>{
-  activatePage(btn.dataset.page);
+  if(btn.dataset.page) activatePage(btn.dataset.page);
 }));
+
+// More Tools dropdown menu
+const moreToolsBtn = qs('moreToolsBtn');
+const moreToolsMenu = qs('moreToolsMenu');
+if(moreToolsBtn && moreToolsMenu){
+  moreToolsBtn.addEventListener('click', (e)=>{
+    e.stopPropagation();
+    moreToolsMenu.style.display = moreToolsMenu.style.display === 'none' ? 'block' : 'none';
+  });
+
+  moreToolsMenu.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click', ()=>{
+    activatePage(btn.dataset.page);
+    moreToolsMenu.style.display = 'none';
+  }));
+
+  document.addEventListener('click', ()=>{
+    moreToolsMenu.style.display = 'none';
+  });
+}
+
 document.querySelectorAll('[data-page-link]').forEach(btn=>btn.addEventListener('click', ()=>activatePage(btn.dataset.pageLink)));
 
 async function checkHealth(){
