@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="xaps_iframe_app.css">
 </head>
 <body>
+<div id="loadingBar" class="loading-bar"></div>
 <div class="app">
   <div class="shell">
     <div class="top">
@@ -40,16 +41,16 @@
 
     <div class="navbar">
       <div class="tabs" id="topTabs">
-        <button class="tab active" data-page="dashboard"><span class="tab-code">DB</span>Dashboard</button>
-        <button class="tab" data-page="campaigns"><span class="tab-code">CP</span>Campaigns</button>
-        <button class="tab" data-page="schedule"><span class="tab-code">GS</span>Schedule</button>
-        <button class="tab" data-page="orders"><span class="tab-code">SO</span>Sales Orders</button>
-        <button class="tab" data-page="dispatch"><span class="tab-code">EQ</span>Dispatch</button>
-        <button class="tab" data-page="material"><span class="tab-code">MT</span>Material</button>
-        <button class="tab" data-page="capacity"><span class="tab-code">CM</span>Capacity</button>
-        <button class="tab" data-page="scenarios"><span class="tab-code">WF</span>Scenarios</button>
-        <button class="tab" data-page="ctp"><span class="tab-code">CT</span>CTP</button>
-        <button class="tab" data-page="master"><span class="tab-code">MD</span>Master Data</button>
+        <button class="tab active" data-page="dashboard">Dashboard</button>
+        <button class="tab" data-page="campaigns">Campaigns</button>
+        <button class="tab" data-page="schedule">Schedule</button>
+        <button class="tab" data-page="orders">Sales Orders</button>
+        <button class="tab" data-page="dispatch">Dispatch</button>
+        <button class="tab" data-page="material">Material</button>
+        <button class="tab" data-page="capacity">Capacity</button>
+        <button class="tab" data-page="scenarios">Scenarios</button>
+        <button class="tab" data-page="ctp">CTP</button>
+        <button class="tab" data-page="master">Master Data</button>
       </div>
       <div class="page-actions">
         <button class="btn ghost" id="horizonBtn">14-day horizon</button>
@@ -576,6 +577,7 @@ function renderOrders(){
   const pr = qs('orderPriority').value;
   const gr = qs('orderGrade').value;
   let rows = [...(state.orders||[])].filter(o=>{
+    if(!o.SO_ID || !String(o.SO_ID).trim()) return false;
     const text = [o.SO_ID,o.Customer,o.Grade,o.SKU_ID].join(' ').toLowerCase();
     if(search && !text.includes(search)) return false;
     if(pr && String(o.Priority || '').toUpperCase() !== pr.toUpperCase()) return false;
@@ -704,10 +706,11 @@ function buildMaterialTree(rows){
     campaigns[cid].rows.push(r);
   });
 
+  state.materialCampaigns = Object.values(campaigns);
   const tree = qs('materialTree');
-  tree.innerHTML = Object.values(campaigns).map(camp=>{
+  tree.innerHTML = state.materialCampaigns.map((camp, idx)=>{
     return '<div class="tree-item">'+
-      '<div class="tree-node campaign" onclick="selectMaterialCampaign(this,'+escapeHtml(JSON.stringify(camp).replace(/'/g,"&#39;"))+')" data-campaign="'+escapeHtml(camp.id)+'">'+
+      '<div class="tree-node campaign" onclick="selectMaterialCampaign(this,'+idx+')" data-campaign="'+escapeHtml(camp.id)+'">'+
         '<div class="tree-toggle leaf"></div>'+
         '<div class="tree-node-icon">📦</div>'+
         '<span>'+escapeHtml(camp.id)+' · '+escapeHtml(camp.grade)+'</span>'+
@@ -715,16 +718,15 @@ function buildMaterialTree(rows){
     '</div>';
   }).join('');
 
-  if(Object.keys(campaigns).length > 0){
-    const firstCampaign = Object.values(campaigns)[0];
-    renderMaterialDetail(firstCampaign);
+  if(state.materialCampaigns.length > 0){
+    renderMaterialDetail(state.materialCampaigns[0]);
   }
 }
 
-function selectMaterialCampaign(el, campaignData){
+function selectMaterialCampaign(el, idx){
   document.querySelectorAll('.tree-node.campaign').forEach(n=>n.classList.remove('selected'));
   el.classList.add('selected');
-  renderMaterialDetail(campaignData);
+  renderMaterialDetail(state.materialCampaigns[idx]);
 }
 
 function renderMaterialDetail(campaign){
@@ -1159,11 +1161,23 @@ document.querySelectorAll('[data-camp-filter]').forEach(btn=>btn.addEventListene
 document.addEventListener('DOMContentLoaded', async ()=>{
   const d = new Date(Date.now() + 14*86400000);
   qs('ctpDate').value = d.toISOString().slice(0,10);
+
+  const bar = qs('loadingBar');
+  bar.style.width = '10%';
+  bar.style.opacity = '1';
+
   await checkHealth();
+  bar.style.width = '30%';
   await loadRouteManifest();
+  bar.style.width = '50%';
   await loadOrdersOnly();
+  bar.style.width = '65%';
   await loadSkusForCtp();
+  bar.style.width = '80%';
   await loadApplicationState();
+  bar.style.width = '100%';
+
+  setTimeout(()=>{ bar.style.opacity = '0'; }, 300);
 });
 </script>
 </body>

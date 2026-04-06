@@ -10,32 +10,27 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<div id="loadingBar" class="loading-bar"></div>
 <div class="app">
   <div class="shell">
     <div class="navbar">
       <div class="tabs" id="topTabs">
-        <button class="tab active" data-page="dashboard"><span class="tab-code">DB</span>Dashboard</button>
-        <button class="tab" data-page="campaigns"><span class="tab-code">CP</span>Campaigns</button>
-        <button class="tab" data-page="schedule"><span class="tab-code">GS</span>Schedule</button>
-        <button class="tab" data-page="orders"><span class="tab-code">SO</span>Sales Orders</button>
-        <button class="tab" data-page="dispatch"><span class="tab-code">EQ</span>Dispatch</button>
-        <button class="tab" data-page="material"><span class="tab-code">MT</span>Material</button>
-        <button class="tab" data-page="capacity"><span class="tab-code">CM</span>Capacity</button>
-        <button class="tab" data-page="scenarios"><span class="tab-code">WF</span>Scenarios</button>
-        <button class="tab" data-page="ctp"><span class="tab-code">CT</span>CTP</button>
-        <button class="tab" data-page="bom"><span class="tab-code">BM</span>BOM Explosion</button>
-        <button class="tab" data-page="master"><span class="tab-code">MD</span>Master Data</button>
+        <button class="tab active" data-page="dashboard">Dashboard</button>
+        <button class="tab" data-page="campaigns">Campaigns</button>
+        <button class="tab" data-page="schedule">Schedule</button>
+        <button class="tab" data-page="orders">Sales Orders</button>
+        <button class="tab" data-page="dispatch">Dispatch</button>
+        <button class="tab" data-page="material">Material</button>
+        <button class="tab" data-page="capacity">Capacity</button>
+        <button class="tab" data-page="scenarios">Scenarios</button>
+        <button class="tab" data-page="ctp">CTP</button>
+        <button class="tab" data-page="bom">BOM Explosion</button>
+        <button class="tab" data-page="master">Master Data</button>
       </div>
     </div>
 
     <div class="top">
       <div class="top-controls">
-        <div class="status-group">
-          <div class="chip" id="chipApi"><span class="dot"></span><span id="chipApiText">API unknown</span></div>
-          <div class="chip success" id="chipSolver"><span class="dot"></span><span id="chipSolverText">Solver —</span></div>
-          <div class="chip warn"><span class="dot"></span><span id="chipHeld">— on hold</span></div>
-          <div class="chip danger"><span class="dot"></span><span id="chipLate">— late</span></div>
-        </div>
         <div class="control-group">
           <select class="sel" id="horizonSelect">
             <option value="7">7 Days Horizon</option>
@@ -176,7 +171,7 @@
       </section>
 
       <section class="page" id="page-material">
-        <div class="page-header"><div><div class="page-title">Material</div><div class="page-sub">Campaign-by-campaign material allocation and shortage trace.</div></div></div>
+        <div class="page-header"><div><div class="page-title">Material</div><div class="page-sub">Material plan and hold rows from the material endpoints.</div></div></div>
         <div class="grid-4" style="margin-bottom:.75rem">
           <div class="metric success"><div class="metric-label">OK</div><div class="metric-value" id="matOk">—</div></div>
           <div class="metric warn"><div class="metric-label">Low / hold</div><div class="metric-value" id="matLow">—</div></div>
@@ -185,7 +180,7 @@
         </div>
         <div class="material-split-container">
           <div class="material-tree-panel">
-            <div class="material-tree-header">Campaigns</div>
+            <div class="material-tree-header">Campaigns & Plants</div>
             <div class="material-tree" id="materialTree"></div>
           </div>
           <div class="material-split-divider" id="materialDivider"></div>
@@ -314,7 +309,16 @@
       </section>
     </div>
 
-
+    <div class="status-footer">
+      <div class="status-footer-content">
+        <div class="status-group">
+          <div class="chip" id="chipApi"><span class="dot"></span><span id="chipApiText">API unknown</span></div>
+          <div class="chip success" id="chipSolver"><span class="dot"></span><span id="chipSolverText">Solver —</span></div>
+          <div class="chip warn"><span class="dot"></span><span id="chipHeld">— on hold</span></div>
+          <div class="chip danger"><span class="dot"></span><span id="chipLate">— late</span></div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -385,7 +389,6 @@ function activatePage(page){
   if(page === 'material') initMaterialResizable();
   if(page === 'bom') initBomResizable();
 }
-
 function initMaterialResizable(){
   const divider = qs('materialDivider');
   if(!divider) return;
@@ -551,31 +554,39 @@ function renderSchedule(){
   const t0 = starts.length ? new Date(Math.min(...starts)) : new Date();
   t0.setHours(0,0,0,0);
   const horizonMs = days*86400000;
-  const resources = [...new Set(jobs.map(j=>j.Resource_ID))].filter(Boolean).sort((a,b)=>{
-    const order=['BF','EAF','LRF','VD','CCM','RM'];
-    const ga=order.findIndex(o=>a.startsWith(o));const gb=order.findIndex(o=>b.startsWith(o));
-    return (ga===-1?99:ga)-(gb===-1?99:gb)||a.localeCompare(b);
+
+  // Group by campaign
+  const campaigns = {};
+  jobs.forEach(job=>{
+    const cid = job.Campaign || 'Unknown';
+    if(!campaigns[cid]) campaigns[cid] = {id:cid, grade:job.Grade, jobs:[], minStart:new Date(8640000000000000), maxEnd:new Date(0)};
+    const s = new Date(job.Planned_Start);
+    const e = new Date(job.Planned_End);
+    if(!isNaN(s) && !isNaN(e)){
+      campaigns[cid].jobs.push(job);
+      if(s < campaigns[cid].minStart) campaigns[cid].minStart = s;
+      if(e > campaigns[cid].maxEnd) campaigns[cid].maxEnd = e;
+    }
   });
+
   const dayLabels=Array.from({length:days},(_,i)=>{const d=new Date(t0.getTime()+i*86400000);const m=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return`${d.getDate()}<small>${m[d.getMonth()]}</small>`;});
   wrap.innerHTML='';
-  const hdr=document.createElement('div');hdr.className='gantt-hdr';hdr.innerHTML=`<div class="gantt-res-col">Resource</div><div class="gantt-days">${dayLabels.map(d=>`<div class="gantt-day">${d}</div>`).join('')}</div>`;wrap.appendChild(hdr);
-  const OP_CLS={EAF:'eaf',LRF:'lrf',VD:'vd',CCM:'ccm',RM:'rm'};
-  resources.forEach(resId=>{
-    const resJobs=jobs.filter(j=>j.Resource_ID===resId);
-    const op=(resJobs[0]?.Operation||'').toUpperCase();const opLabel={EAF:'Melting',LRF:'Refining',VD:'Degassing',CCM:'Casting',RM:'Rolling'}[op]||op;
-    const row=document.createElement('div');row.className='gantt-row';row.innerHTML=`<div class="gantt-res-lbl"><div class="rid">${resId}</div><div class="rop">${opLabel}</div></div>`;
+  const hdr=document.createElement('div');hdr.className='gantt-hdr';hdr.innerHTML=`<div class="gantt-res-col" style="font-weight:700">Campaign</div><div class="gantt-days">${dayLabels.map(d=>`<div class="gantt-day">${d}</div>`).join('')}</div>`;wrap.appendChild(hdr);
+
+  Object.values(campaigns).sort((a,b)=>a.id.localeCompare(b.id)).forEach(camp=>{
+    const row=document.createElement('div');row.className='gantt-row';row.innerHTML=`<div class="gantt-res-lbl"><div class="rid">${camp.id}</div><div class="rop" style="font-size:.7rem">${camp.grade||'—'}</div></div>`;
     const tl=document.createElement('div');tl.className='gantt-tl';
-    resJobs.forEach(job=>{
-      const s=new Date(job.Planned_Start);const e=new Date(job.Planned_End);
-      if(isNaN(s)||isNaN(e))return;const left=Math.max(0,(s-t0)/horizonMs*100);const width=Math.max(0.5,(e-s)/horizonMs*100);
-      if(left>100)return;const cls=OP_CLS[(job.Operation||'').toUpperCase()]||'eaf';
-      const bar=document.createElement('div');bar.className=`gantt-job ${cls}`;bar.style.left=left+'%';bar.style.width=Math.min(width,100-left)+'%';
-      bar.innerHTML=`<span>${job.Campaign||''}</span> <span style="opacity:.7;font-size:9px">H${job.Heat_No||''}</span>`;
-      bar.addEventListener('mouseenter',e=>{const tt=document.getElementById('tt');tt.textContent='';tt.innerHTML=`<strong>${job.Campaign} · Heat ${job.Heat_No||'—'}</strong><br>Resource: ${job.Resource_ID}<br>Op: ${job.Operation}<br>Start: ${fmtDate(job.Planned_Start)}<br>End: ${fmtDate(job.Planned_End)}<br>Grade: ${job.Grade||'—'}`;tt.classList.add('show');});
+    const s = camp.minStart; const e = camp.maxEnd;
+    if(!isNaN(s) && !isNaN(e) && s <= e){
+      const left=Math.max(0,(s-t0)/horizonMs*100);
+      const width=Math.max(1,(e-s)/horizonMs*100);
+      const bar=document.createElement('div');bar.className='gantt-job eaf';bar.style.left=left+'%';bar.style.width=Math.min(width,100-left)+'%';
+      bar.innerHTML=`<span>${camp.id}</span> <span style="opacity:.6;font-size:9px">${camp.jobs.length}H</span>`;
+      bar.addEventListener('mouseenter',ev=>{const tt=document.getElementById('tt');tt.innerHTML=`<strong>${camp.id}</strong><br>Grade: ${camp.grade||'—'}<br>Heats: ${camp.jobs.length}<br>Start: ${fmtDate(s)}<br>End: ${fmtDate(e)}`;tt.classList.add('show');});
       bar.addEventListener('mousemove',ev=>{const tt=document.getElementById('tt');tt.style.left=(ev.clientX+14)+'px';tt.style.top=(ev.clientY-10)+'px';});
       bar.addEventListener('mouseleave',()=>{document.getElementById('tt').classList.remove('show');});
       tl.appendChild(bar);
-    });
+    }
     row.appendChild(tl);
     wrap.appendChild(row);
   });
@@ -593,6 +604,7 @@ function renderOrders(){
   const pr = qs('orderPriority').value;
   const gr = qs('orderGrade').value;
   let rows = [...(state.orders||[])].filter(o=>{
+    if(!o.SO_ID || !String(o.SO_ID).trim()) return false;
     const text = [o.SO_ID,o.Customer,o.Grade,o.SKU_ID].join(' ').toLowerCase();
     if(search && !text.includes(search)) return false;
     if(pr && String(o.Priority || '').toUpperCase() !== pr.toUpperCase()) return false;
@@ -700,98 +712,117 @@ function deriveMaterialRows(){
   });
 }
 function renderMaterial(){
-  const material = state.material || { campaigns: [] };
-  const campaigns_data = material.campaigns || [];
+  const rows = (state.material && state.material.length ? state.material : deriveMaterialRows());
+  if(!rows.length){ qs('materialDetailContent').innerHTML = '<div class="material-detail-empty">No material data loaded.</div>'; return; }
 
-  const held_campaigns = campaigns_data.filter(c=>String(c.release_status||'').toUpperCase().includes('HOLD')).length;
-  const ok_campaigns = campaigns_data.length - held_campaigns;
-  setText('matOk', ok_campaigns);
-  setText('matLow', held_campaigns);
-  setText('matCrit', 0);
-  setText('matHeld', held_campaigns);
+  const critical = rows.filter(r=>['CRITICAL','BLOCKED'].includes(String(r.Status || '').toUpperCase())).length;
+  const held = rows.filter(r=>String(r.Status || '').toUpperCase().includes('HOLD')).length;
+  setText('matOk', Math.max(rows.length - held - critical, 0));
+  setText('matLow', held);
+  setText('matCrit', critical);
+  setText('matHeld', held);
 
-  buildMaterialTree(campaigns_data);
+  buildMaterialTree(rows);
 }
 
-function buildMaterialTree(campaigns){
-  state.materialCampaigns = campaigns;
-  const tree = qs('materialTree');
-  if(!campaigns.length){
-    tree.innerHTML = '<div style="padding:1rem;text-align:center;color:var(--text-faint);font-size:.8rem">No campaigns</div>';
-    qs('materialDetailContent').innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-faint)">Run Schedule to populate</div>';
-    return;
-  }
+function buildMaterialTree(rows){
+  const campaigns = {};
+  rows.forEach(r=>{
+    const cid = r.Campaign_ID || 'Unknown';
+    if(!campaigns[cid]) campaigns[cid] = {id:cid, grade:r.Grade, rows:[], shortageCount:0};
+    campaigns[cid].rows.push(r);
+    if(String(r.Status||'').toUpperCase().includes('SHORT') || String(r.Status||'').toUpperCase().includes('HOLD')){
+      campaigns[cid].shortageCount++;
+    }
+  });
 
-  tree.innerHTML = campaigns.map((camp,idx)=>{
+  state.materialCampaigns = Object.values(campaigns).sort((a,b)=>b.shortageCount - a.shortageCount);
+  const tree = qs('materialTree');
+  tree.innerHTML = state.materialCampaigns.map((camp, idx)=>{
+    const statusIcon = camp.shortageCount > 0 ? '⚠️' : '✓';
+    const statusLabel = camp.shortageCount > 0 ? camp.shortageCount + ' blocked' : 'Ready';
     return '<div class="tree-item">'+
-      '<div class="tree-node campaign" onclick="selectMaterialCampaign(this,'+idx+')" data-campaign="'+escapeHtml(camp.campaign_id || 'unknown')+'">'+
+      '<div class="tree-node campaign" onclick="selectMaterialCampaign(this,'+idx+')" data-campaign="'+escapeHtml(camp.id)+'">'+
         '<div class="tree-toggle leaf"></div>'+
-        '<div class="tree-node-icon">📦</div>'+
-        '<span>'+escapeHtml((camp.campaign_id||'—')+' · '+(camp.grade||'—'))+'</span>'+
+        '<div class="tree-node-icon">'+statusIcon+'</div>'+
+        '<span>'+escapeHtml(camp.id)+' <span style="font-size:.75rem;color:var(--text-faint)">'+escapeHtml(camp.grade)+' — '+statusLabel+'</span></span>'+
       '</div>'+
     '</div>';
   }).join('');
 
-  if(campaigns.length > 0) selectMaterialCampaign(null, 0);
+  if(state.materialCampaigns.length > 0){
+    renderMaterialDetail(state.materialCampaigns[0]);
+  }
 }
 
 function selectMaterialCampaign(el, idx){
-  if(el) {
-    document.querySelectorAll('.tree-node.campaign').forEach(n=>n.classList.remove('selected'));
-    el.classList.add('selected');
-  }
-  const campaign = state.materialCampaigns[idx];
-  renderMaterialDetail(campaign);
+  document.querySelectorAll('.tree-node.campaign').forEach(n=>n.classList.remove('selected'));
+  el.classList.add('selected');
+  renderMaterialDetail(state.materialCampaigns[idx]);
 }
 
 function renderMaterialDetail(campaign){
-  if(!campaign || !campaign.plants || !campaign.plants.length){
-    qs('materialDetailContent').innerHTML = '<div style="padding:2rem;text-align:center;color:var(--text-faint)">No material data</div>';
+  const rows = campaign.rows || [];
+  if(!rows.length){
+    qs('materialDetailContent').innerHTML = '<div class="material-detail-empty">No materials for this campaign.</div>';
     return;
   }
+  const campaignId = campaign.id || 'Unknown';
+  const grade = campaign.grade || '—';
+  const totalQty = rows.reduce((a,r)=>a+num(r.Required_Qty || r.Shortage_Qty || 0),0);
+  const shortageRows = rows.filter(r=>String(r.Status||'').toUpperCase().includes('SHORT'));
+  const holdRows = rows.filter(r=>String(r.Status||'').toUpperCase().includes('HOLD'));
+  const readyRows = rows.filter(r=>!String(r.Status||'').toUpperCase().includes('SHORT') && !String(r.Status||'').toUpperCase().includes('HOLD'));
+  const shortageQty = shortageRows.reduce((a,r)=>a+num(r.Required_Qty || r.Shortage_Qty || 0),0);
+  const holdQty = holdRows.reduce((a,r)=>a+num(r.Required_Qty || r.Shortage_Qty || 0),0);
 
-  const totalRequired = campaign.plants.reduce((a,p)=>a+(p.required_qty||0), 0);
-  const totalCovered = campaign.plants.reduce((a,p)=>a+(p.inventory_covered_qty||0), 0);
-  const totalShortage = totalRequired - totalCovered;
-
-  let html = '<div style="margin-bottom:1.5rem">'+
-    '<div style="font-size:1.05rem;font-weight:800;color:var(--text);margin-bottom:.3rem">'+escapeHtml(campaign.campaign_id||'—')+'</div>'+
-    '<div style="font-size:.8rem;color:var(--text-soft);margin-bottom:.8rem">'+escapeHtml(campaign.grade||'—')+' · '+badgeForStatus(campaign.release_status||'OPEN')+'</div>'+
-    '<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;margin-bottom:1.5rem">'+
-      '<div style="padding:.75rem;background:var(--panel-soft);border-radius:.6rem;border:1px solid var(--border-soft)">'+
-        '<div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:700">Total Required</div>'+
-        '<div style="font-size:1.1rem;font-weight:800;color:var(--text);margin-top:.3rem">'+totalRequired.toFixed(1)+' MT</div>'+
-      '</div>'+
-      '<div style="padding:.75rem;background:var(--panel-soft);border-radius:.6rem;border:1px solid var(--border-soft)">'+
-        '<div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:700">From Inventory</div>'+
-        '<div style="font-size:1.1rem;font-weight:800;color:var(--text);margin-top:.3rem">'+totalCovered.toFixed(1)+' MT</div>'+
-      '</div>'+
-      '<div style="padding:.75rem;background:var(--panel-soft);border-radius:.6rem;border:1px solid var(--border-soft)">'+
-        '<div style="font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:700">Shortage</div>'+
-        '<div style="font-size:1.1rem;font-weight:800;color:'+(totalShortage>0?'var(--danger)':'var(--success)')+';margin-top:.3rem">'+totalShortage.toFixed(1)+' MT</div>'+
-      '</div>'+
-    '</div>'+
+  let html = '<div class="material-detail-header">'+
+    '<div class="material-detail-title">'+escapeHtml(campaignId)+'</div>'+
+    '<div class="material-detail-subtitle">'+escapeHtml(grade)+' – '+totalQty.toFixed(1)+' MT total</div>'+
+  '</div>'+
+  '<div class="material-detail-stats">'+
+    '<div class="material-detail-stat" style="background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.3)"><div class="material-detail-stat-label">Ready</div><div class="material-detail-stat-value" style="color:#16a34a">'+readyRows.length+'</div></div>'+
+    '<div class="material-detail-stat" style="background:rgba(220,38,38,.1);border-color:rgba(220,38,38,.3)"><div class="material-detail-stat-label">Shortage</div><div class="material-detail-stat-value" style="color:#dc2626">'+shortageQty.toFixed(0)+' MT</div></div>'+
+    '<div class="material-detail-stat" style="background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.3)"><div class="material-detail-stat-label">Hold</div><div class="material-detail-stat-value" style="color:#f59e0b">'+holdQty.toFixed(0)+' MT</div></div>'+
   '</div>';
 
-  html += campaign.plants.map(plant=>{
-    const plantRequired = plant.required_qty || 0;
-    const plantCovered = plant.inventory_covered_qty || 0;
-    return '<div style="margin-bottom:1.5rem">'+
-      '<div style="font-size:.9rem;font-weight:700;padding:.6rem .8rem;background:var(--panel-soft);border-left:3px solid #7c3aed;margin-bottom:.75rem">'+escapeHtml(plant.plant||'UNKNOWN')+'</div>'+
-      '<div style="display:flex;flex-direction:column;gap:.5rem">'+
-        (plant.rows||[]).map(row=>'<div style="padding:.6rem .8rem;background:var(--panel-soft);border:1px solid var(--border-soft);border-radius:.5rem;font-size:.8rem">'+
-          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.3rem">'+
-            '<div><div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:600">SKU</div><div style="font-weight:600;color:var(--text)">'+escapeHtml(row.material_sku||'—')+'</div></div>'+
-            '<div><div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:600">Required</div><div style="font-weight:600;color:var(--text)">'+(row.required_qty||0).toFixed(1)+' MT</div></div>'+
-          '</div>'+
-          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.3rem">'+
-            '<div><div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:600">Available</div><div style="font-weight:600;color:var(--text)">'+(row.available_before||0).toFixed(1)+' MT</div></div>'+
-            '<div><div style="font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:600">Status</div><span style="display:inline-block;padding:.2rem .5rem;border-radius:.3rem;font-size:.7rem;font-weight:700;text-transform:uppercase;background:'+(row.status==='STOCK'?'rgba(34,197,94,.15)':row.status==='SHORT'?'rgba(220,38,38,.15)':'rgba(217,119,6,.15)');color:'+(row.status==='STOCK'?'#16a34a':row.status==='SHORT'?'#dc2626':'#d97706')+'">'+escapeHtml(row.status||'OK')+'</span></div>'+
-          '</div>'+
-        '</div>').join('')+
-      '</div>'+
+  if(holdRows.length > 0){
+    html += '<div style="margin-top:1.5rem">'+
+      '<div style="font-weight:700;color:var(--text);font-size:.9rem;padding:.6rem .8rem;background:rgba(245,158,11,.1);border-left:3px solid #f59e0b">🚫 On Hold – Blocks Execution</div>'+
+      '<table class="material-detail-table" style="margin-top:.5rem"><thead><tr><th>Material</th><th style="text-align:right">Required</th><th style="text-align:right">Available</th></tr></thead><tbody>'+
+        holdRows.map(r=>'<tr style="background:rgba(245,158,11,.05)">'+
+          '<td><strong>'+escapeHtml(r.Material_SKU || r.Shortage_SKU || '—')+'</strong></td>'+
+          '<td style="text-align:right">'+num(r.Required_Qty || r.Shortage_Qty || 0).toFixed(1)+' MT</td>'+
+          '<td style="text-align:right;color:#dc2626">'+num(r.Available_Qty || 0).toFixed(1)+' MT</td>'+
+        '</tr>').join('')+
+      '</tbody></table></div>';
+  }
+
+  if(shortageRows.length > 0){
+    html += '<div style="margin-top:1.5rem">'+
+      '<div style="font-weight:700;color:var(--text);font-size:.9rem;padding:.6rem .8rem;background:rgba(220,38,38,.1);border-left:3px solid #dc2626">⚠️ Shortage – Partial Coverage</div>'+
+      '<table class="material-detail-table" style="margin-top:.5rem"><thead><tr><th>Material</th><th style="text-align:right">Required</th><th style="text-align:right">Available</th><th style="text-align:right">Deficit</th></tr></thead><tbody>'+
+        shortageRows.map(r=>{
+          const req = num(r.Required_Qty || r.Shortage_Qty || 0);
+          const avail = num(r.Available_Qty || 0);
+          const deficit = Math.max(0, req - avail);
+          return '<tr style="background:rgba(220,38,38,.05)">'+
+            '<td><strong>'+escapeHtml(r.Material_SKU || r.Shortage_SKU || '—')+'</strong></td>'+
+            '<td style="text-align:right">'+req.toFixed(1)+' MT</td>'+
+            '<td style="text-align:right">'+avail.toFixed(1)+' MT</td>'+
+            '<td style="text-align:right;color:#dc2626;font-weight:600">-'+deficit.toFixed(1)+' MT</td>'+
+          '</tr>';
+        }).join('')+
+      '</tbody></table></div>';
+  }
+
+  if(readyRows.length > 0 && holdRows.length === 0 && shortageRows.length === 0){
+    html += '<div style="margin-top:2rem;padding:2rem;text-align:center;color:var(--text-faint)">'+
+      '<div style="font-size:2.5rem;margin-bottom:.5rem">✓</div>'+
+      '<div style="font-weight:600">All materials available</div>'+
+      '<div style="font-size:.85rem;margin-top:.5rem">This campaign has no material constraints</div>'+
     '</div>';
-  }).join('');
+  }
 
   qs('materialDetailContent').innerHTML = html;
 }
@@ -1352,10 +1383,21 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   qs('horizonSelect').value = state.horizon;
   const d = new Date(Date.now() + state.horizon*86400000);
   qs('ctpDate').value = d.toISOString().slice(0,10);
+
+  const bar = qs('loadingBar');
+  bar.style.width = '10%';
+  bar.style.opacity = '1';
+
   await checkHealth();
+  bar.style.width = '30%';
   await loadOrdersOnly();
+  bar.style.width = '50%';
   await loadSkusForCtp();
+  bar.style.width = '75%';
   await loadApplicationState();
+  bar.style.width = '100%';
+
+  setTimeout(()=>{ bar.style.opacity = '0'; }, 300);
 });
 </script>
 </body>

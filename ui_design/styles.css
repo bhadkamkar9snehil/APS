@@ -104,26 +104,34 @@ textarea {
   box-shadow: 0 .125rem .25rem rgba(15, 23, 42, .05), 0 1.25rem 2.5rem rgba(15, 23, 42, .08);
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 .top {
   border-bottom: 1px solid var(--border-soft);
   background: white;
+  flex-shrink: 0;
+  flex-direction: column;
+  display: flex;
 }
 
 .top-summary {
   padding: 0.6rem 1rem 0.75rem;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
 .top-controls {
   padding: 0.5rem 1rem;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-start;
   align-items: center;
   gap: var(--spacing-md);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
   background: rgba(0, 0, 0, 0.015);
   border-bottom: 1px solid rgba(0,0,0,0.04);
+  overflow: hidden;
 }
 
 .status-group,
@@ -141,7 +149,7 @@ textarea {
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: var(--spacing-sm);
+  gap: 0.5rem;
   min-width: 0;
   flex: 1
 }
@@ -400,14 +408,18 @@ textarea {
   padding:.45rem 1rem;
   border-bottom:1px solid var(--border-soft);
   background:rgba(255,255,255,0.8);
-  display:flex;align-items:center;justify-content:center;gap: var(--spacing-sm)
+  display:flex;align-items:center;justify-content:center;gap: var(--spacing-sm);
+  flex-shrink: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .tabs {
   display: flex;
   gap: var(--spacing-xs);
   align-items: center;
-  flex-wrap: wrap
+  flex-wrap: nowrap;
+  flex-shrink: 0;
 }
 
 .tab {
@@ -455,7 +467,34 @@ textarea {
 .body {
   flex: 1;
   overflow: auto;
-  padding: 0.5rem 0.6rem 1rem;
+  padding: 0.5rem 0.6rem 0.5rem;
+  min-height: 0;
+  padding-bottom: 3.2rem;
+}
+
+.status-footer {
+  position: fixed;
+  bottom: 0.5rem;
+  left: 0.5rem;
+  right: 0.5rem;
+  background: var(--shell);
+  border: 1px solid var(--border-soft);
+  border-radius: 0.4rem;
+  padding: 0.6rem 1rem;
+  display: flex;
+  align-items: center;
+  height: 2.5rem;
+  box-shadow: 0 -1px 3px rgba(15, 23, 42, .05);
+  z-index: 10;
+}
+
+.status-footer-content {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  flex-wrap: nowrap;
+  overflow-x: auto;
 }
 
 .page {
@@ -1902,26 +1941,58 @@ code.inline {
 .bom-item-badge.input{border:1px solid rgba(124,58,237,.3);color:#7c3aed}
 .bom-item-badge.byproduct{border:1px solid rgba(37,99,235,.3);color:#2563eb}
 
-/* Material Split Panel Layout */
-.material-split-container{display:flex;gap:0;height:calc(100vh - 400px);background:#fff}
+/* Material Split Layout */
+.material-split-container{display:flex;gap:0;height:calc(100vh - 460px);background:#fff}
 .material-tree-panel{flex:0 0 280px;border:1px solid var(--border);border-radius:1rem;display:flex;flex-direction:column;background:var(--panel);overflow:hidden}
 .material-tree-header{padding:.75rem 1rem;background:var(--panel-muted);border-bottom:1px solid var(--border-soft);font-size:.8rem;font-weight:700;color:var(--text);text-transform:uppercase;letter-spacing:.05em}
 .material-tree{flex:1;overflow:auto;padding:.5rem}
 .material-split-divider{flex:0 0 1px;background:var(--border);cursor:col-resize;transition:background .2s}
-.material-split-divider:hover{background:#7c3aed}
+.material-split-divider:hover{background:var(--brand)}
 .material-detail-panel{flex:1;border:1px solid var(--border);border-radius:1rem;display:flex;flex-direction:column;background:var(--panel);overflow:hidden;margin-left:.5rem}
-#materialDetailContent{flex:1;overflow:auto;padding:1rem}
 
-/* Tree Navigation */
+/* Tree Structure */
 .tree-item{margin:0;padding:0;list-style:none}
 .tree-node{display:flex;align-items:center;padding:.4rem .5rem;font-size:.8rem;cursor:pointer;user-select:none;color:var(--text);border-radius:.4rem}
 .tree-node:hover{background:var(--panel-soft)}
-.tree-node.selected{background:#f4efff;color:#7c3aed;font-weight:600}
+.tree-node.selected{background:var(--brand-soft);color:var(--brand);font-weight:600}
 .tree-toggle{display:inline-flex;align-items:center;justify-content:center;width:1.2rem;height:1.2rem;margin-right:.2rem;font-size:.6rem;color:var(--text-faint);cursor:pointer;flex-shrink:0}
 .tree-toggle.collapsed::before{content:'▶'}
 .tree-toggle.expanded::before{content:'▼'}
 .tree-toggle.leaf{visibility:hidden}
+.tree-children{margin-left:1rem;display:none}
+.tree-children.open{display:block}
 .tree-node-icon{width:.8rem;height:.8rem;margin-right:.3rem;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;font-size:.65rem}
+.tree-node.campaign .tree-node-icon{color:var(--info)}
+.tree-node.plant .tree-node-icon{color:var(--warning)}
+
+/* Material Detail Panel Content */
+#materialDetailContent{flex:1;overflow:auto;padding:1rem}
+.material-detail-empty{text-align:center;color:var(--text-faint);padding:2rem}
+.material-detail-header{margin-bottom:1.5rem}
+.material-detail-title{font-size:1.05rem;font-weight:800;color:var(--text);margin-bottom:.3rem}
+.material-detail-subtitle{font-size:.8rem;color:var(--text-soft);margin-bottom:.5rem}
+.material-detail-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem;margin-bottom:1.5rem}
+.material-detail-stat{padding:.75rem;background:var(--panel-soft);border-radius:.6rem;border:1px solid var(--border-soft)}
+.material-detail-stat-label{font-size:.65rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint);font-weight:700}
+.material-detail-stat-value{font-size:1.1rem;font-weight:800;color:var(--text);margin-top:.3rem}
+.material-detail-table{width:100%;border-collapse:collapse;font-size:.8rem}
+.material-detail-table thead{background:var(--panel-soft);border-bottom:1px solid var(--border-soft)}
+.material-detail-table th{padding:.6rem .8rem;text-align:left;font-weight:700;color:var(--text);text-transform:uppercase;font-size:.7rem;letter-spacing:.05em}
+.material-detail-table td{padding:.6rem .8rem;border-bottom:1px solid var(--border-soft);color:var(--text)}
+.material-detail-table tbody tr:hover{background:var(--panel-soft)}
+
+/* Loading Progress Bar */
+.loading-bar{
+  position:fixed;
+  top:0;left:0;
+  height:3px;
+  background:linear-gradient(90deg, #7c3aed, #0f9f8c);
+  width:0%;
+  opacity:0;
+  z-index:9999;
+  transition:width 0.3s ease, opacity 0.3s ease;
+  box-shadow:0 0 10px rgba(124,58,237,.6);
+}
 
 @media (max-width:760px) {
   .app {

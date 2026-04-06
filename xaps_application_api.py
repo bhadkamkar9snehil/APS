@@ -1917,6 +1917,8 @@ def aps_dashboard_overview():
 @app.route('/api/aps/orders/list')
 def aps_orders_list():
     items = _sheet_items('sales-orders', search=request.args.get('search'))
+    # Filter out rows with null/empty SO_ID
+    items = [x for x in items if x.get('SO_ID')]
     priority = request.args.get('priority')
     grade = request.args.get('grade')
     if priority:

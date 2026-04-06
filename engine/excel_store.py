@@ -90,6 +90,13 @@ class ExcelStore:
         headers, rows = self._iter_records_with_rows(cfg)
         items = [deepcopy(r) for _, r in rows]
 
+        # Filter out rows with null/empty key field (data integrity check)
+        if cfg.key_field:
+            items = [
+                x for x in items
+                if x.get(cfg.key_field) and str(x.get(cfg.key_field, '')).strip()
+            ]
+
         if filters:
             def match_filters(item: Dict[str, Any]) -> bool:
                 for k, expected in filters.items():
