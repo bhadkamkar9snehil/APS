@@ -39,7 +39,7 @@ from flask import Flask, request
 from flask_cors import CORS
 
 sys.path.insert(0, str(Path(__file__).parent))
-from engine.aps_planner import APSPlanner, SalesOrder, PlanningHorizon
+from engine.aps_planner import APSPlanner, SalesOrder, PlanningHorizon, HeatBatch
 from engine.bom_explosion import consolidate_demand, explode_bom_details, net_requirements
 from engine.campaign import build_campaigns
 from engine.capacity import capacity_map, compute_demand_hours
@@ -2444,15 +2444,23 @@ def aps_planning_heats_derive():
 def aps_planning_simulate():
     """Simulate: Run finite scheduler on heats and return feasibility."""
     try:
+        from engine.aps_planner import HeatBatch
         payload = request.get_json(silent=True) or {}
+        heats_data = payload.get('heat_batches', [])
 
-        # Use the heat batches stored during derive step
-        if not hasattr(aps_planning_simulate, '_heat_batches'):
-            aps_planning_simulate._heat_batches = []
+        if not heats_data:
+            return _jsonify({
+                'feasible': False,
+                'total_duration_hours': 0,
+                'sms_hours': 0,
+                'rm_hours': 0,
+                'load_factor': '0%',
+                'message': 'No heat batches provided for simulation',
+            })
 
-        # Reconstruct heat batch objects from stored data
+        # Reconstruct heat batch objects from request data
         heat_batches = []
-        for h in aps_planning_simulate._heat_batches:
+        for h in heats_data:
             if isinstance(h, dict):
                 heat = HeatBatch(
                     heat_id=h.get('heat_id', f'HEAT-{len(heat_batches)+1}'),
@@ -2479,6 +2487,7 @@ def aps_planning_simulate():
             'message': result.get('message'),
         })
     except Exception as e:
+        import traceback
         return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
 
 
