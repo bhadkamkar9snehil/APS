@@ -140,7 +140,7 @@ button,input,select,textarea{font:inherit}
   border:1px solid var(--border);
   border-radius:1rem;
   box-shadow:var(--shadow-soft);
-  overflow:hidden;
+  overflow:visible;
 }
 .card-header{
   padding:.82rem .95rem;

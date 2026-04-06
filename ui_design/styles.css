@@ -574,7 +574,7 @@ textarea {
   border: 1px solid var(--border);
   border-radius: 0.4rem;
   box-shadow: var(--shadow-soft);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .card-header {
