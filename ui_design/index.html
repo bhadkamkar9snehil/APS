@@ -124,8 +124,7 @@
           <div><div class="page-title">Schedule</div><div class="page-sub">Finite timeline generated from <code class="inline">/api/aps/schedule/gantt</code>.</div></div>
           <div class="page-actions"><button class="btn ghost" id="patchJobBtn">Patch Job</button></div>
         </div>
-        <div class="notice">This screen stays iframe-friendly, but the bars below are now based on live schedule data rather than static placeholders.</div>
-        <div class="card"><div class="card-body"><div class="gantt-wrap"><div id="scheduleTimeline"></div><div id="tt"></div></div></div></div>
+        <div class="card" style="display:flex;flex-direction:column;height:calc(100vh - 200px)"><div class="card-body" style="padding:0;overflow:auto;flex:1;min-height:0"><div class="gantt-wrap"><div id="scheduleTimeline"></div><div id="tt"></div></div></div></div>
       </section>
 
       <section class="page" id="page-orders">
