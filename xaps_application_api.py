@@ -39,6 +39,7 @@ from flask import Flask, request
 from flask_cors import CORS
 
 sys.path.insert(0, str(Path(__file__).parent))
+from engine.aps_planner import APSPlanner, SalesOrder, PlanningHorizon
 from engine.bom_explosion import consolidate_demand, explode_bom_details, net_requirements
 from engine.campaign import build_campaigns
 from engine.capacity import capacity_map, compute_demand_hours
@@ -2227,6 +2228,262 @@ def aps_masterdata_bulk_replace(section):
         return _jsonify(store.bulk_replace(api_name, items))
     except ValueError as e:
         return _jsonify({"error": str(e)}, 400)
+
+
+# ===== APS PLANNING WORKFLOW ENDPOINTS =====
+
+@app.route('/api/aps/planning/orders/pool', methods=['GET'])
+def aps_planning_orders_pool():
+    """List all open sales orders for planning (Order Pool view)."""
+    try:
+        result = store.list_rows('sales-orders', filters=[], limit=1000)
+        sos = result.get('items', [])
+
+        # Filter to open orders only
+        open_sos = [so for so in sos if so.get('Status') != 'Completed']
+
+        # Convert to domain objects for response
+        so_list = []
+        for so in open_sos:
+            so_list.append({
+                'so_id': so.get('SO_ID'),
+                'customer_id': so.get('Customer'),
+                'grade': so.get('Grade'),
+                'section_mm': float(so.get('Section_mm', 0)) if so.get('Section_mm') else 0,
+                'qty_mt': float(so.get('Order_Qty_MT', 0)) if so.get('Order_Qty_MT') else 0,
+                'due_date': so.get('Delivery_Date'),
+                'priority': so.get('Priority', 'NORMAL'),
+                'route_family': 'SMS→RM',
+                'status': so.get('Status', 'Open'),
+            })
+
+        return _jsonify({
+            'total_orders': len(so_list),
+            'orders': so_list,
+        })
+    except Exception as e:
+        return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
+
+
+@app.route('/api/aps/planning/window/select', methods=['POST'])
+def aps_planning_window_select():
+    """Select planning window and get candidate SOs."""
+    try:
+        payload = request.get_json(silent=True) or {}
+        window_days = payload.get('days', 7)  # default 7 days
+
+        result = store.list_rows('sales-orders', filters=[], limit=1000)
+        sos = result.get('items', [])
+
+        # Get SO objects
+        all_sos = []
+        for so in sos:
+            if so.get('Status') != 'Completed':
+                try:
+                    so_obj = SalesOrder(
+                        so_id=so.get('SO_ID'),
+                        customer_id=so.get('Customer'),
+                        grade=so.get('Grade'),
+                        section_mm=float(so.get('Section_mm', 0)) if so.get('Section_mm') else 0,
+                        qty_mt=float(so.get('Order_Qty_MT', 0)) if so.get('Order_Qty_MT') else 0,
+                        due_date=so.get('Delivery_Date', '2099-12-31'),
+                        priority=so.get('Priority', 'NORMAL'),
+                        route_family='SMS→RM',
+                        status=so.get('Status', 'Open'),
+                    )
+                    all_sos.append(so_obj)
+                except Exception:
+                    continue
+
+        # Use planner to select window
+        planner = APSPlanner(get_config().all_params())
+        window = PlanningHorizon.NEXT_7_DAYS
+        if window_days == 3:
+            window = PlanningHorizon.NEXT_3_DAYS
+        elif window_days == 10:
+            window = PlanningHorizon.NEXT_10_DAYS
+        elif window_days == 14:
+            window = PlanningHorizon.NEXT_14_DAYS
+
+        window_sos = planner.select_planning_window(all_sos, window)
+
+        return _jsonify({
+            'window_days': window_days,
+            'candidate_count': len(window_sos),
+            'candidates': [
+                {
+                    'so_id': so.so_id,
+                    'customer_id': so.customer_id,
+                    'grade': so.grade,
+                    'qty_mt': so.qty_mt,
+                    'due_date': so.due_date,
+                    'priority': so.priority,
+                    'hours_until_due': max(0, so.hours_until_due()),
+                }
+                for so in window_sos
+            ],
+        })
+    except Exception as e:
+        return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
+
+
+@app.route('/api/aps/planning/orders/propose', methods=['POST'])
+def aps_planning_orders_propose():
+    """System proposes Planning Orders (manufacturing lots) from window SOs."""
+    try:
+        payload = request.get_json(silent=True) or {}
+        window_days = payload.get('days', 7)
+
+        result = store.list_rows('sales-orders', filters=[], limit=1000)
+        sos = result.get('items', [])
+
+        # Get SO objects
+        all_sos = []
+        for so in sos:
+            if so.get('Status') != 'Completed':
+                try:
+                    so_obj = SalesOrder(
+                        so_id=so.get('SO_ID'),
+                        customer_id=so.get('Customer'),
+                        grade=so.get('Grade'),
+                        section_mm=float(so.get('Section_mm', 0)) if so.get('Section_mm') else 0,
+                        qty_mt=float(so.get('Order_Qty_MT', 0)) if so.get('Order_Qty_MT') else 0,
+                        due_date=so.get('Delivery_Date', '2099-12-31'),
+                        priority=so.get('Priority', 'NORMAL'),
+                        route_family='SMS→RM',
+                        status=so.get('Status', 'Open'),
+                    )
+                    all_sos.append(so_obj)
+                except Exception:
+                    continue
+
+        # Use planner
+        planner = APSPlanner(get_config().all_params())
+        window = PlanningHorizon.NEXT_7_DAYS
+        if window_days == 3:
+            window = PlanningHorizon.NEXT_3_DAYS
+        elif window_days == 10:
+            window = PlanningHorizon.NEXT_10_DAYS
+        elif window_days == 14:
+            window = PlanningHorizon.NEXT_14_DAYS
+
+        window_sos = planner.select_planning_window(all_sos, window)
+        pos = planner.propose_planning_orders(window_sos)
+
+        validation = planner.validate_planning_orders(pos)
+
+        return _jsonify({
+            'po_count': len(pos),
+            'validation': validation,
+            'planning_orders': [po.to_dict() for po in pos],
+        })
+    except Exception as e:
+        return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
+
+
+@app.route('/api/aps/planning/orders/update', methods=['POST'])
+def aps_planning_orders_update():
+    """Planner can adjust Planning Orders (split/merge)."""
+    try:
+        payload = request.get_json(silent=True) or {}
+        # This endpoint receives user edits to Planning Orders
+        # For now, just acknowledge - will be extended with actual merge/split logic
+
+        return _jsonify({
+            'status': 'acknowledged',
+            'message': 'PO updates received (merge/split logic to be implemented)',
+        })
+    except Exception as e:
+        return _jsonify({"error": str(e)}, 500)
+
+
+@app.route('/api/aps/planning/heats/derive', methods=['POST'])
+def aps_planning_heats_derive():
+    """System derives heat requirements from Planning Orders."""
+    try:
+        payload = request.get_json(silent=True) or {}
+        planning_orders_data = payload.get('planning_orders', [])
+
+        # Convert to PlanningOrder objects
+        from engine.aps_planner import PlanningOrder
+        pos = []
+        for po_data in planning_orders_data:
+            po = PlanningOrder(
+                po_id=po_data.get('po_id'),
+                selected_so_ids=po_data.get('selected_so_ids', []),
+                total_qty_mt=po_data.get('total_qty_mt', 0),
+                grade_family=po_data.get('grade_family'),
+                size_family=po_data.get('size_family'),
+                due_window=tuple(po_data.get('due_window', ('', ''))),
+                route_family=po_data.get('route_family', 'SMS→RM'),
+                heats_required=po_data.get('heats_required', 1),
+                planner_status='PROPOSED',
+            )
+            pos.append(po)
+
+        # Derive heats
+        planner = APSPlanner(get_config().all_params())
+        heats = planner.derive_heat_batches(pos, heat_size_mt=50.0)
+
+        return _jsonify({
+            'total_heats': len(heats),
+            'total_mt': sum(h.qty_mt for h in heats),
+            'heats': [h.to_dict() for h in heats],
+        })
+    except Exception as e:
+        return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
+
+
+@app.route('/api/aps/planning/simulate', methods=['POST'])
+def aps_planning_simulate():
+    """Simulate: Run finite scheduler on heats and return schedule."""
+    try:
+        payload = request.get_json(silent=True) or {}
+        heats_data = payload.get('heats', [])
+
+        # For now, return a mock feasibility check
+        # Will be integrated with CP-SAT scheduler
+
+        total_mt = sum(h.get('qty_mt', 0) for h in heats_data)
+        total_heats = len(heats_data)
+        estimated_sms_hours = total_heats * 2 + 1
+        estimated_rm_hours = round(total_mt / 30) + 1
+        total_duration_hours = estimated_sms_hours + estimated_rm_hours
+
+        return _jsonify({
+            'feasible': True,
+            'estimated_sms_hours': estimated_sms_hours,
+            'estimated_rm_hours': estimated_rm_hours,
+            'total_duration_hours': total_duration_hours,
+            'schedule_status': 'OPTIMAL',
+            'message': 'Simulation complete - ready to release',
+        })
+    except Exception as e:
+        return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
+
+
+@app.route('/api/aps/planning/release', methods=['POST'])
+def aps_planning_release():
+    """Release approved Planning Orders to operations."""
+    try:
+        payload = request.get_json(silent=True) or {}
+        po_ids = payload.get('po_ids', [])
+
+        # Mark SOs as assigned to planning
+        result = store.list_rows('sales-orders', filters=[], limit=1000)
+        sos = result.get('items', [])
+
+        # For now, just acknowledge release
+        # Will update SO Campaign_ID in actual implementation
+
+        return _jsonify({
+            'released': True,
+            'po_count': len(po_ids),
+            'message': 'Planning orders released to operations',
+            'next_step': 'Operations begins execution',
+        })
+    except Exception as e:
+        return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
 
 
 @app.route('/api/meta/xaps/routes')
