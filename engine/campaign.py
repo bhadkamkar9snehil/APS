@@ -56,6 +56,36 @@ def _get_low_carbon_billet_grades():
     lc_list = get_config().get_list('LOW_CARBON_BILLET_GRADES', ['1008', '1018', '1035'])
     return set(lc_list)
 
+
+def _normalize_grade_for_config(grade: str) -> str:
+    """Normalize grade string to config format.
+
+    Examples:
+        'SAE 1080' -> '1080'
+        'SAE 1008' -> '1008'
+        'CHQ 1006' -> 'CHQ1006'
+        'Cr-Mo 4140' -> 'CrMo4140'
+        '1080' -> '1080' (already normalized)
+    """
+    grade_text = str(grade or "").strip()
+
+    # Remove leading 'SAE ' if present
+    if grade_text.startswith("SAE "):
+        return grade_text[4:].strip()
+
+    # Handle 'CHQ ' prefix -> 'CHQ' + number
+    if grade_text.startswith("CHQ "):
+        num = grade_text[4:].strip()
+        return f"CHQ{num}"
+
+    # Handle 'Cr-Mo ' prefix -> 'CrMo' + number
+    if grade_text.startswith("Cr-Mo "):
+        num = grade_text[6:].strip()
+        return f"CrMo{num}"
+
+    # Return as-is if already normalized
+    return grade_text
+
 # Primary batch resource prefixes (these don't change)
 PRIMARY_BATCH_PREFIXES = {
     "EAF": ("EAF-OUT-",),
@@ -88,13 +118,15 @@ def priority_rank(priority: str) -> int:
 def needs_vd_for_grade(grade: str) -> bool:
     """Check if grade requires VD (vacuum degassing) based on config."""
     vd_grades = _get_vd_required_grades()
-    return str(grade or "").strip() in vd_grades
+    normalized = _normalize_grade_for_config(grade)
+    return normalized in vd_grades
 
 
 def billet_family_for_grade(grade: str) -> str:
     """Determine billet family (BIL-130 or BIL-150) based on grade and config."""
     lc_grades = _get_low_carbon_billet_grades()
-    return "BIL-130" if str(grade or "").strip() in lc_grades else "BIL-150"
+    normalized = _normalize_grade_for_config(grade)
+    return "BIL-130" if normalized in lc_grades else "BIL-150"
 
 
 def rm_minutes_for_qty(qty_coil_mt: float, section_mm: float, include_setup: bool = True) -> int:

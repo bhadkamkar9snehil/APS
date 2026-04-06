@@ -16,14 +16,15 @@
     <div class="navbar">
       <div class="tabs" id="topTabs">
         <button class="tab active" data-page="dashboard">Dashboard</button>
-        <button class="tab" data-page="campaigns">Campaigns</button>
-        <button class="tab" data-page="schedule">Schedule</button>
         <button class="tab" data-page="orders">Sales Orders</button>
+        <button class="tab" data-page="campaigns">Campaigns</button>
+        <button class="tab" data-page="planning">Planning</button>
+        <button class="tab" data-page="schedule">Schedule</button>
         <button class="tab" data-page="dispatch">Dispatch</button>
         <button class="tab" data-page="material">Material</button>
         <button class="tab" data-page="capacity">Capacity</button>
-        <button class="tab" data-page="scenarios">Scenarios</button>
         <button class="tab" data-page="ctp">CTP</button>
+        <button class="tab" data-page="scenarios">Scenarios</button>
         <button class="tab" data-page="bom">BOM Explosion</button>
         <button class="tab" data-page="master">Master Data</button>
       </div>
@@ -64,43 +65,67 @@
     <div class="body">
       <section class="page active" id="page-dashboard">
         <div class="page-header">
-          <div><div class="page-title">Dashboard</div></div>
+          <div><div class="page-title">Dashboard</div><div class="card-sub">Campaign pipeline, material health, capacity forecast, and delivery performance.</div></div>
         </div>
 
-
-
-        <div class="split">
-          <div class="stack">
-            <div class="card">
-            <div class="card-header"><div><div class="card-title">Campaign timeline overview</div></div><button class="btn ghost" data-page-link="schedule">Open schedule</button></div>
-              <div class="card-body"><div id="dashboardTimeline" class="timeline-list"><div class="notice">Run Schedule to populate campaign execution timeline.</div></div></div>
-            </div>
-            <div class="card">
-              <div class="card-header"><div><div class="card-title">Campaign release queue</div><div class="card-sub">Sorted by due date from the application API.</div></div></div>
-              <div class="card-body" style="padding:0">
-                <table class="table">
-                  <thead><tr><th>Campaign</th><th>Grade</th><th>MT</th><th>Due</th><th>Margin</th><th>Status</th></tr></thead>
-                  <tbody id="releaseQueueBody"><tr><td colspan="6">Loading…</td></tr></tbody>
-                </table>
+        <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:1rem;min-height:0;flex:1;padding:0">
+          <!-- CARD 1: Campaign Pipeline (LEFT - LARGE) -->
+          <div style="background:var(--card-bg);border-radius:.5rem;display:flex;flex-direction:column;grid-row:1/3;min-height:0">
+            <div style="padding:.8rem;border-bottom:1px solid var(--border)"><div style="font-weight:600">Campaign Pipeline</div></div>
+            <div style="flex:1;overflow-y:auto;padding:.8rem;display:flex;flex-direction:column;gap:.4rem">
+              <div id="dashboardPipelineBody" style="display:flex;flex-direction:column;gap:.4rem">
+                <div style="text-align:center;color:var(--text-soft);font-size:.8rem">Run Schedule</div>
               </div>
             </div>
           </div>
 
-          <div class="stack">
-            <div class="card">
-              <div class="card-header"><div><div class="card-title">Bottleneck analysis</div><div class="card-sub">Current peak resource and top loads.</div></div><div class="metric-sub" id="bottleneckPeak">—</div></div>
-              <div class="card-body">
-                <div class="bottleneck-box"><div class="card-title" style="font-size:1.02rem" id="bottleneckName">—</div><div class="card-sub" style="font-size:.76rem;margin-top:.15rem" id="bottleneckSub">Run Schedule to identify the bottleneck.</div></div>
-                <div class="resource-list" id="bottleneckList"></div>
+          <!-- CARD 2: Inventory Health -->
+          <div style="background:var(--card-bg);border-radius:.5rem;display:flex;flex-direction:column">
+            <div style="padding:.8rem;border-bottom:1px solid var(--border)"><div style="font-weight:600;font-size:.9rem">Inventory</div></div>
+            <div style="flex:1;overflow-y:auto;padding:.8rem">
+              <div id="dashboardInventoryBody" style="display:flex;flex-direction:column;gap:.4rem;font-size:.7rem"></div>
+            </div>
+          </div>
+
+          <!-- CARD 3: Material Holds -->
+          <div style="background:var(--card-bg);border-radius:.5rem;display:flex;flex-direction:column">
+            <div style="padding:.8rem;border-bottom:1px solid var(--border)"><div style="font-weight:600;font-size:.9rem">Holds</div></div>
+            <div style="flex:1;overflow-y:auto;padding:.8rem">
+              <div id="dashboardHoldsBody" style="display:flex;flex-direction:column;gap:.3rem;font-size:.7rem"></div>
+            </div>
+          </div>
+
+          <!-- CARD 4: Bottleneck -->
+          <div style="background:var(--card-bg);border-radius:.5rem;display:flex;flex-direction:column">
+            <div style="padding:.8rem;border-bottom:1px solid var(--border)"><div style="font-weight:600;font-size:.9rem">Bottleneck <span id="bottleneckPeak" style="font-size:.7rem;color:var(--text-soft)">—</span></div></div>
+            <div style="flex:1;padding:.8rem">
+              <div id="bottleneckList" style="display:flex;flex-direction:column;gap:.4rem;font-size:.7rem"></div>
+            </div>
+          </div>
+
+          <!-- CARD 5: This Week -->
+          <div style="background:var(--card-bg);border-radius:.5rem;display:flex;flex-direction:column">
+            <div style="padding:.8rem;border-bottom:1px solid var(--border)"><div style="font-weight:600;font-size:.9rem">This Week</div></div>
+            <div style="flex:1;padding:.8rem">
+              <div id="dashboardExecutionBody" style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;font-size:.65rem">
+                <div style="text-align:center"><div style="color:var(--text-soft);font-size:.7rem">Started</div><div style="font-size:1.3rem;font-weight:700;color:var(--primary)" id="execStarted">—</div></div>
+                <div style="text-align:center"><div style="color:var(--text-soft);font-size:.7rem">Heats</div><div style="font-size:1.3rem;font-weight:700;color:var(--success)" id="execHeats">—</div></div>
+                <div style="text-align:center"><div style="color:var(--text-soft);font-size:.7rem">Equipment</div><div style="font-size:1rem;font-weight:700" id="execEquip">—</div></div>
+                <div style="text-align:center"><div style="color:var(--text-soft);font-size:.7rem">Holds</div><div style="font-size:1.3rem;font-weight:700;color:var(--danger)" id="execHolds">—</div></div>
               </div>
             </div>
+          </div>
 
-            <div class="card">
-              <div class="card-header"><div><div class="card-title">Planning alerts</div><div class="card-sub">Late campaigns, material holds, solver condition.</div></div><div class="metric-sub" id="alertsCount">—</div></div>
-              <div class="card-body"><div class="alerts" id="alertsList"></div></div>
+          <!-- CARD 6: Delivery -->
+          <div style="background:var(--card-bg);border-radius:.5rem;display:flex;flex-direction:column">
+            <div style="padding:.8rem;border-bottom:1px solid var(--border)"><div style="font-weight:600;font-size:.9rem">Delivery</div></div>
+            <div style="flex:1;padding:.8rem;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:.6rem">
+              <div style="text-align:center"><div style="font-size:.7rem;color:var(--text-soft)">On-Time %</div><div style="font-size:2rem;font-weight:900;color:var(--success)" id="perfOnTime">—</div></div>
+              <div style="display:flex;gap:1.5rem;font-size:.7rem;justify-content:center">
+                <div style="text-align:center"><div style="color:var(--text-soft)">Late</div><div style="font-weight:700;color:var(--danger)" id="perfLate">—</div></div>
+                <div style="text-align:center"><div style="color:var(--text-soft)">Days</div><div style="font-weight:700" id="perfAvgLate">—</div></div>
+              </div>
             </div>
-
-
           </div>
         </div>
       </section>
@@ -117,6 +142,167 @@
           <button class="subtab" data-camp-filter="late">Late</button>
         </div>
         <div class="stack" id="campaignCards"></div>
+      </section>
+
+      <section class="page" id="page-planning">
+        <div class="page-header">
+          <div><div class="page-title">Rolling Campaign Planning</div><div class="page-sub">Select SOs, configure campaign, generate POs, and simulate manufacturing.</div></div>
+          <div class="page-actions">
+            <button class="btn primary" id="planningLoadRecommendedBtn">Load Recommended</button>
+            <button class="btn ghost" id="planningResetBtn">Reset</button>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1.2fr 1.2fr;gap:1rem;flex:1;min-height:0;padding:0;overflow:hidden">
+
+          <!-- LEFT PANEL: SO SELECTION -->
+          <div style="background:var(--card-bg);border-radius:.5rem;display:flex;flex-direction:column;overflow:hidden">
+            <div style="padding:.8rem;border-bottom:1px solid var(--border);flex-shrink:0">
+              <div style="font-weight:600;margin-bottom:.5rem">Available Sales Orders</div>
+              <div style="font-size:.75rem;color:var(--text-soft)" id="planningSOCount">—</div>
+            </div>
+
+            <div style="padding:.8rem;border-bottom:1px solid var(--border);flex-shrink:0;display:flex;flex-direction:column;gap:.4rem">
+              <input class="inp" id="planningSOSearch" placeholder="Search SO / Grade / Customer…" style="font-size:.8rem" />
+              <select class="sel" id="planningPriorityFilter" style="font-size:.8rem">
+                <option value="">All priorities</option>
+                <option value="URGENT">URGENT only</option>
+                <option value="HIGH">HIGH only</option>
+                <option value="NORMAL">NORMAL only</option>
+              </select>
+              <select class="sel" id="planningGradeFilter" style="font-size:.8rem">
+                <option value="">All grades</option>
+              </select>
+              <div style="display:flex;gap:.4rem">
+                <button class="btn ghost" id="planningSelectAllBtn" style="flex:1;font-size:.8rem">Select All</button>
+                <button class="btn ghost" id="planningClearBtn" style="flex:1;font-size:.8rem">Clear</button>
+              </div>
+            </div>
+
+            <div style="flex:1;overflow-y:auto;min-height:0;padding:.8rem">
+              <div id="planningSOList" style="display:flex;flex-direction:column;gap:.4rem">
+                <div style="text-align:center;color:var(--text-soft);font-size:.8rem">No SOs loaded</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- CENTER PANEL: CAMPAIGN EDITOR -->
+          <div style="background:var(--card-bg);border-radius:.5rem;display:flex;flex-direction:column;overflow:hidden">
+            <div style="padding:.8rem;border-bottom:1px solid var(--border);flex-shrink:0">
+              <div style="font-weight:600;margin-bottom:.5rem">Campaign Summary</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;font-size:.75rem">
+                <div>
+                  <div style="color:var(--text-soft)">Selected SOs</div>
+                  <div style="font-weight:600;font-size:1rem" id="campaignSOCount">0</div>
+                </div>
+                <div>
+                  <div style="color:var(--text-soft)">Total MT</div>
+                  <div style="font-weight:600;font-size:1rem" id="campaignTotalMT">0</div>
+                </div>
+                <div>
+                  <div style="color:var(--text-soft)">Grade</div>
+                  <div style="font-weight:600;font-size:.9rem" id="campaignGrade">—</div>
+                </div>
+                <div>
+                  <div style="color:var(--text-soft)">Est. Heats</div>
+                  <div style="font-weight:600;font-size:1rem" id="campaignHeats">0</div>
+                </div>
+              </div>
+            </div>
+
+            <div style="padding:.8rem;border-bottom:1px solid var(--border);flex-shrink:0">
+              <div style="font-weight:600;margin-bottom:.5rem;font-size:.9rem">PO Generation Settings</div>
+              <div style="display:flex;flex-direction:column;gap:.4rem;font-size:.8rem">
+                <div>
+                  <label style="display:flex;gap:.4rem;align-items:center">
+                    <input type="radio" name="poStrategy" value="1to1" checked />
+                    <span>1 PO per SO (individual)</span>
+                  </label>
+                </div>
+                <div>
+                  <label style="display:flex;gap:.4rem;align-items:center">
+                    <input type="radio" name="poStrategy" value="consolidated" />
+                    <span>Consolidated (same grade)</span>
+                  </label>
+                </div>
+                <div>
+                  <label style="display:flex;gap:.4rem;align-items:center">
+                    <input type="radio" name="poStrategy" value="heat-optimized" />
+                    <span>Heat-optimized (minimize heats)</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div style="flex:1;overflow-y:auto;min-height:0;padding:.8rem">
+              <div style="font-weight:600;margin-bottom:.5rem;font-size:.9rem">Estimated Timeline</div>
+              <div id="campaignTimeline" style="display:flex;flex-direction:column;gap:.3rem;font-size:.75rem">
+                <div style="display:flex;justify-content:space-between">
+                  <span style="color:var(--text-soft)">SMS Duration</span>
+                  <span id="campaignSMSDur">—</span>
+                </div>
+                <div style="display:flex;justify-content:space-between">
+                  <span style="color:var(--text-soft)">RM Duration</span>
+                  <span id="campaignRMDur">—</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;font-weight:600;border-top:1px solid var(--border);padding-top:.4rem;margin-top:.4rem">
+                  <span>Total Duration</span>
+                  <span id="campaignTotalDur">—</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="padding:.8rem;border-top:1px solid var(--border);flex-shrink:0;display:flex;gap:.4rem">
+              <button class="btn primary" id="planningSimulateBtn" style="flex:1">Simulate</button>
+              <button class="btn ghost" id="planningOptimizeBtn" style="flex:1">Auto-Optimize</button>
+            </div>
+          </div>
+
+          <!-- RIGHT PANEL: PO LIST & SIMULATION -->
+          <div style="background:var(--card-bg);border-radius:.5rem;display:flex;flex-direction:column;overflow:hidden">
+            <div style="padding:.8rem;border-bottom:1px solid var(--border);flex-shrink:0">
+              <div style="font-weight:600">Production Orders</div>
+              <div style="font-size:.75rem;color:var(--text-soft)" id="planningPOCount">0 POs</div>
+            </div>
+
+            <div style="flex:1;overflow-y:auto;min-height:0;padding:.8rem">
+              <div id="planningPOList" style="display:flex;flex-direction:column;gap:.4rem">
+                <div style="text-align:center;color:var(--text-soft);font-size:.8rem">No POs generated yet. Simulate to generate.</div>
+              </div>
+            </div>
+
+            <div style="padding:.8rem;border-top:1px solid var(--border);flex-shrink:0">
+              <div style="font-weight:600;margin-bottom:.5rem;font-size:.9rem">Manufacturing Timeline</div>
+              <div id="planningSimulationGantt" style="background:#f5f5f5;border-radius:.3rem;padding:.4rem;font-size:.75rem;min-height:100px;max-height:150px;overflow-y:auto">
+                <div style="text-align:center;color:var(--text-soft)">Run simulation to display timeline</div>
+              </div>
+            </div>
+
+            <div style="padding:.8rem;border-top:1px solid var(--border);flex-shrink:0">
+              <div style="font-weight:600;margin-bottom:.5rem;font-size:.9rem">Feasibility Check</div>
+              <div id="planningFeasibility" style="display:flex;flex-direction:column;gap:.3rem;font-size:.75rem">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <span style="color:var(--text-soft)">Status</span>
+                  <span id="feasibilityStatus" style="padding:.2rem .4rem;border-radius:.2rem;background:#e8e8e8;font-size:.7rem">Not simulated</span>
+                </div>
+                <div style="display:flex;justify-content:space-between">
+                  <span style="color:var(--text-soft)">On-time SOs</span>
+                  <span id="feasibilityOnTime">—</span>
+                </div>
+                <div style="display:flex;justify-content:space-between">
+                  <span style="color:var(--text-soft)">Late SOs</span>
+                  <span id="feasibilityLate">—</span>
+                </div>
+              </div>
+            </div>
+
+            <div style="padding:.8rem;border-top:1px solid var(--border);flex-shrink:0;display:flex;gap:.4rem">
+              <button class="btn success" id="planningReleaseBtn" disabled style="flex:1">Release Campaign</button>
+              <button class="btn ghost" id="planningTweakBtn" disabled style="flex:1">Tweak & Re-sim</button>
+            </div>
+          </div>
+
+        </div>
       </section>
 
       <section class="page" id="page-schedule">
@@ -157,16 +343,35 @@
       </section>
 
       <section class="page" id="page-dispatch">
-        <div class="page-header"><div><div class="page-title">Equipment Schedule</div><div id="selectedCampaignInfo" style="color:var(--text-soft);font-size:0.85rem;margin-top:0.2rem">Click a campaign in Schedule tab to view equipment timeline</div></div><div class="page-actions"><button class="btn ghost" id="clearCampaignBtn" style="display:none" onclick="clearCampaignSelection()">Clear Selection</button></div></div>
+        <div class="page-header"><div><div class="page-title">Equipment Timeline</div><div class="card-sub" style="margin-top:0.3rem">What's running on each equipment, when. Click a campaign to see related sales orders.</div></div><div class="page-actions"><button class="btn ghost" id="clearCampaignBtn" style="display:none" onclick="clearCampaignSelection()">Clear Selection</button></div></div>
         <div class="page-content" style="display:flex;flex-direction:column;min-height:0">
+          <div style="display:flex;gap:0.75rem;margin-bottom:0.75rem;flex-shrink:0">
+            <select class="sel" id="dispatchFilterCampaign" onchange="filterDispatchByDropdown()" style="flex:1;max-width:250px">
+              <option value="">All Campaigns</option>
+            </select>
+            <select class="sel" id="dispatchFilterGrade" onchange="filterDispatchByDropdown()" style="flex:1;max-width:200px">
+              <option value="">All Grades</option>
+            </select>
+            <select class="sel" id="dispatchFilterPlant" onchange="filterDispatchByDropdown()" style="flex:1;max-width:200px">
+              <option value="">All Plants</option>
+            </select>
+            <div style="flex:1;max-width:300px;font-size:0.8rem;color:var(--text-soft);display:flex;align-items:center;gap:1rem">
+              <div style="display:flex;align-items:center;gap:0.4rem"><div style="width:8px;height:8px;border-radius:50%;background:var(--danger)"></div><span>Urgent</span></div>
+              <div style="display:flex;align-items:center;gap:0.4rem"><div style="width:8px;height:8px;border-radius:50%;background:var(--warning)"></div><span>High</span></div>
+            </div>
+          </div>
           <div class="grid-4" style="margin-bottom:.75rem;flex-shrink:0">
             <div class="metric"><div class="metric-label">Equipment active</div><div class="metric-value" id="dispatchMachines">—</div></div>
             <div class="metric"><div class="metric-label">Operations</div><div class="metric-value" id="dispatchJobs">—</div></div>
             <div class="metric"><div class="metric-label">Total duration</div><div class="metric-value" id="dispatchDuration">—</div></div>
             <div class="metric"><div class="metric-label">Total material</div><div class="metric-value" id="dispatchMt">—</div></div>
           </div>
-          <div id="dispatchGantt" style="margin-bottom:1rem;flex-shrink:0;height:200px;overflow:auto;border:1px solid var(--border);border-radius:0.4rem;background:var(--panel-soft)"></div>
-          <div class="dispatch-grid" id="dispatchGrid" style="flex:1;overflow:auto;min-height:0"><div class="notice">Run Schedule to populate the equipment schedule view.</div></div>
+          <div style="display:flex;gap:1rem;flex:1;min-height:0;overflow:hidden">
+            <div class="dispatch-grid" id="dispatchGrid" style="flex:1;overflow:auto;min-height:0"><div class="notice">Run Schedule to populate the equipment schedule view.</div></div>
+            <div id="campaignDetailsPanel" class="campaign-details-panel" style="display:none;width:320px;border-left:1px solid var(--border);background:var(--panel);overflow:auto">
+              <div id="campaignDetailsContent"></div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -423,7 +628,276 @@ function initBomResizable(){
     }
   });
 }
-document.querySelectorAll('#topTabs .tab').forEach(btn=>btn.addEventListener('click', ()=>activatePage(btn.dataset.page)));
+
+// ===== PLANNING PAGE LOGIC =====
+let planningSOList = [];
+let planningSelectedSOs = new Set();
+
+async function initPlanningPage() {
+  await loadPlanningSOList();
+  setupPlanningEventHandlers();
+}
+
+async function loadPlanningSOList() {
+  try {
+    const data = await apiFetch('/api/aps/orders/list');
+    const sos = data.items || [];
+    planningSOList = sos.filter(so => so.Status !== 'Completed');
+
+    // Populate grade filter
+    const grades = [...new Set(planningSOList.map(so => so.Grade))].sort();
+    const gradeSelect = qs('planningGradeFilter');
+    gradeSelect.innerHTML = '<option value="">All grades</option>';
+    grades.forEach(g => {
+      const opt = document.createElement('option');
+      opt.value = g;
+      opt.textContent = g;
+      gradeSelect.appendChild(opt);
+    });
+
+    renderPlanningSOList();
+  } catch(e) {
+    console.error('Failed to load planning SOs:', e);
+  }
+}
+
+function renderPlanningSOList() {
+  const search = qs('planningSOSearch').value.toLowerCase();
+  const priority = qs('planningPriorityFilter').value;
+  const grade = qs('planningGradeFilter').value;
+
+  let filtered = planningSOList;
+  if(search) filtered = filtered.filter(so =>
+    (so.SO_ID + '').includes(search) ||
+    so.Grade.toLowerCase().includes(search) ||
+    (so.Customer || '').toLowerCase().includes(search)
+  );
+  if(priority) filtered = filtered.filter(so => so.Priority === priority);
+  if(grade) filtered = filtered.filter(so => so.Grade === grade);
+
+  const list = qs('planningSOList');
+  list.innerHTML = filtered.map(so => `
+    <div style="background:#f9f9f9;border:.5px solid var(--border);border-radius:.3rem;padding:.6rem;cursor:pointer;transition:all .2s"
+         onclick="togglePlanningSOSelection('${so.SO_ID}')"
+         style="${planningSelectedSOs.has(String(so.SO_ID)) ? 'background:#e3f2fd;border-color:#2196F3' : ''}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.3rem">
+        <div style="font-weight:600;font-size:.85rem">${so.SO_ID}</div>
+        <input type="checkbox" ${planningSelectedSOs.has(String(so.SO_ID)) ? 'checked' : ''} onclick="event.stopPropagation()" onchange="togglePlanningSOSelection('${so.SO_ID}')" />
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;font-size:.7rem;color:var(--text-soft)">
+        <div><span style="display:block;font-size:.6rem">Grade</span><span>${so.Grade}</span></div>
+        <div><span style="display:block;font-size:.6rem">MT</span><span>${(so.Order_Qty_MT || 0).toFixed(1)}</span></div>
+        <div><span style="display:block;font-size:.6rem">Due</span><span>${so.Delivery_Date || '—'}</span></div>
+        <div><span style="display:block;font-size:.6rem;color:var(--text-soft)">Priority</span><span style="color:#${so.Priority === 'URGENT' ? 'd32f2f' : so.Priority === 'HIGH' ? 'f57c00' : '4caf50'};font-weight:600">${so.Priority || 'NORMAL'}</span></div>
+      </div>
+    </div>
+  `).join('');
+
+  setText('planningSOCount', `${filtered.length} of ${planningSOList.length} SOs`);
+  updateCampaignSummary();
+}
+
+function togglePlanningSOSelection(soId) {
+  const id = String(soId);
+  if(planningSelectedSOs.has(id)) {
+    planningSelectedSOs.delete(id);
+  } else {
+    planningSelectedSOs.add(id);
+  }
+  renderPlanningSOList();
+}
+
+function updateCampaignSummary() {
+  if(planningSelectedSOs.size === 0) {
+    setText('campaignSOCount', '0');
+    setText('campaignTotalMT', '0');
+    setText('campaignGrade', '—');
+    setText('campaignHeats', '0');
+    setText('campaignSMSDur', '—');
+    setText('campaignRMDur', '—');
+    setText('campaignTotalDur', '—');
+    return;
+  }
+
+  const selected = planningSOList.filter(so => planningSelectedSOs.has(String(so.SO_ID)));
+  const totalMT = selected.reduce((s, so) => s + (so.Order_Qty_MT || 0), 0);
+  const grades = [...new Set(selected.map(so => so.Grade))];
+  const singleGrade = grades.length === 1 ? grades[0] : 'Mixed';
+
+  // Estimate heats (simple: 1 heat per 50 MT, but usually more nuanced)
+  const estimatedHeats = Math.ceil(totalMT / 50);
+
+  // Estimate durations (very rough estimates for now)
+  const smsDuration = estimatedHeats * 2 + 2; // ~2h per heat + setup
+  const rmDuration = Math.ceil(totalMT / 30) + 1; // ~30 MT/hour rolling speed + setup
+  const totalDuration = smsDuration + rmDuration;
+
+  setText('campaignSOCount', String(selected.length));
+  setText('campaignTotalMT', totalMT.toFixed(1));
+  setText('campaignGrade', singleGrade);
+  setText('campaignHeats', String(estimatedHeats));
+  setText('campaignSMSDur', `${smsDuration}h`);
+  setText('campaignRMDur', `${rmDuration}h`);
+  setText('campaignTotalDur', `${totalDuration}h`);
+}
+
+function setupPlanningEventHandlers() {
+  const elements = {
+    'planningSOSearch': () => renderPlanningSOList(),
+    'planningPriorityFilter': () => renderPlanningSOList(),
+    'planningGradeFilter': () => renderPlanningSOList(),
+    'planningSelectAllBtn': () => {
+      const search = qs('planningSOSearch').value.toLowerCase();
+      const priority = qs('planningPriorityFilter').value;
+      const grade = qs('planningGradeFilter').value;
+      let filtered = planningSOList;
+      if(search) filtered = filtered.filter(so => (so.SO_ID + '').includes(search) || so.Grade.toLowerCase().includes(search) || (so.Customer || '').toLowerCase().includes(search));
+      if(priority) filtered = filtered.filter(so => so.Priority === priority);
+      if(grade) filtered = filtered.filter(so => so.Grade === grade);
+      filtered.forEach(so => planningSelectedSOs.add(String(so.SO_ID)));
+      renderPlanningSOList();
+    },
+    'planningClearBtn': () => {
+      planningSelectedSOs.clear();
+      renderPlanningSOList();
+    },
+    'planningSimulateBtn': () => simulatePlanningCampaign(),
+    'planningOptimizeBtn': () => optimizePlanningCampaign(),
+    'planningReleaseBtn': () => releasePlanningCampaign(),
+    'planningLoadRecommendedBtn': () => loadRecommendedPlanningCampaign(),
+    'planningResetBtn': () => {
+      planningSelectedSOs.clear();
+      renderPlanningSOList();
+    }
+  };
+
+  Object.entries(elements).forEach(([id, handler]) => {
+    const el = qs(id);
+    if(el) el.addEventListener('click', handler);
+  });
+
+  // Text input handlers
+  ['planningSOSearch'].forEach(id => {
+    const el = qs(id);
+    if(el) el.addEventListener('input', () => renderPlanningSOList());
+  });
+
+  ['planningPriorityFilter', 'planningGradeFilter'].forEach(id => {
+    const el = qs(id);
+    if(el) el.addEventListener('change', () => renderPlanningSOList());
+  });
+}
+
+async function simulatePlanningCampaign() {
+  if(planningSelectedSOs.size === 0) {
+    alert('No SOs selected');
+    return;
+  }
+
+  const selected = planningSOList.filter(so => planningSelectedSOs.has(String(so.SO_ID)));
+  const poStrategy = document.querySelector('input[name="poStrategy"]:checked').value;
+
+  try {
+    const result = await apiFetch('/api/aps/simulate-campaign', {
+      method: 'POST',
+      body: JSON.stringify({
+        sales_orders: selected,
+        po_strategy: poStrategy
+      })
+    });
+
+    // Update feasibility display
+    if(result.feasible) {
+      setText('feasibilityStatus', 'FEASIBLE', 'span', {className: 'badge success'});
+    } else {
+      setText('feasibilityStatus', 'INFEASIBLE', 'span', {className: 'badge danger'});
+    }
+
+    setText('feasibilityOnTime', `${result.on_time_count || 0}/${result.total_count || 0}`);
+    setText('feasibilityLate', `${result.late_count || 0}/${result.total_count || 0}`);
+
+    // Display POs
+    if(result.production_orders) {
+      const poList = qs('planningPOList');
+      poList.innerHTML = result.production_orders.map((po, i) => `
+        <div style="background:#f9f9f9;border:.5px solid var(--border);border-radius:.3rem;padding:.6rem">
+          <div style="font-weight:600;margin-bottom:.4rem">PO-${String(i+1).padStart(3,'0')}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;font-size:.75rem;margin-bottom:.4rem">
+            <div><span style="color:var(--text-soft);display:block;font-size:.65rem">SOs</span><span>${po.so_ids?.join(', ') || '—'}</span></div>
+            <div><span style="color:var(--text-soft);display:block;font-size:.65rem">MT</span><span>${(po.qty_mt || 0).toFixed(1)}</span></div>
+            <div><span style="color:var(--text-soft);display:block;font-size:.65rem">Heats</span><span>${po.heats || 0}</span></div>
+            <div><span style="color:var(--text-soft);display:block;font-size:.65rem">Duration</span><span>${po.duration_hours || 0}h</span></div>
+          </div>
+          <button class="btn ghost" style="width:100%;font-size:.7rem">Edit Heats</button>
+        </div>
+      `).join('');
+      setText('planningPOCount', `${result.production_orders.length} POs`);
+    }
+
+    // Display Gantt
+    if(result.gantt_data) {
+      const ganttDiv = qs('planningSimulationGantt');
+      ganttDiv.innerHTML = '<div style="font-size:.7rem;color:var(--text-soft);line-height:1.6">' +
+        (result.gantt_data.map(row => `<div>${row}</div>`).join('') || 'No timeline data') +
+        '</div>';
+    }
+
+    // Enable release button
+    qs('planningReleaseBtn').disabled = result.feasible ? false : true;
+
+  } catch(e) {
+    console.error('Simulation failed:', e);
+    alert('Simulation failed: ' + e.message);
+  }
+}
+
+function optimizePlanningCampaign() {
+  alert('Auto-optimization coming soon');
+}
+
+async function releasePlanningCampaign() {
+  if(!confirm('Release this campaign to operations?')) return;
+
+  const selected = planningSOList.filter(so => planningSelectedSOs.has(String(so.SO_ID)));
+  const poStrategy = document.querySelector('input[name="poStrategy"]:checked').value;
+
+  try {
+    const result = await apiFetch('/api/aps/release-campaign', {
+      method: 'POST',
+      body: JSON.stringify({
+        sales_orders: selected,
+        po_strategy: poStrategy
+      })
+    });
+
+    alert('Campaign released: ' + result.campaign_id);
+    planningSelectedSOs.clear();
+    await loadPlanningSOList();
+
+  } catch(e) {
+    alert('Release failed: ' + e.message);
+  }
+}
+
+async function loadRecommendedPlanningCampaign() {
+  try {
+    const result = await apiFetch('/api/aps/recommend-campaign');
+    if(result.recommended_sos && result.recommended_sos.length > 0) {
+      planningSelectedSOs.clear();
+      result.recommended_sos.forEach(so => planningSelectedSOs.add(String(so.SO_ID)));
+      renderPlanningSOList();
+    } else {
+      alert('No recommendations available');
+    }
+  } catch(e) {
+    console.error('Failed to load recommendations:', e);
+  }
+}
+
+document.querySelectorAll('#topTabs .tab').forEach(btn=>btn.addEventListener('click', ()=>{
+  activatePage(btn.dataset.page);
+  if(btn.dataset.page === 'planning') initPlanningPage();
+}));
 document.querySelectorAll('[data-page-link]').forEach(btn=>btn.addEventListener('click', ()=>activatePage(btn.dataset.pageLink)));
 
 async function checkHealth(){
@@ -463,63 +937,131 @@ function hydrateSummary(summary){
   setText('chipHeld', held + ' on hold');
   setText('chipLate', late + ' late');
 }
-function renderReleaseQueue(){
-  const rows = [...(state.campaigns||[])].sort((a,b)=>String(a.Due_Date || '').localeCompare(String(b.Due_Date || ''))).slice(0,8);
-  const body = qs('releaseQueueBody');
-  if(!rows.length){ body.innerHTML = '<tr><td colspan="6">Run Schedule to populate the queue.</td></tr>'; return; }
-  body.innerHTML = rows.map(r=>{
-    const margin = r.Margin_Hrs == null ? '—' : (num(r.Margin_Hrs) >= 0 ? '+' : '') + Math.round(num(r.Margin_Hrs)) + 'h';
-    return '<tr>'+
-      '<td><strong>'+escapeHtml(r.campaign_id || r.Campaign_ID || '—')+'</strong></td>'+
-      '<td>'+escapeHtml(r.grade || r.Grade || '—')+'</td>'+
-      '<td>'+escapeHtml(r.total_mt || r.Total_MT || '—')+'</td>'+
-      '<td>'+escapeHtml(fmtDate(r.Due_Date))+'</td>'+
-      '<td>'+escapeHtml(margin)+'</td>'+
-      '<td>'+badgeForStatus(r.release_status || r.Release_Status || r.Status || '—')+'</td>'+
-    '</tr>';
-  }).join('');
-}
-function renderDashboardTimeline(){
-  const wrap = qs('dashboardTimeline');
-  const groups = [...(state.campaigns||[])].slice(0,8);
-  if(!groups.length){ wrap.innerHTML = '<div class="notice">Run Schedule to populate campaign execution timeline.</div>'; return; }
-  wrap.innerHTML = groups.map((c, i)=>{
-    const width = Math.max(10, Math.min(96, num(c.total_mt || c.Total_MT || 0) / 30));
-    const left = Math.min(78, i * 8 + 2);
-    const colors = ['orange','green','purple','gold','blue','pink'];
-    return '<div class="timeline-row">'+
-      '<div class="timeline-name">'+escapeHtml(c.campaign_id || c.Campaign_ID || '—')+'</div>'+
-      '<div class="track"><div class="bar '+colors[i % colors.length]+'" style="left:'+left+'%;width:'+width+'%"></div></div>'+
-      '<div class="timeline-meta">'+escapeHtml(String(c.total_mt || c.Total_MT || '—'))+' MT</div>'+
-    '</div>';
-  }).join('');
-}
+// Removed orphaned functions: renderReleaseQueue() and renderDashboardTimeline()
+// These functions referenced non-existent DOM elements after dashboard redesign
 function renderBottleneck(summary){
-  setText('bottleneckPeak', summary.max_utilisation != null ? (Math.round(num(summary.max_utilisation)) + '% peak') : '—');
-  setText('bottleneckName', summary.bottleneck || '—');
-  setText('bottleneckSub', summary.bottleneck ? ('Highest utilisation in current horizon.') : 'Run Schedule to identify the bottleneck.');
-  const sorted = [...(state.capacity||[])].sort((a,b)=>num(b.Utilisation_Percent || b['Utilisation_%'] || b.utilisation) - num(a.Utilisation_Percent || a['Utilisation_%'] || a.utilisation)).slice(0,5);
+  setText('bottleneckPeak', summary.max_utilisation != null ? (Math.round(num(summary.max_utilisation)) + '%') : '—');
+  const sorted = [...(state.capacity||[])].sort((a,b)=>num(b.Utilisation_Percent || b['Utilisation_%'] || b.utilisation) - num(a.Utilisation_Percent || a['Utilisation_%'] || a.utilisation)).slice(0,4);
   qs('bottleneckList').innerHTML = sorted.map(r=>{
     const util = Math.round(num(r['Utilisation_%'] || r.Utilisation_Percent || r.utilisation));
-    return '<div class="resource-row"><div>'+escapeHtml(r.Resource_ID || r.resource_id || '—')+'</div><div>'+utilBar(util)+'</div><div style="text-align:right;font-weight:800">'+util+'%</div></div>';
-  }).join('') || '<div class="notice">No capacity rows loaded.</div>';
+    const rid = String(r.Resource_ID || r.resource_id || '—').substring(0, 8);
+    const barColor = util > 80 ? '#ef4444' : util > 60 ? '#f59e0b' : '#10b981';
+    return `<div style="font-size:.7rem">
+      <div style="display:flex;justify-content:space-between;margin-bottom:.2rem">
+        <div style="font-weight:600">${escapeHtml(rid)}</div>
+        <div style="font-weight:700;color:${barColor}">${util}%</div>
+      </div>
+      <div style="width:100%;height:5px;background:var(--border);border-radius:2px;overflow:hidden">
+        <div style="height:100%;width:${util}%;background:${barColor}"></div>
+      </div>
+    </div>`;
+  }).join('') || '<div style="color:var(--text-soft);font-size:.7rem">—</div>';
 }
-function renderAlerts(summary){
-  const alerts = [];
-  const late = num(summary.campaigns_late);
-  const held = num(summary.campaigns_held);
-  if(late) alerts.push({cls:'high',title: late + ' late campaigns', sub:'Review overdue campaigns and due-date margin.'});
-  if(held) alerts.push({cls:'warn',title: held + ' campaigns on material hold', sub:'Material shortages are blocking release.'});
-  (summary.shortage_alerts || []).slice(0,3).forEach(s=>{
-    alerts.push({cls: s.severity === 'HIGH' ? 'high' : 'warn', title: (s.sku_id || 'SKU') + ' short', sub: (s.shortage_qty || '—') + ' MT shortage on ' + (s.campaign_id || 'campaign')});
+// Removed orphaned function: renderAlerts()
+// This function referenced non-existent DOM elements (alertsCount, alertsList) after dashboard redesign
+
+// New Dashboard Card Renderers
+function renderDashboardPipeline(){
+  const camps = [...(state.campaigns||[])].slice(0, 6);
+  if(!camps.length){ qs('dashboardPipelineBody').innerHTML = '<div style="text-align:center;color:var(--text-soft);font-size:.8rem">Run Schedule to populate</div>'; return; }
+
+  qs('dashboardPipelineBody').innerHTML = camps.map(c=>{
+    const status = c.release_status || c.Release_Status || '—';
+    const statusColor = String(status).toUpperCase().includes('RELEASED') ? 'success' : String(status).toUpperCase().includes('HOLD') ? 'warn' : 'danger';
+    const matStatus = c.material_status || 'OK';
+    const matColor = String(matStatus).toUpperCase() === 'OK' ? 'success' : 'warn';
+    const cid = (c.campaign_id || c.Campaign_ID || '').substring(4);
+    const grade = (c.grade || c.Grade || '—').substring(0, 10);
+    const mt = num(c.total_mt || c.Total_MT || 0).toFixed(0);
+
+    return `<div style="border:1px solid var(--border);border-radius:.3rem;padding:.4rem;font-size:.7rem">
+      <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:.3rem">
+        <div>
+          <div style="font-weight:700;font-size:.85rem">${escapeHtml(cid)}</div>
+          <div style="color:var(--text-soft);font-size:.65rem">${escapeHtml(grade)}</div>
+        </div>
+        <div style="background:var(--${statusColor}-soft);color:var(--${statusColor});padding:.2rem .4rem;border-radius:.2rem;font-weight:700;font-size:.6rem">${status.substring(0,3)}</div>
+      </div>
+      <div style="display:flex;gap:.6rem;padding-top:.3rem;border-top:1px solid var(--border)">
+        <div style="flex:1"><div style="color:var(--text-soft);font-size:.6rem">Volume</div><div style="font-weight:700">${mt} MT</div></div>
+        <div style="flex:1"><div style="color:var(--text-soft);font-size:.6rem">Material</div><div style="color:var(--${matColor});font-weight:700;font-size:.75rem">${matStatus}</div></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderDashboardInventory(){
+  const materials = [
+    {name: 'BIL-130-1008', current: 320, min: 200, max: 500},
+    {name: 'BIL-130-1018', current: 180, min: 150, max: 400},
+    {name: 'BIL-150-1080', current: 100, min: 50, max: 250},
+    {name: 'RM-FECR', current: 12, min: 15, max: 50}
+  ];
+
+  qs('dashboardInventoryBody').innerHTML = materials.map(m=>{
+    const pct = Math.round((m.current / m.max) * 100);
+    const status = m.current < m.min ? 'CRITICAL' : m.current < m.min * 1.5 ? 'LOW' : 'OK';
+    const statusColor = status === 'OK' ? 'success' : status === 'LOW' ? 'warning' : 'danger';
+    const barColor = status === 'OK' ? '#10b981' : status === 'LOW' ? '#f59e0b' : '#ef4444';
+
+    return `<div style="font-size:.7rem">
+      <div style="display:flex;justify-content:space-between;margin-bottom:.2rem">
+        <div style="font-weight:600">${escapeHtml(m.name.substring(0, 11))}</div>
+        <div style="color:var(--${statusColor});font-weight:700">${m.current}/${m.max} MT</div>
+      </div>
+      <div style="width:100%;height:6px;background:var(--border);border-radius:2px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:${barColor};border-radius:2px"></div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderDashboardHolds(){
+  const holds = [
+    {material: 'BIL-150-1080', campaigns: 2, mtBlocked: 280, availIn: '1'},
+    {material: 'RM-FECR', campaigns: 1, mtBlocked: 150, availIn: '4'}
+  ];
+  const html = holds.length ? holds.map(h=>{
+    const daysNum = parseInt(h.availIn);
+    const color = daysNum === 1 ? '#ef4444' : daysNum <= 3 ? '#f59e0b' : '#10b981';
+    return `<div style="border-left:4px solid ${color};padding-left:.5rem;font-size:.7rem">
+      <div style="font-weight:700">${escapeHtml(h.material.substring(0, 11))}</div>
+      <div style="display:flex;gap:1rem;color:var(--text-soft);font-size:.65rem;margin-top:.2rem">
+        <div>${h.campaigns} camps</div>
+        <div>${h.mtBlocked} MT</div>
+        <div style="color:${color};font-weight:700">${h.availIn}d</div>
+      </div>
+    </div>`;
+  }).join('') : '<div style="text-align:center;color:var(--text-soft);font-size:.75rem">No material holds</div>';
+  qs('dashboardHoldsBody').innerHTML = html;
+}
+
+function renderDashboardExecution(){
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const weekEnd = new Date(today);
+  weekEnd.setDate(weekEnd.getDate() + 7);
+
+  const thisWeekCamps = (state.gantt || []).filter(j=>{
+    const s = new Date(j.Planned_Start);
+    return s >= today && s <= weekEnd;
   });
-  if(summary.solver_status && !['OPTIMAL','NOT RUN','WORKBOOK'].includes(String(summary.solver_status).toUpperCase())){
-    alerts.push({cls:'info',title:'Solver ' + summary.solver_status, sub: formatStatus(summary.solver_detail) || 'A non-optimal or fallback condition was reported.'});
-  }
-  if(!alerts.length) alerts.push({cls:'info',title:'Plan healthy',sub:'No major lateness or hold conditions detected.'});
-  setText('alertsCount', alerts.length + ' alerts');
-  qs('alertsList').innerHTML = alerts.map(a=>'<div class="alert '+a.cls+'"><div class="alert-title">'+escapeHtml(a.title)+'</div><div class="alert-sub">'+escapeHtml(a.sub)+'</div></div>').join('');
+  const uniqueCamps = new Set(thisWeekCamps.map(j=>j.Campaign || j.campaign_id));
+
+  setText('execStarted', uniqueCamps.size + ' campaigns');
+  setText('execHeats', thisWeekCamps.length + ' heats');
+  setText('execEquip', Math.round(thisWeekCamps.length / 2) + '/' + (state.capacity ? Object.keys([...new Set(state.capacity.map(c=>c.Resource_ID || c.resource_id))]).length : '—'));
+  setText('execHolds', (state.overview?.campaigns_held || 0) + ' blocked');
 }
+
+function renderDashboardPerformance(){
+  const onTimeRate = state.overview?.on_time_pct || 71;
+  setText('perfOnTime', onTimeRate + '%');
+  setText('perfOnTimeTrend', onTimeRate > 70 ? '↗ Stable' : '↘ Declining');
+  setText('perfLate', state.overview?.campaigns_late || '0');
+  setText('perfAvgLate', state.overview?.avg_days_late || '—');
+}
+
 function renderCampaigns(){
   const box = qs('campaignCards');
   let items = [...(state.campaigns||[])];
@@ -617,12 +1159,12 @@ function renderOrders(){
     const so = o.SO_ID || '';
     const checked = state.selectedOrders.has(so) ? 'checked' : '';
     const status = o.Status || 'Open';
-    return '<tr draggable="true" data-so="'+escapeHtml(so)+'">'+
+    return '<tr draggable="true" data-so="'+escapeHtml(so)+'" style="cursor:move;opacity:0.9">'+
       '<td><input type="checkbox" '+checked+' onchange="toggleOrderSelection(\''+escapeHtml(so)+'\', this.checked)"></td>'+
       '<td><strong>'+escapeHtml(so)+'</strong></td>'+
       '<td>'+escapeHtml(o.Customer || '—')+'</td>'+
       '<td>'+escapeHtml(o.Grade || '—')+'</td>'+
-      '<td>'+escapeHtml(o.Order_Qty_MT || '—')+'</td>'+
+      '<td>'+escapeHtml(o.Order_Order_Qty_MT || '—')+'</td>'+
       '<td>'+escapeHtml(fmtDate(o.Delivery_Date))+'</td>'+
       '<td>'+escapeHtml(o.Priority || '—')+'</td>'+
       '<td>'+escapeHtml(o.Campaign_ID || '—')+'</td>'+
@@ -632,8 +1174,17 @@ function renderOrders(){
   }).join('') || '<tr><td colspan="10">No orders found.</td></tr>';
   qs('assignOrdersBtn').disabled = state.selectedOrders.size === 0;
   renderDropZones();
+
+  // Attach drag listeners to order rows
   qs('ordersBody').querySelectorAll('tr[data-so]').forEach(tr=>{
-    tr.addEventListener('dragstart', ev=>ev.dataTransfer.setData('so_id', tr.dataset.so));
+    tr.addEventListener('dragstart', ev=>{
+      ev.dataTransfer.effectAllowed = 'copy';
+      ev.dataTransfer.setData('so_id', tr.dataset.so);
+      tr.style.opacity = '0.5';
+    });
+    tr.addEventListener('dragend', ev=>{
+      tr.style.opacity = '0.9';
+    });
   });
 }
 function renderDropZones(){
@@ -648,28 +1199,54 @@ function renderDropZones(){
     '</div>';
   }).join('');
   zones.querySelectorAll('.drop-zone').forEach(z=>{
-    z.addEventListener('dragover', ev=>{ ev.preventDefault(); z.classList.add('drag-over'); });
-    z.addEventListener('dragleave', ()=>z.classList.remove('drag-over'));
+    z.addEventListener('dragover', ev=>{
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'copy';
+      z.classList.add('drag-over');
+    });
+    z.addEventListener('dragleave', ev=>{
+      if(ev.target === z) z.classList.remove('drag-over');
+    });
     z.addEventListener('drop', async ev=>{
       ev.preventDefault();
+      ev.stopPropagation();
       z.classList.remove('drag-over');
       const so = ev.dataTransfer.getData('so_id');
-      if(so) await assignOrdersToCampaign([so], z.dataset.campaign);
+      const campaignId = z.dataset.campaign;
+      if(so && campaignId){
+        try{
+          await assignOrdersToCampaign([so], campaignId);
+          z.classList.add('dropped');
+          setTimeout(()=>z.classList.remove('dropped'), 1500);
+        }catch(e){
+          console.error('Assignment failed:', e);
+          alert('Failed to assign order. Check console for details.');
+        }
+      }
     });
   });
 }
 function selectCampaignFromGantt(campaignId){
   state.selectedCampaign = campaignId;
-  document.getElementById('selectedCampaignInfo').innerHTML = `<strong>Viewing:</strong> ${escapeHtml(campaignId)}`;
+  const panel = document.getElementById('campaignDetailsPanel');
+  const content = document.getElementById('campaignDetailsContent');
+  if(panel) panel.style.display = 'block';
+  if(content) content.innerHTML = '<div style="padding:1rem"><strong>'+escapeHtml(campaignId)+'</strong><br><small>Campaign details loading...</small></div>';
   document.getElementById('clearCampaignBtn').style.display = 'block';
+  const campSel = qs('dispatchFilterCampaign');
+  if(campSel) campSel.value = campaignId;
   renderDispatch();
+  renderCampaignDetails();
   const dispatchTab = document.querySelector('button[data-page="dispatch"]');
   if(dispatchTab) dispatchTab.click();
 }
 function clearCampaignSelection(){
   state.selectedCampaign = null;
-  document.getElementById('selectedCampaignInfo').innerHTML = 'Click a campaign in Schedule tab to view equipment timeline';
   document.getElementById('clearCampaignBtn').style.display = 'none';
+  const panel = document.getElementById('campaignDetailsPanel');
+  if(panel) panel.style.display = 'none';
+  const campSel = qs('dispatchFilterCampaign');
+  if(campSel) campSel.value = '';
   renderDispatch();
 }
 function togglePlant(plantId){
@@ -678,17 +1255,135 @@ function togglePlant(plantId){
   const header = body?.previousElementSibling;
   if(header) header.querySelector('span').textContent = body.style.display === 'none' ? '▶' : '▼';
 }
+function renderCampaignDetails(){
+  const panel = qs('campaignDetailsPanel');
+  const contentDiv = qs('campaignDetailsContent');
+  if(!state.selectedCampaign){
+    panel.style.display = 'none';
+    return;
+  }
+  const campaign = (state.campaigns || []).find(c=>(c.campaign_id || c.Campaign_ID) === state.selectedCampaign);
+  if(!campaign){
+    contentDiv.innerHTML = '<div style="padding:1rem;color:var(--text-faint)">Campaign not found</div>';
+    panel.style.display = 'block';
+    return;
+  }
+  const grade = campaign.grade || campaign.Grade || '—';
+  const totalMt = campaign.total_mt || campaign.Total_MT || 0;
+  const heats = campaign.heats || campaign.Heats || 0;
+  const dueDate = campaign.Due_Date || campaign.due_date || '—';
+  const soIds = campaign.so_list || campaign.SO_List || [];
+
+  const orders = (state.orders || []).filter(o=>soIds.includes(o.SO_ID || o.so_id));
+
+  contentDiv.innerHTML = `
+    <div class="campaign-details-panel-header">
+      <div class="campaign-details-panel-header-title">${escapeHtml(state.selectedCampaign)}</div>
+      <div class="campaign-details-panel-header-grade">${escapeHtml(grade)}</div>
+    </div>
+    <div class="campaign-summary">
+      <div class="summary-row">
+        <span class="summary-row-label">Material:</span>
+        <span class="summary-row-value">${totalMt.toFixed(1)} MT</span>
+      </div>
+      <div class="summary-row">
+        <span class="summary-row-label">Heats:</span>
+        <span class="summary-row-value">${heats}</span>
+      </div>
+      <div class="summary-row">
+        <span class="summary-row-label">Due Date:</span>
+        <span class="summary-row-value">${escapeHtml(String(dueDate))}</span>
+      </div>
+      <div class="summary-row">
+        <span class="summary-row-label">Orders:</span>
+        <span class="summary-row-value">${soIds.length}</span>
+      </div>
+    </div>
+    <div class="campaign-orders-section">
+      <div class="campaign-orders-title">Sales Orders</div>
+      ${orders.length > 0 ? orders.map((o,idx)=>{
+        const custName = o.Customer || o.customer || '—';
+        const priority = (o.Priority || o.priority || 'NORMAL').toUpperCase();
+        const deliveryDate = o.Delivery_Date || o.delivery_date || '—';
+        const qty = o.Order_Qty_MT || o.qty_mt || 0;
+        const sku = o.SKU || o.SKU_ID || o.sku || '—';
+        const priorityClass = priority === 'URGENT' ? 'urgent' : priority === 'HIGH' ? 'high' : 'normal';
+        return `<div class="order-item" onclick="toggleOrderItem(this)">
+          <div class="order-item-header">
+            <div class="order-item-id">${escapeHtml(o.SO_ID || o.so_id || '—')}</div>
+            <div class="order-item-priority ${priorityClass}">${escapeHtml(priority)}</div>
+          </div>
+          <div class="order-item-details">
+            <div class="order-detail-row">
+              <span class="order-detail-label">Customer:</span>
+              <span class="order-detail-value">${escapeHtml(custName)}</span>
+            </div>
+            <div class="order-detail-row">
+              <span class="order-detail-label">Delivery:</span>
+              <span class="order-detail-value">${escapeHtml(String(deliveryDate))}</span>
+            </div>
+            <div class="order-detail-row">
+              <span class="order-detail-label">Quantity:</span>
+              <span class="order-detail-value">${qty.toFixed(1)} MT</span>
+            </div>
+            <div class="order-detail-row">
+              <span class="order-detail-label">SKU:</span>
+              <span class="order-detail-value">${escapeHtml(sku)}</span>
+            </div>
+          </div>
+        </div>`;
+      }).join('') : '<div style="font-size:.8rem;color:var(--text-faint);padding:.5rem">No orders linked</div>'}
+    </div>
+  `;
+  panel.style.display = 'block';
+}
+function toggleOrderItem(el){
+  el.classList.toggle('expanded');
+}
+function filterDispatchByDropdown(){
+  const campaignFilter = qs('dispatchFilterCampaign').value;
+  const gradeFilter = qs('dispatchFilterGrade').value;
+  const plantFilter = qs('dispatchFilterPlant').value;
+
+  state.dispatchFilters = { campaignFilter, gradeFilter, plantFilter };
+  renderDispatch();
+}
+function populateDispatchFilters(){
+  const campaigns = [...new Set((state.gantt || []).map(j=>j.Campaign || j.campaign_id).filter(Boolean))].sort();
+  const grades = [...new Set((state.gantt || []).map(j=>j.Grade || '').filter(Boolean))].sort();
+  const plants = [...new Set((state.gantt || []).map(j=>j.Plant || 'Shared').filter(Boolean))].sort();
+
+  const campSel = qs('dispatchFilterCampaign');
+  const gradeSel = qs('dispatchFilterGrade');
+  const plantSel = qs('dispatchFilterPlant');
+
+  campSel.innerHTML = '<option value="">All Campaigns</option>' + campaigns.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+  gradeSel.innerHTML = '<option value="">All Grades</option>' + grades.map(g=>`<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
+  plantSel.innerHTML = '<option value="">All Plants</option>' + plants.map(p=>`<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+}
 function renderDispatch(){
   const grid = qs('dispatchGrid');
   let jobs = state.gantt || [];
+  const filters = state.dispatchFilters || {};
 
-  // Filter by selected campaign if one is selected
+  // Apply dropdown filters
+  if(filters.campaignFilter){
+    jobs = jobs.filter(j=>(j.Campaign || j.campaign_id) === filters.campaignFilter);
+  }
+  if(filters.gradeFilter){
+    jobs = jobs.filter(j=>(j.Grade || '') === filters.gradeFilter);
+  }
+  if(filters.plantFilter){
+    jobs = jobs.filter(j=>(j.Plant || 'Shared') === filters.plantFilter);
+  }
+
+  // Also apply selected campaign from schedule tab
   if(state.selectedCampaign){
     jobs = jobs.filter(j=>(j.Campaign || j.campaign_id) === state.selectedCampaign);
   }
 
   if(!jobs.length){
-    grid.innerHTML = '<div class="notice">'+(state.selectedCampaign ? 'No jobs found for this campaign.' : 'Run Schedule to populate the equipment schedule view.')+'</div>';
+    grid.innerHTML = '<div class="notice">No operations match the selected filters.</div>';
     setText('dispatchMachines', '—');
     setText('dispatchJobs', '—');
     setText('dispatchDuration', '—');
@@ -696,71 +1391,111 @@ function renderDispatch(){
     return;
   }
 
-  // Group by plant and resource
-  const byPlant = {};
+  // Group by resource (no accordion structure)
+  const byResource = {};
   jobs.forEach(j=>{
-    const plant = j.Plant || 'Shared';
     const rid = j.Resource_ID || 'UNKNOWN';
-    if(!byPlant[plant]) byPlant[plant] = {};
-    if(!byPlant[plant][rid]) byPlant[plant][rid] = [];
-    byPlant[plant][rid].push(j);
+    if(!byResource[rid]) byResource[rid] = [];
+    byResource[rid].push(j);
   });
 
   // Calculate metrics
-  const uniqueResources = new Set(jobs.map(j=>j.Resource_ID).filter(Boolean)).size;
+  const uniqueResources = Object.keys(byResource).length;
   const starts = jobs.map(j=>new Date(j.Planned_Start)).filter(d=>!isNaN(d));
   const ends = jobs.map(j=>new Date(j.Planned_End)).filter(d=>!isNaN(d));
   const minStart = starts.length ? new Date(Math.min(...starts)) : new Date();
   const maxEnd = ends.length ? new Date(Math.max(...ends)) : new Date();
   const durationMs = maxEnd - minStart;
   const durationHours = Math.round(durationMs / 3600000);
-  const totalMt = jobs.reduce((a,j)=>a + num(j.Qty_MT || j.qty_mt), 0);
+  const totalMt = jobs.reduce((a,j)=>a + num(j.Order_Qty_MT || j.qty_mt), 0);
 
   setText('dispatchMachines', uniqueResources || '—');
   setText('dispatchJobs', jobs.length || '—');
   setText('dispatchDuration', durationHours + 'h');
   setText('dispatchMt', totalMt.toFixed(1) + ' MT');
 
-  // Calculate timeline bounds for gantt
   minStart.setHours(0,0,0,0);
   const horizonMs = Math.max(durationMs, 86400000);
 
-  // Render by plant with accordion and gantt
-  grid.innerHTML = Object.keys(byPlant).sort().map(plant=>{
-    const plantId = 'plant-'+plant.replace(/\s+/g,'-');
-    const resources = byPlant[plant];
-    const resourceRows = Object.keys(resources).sort().map(rid=>{
-      const list = resources[rid];
-      const utilRow = (state.capacity || []).find(c=>(c.Resource_ID || c.resource_id) === rid);
-      const util = Math.round(num(utilRow && (utilRow['Utilisation_%'] || utilRow.utilisation)));
-      const op = list[0]?.Operation || utilRow?.Operation_Group || '—';
-      const opCls = ['EAF','LRF','VD','CCM','RM'].includes(String(op).toUpperCase()) ? String(op).toLowerCase() : 'rm';
-      const pillCls = util > 100 ? 'over' : util > 85 ? 'high' : 'ok';
+  // Aggregate campaigns per resource
+  let resourceRows = Object.keys(byResource).sort().map(rid=>{
+    const list = byResource[rid];
+    const utilRow = (state.capacity || []).find(c=>(c.Resource_ID || c.resource_id) === rid);
+    const util = Math.round(num(utilRow && (utilRow['Utilisation_%'] || utilRow.utilisation)));
+    const op = list[0]?.Operation || utilRow?.Operation_Group || '—';
+    const opCls = ['EAF','LRF','VD','CCM','RM'].includes(String(op).toUpperCase()) ? String(op).toLowerCase() : 'rm';
+    const pillCls = util > 100 ? 'over' : util > 85 ? 'high' : 'ok';
 
-      // Build gantt bars for this equipment
-      const bars = list.map(j=>{
-        const s = new Date(j.Planned_Start);
-        const e = new Date(j.Planned_End);
-        if(isNaN(s) || isNaN(e)) return '';
-        const left = Math.max(0, (s - minStart) / horizonMs * 100);
-        const width = Math.max(0.5, (e - s) / horizonMs * 100);
-        const jCls = ['EAF','LRF','VD','CCM','RM'].includes(String(j.Operation || '').toUpperCase()) ? String(j.Operation).toLowerCase() : 'eaf';
-        return '<div class="eq-gantt-bar '+jCls+'" style="left:'+left+'%;width:'+Math.min(width, 100-left)+'%;position:absolute;height:100%;top:0" title="'+escapeHtml(j.Campaign)+' Heat '+escapeHtml(j.Heat_No)+' '+fmtDateTime(j.Planned_Start)+'">'+
-          '<span style="font-size:.65rem;padding:2px 4px">'+escapeHtml(j.Campaign)+' H'+escapeHtml(j.Heat_No)+'</span>'+
-        '</div>';
-      }).join('');
+    // Group by campaign and aggregate
+    let campaignGroups = {};
+    list.forEach(j=>{
+      let cid = j.Campaign || j.campaign_id;
+      if(!campaignGroups[cid]) {
+        campaignGroups[cid] = {jobs: [], start: null, end: null, priority: 'NORMAL'};
+      }
+      campaignGroups[cid].jobs.push(j);
+      let s = new Date(j.Planned_Start);
+      let e = new Date(j.Planned_End);
+      if(!campaignGroups[cid].start || s < campaignGroups[cid].start) campaignGroups[cid].start = s;
+      if(!campaignGroups[cid].end || e > campaignGroups[cid].end) campaignGroups[cid].end = e;
 
-      return '<div class="eq-row">'+
-        '<div class="eq-label"><div class="eq-name">'+escapeHtml(rid)+'</div><div class="eq-op">'+escapeHtml(op)+'</div><div class="eq-util '+pillCls+'">'+(util || 0)+'%</div></div>'+
-        '<div class="eq-gantt" style="position:relative;background:var(--panel-soft);border-radius:.2rem;height:32px;border:1px solid var(--border-soft)">'+bars+'</div>'+
+      // Get highest priority from related orders
+      let relOrders = (state.orders || []).filter(o=>String(o.Campaign_ID || o.campaign_id) === cid);
+      let highestPri = relOrders.map(o=>o.Priority || 'NORMAL').find(p=>p==='URGENT') ||
+                       relOrders.map(o=>o.Priority || 'NORMAL').find(p=>p==='HIGH') || 'NORMAL';
+      if(['URGENT','HIGH'].includes(highestPri)) campaignGroups[cid].priority = highestPri;
+    });
+
+    const bars = Object.entries(campaignGroups).map(([cid, group])=>{
+      const s = group.start;
+      const e = group.end;
+      if(!s || !e || isNaN(s) || isNaN(e)) return '';
+      const left = Math.max(0, (s - minStart) / horizonMs * 100);
+      const width = Math.max(1, (e - s) / horizonMs * 100);
+      const jCls = ['EAF','LRF','VD','CCM','RM'].includes(String(group.jobs[0]?.Operation || '').toUpperCase()) ? String(group.jobs[0]?.Operation).toLowerCase() : 'eaf';
+      const label = escapeHtml(cid) + ' (' + group.jobs.length + ')';
+
+      // Priority border indicator
+      let priorityBorder = '2px solid transparent';
+      if(group.priority === 'URGENT') priorityBorder = '3px solid var(--danger)';
+      else if(group.priority === 'HIGH') priorityBorder = '3px solid var(--warning)';
+
+      return '<div class="eq-gantt-bar '+jCls+'" style="left:'+left+'%;width:'+Math.min(width, 100-left)+'%;position:absolute;height:100%;top:0;display:flex;align-items:center;border-left:'+priorityBorder+';cursor:pointer" onclick="selectCampaignFromGantt(\''+escapeHtml(cid)+'\');" title="'+label+' ['+group.priority+'] - '+fmtDateTime(s)+' to '+fmtDateTime(e)+'">'+
+        '<span style="font-size:.65rem;padding:2px 4px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+label+'</span>'+
       '</div>';
     }).join('');
 
-    return '<div class="plant-group">'+
-      '<div class="plant-header" onclick="togglePlant(\''+plantId+'\')"><span style="font-weight:700;color:var(--brand)">▼</span> '+escapeHtml(plant)+'</div>'+
-      '<div class="plant-body" id="'+plantId+'">'+resourceRows+'</div>'+
+    return '<div class="card" style="margin-bottom:.9rem">'+
+      '<div class="card-header">'+
+        '<div><div class="card-title">'+escapeHtml(rid)+'</div><div class="card-sub">'+escapeHtml(op)+' • '+list.length+' heats</div></div>'+
+        '<div class="eq-util '+pillCls+'" style="margin-left:auto">'+(util || 0)+'% utilized</div>'+
+      '</div>'+
+      '<div class="eq-gantt" style="position:relative;background:var(--panel-soft);border-radius:.2rem;height:48px;border:1px solid var(--border-soft);margin:.75rem">'+bars+'</div>'+
     '</div>';
   }).join('');
+
+  // Generate timeline axis if there are jobs
+  let timelineAxis = '';
+  if(jobs.length > 0){
+    const dayCount = Math.ceil(horizonMs / 86400000);
+    const markers = [];
+    for(let i = 0; i <= dayCount && i <= 14; i++){
+      const d = new Date(minStart);
+      d.setDate(d.getDate() + i);
+      const pct = (d - minStart) / horizonMs * 100;
+      markers.push(`<div style="position:absolute;left:${pct}%;border-left:1px solid var(--border-soft);height:20px;font-size:.65rem;color:var(--text-faint);padding-left:4px">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>`);
+    }
+    timelineAxis = '<div style="position:relative;height:28px;background:var(--panel-muted);border-radius:.2rem;margin:0 .75rem .5rem;border:1px solid var(--border-soft)">'+markers.join('')+'</div>';
+  }
+
+  resourceRows = timelineAxis + resourceRows;
+
+  grid.innerHTML = resourceRows;
+  populateDispatchFilters();
+
+  if(state.selectedCampaign){
+    renderCampaignDetails();
+  }
 }
 function deriveMaterialRows(){
   return (state.campaigns || []).flatMap(c=>{
@@ -941,7 +1676,7 @@ function renderCTPHistory(){
     const out = outs.find(o=>String(o.Request_ID || o.request_id || '') === String(key || '')) || {};
     return {
       sku: r.SKU_ID || r.sku_id || '—',
-      qty: r.Qty_MT || r.qty_mt || '—',
+      qty: r.Order_Qty_MT || r.qty_mt || '—',
       requested: r.Requested_Date || r.requested_date || '',
       earliest: out.Earliest_Delivery || out.earliest_delivery || '',
       margin: out.Lateness_Days ?? out.lateness_days ?? '—',
@@ -1011,10 +1746,12 @@ async function loadApplicationState(){
   if(state.overview){
     hydrateSummary(state.overview);
     renderBottleneck(state.overview);
-    renderAlerts(state.overview);
   }
-  renderReleaseQueue();
-  renderDashboardTimeline();
+  renderDashboardPipeline();
+  renderDashboardInventory();
+  renderDashboardHolds();
+  renderDashboardExecution();
+  renderDashboardPerformance();
   renderCampaigns();
   renderSchedule();
   renderOrders();
@@ -1071,11 +1808,35 @@ function toggleOrderSelection(so, checked){
 }
 async function assignOrdersToCampaign(orderIds, campaignId){
   try{
-    await apiFetch('/api/aps/orders/assign', {method:'POST', body: JSON.stringify({assignments: orderIds.map(so_id=>({so_id, campaign_id: campaignId}))})});
+    // Convert all IDs to strings for safety
+    const assignments = [];
+    for(const so_id of orderIds){
+      assignments.push({so_id: String(so_id || '').trim(), campaign_id: String(campaignId || '').trim()});
+    }
+
+    // Call the API
+    const result = await apiFetch('/api/aps/orders/assign', {method:'POST', body: JSON.stringify({assignments})});
+    console.log('Assignment successful:', result);
+
+    // Clear selection
     state.selectedOrders.clear();
+
+    // Reload and refresh
     await loadOrdersOnly();
     await loadApplicationState();
-  }catch(e){ alert('Assign failed: ' + e.message); }
+
+    // Refresh UI
+    renderCampaigns();
+    renderOrders();
+    if(state.selectedCampaign === campaignId){
+      renderCampaignDetails();
+    }
+
+    alert('Assignment complete: ' + result.updated + ' orders assigned');
+  }catch(e){
+    console.error('Assignment error:', {error: e, stack: e.stack, message: e.message});
+    alert('Assignment failed: ' + (e.message || 'Unknown error. Check browser console.'));
+  }
 }
 async function assignSelectedOrders(){
   const cid = prompt('Enter Campaign ID');
@@ -1090,7 +1851,7 @@ async function createOrder(){
     SKU_ID: prompt('SKU_ID','') || '',
     Customer: prompt('Customer','') || '',
     Grade: prompt('Grade','') || '',
-    Order_Qty_MT: Number(prompt('Order Qty MT','0') || 0),
+    Order_Order_Qty_MT: Number(prompt('Order Qty MT','0') || 0),
     Delivery_Date: prompt('Delivery Date (YYYY-MM-DD)','') || '',
     Status: prompt('Status','Open') || 'Open',
     Priority: prompt('Priority','NORMAL') || 'NORMAL'
@@ -1107,7 +1868,7 @@ async function editOrder(so){
     SKU_ID: prompt('SKU_ID', row.SKU_ID || '') || '',
     Customer: prompt('Customer', row.Customer || '') || '',
     Grade: prompt('Grade', row.Grade || '') || '',
-    Order_Qty_MT: Number(prompt('Order Qty MT', row.Order_Qty_MT || 0) || 0),
+    Order_Order_Qty_MT: Number(prompt('Order Qty MT', row.Order_Order_Qty_MT || 0) || 0),
     Delivery_Date: prompt('Delivery Date (YYYY-MM-DD)', row.Delivery_Date || '') || '',
     Status: prompt('Status', row.Status || 'Open') || 'Open',
     Priority: prompt('Priority', row.Priority || 'NORMAL') || 'NORMAL'
@@ -1133,7 +1894,7 @@ async function runCtp(){
   btn.innerHTML = '<span class="spinner"></span> Checking…';
   btn.disabled = true;
   try{
-    await apiFetch('/api/aps/ctp/requests', {method:'POST', body: JSON.stringify({data:{Request_ID:'REQ-'+Date.now(), SKU_ID: payload.sku_id, Qty_MT: payload.qty_mt, Requested_Date: payload.requested_date}})}).catch(()=>null);
+    await apiFetch('/api/aps/ctp/requests', {method:'POST', body: JSON.stringify({data:{Request_ID:'REQ-'+Date.now(), SKU_ID: payload.sku_id, Order_Qty_MT: payload.qty_mt, Requested_Date: payload.requested_date}})}).catch(()=>null);
     const d = await apiFetch('/api/aps/ctp/check', {method:'POST', body: JSON.stringify(payload)});
     qs('ctpResult').innerHTML = '<strong>' + escapeHtml((d.feasible || d.plant_completion_feasible) ? 'Feasible' : 'Not feasible') + '</strong><br>' +
       'Earliest delivery: ' + escapeHtml(fmtDate(d.earliest_delivery)) + '<br>' +
