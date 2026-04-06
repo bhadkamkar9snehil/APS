@@ -439,6 +439,19 @@ code.inline{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;backgroun
 .material-detail-table td{padding:.6rem .8rem;border-bottom:1px solid var(--border-soft);vertical-align:middle}
 .material-detail-table tbody tr:hover{background:var(--panel-soft)}
 
+/* Loading Progress Bar */
+.loading-bar{
+  position:fixed;
+  top:0;left:0;
+  height:3px;
+  background:linear-gradient(90deg, #7c3aed, #0f9f8c);
+  width:0%;
+  opacity:0;
+  z-index:9999;
+  transition:width 0.3s ease, opacity 0.3s ease;
+  box-shadow:0 0 10px rgba(124,58,237,.6);
+}
+
 .spinner{
   display:inline-block;width:.88rem;height:.88rem;border:.125rem solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite
 }

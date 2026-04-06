@@ -56,7 +56,7 @@ echo  [OK] UI server running
 
 :: Open browser
 echo  [^-^>] Opening browser...
-start http://localhost:%UI_PORT%/xaps_iframe_app.html
+start http://localhost:%UI_PORT%/
 
 echo.
 echo  X-APS is running:
