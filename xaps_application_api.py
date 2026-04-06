@@ -2372,10 +2372,13 @@ def aps_planning_orders_propose():
 
         validation = planner.validate_planning_orders(pos)
 
+        # Store planning orders for release endpoint
+        aps_planning_orders_propose._planning_orders = [po.to_dict() for po in pos]
+
         return _jsonify({
             'po_count': len(pos),
             'validation': validation,
-            'planning_orders': [po.to_dict() for po in pos],
+            'planning_orders': aps_planning_orders_propose._planning_orders,
         })
     except Exception as e:
         return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
@@ -2425,6 +2428,9 @@ def aps_planning_heats_derive():
         planner = APSPlanner(get_config().all_params())
         heats = planner.derive_heat_batches(pos, heat_size_mt=50.0)
 
+        # Store heats for simulate endpoint to use
+        aps_planning_simulate._heat_batches = [h.to_dict() for h in heats]
+
         return _jsonify({
             'total_heats': len(heats),
             'total_mt': sum(h.qty_mt for h in heats),
@@ -2436,27 +2442,41 @@ def aps_planning_heats_derive():
 
 @app.route('/api/aps/planning/simulate', methods=['POST'])
 def aps_planning_simulate():
-    """Simulate: Run finite scheduler on heats and return schedule."""
+    """Simulate: Run finite scheduler on heats and return feasibility."""
     try:
         payload = request.get_json(silent=True) or {}
-        heats_data = payload.get('heats', [])
 
-        # For now, return a mock feasibility check
-        # Will be integrated with CP-SAT scheduler
+        # Use the heat batches stored during derive step
+        if not hasattr(aps_planning_simulate, '_heat_batches'):
+            aps_planning_simulate._heat_batches = []
 
-        total_mt = sum(h.get('qty_mt', 0) for h in heats_data)
-        total_heats = len(heats_data)
-        estimated_sms_hours = total_heats * 2 + 1
-        estimated_rm_hours = round(total_mt / 30) + 1
-        total_duration_hours = estimated_sms_hours + estimated_rm_hours
+        # Reconstruct heat batch objects from stored data
+        heat_batches = []
+        for h in aps_planning_simulate._heat_batches:
+            if isinstance(h, dict):
+                heat = HeatBatch(
+                    heat_id=h.get('heat_id', f'HEAT-{len(heat_batches)+1}'),
+                    planning_order_id=h.get('planning_order_id', ''),
+                    grade=h.get('grade', ''),
+                    qty_mt=float(h.get('qty_mt', 0)),
+                    heat_number_seq=int(h.get('heat_number_seq', len(heat_batches)+1)),
+                    upstream_route=h.get('upstream_route', 'SMS→RM'),
+                    compatibility_class=h.get('compatibility_class', 'standard'),
+                    expected_duration_hours=float(h.get('expected_duration_hours', 2.0)),
+                )
+                heat_batches.append(heat)
+
+        # Run scheduler simulation
+        planner = APSPlanner(get_config().all_params())
+        result = planner.simulate_finite_schedule(heat_batches)
 
         return _jsonify({
-            'feasible': True,
-            'estimated_sms_hours': estimated_sms_hours,
-            'estimated_rm_hours': estimated_rm_hours,
-            'total_duration_hours': total_duration_hours,
-            'schedule_status': 'OPTIMAL',
-            'message': 'Simulation complete - ready to release',
+            'feasible': result.get('feasible'),
+            'total_duration_hours': result.get('total_duration_hours'),
+            'sms_hours': result.get('sms_hours'),
+            'rm_hours': result.get('rm_hours'),
+            'load_factor': result.get('load_factor'),
+            'message': result.get('message'),
         })
     except Exception as e:
         return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
