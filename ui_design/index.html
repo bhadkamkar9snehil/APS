@@ -158,13 +158,14 @@
 
       <section class="page" id="page-dispatch">
         <div class="page-header"><div><div class="page-title">Equipment Schedule</div><div id="selectedCampaignInfo" style="color:var(--text-soft);font-size:0.85rem;margin-top:0.2rem">Click a campaign in Schedule tab to view equipment timeline</div></div><div class="page-actions"><button class="btn ghost" id="clearCampaignBtn" style="display:none" onclick="clearCampaignSelection()">Clear Selection</button></div></div>
-        <div class="page-content">
+        <div class="page-content" style="display:flex;flex-direction:column;min-height:0">
           <div class="grid-4" style="margin-bottom:.75rem;flex-shrink:0">
             <div class="metric"><div class="metric-label">Equipment active</div><div class="metric-value" id="dispatchMachines">—</div></div>
             <div class="metric"><div class="metric-label">Operations</div><div class="metric-value" id="dispatchJobs">—</div></div>
             <div class="metric"><div class="metric-label">Total duration</div><div class="metric-value" id="dispatchDuration">—</div></div>
             <div class="metric"><div class="metric-label">Total material</div><div class="metric-value" id="dispatchMt">—</div></div>
           </div>
+          <div id="dispatchGantt" style="margin-bottom:1rem;flex-shrink:0;height:200px;overflow:auto;border:1px solid var(--border);border-radius:0.4rem;background:var(--panel-soft)"></div>
           <div class="dispatch-grid" id="dispatchGrid" style="flex:1;overflow:auto;min-height:0"><div class="notice">Run Schedule to populate the equipment schedule view.</div></div>
         </div>
       </section>
@@ -671,6 +672,12 @@ function clearCampaignSelection(){
   document.getElementById('clearCampaignBtn').style.display = 'none';
   renderDispatch();
 }
+function togglePlant(plantId){
+  const body = document.getElementById(plantId);
+  if(body) body.style.display = body.style.display === 'none' ? 'block' : 'none';
+  const header = body?.previousElementSibling;
+  if(header) header.querySelector('span').textContent = body.style.display === 'none' ? '▶' : '▼';
+}
 function renderDispatch(){
   const grid = qs('dispatchGrid');
   let jobs = state.gantt || [];
@@ -714,32 +721,45 @@ function renderDispatch(){
   setText('dispatchDuration', durationHours + 'h');
   setText('dispatchMt', totalMt.toFixed(1) + ' MT');
 
-  // Render by plant
+  // Calculate timeline bounds for gantt
+  minStart.setHours(0,0,0,0);
+  const horizonMs = Math.max(durationMs, 86400000);
+
+  // Render by plant with accordion and gantt
   grid.innerHTML = Object.keys(byPlant).sort().map(plant=>{
+    const plantId = 'plant-'+plant.replace(/\s+/g,'-');
     const resources = byPlant[plant];
-    const resourceCards = Object.keys(resources).sort().map(rid=>{
+    const resourceRows = Object.keys(resources).sort().map(rid=>{
       const list = resources[rid];
       const utilRow = (state.capacity || []).find(c=>(c.Resource_ID || c.resource_id) === rid);
       const util = Math.round(num(utilRow && (utilRow['Utilisation_%'] || utilRow.utilisation)));
       const op = list[0]?.Operation || utilRow?.Operation_Group || '—';
       const opCls = ['EAF','LRF','VD','CCM','RM'].includes(String(op).toUpperCase()) ? String(op).toLowerCase() : 'rm';
       const pillCls = util > 100 ? 'over' : util > 85 ? 'high' : 'ok';
-      return '<div class="machine-card">'+
-        '<div class="machine-card-hdr"><div class="machine-badge '+opCls+'">'+escapeHtml(String(op).slice(0,3).toUpperCase())+'</div><div><div class="machine-name">'+escapeHtml(rid)+'</div><div class="machine-op">'+escapeHtml(op)+'</div></div><div class="machine-util-pill '+pillCls+'">'+(util || 0)+'%</div></div>'+
-        '<div class="machine-jobs">'+
-          list.map((j, idx)=>{
-            const cls = [j.Status === 'RUNNING' ? 'running' : '', j.Queue_Violation && j.Queue_Violation !== 'OK' ? 'viol' : '', String(j.Status || '').toUpperCase().includes('LATE') ? 'late' : ''].filter(Boolean).join(' ');
-            const opClass = ['EAF','LRF','VD','CCM','RM'].includes(String(j.Operation || '').toUpperCase()) ? String(j.Operation).toLowerCase() : 'rm';
-            return '<div class="disp-job '+cls+'">'+
-              '<div class="disp-seq">'+(idx+1)+'</div>'+
-              '<div><div class="disp-camp">'+escapeHtml(j.Campaign || j.campaign_id || '—')+' · Heat '+escapeHtml(j.Heat_No || '—')+'</div><div class="disp-detail"><span class="disp-dur '+opClass+'"></span>'+escapeHtml(j.Grade || '—')+' · '+escapeHtml(j.Qty_MT || j.qty_mt || '—')+' MT'+(j.Queue_Violation && j.Queue_Violation !== 'OK' ? ' <span class="disp-viol-tag">'+escapeHtml(j.Queue_Violation)+'</span>' : '')+'</div></div>'+
-              '<div class="disp-time">'+escapeHtml(fmtDateTime(j.Planned_Start))+' → '+escapeHtml(fmtDateTime(j.Planned_End))+'</div>'+
-            '</div>';
-          }).join('') +
-        '</div></div>';
+
+      // Build gantt bars for this equipment
+      const bars = list.map(j=>{
+        const s = new Date(j.Planned_Start);
+        const e = new Date(j.Planned_End);
+        if(isNaN(s) || isNaN(e)) return '';
+        const left = Math.max(0, (s - minStart) / horizonMs * 100);
+        const width = Math.max(0.5, (e - s) / horizonMs * 100);
+        const jCls = ['EAF','LRF','VD','CCM','RM'].includes(String(j.Operation || '').toUpperCase()) ? String(j.Operation).toLowerCase() : 'eaf';
+        return '<div class="eq-gantt-bar '+jCls+'" style="left:'+left+'%;width:'+Math.min(width, 100-left)+'%;position:absolute;height:100%;top:0" title="'+escapeHtml(j.Campaign)+' Heat '+escapeHtml(j.Heat_No)+' '+fmtDateTime(j.Planned_Start)+'">'+
+          '<span style="font-size:.65rem;padding:2px 4px">'+escapeHtml(j.Campaign)+' H'+escapeHtml(j.Heat_No)+'</span>'+
+        '</div>';
+      }).join('');
+
+      return '<div class="eq-row">'+
+        '<div class="eq-label"><div class="eq-name">'+escapeHtml(rid)+'</div><div class="eq-op">'+escapeHtml(op)+'</div><div class="eq-util '+pillCls+'">'+(util || 0)+'%</div></div>'+
+        '<div class="eq-gantt" style="position:relative;background:var(--panel-soft);border-radius:.2rem;height:32px;border:1px solid var(--border-soft)">'+bars+'</div>'+
+      '</div>';
     }).join('');
 
-    return '<div style="margin-bottom:1.5rem"><div style="font-weight:700;color:var(--text-soft);padding:.5rem 0;border-bottom:1px solid var(--border)">'+escapeHtml(plant)+'</div>'+resourceCards+'</div>';
+    return '<div class="plant-group">'+
+      '<div class="plant-header" onclick="togglePlant(\''+plantId+'\')"><span style="font-weight:700;color:var(--brand)">▼</span> '+escapeHtml(plant)+'</div>'+
+      '<div class="plant-body" id="'+plantId+'">'+resourceRows+'</div>'+
+    '</div>';
   }).join('');
 }
 function deriveMaterialRows(){

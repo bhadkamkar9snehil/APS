@@ -277,7 +277,26 @@ select.sel{cursor:pointer}
 .mx-cell{
   padding:.48rem .5rem;border:1px solid var(--border-soft);border-radius:.45rem;text-align:center;font-size:.72rem
 }
-.dispatch-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(22rem,1fr));gap:.9rem;align-items:start}
+.dispatch-grid{display:flex;flex-direction:column;gap:.9rem;align-items:stretch}
+.plant-group{border:1px solid var(--border);border-radius:.4rem;overflow:hidden;background:var(--panel)}
+.plant-header{padding:.7rem .9rem;background:var(--bg-accent);border-bottom:1px solid var(--border);cursor:pointer;font-weight:700;color:var(--text);user-select:none;transition:background 0.2s}
+.plant-header:hover{background:var(--panel-soft)}
+.plant-body{padding:.7rem;display:flex;flex-direction:column;gap:.5rem}
+.eq-row{display:grid;grid-template-columns:160px 1fr;gap:.7rem;align-items:center;padding:.5rem;background:var(--panel-soft);border-radius:.3rem;border:1px solid var(--border-soft)}
+.eq-label{display:flex;flex-direction:column;gap:.15rem}
+.eq-name{font-weight:700;font-size:.8rem;color:var(--text)}
+.eq-op{font-size:.7rem;color:var(--text-soft)}
+.eq-util{font-size:.7rem;font-weight:700;padding:.1rem .4rem;border-radius:.2rem;width:fit-content;margin-top:.1rem}
+.eq-util.ok{background:var(--success-soft);color:var(--success)}
+.eq-util.high{background:var(--warning-soft);color:var(--warning)}
+.eq-util.over{background:var(--danger-soft);color:var(--danger)}
+.eq-gantt-bar{border-radius:.2rem;display:flex;align-items:center;color:#fff;font-weight:700;box-shadow:0 1px 3px rgba(0,0,0,0.15);transition:opacity 0.2s}
+.eq-gantt-bar:hover{opacity:0.85;z-index:10}
+.eq-gantt-bar.eaf{background:var(--eaf)}
+.eq-gantt-bar.lrf{background:var(--lrf)}
+.eq-gantt-bar.vd{background:var(--vd)}
+.eq-gantt-bar.ccm{background:var(--ccm)}
+.eq-gantt-bar.rm{background:var(--rm)}
 .machine-card{background:#fff;border:1px solid var(--border);border-radius:1rem;box-shadow:var(--shadow-soft);overflow:hidden}
 .machine-card-hdr{display:flex;align-items:center;gap:.65rem;padding:.72rem .9rem;border-bottom:1px solid var(--border-soft)}
 .machine-badge{
