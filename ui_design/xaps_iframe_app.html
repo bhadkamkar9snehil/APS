@@ -166,14 +166,14 @@
       </section>
 
       <section class="page" id="page-dispatch">
-        <div class="page-header"><div><div class="page-title">Dispatch</div><div class="page-sub">Machine-by-machine execution cards from dispatch board and schedule rows.</div></div></div>
+        <div class="page-header"><div><div class="page-title">Equipment Schedule</div><div id="selectedCampaignInfo" style="color:var(--text-soft);font-size:0.85rem;margin-top:0.2rem">Click a campaign in Schedule tab to view equipment timeline</div></div><div class="page-actions"><button class="btn ghost" id="clearCampaignBtn" style="display:none" onclick="clearCampaignSelection()">Clear Selection</button></div></div>
         <div class="grid-4" style="margin-bottom:.75rem">
-          <div class="metric"><div class="metric-label">Machines active</div><div class="metric-value" id="dispatchMachines">—</div></div>
-          <div class="metric"><div class="metric-label">Jobs visible</div><div class="metric-value" id="dispatchJobs">—</div></div>
-          <div class="metric"><div class="metric-label">Queue violations</div><div class="metric-value" id="dispatchViolations">—</div></div>
-          <div class="metric"><div class="metric-label">MT dispatched</div><div class="metric-value" id="dispatchMt">—</div></div>
+          <div class="metric"><div class="metric-label">Equipment active</div><div class="metric-value" id="dispatchMachines">—</div></div>
+          <div class="metric"><div class="metric-label">Operations</div><div class="metric-value" id="dispatchJobs">—</div></div>
+          <div class="metric"><div class="metric-label">Total duration</div><div class="metric-value" id="dispatchDuration">—</div></div>
+          <div class="metric"><div class="metric-label">Total material</div><div class="metric-value" id="dispatchMt">—</div></div>
         </div>
-        <div class="dispatch-grid" id="dispatchGrid"><div class="notice">Run Schedule to populate the dispatch view.</div></div>
+        <div class="dispatch-grid" id="dispatchGrid"><div class="notice">Run Schedule to populate the equipment schedule view.</div></div>
       </section>
 
       <section class="page" id="page-material">
@@ -535,34 +535,57 @@ function renderSchedule(){
   const t0 = starts.length ? new Date(Math.min(...starts)) : new Date();
   t0.setHours(0,0,0,0);
   const horizonMs = days*86400000;
-  const resources = [...new Set(jobs.map(j=>j.Resource_ID))].filter(Boolean).sort((a,b)=>{
-    const order=['BF','EAF','LRF','VD','CCM','RM'];
-    const ga=order.findIndex(o=>a.startsWith(o));const gb=order.findIndex(o=>b.startsWith(o));
-    return (ga===-1?99:ga)-(gb===-1?99:gb)||a.localeCompare(b);
+
+  // Group by campaign (for campaign-level view)
+  const campaigns = {};
+  jobs.forEach(job=>{
+    const cid = job.Campaign || 'Unknown';
+    if(!campaigns[cid]) campaigns[cid] = {id:cid, grade:job.Grade, jobs:[], minStart:new Date(8640000000000000), maxEnd:new Date(0)};
+    const s = new Date(job.Planned_Start);
+    const e = new Date(job.Planned_End);
+    if(!isNaN(s) && !isNaN(e)){
+      campaigns[cid].jobs.push(job);
+      if(s < campaigns[cid].minStart) campaigns[cid].minStart = s;
+      if(e > campaigns[cid].maxEnd) campaigns[cid].maxEnd = e;
+    }
   });
+
   const dayLabels=Array.from({length:days},(_,i)=>{const d=new Date(t0.getTime()+i*86400000);const m=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return`${d.getDate()}<small>${m[d.getMonth()]}</small>`;});
   wrap.innerHTML='';
-  const hdr=document.createElement('div');hdr.className='gantt-hdr';hdr.innerHTML=`<div class="gantt-res-col">Resource</div><div class="gantt-days">${dayLabels.map(d=>`<div class="gantt-day">${d}</div>`).join('')}</div>`;wrap.appendChild(hdr);
-  const OP_CLS={EAF:'eaf',LRF:'lrf',VD:'vd',CCM:'ccm',RM:'rm'};
-  resources.forEach(resId=>{
-    const resJobs=jobs.filter(j=>j.Resource_ID===resId);
-    const op=(resJobs[0]?.Operation||'').toUpperCase();const opLabel={EAF:'Melting',LRF:'Refining',VD:'Degassing',CCM:'Casting',RM:'Rolling'}[op]||op;
-    const row=document.createElement('div');row.className='gantt-row';row.innerHTML=`<div class="gantt-res-lbl"><div class="rid">${resId}</div><div class="rop">${opLabel}</div></div>`;
+  const hdr=document.createElement('div');hdr.className='gantt-hdr';hdr.innerHTML=`<div class="gantt-res-col" style="font-weight:700">Campaign</div><div class="gantt-days">${dayLabels.map(d=>`<div class="gantt-day">${d}</div>`).join('')}</div>`;wrap.appendChild(hdr);
+
+  Object.values(campaigns).sort((a,b)=>a.id.localeCompare(b.id)).forEach(camp=>{
+    const row=document.createElement('div');row.className='gantt-row';row.innerHTML=`<div class="gantt-res-lbl"><div class="rid">${camp.id}</div><div class="rop" style="font-size:.7rem">${camp.grade||'—'}</div></div>`;
     const tl=document.createElement('div');tl.className='gantt-tl';
-    resJobs.forEach(job=>{
-      const s=new Date(job.Planned_Start);const e=new Date(job.Planned_End);
-      if(isNaN(s)||isNaN(e))return;const left=Math.max(0,(s-t0)/horizonMs*100);const width=Math.max(0.5,(e-s)/horizonMs*100);
-      if(left>100)return;const cls=OP_CLS[(job.Operation||'').toUpperCase()]||'eaf';
-      const bar=document.createElement('div');bar.className=`gantt-job ${cls}`;bar.style.left=left+'%';bar.style.width=Math.min(width,100-left)+'%';
-      bar.innerHTML=`<span>${job.Campaign||''}</span><span style="opacity:.7;margin-left:3px;font-size:9px">H${job.Heat_No||''}</span>`;
-      bar.addEventListener('mouseenter',e=>{const tt=document.getElementById('tt');tt.textContent='';tt.innerHTML=`<strong>${job.Campaign} · Heat ${job.Heat_No||'—'}</strong><br>Resource: ${job.Resource_ID}<br>Op: ${job.Operation}<br>Start: ${fmtDate(job.Planned_Start)}<br>End: ${fmtDate(job.Planned_End)}<br>Grade: ${job.Grade||'—'}`;tt.classList.add('show');});
+    const s = camp.minStart; const e = camp.maxEnd;
+    if(!isNaN(s) && !isNaN(e) && s <= e){
+      const left=Math.max(0,(s-t0)/horizonMs*100);
+      const width=Math.max(1,(e-s)/horizonMs*100);
+      const bar=document.createElement('div');bar.className='gantt-job eaf';bar.style.left=left+'%';bar.style.width=Math.min(width,100-left)+'%';bar.style.cursor='pointer';
+      bar.innerHTML=`<span>${camp.id}</span> <span style="opacity:.6;font-size:9px">${camp.jobs.length}H</span>`;
+      bar.addEventListener('click',()=>{selectCampaignFromGantt(camp.id);});
+      bar.addEventListener('mouseenter',ev=>{const tt=document.getElementById('tt');tt.innerHTML=`<strong>${camp.id}</strong><br>Grade: ${camp.grade||'—'}<br>Heats: ${camp.jobs.length}<br>Start: ${fmtDate(s)}<br>End: ${fmtDate(e)}<br><small style="color:var(--brand)">Click to view equipment schedule</small>`;tt.classList.add('show');});
       bar.addEventListener('mousemove',ev=>{const tt=document.getElementById('tt');tt.style.left=(ev.clientX+14)+'px';tt.style.top=(ev.clientY-10)+'px';});
       bar.addEventListener('mouseleave',()=>{document.getElementById('tt').classList.remove('show');});
       tl.appendChild(bar);
-    });
+    }
     row.appendChild(tl);
     wrap.appendChild(row);
   });
+}
+function selectCampaignFromGantt(campaignId){
+  state.selectedCampaign = campaignId;
+  document.getElementById('selectedCampaignInfo').innerHTML = `<strong>Viewing:</strong> ${escapeHtml(campaignId)}`;
+  document.getElementById('clearCampaignBtn').style.display = 'block';
+  renderDispatch();
+  const dispatchTab = document.querySelector('button[data-page="dispatch"]');
+  if(dispatchTab) dispatchTab.click();
+}
+function clearCampaignSelection(){
+  state.selectedCampaign = null;
+  document.getElementById('selectedCampaignInfo').innerHTML = 'Click a campaign in Schedule tab to view equipment timeline';
+  document.getElementById('clearCampaignBtn').style.display = 'none';
+  renderDispatch();
 }
 function renderOrderGradeOptions(){
   const grades = [...new Set((state.orders||[]).map(o=>o.Grade).filter(Boolean))].sort();
@@ -632,41 +655,73 @@ function renderDropZones(){
 }
 function renderDispatch(){
   const grid = qs('dispatchGrid');
-  const board = state.dispatch && state.dispatch.length ? state.dispatch : [];
-  const jobs = state.gantt || [];
-  const grouped = {};
+  let jobs = state.gantt || [];
+
+  // Filter by selected campaign if one is selected
+  if(state.selectedCampaign){
+    jobs = jobs.filter(j=>(j.Campaign || j.campaign_id) === state.selectedCampaign);
+  }
+
+  if(!jobs.length){
+    grid.innerHTML = '<div class="notice">'+(state.selectedCampaign ? 'No jobs found for this campaign.' : 'Run Schedule to populate the equipment schedule view.')+'</div>';
+    setText('dispatchMachines', '—');
+    setText('dispatchJobs', '—');
+    setText('dispatchDuration', '—');
+    setText('dispatchMt', '—');
+    return;
+  }
+
+  // Group by plant and resource
+  const byPlant = {};
   jobs.forEach(j=>{
+    const plant = j.Plant || 'Shared';
     const rid = j.Resource_ID || 'UNKNOWN';
-    if(!grouped[rid]) grouped[rid] = [];
-    grouped[rid].push(j);
+    if(!byPlant[plant]) byPlant[plant] = {};
+    if(!byPlant[plant][rid]) byPlant[plant][rid] = [];
+    byPlant[plant][rid].push(j);
   });
-  const ids = [...new Set([...Object.keys(grouped), ...board.map(b=>b.resource_id || b.Resource_ID).filter(Boolean)])].sort();
-  setText('dispatchMachines', ids.length || '—');
+
+  // Calculate metrics
+  const uniqueResources = new Set(jobs.map(j=>j.Resource_ID).filter(Boolean)).size;
+  const starts = jobs.map(j=>new Date(j.Planned_Start)).filter(d=>!isNaN(d));
+  const ends = jobs.map(j=>new Date(j.Planned_End)).filter(d=>!isNaN(d));
+  const minStart = starts.length ? new Date(Math.min(...starts)) : new Date();
+  const maxEnd = ends.length ? new Date(Math.max(...ends)) : new Date();
+  const durationMs = maxEnd - minStart;
+  const durationHours = Math.round(durationMs / 3600000);
+  const totalMt = jobs.reduce((a,j)=>a + num(j.Qty_MT || j.qty_mt), 0);
+
+  setText('dispatchMachines', uniqueResources || '—');
   setText('dispatchJobs', jobs.length || '—');
-  const viol = jobs.filter(j=>j.Queue_Violation && j.Queue_Violation !== 'OK').length;
-  setText('dispatchViolations', viol || 0);
-  setText('dispatchMt', jobs.reduce((a,j)=>a + num(j.Qty_MT || j.qty_mt), 0).toFixed(1));
-  if(!ids.length){ grid.innerHTML = '<div class="notice">Run Schedule to populate the dispatch view.</div>'; return; }
-  grid.innerHTML = ids.map(rid=>{
-    const list = (grouped[rid] || []).slice(0,12);
-    const utilRow = (state.capacity || []).find(c=>(c.Resource_ID || c.resource_id) === rid);
-    const util = Math.round(num(utilRow && (utilRow['Utilisation_%'] || utilRow.utilisation)));
-    const op = list[0]?.Operation || utilRow?.Operation_Group || '—';
-    const opCls = ['EAF','LRF','VD','CCM','RM'].includes(String(op).toUpperCase()) ? String(op).toLowerCase() : 'rm';
-    const pillCls = util > 100 ? 'over' : util > 85 ? 'high' : 'ok';
-    return '<div class="machine-card">'+
-      '<div class="machine-card-hdr"><div class="machine-badge '+opCls+'">'+escapeHtml(String(op).slice(0,3).toUpperCase())+'</div><div><div class="machine-name">'+escapeHtml(rid)+'</div><div class="machine-op">'+escapeHtml(op)+'</div></div><div class="machine-util-pill '+pillCls+'">'+(util || 0)+'%</div></div>'+
-      '<div class="machine-jobs">'+
-        (list.length ? list.map((j, idx)=>{
-          const cls = [j.Status === 'RUNNING' ? 'running' : '', j.Queue_Violation && j.Queue_Violation !== 'OK' ? 'viol' : '', String(j.Status || '').toUpperCase().includes('LATE') ? 'late' : ''].filter(Boolean).join(' ');
-          const opClass = ['EAF','LRF','VD','CCM','RM'].includes(String(j.Operation || '').toUpperCase()) ? String(j.Operation).toLowerCase() : 'rm';
-          return '<div class="disp-job '+cls+'">'+
-            '<div class="disp-seq">'+(idx+1)+'</div>'+
-            '<div><div class="disp-camp">'+escapeHtml(j.Campaign || j.campaign_id || '—')+' · Heat '+escapeHtml(j.Heat_No || '—')+'</div><div class="disp-detail"><span class="disp-dur '+opClass+'"></span>'+escapeHtml(j.Grade || '—')+' · '+escapeHtml(j.Qty_MT || j.qty_mt || '—')+' MT'+(j.Queue_Violation && j.Queue_Violation !== 'OK' ? ' <span class="disp-viol-tag">'+escapeHtml(j.Queue_Violation)+'</span>' : '')+'</div></div>'+
-            '<div class="disp-time">'+escapeHtml(fmtDateTime(j.Planned_Start))+'</div>'+
-          '</div>';
-        }).join('') : '<div class="notice">No jobs for this resource.</div>')+
-      '</div></div>';
+  setText('dispatchDuration', durationHours + 'h');
+  setText('dispatchMt', totalMt.toFixed(1) + ' MT');
+
+  // Render by plant
+  grid.innerHTML = Object.keys(byPlant).sort().map(plant=>{
+    const resources = byPlant[plant];
+    const resourceCards = Object.keys(resources).sort().map(rid=>{
+      const list = resources[rid];
+      const utilRow = (state.capacity || []).find(c=>(c.Resource_ID || c.resource_id) === rid);
+      const util = Math.round(num(utilRow && (utilRow['Utilisation_%'] || utilRow.utilisation)));
+      const op = list[0]?.Operation || utilRow?.Operation_Group || '—';
+      const opCls = ['EAF','LRF','VD','CCM','RM'].includes(String(op).toUpperCase()) ? String(op).toLowerCase() : 'rm';
+      const pillCls = util > 100 ? 'over' : util > 85 ? 'high' : 'ok';
+      return '<div class="machine-card">'+
+        '<div class="machine-card-hdr"><div class="machine-badge '+opCls+'">'+escapeHtml(String(op).slice(0,3).toUpperCase())+'</div><div><div class="machine-name">'+escapeHtml(rid)+'</div><div class="machine-op">'+escapeHtml(op)+'</div></div><div class="machine-util-pill '+pillCls+'">'+(util || 0)+'%</div></div>'+
+        '<div class="machine-jobs">'+
+          list.map((j, idx)=>{
+            const cls = [j.Status === 'RUNNING' ? 'running' : '', j.Queue_Violation && j.Queue_Violation !== 'OK' ? 'viol' : '', String(j.Status || '').toUpperCase().includes('LATE') ? 'late' : ''].filter(Boolean).join(' ');
+            const opClass = ['EAF','LRF','VD','CCM','RM'].includes(String(j.Operation || '').toUpperCase()) ? String(j.Operation).toLowerCase() : 'rm';
+            return '<div class="disp-job '+cls+'">'+
+              '<div class="disp-seq">'+(idx+1)+'</div>'+
+              '<div><div class="disp-camp">'+escapeHtml(j.Campaign || j.campaign_id || '—')+' · Heat '+escapeHtml(j.Heat_No || '—')+'</div><div class="disp-detail"><span class="disp-dur '+opClass+'"></span>'+escapeHtml(j.Grade || '—')+' · '+escapeHtml(j.Qty_MT || j.qty_mt || '—')+' MT'+(j.Queue_Violation && j.Queue_Violation !== 'OK' ? ' <span class="disp-viol-tag">'+escapeHtml(j.Queue_Violation)+'</span>' : '')+'</div></div>'+
+              '<div class="disp-time">'+escapeHtml(fmtDateTime(j.Planned_Start))+' → '+escapeHtml(fmtDateTime(j.Planned_End))+'</div>'+
+            '</div>';
+          }).join('') +
+        '</div></div>';
+    }).join('');
+
+    return '<div style="margin-bottom:1.5rem"><div style="font-weight:700;color:var(--text-soft);padding:.5rem 0;border-bottom:1px solid var(--border)">'+escapeHtml(plant)+'</div>'+resourceCards+'</div>';
   }).join('');
 }
 function deriveMaterialRows(){
