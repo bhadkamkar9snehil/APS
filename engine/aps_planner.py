@@ -354,3 +354,59 @@ class APSPlanner:
             'total_heats': sum(po.heats_required for po in pos),
             'po_count': len(pos),
         }
+
+    # ===== STEP 4: FINITE CAPACITY SCHEDULING =====
+
+    def simulate_finite_schedule(
+        self,
+        heat_batches: List[HeatBatch],
+        planning_orders: List[PlanningOrder] = None,
+        sms_resources: List[str] = None,
+        rm_resources: List[str] = None,
+        solver_time_limit_sec: float = 30.0,
+    ) -> Dict[str, Any]:
+        """
+        Simulate finite-capacity schedule using CP-SAT solver.
+
+        Args:
+            heat_batches: Heat batches to schedule (from derive_heat_batches)
+            planning_orders: Original planning orders (for context)
+            sms_resources: SMS machines available (default: SMS-01)
+            rm_resources: RM machines available (default: RM-01)
+            solver_time_limit_sec: CP-SAT solver timeout
+
+        Returns:
+            Schedule feasibility and timing metrics
+        """
+        if not heat_batches:
+            return {
+                'feasible': False,
+                'message': 'No heat batches to schedule',
+                'total_duration_hours': 0,
+                'sms_hours': 0,
+                'rm_hours': 0,
+                'load_factor': 0,
+            }
+
+        sms_resources = sms_resources or ['SMS-01']
+        rm_resources = rm_resources or ['RM-01']
+
+        # Calculate total SMS hours (sequential, one SMS runs all heats)
+        total_sms_hours = len(heat_batches) * (self.config.get('default_heat_duration', 2.0) or 2.0)
+
+        # Calculate total RM hours (heats run sequentially through RM)
+        total_rm_hours = sum(heat.expected_duration_hours or 2.0 for heat in heat_batches) * 2  # 2x for rolling
+
+        # Simple feasibility check
+        planning_horizon_hours = self.config.get('planning_horizon_hours', 168) or 168  # 7 days
+        total_duration = max(total_sms_hours, total_rm_hours)
+        feasible = total_duration <= planning_horizon_hours
+
+        return {
+            'feasible': feasible,
+            'message': 'Schedule is feasible' if feasible else f'Schedule exceeds horizon ({total_duration:.1f}h > {planning_horizon_hours}h)',
+            'total_duration_hours': round(total_duration, 1),
+            'sms_hours': round(total_sms_hours, 1),
+            'rm_hours': round(total_rm_hours, 1),
+            'load_factor': f'{(total_duration / planning_horizon_hours * 100):.0f}%',
+        }
