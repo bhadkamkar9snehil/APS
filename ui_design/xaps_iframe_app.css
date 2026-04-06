@@ -185,9 +185,9 @@ button,input,select,textarea{font:inherit}
 .bottleneck-box{padding:.78rem .84rem;border-radius:.85rem;background:var(--warning-soft);border:1px solid #f3e1b1;margin-bottom:.72rem}
 .resource-list{display:grid;gap:.5rem}
 .resource-row{display:grid;grid-template-columns:4.75rem 1fr 2.1rem;gap:.58rem;align-items:center;font-size:.75rem}
-.table{width:100%;border-collapse:collapse}
+.table{width:100%;border-collapse:collapse;table-layout:fixed}
 .table th{font-size:.64rem;text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);text-align:left;padding:.64rem .78rem;background:#fbfcfe;border-bottom:1px solid var(--border)}
-.table td{padding:.72rem .78rem;border-bottom:1px solid var(--border-soft);font-size:.77rem;vertical-align:top}
+.table td{padding:.72rem .78rem;border-bottom:1px solid var(--border-soft);font-size:.77rem;vertical-align:top;word-break:break-word;overflow-wrap:break-word}
 .table tr:hover td{background:#fafcff}
 .badge{
   display:inline-flex;align-items:center;border-radius:999px;padding:.17rem .48rem;font-size:.63rem;font-weight:850;border:1px solid var(--border)

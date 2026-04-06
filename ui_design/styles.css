@@ -787,7 +787,8 @@ textarea {
 
 .table {
   width: 100%;
-  border-collapse: collapse
+  border-collapse: collapse;
+  table-layout: fixed
 }
 
 .table th {
@@ -805,7 +806,9 @@ textarea {
   padding: .72rem .78rem;
   border-bottom: 1px solid var(--border-soft);
   font-size: .77rem;
-  vertical-align: top
+  vertical-align: top;
+  word-break: break-word;
+  overflow-wrap: break-word
 }
 
 .table tr:hover td {
