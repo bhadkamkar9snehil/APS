@@ -17,6 +17,11 @@
       <div class="tabs" id="topTabs">
         <button class="tab active" data-page="dashboard">Dashboard</button>
         <button class="tab" data-page="orders">Sales Orders</button>
+        <button class="tab" data-page="planning-pool">Order Pool</button>
+        <button class="tab" data-page="planning-board">Planning Board</button>
+        <button class="tab" data-page="heat-builder">Heat Builder</button>
+        <button class="tab" data-page="finite-scheduler">Scheduler</button>
+        <button class="tab" data-page="release-board">Release</button>
         <button class="tab" data-page="campaigns">Campaigns</button>
         <button class="tab" data-page="schedule">Schedule</button>
         <button class="tab" data-page="dispatch">Dispatch</button>
@@ -124,6 +129,130 @@
                 <div style="text-align:center"><div style="color:var(--text-soft)">Late</div><div style="font-weight:700;color:var(--danger)" id="perfLate">—</div></div>
                 <div style="text-align:center"><div style="color:var(--text-soft)">Days</div><div style="font-weight:700" id="perfAvgLate">—</div></div>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-planning-pool">
+        <div class="page-header">
+          <div><div class="page-title">Order Pool</div><div class="page-sub">Backlog of open sales orders ready for planning.</div></div>
+          <div class="page-actions"><button class="btn primary" id="poolSelectWindowBtn">Select Window</button></div>
+        </div>
+        <div class="page-content">
+          <div class="filters">
+            <input class="inp" id="poolSearch" placeholder="Search SO / Grade / Customer…" />
+            <select class="sel" id="poolGrade"><option value="">All grades</option></select>
+            <select class="sel" id="poolPriority"><option value="">All priorities</option><option>URGENT</option><option>HIGH</option><option>NORMAL</option></select>
+          </div>
+          <div class="card">
+            <div class="card-header"><div><div class="card-title">Open sales orders</div><div class="card-sub" id="poolCount">—</div></div></div>
+            <div class="card-body" style="padding:0;overflow:auto;max-height:70vh">
+              <table class="table">
+                <thead><tr><th>SO ID</th><th>Customer</th><th>Grade</th><th>Section</th><th>Qty MT</th><th>Due Date</th><th>Priority</th><th>Status</th></tr></thead>
+                <tbody id="poolBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-planning-board">
+        <div class="page-header">
+          <div><div class="page-title">Planning Board</div><div class="page-sub">Proposed planning orders with merge/split editing.</div></div>
+          <div class="page-actions">
+            <select class="sel" id="planningWindowDays" style="max-width:150px">
+              <option value="3">Next 3 days</option>
+              <option value="7" selected>Next 7 days</option>
+              <option value="10">Next 10 days</option>
+              <option value="14">Next 14 days</option>
+            </select>
+            <button class="btn primary" id="planningProposeBtn">Propose Orders</button>
+          </div>
+        </div>
+        <div class="page-content">
+          <div class="grid-4" style="margin-bottom:.75rem">
+            <div class="metric"><div class="metric-label">Planning window</div><div class="metric-value" id="planningWindowLabel">—</div></div>
+            <div class="metric"><div class="metric-label">Candidates</div><div class="metric-value" id="planningCandidates">—</div></div>
+            <div class="metric"><div class="metric-label">Proposed POs</div><div class="metric-value" id="planningProposedCount">—</div></div>
+            <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="planningTotalMT">—</div></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div><div class="card-title">Proposed Planning Orders</div><div class="card-sub" id="planningNote">—</div></div></div>
+            <div class="card-body" style="padding:0;overflow:auto;max-height:70vh">
+              <table class="table">
+                <thead><tr><th>PO ID</th><th>SOs</th><th>Qty MT</th><th>Grade</th><th>Due Window</th><th>Heats</th><th>Status</th></tr></thead>
+                <tbody id="planningBoard"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-heat-builder">
+        <div class="page-header">
+          <div><div class="page-title">Heat Builder</div><div class="page-sub">Derived heat requirements from planning orders.</div></div>
+          <div class="page-actions"><button class="btn primary" id="heatDeriveBtn">Derive Heats</button></div>
+        </div>
+        <div class="page-content">
+          <div class="grid-4" style="margin-bottom:.75rem">
+            <div class="metric"><div class="metric-label">Total heats</div><div class="metric-value" id="heatTotal">—</div></div>
+            <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="heatMT">—</div></div>
+            <div class="metric"><div class="metric-label">Avg per heat</div><div class="metric-value" id="heatAvg">—</div></div>
+            <div class="metric"><div class="metric-label">Duration</div><div class="metric-value" id="heatDuration">—</div></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div><div class="card-title">Heat Batches</div><div class="card-sub">SMS production heats derived from manufacturing lots.</div></div></div>
+            <div class="card-body" style="padding:0;overflow:auto;max-height:70vh">
+              <table class="table">
+                <thead><tr><th>Heat ID</th><th>PO ID</th><th>Grade</th><th>Qty MT</th><th>Seq</th><th>Route</th><th>Duration</th></tr></thead>
+                <tbody id="heatBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-finite-scheduler">
+        <div class="page-header">
+          <div><div class="page-title">Finite Scheduler</div><div class="page-sub">Resource-constrained schedule from heat batches.</div></div>
+          <div class="page-actions"><button class="btn primary" id="schedulerSimulateBtn">Simulate Schedule</button></div>
+        </div>
+        <div class="page-content">
+          <div class="grid-4" style="margin-bottom:.75rem">
+            <div class="metric"><div class="metric-label">Feasible</div><div class="metric-value" id="scheduleFeasible">—</div></div>
+            <div class="metric"><div class="metric-label">Total duration</div><div class="metric-value" id="scheduleDuration">—</div></div>
+            <div class="metric"><div class="metric-label">SMS hours</div><div class="metric-value" id="scheduleSmsHours">—</div></div>
+            <div class="metric"><div class="metric-label">RM hours</div><div class="metric-value" id="scheduleRmHours">—</div></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div><div class="card-title">Schedule Summary</div><div class="card-sub" id="scheduleNote">—</div></div></div>
+            <div class="card-body" style="padding:1rem">
+              <div id="schedulerContent" style="color:var(--text-soft);text-align:center;font-size:.9rem">Run simulation to see feasibility and timing.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-release-board">
+        <div class="page-header">
+          <div><div class="page-title">Release Board</div><div class="page-sub">Approve and release planning orders to execution.</div></div>
+          <div class="page-actions"><button class="btn success" id="releaseApproveBtn" disabled>Release Selected</button></div>
+        </div>
+        <div class="page-content">
+          <div class="grid-4" style="margin-bottom:.75rem">
+            <div class="metric"><div class="metric-label">Ready</div><div class="metric-value" id="releaseReady">—</div></div>
+            <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="releaseMT">—</div></div>
+            <div class="metric"><div class="metric-label">Total SOs</div><div class="metric-value" id="releaseSOs">—</div></div>
+            <div class="metric"><div class="metric-label">Status</div><div class="metric-value" id="releaseStatus">—</div></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div><div class="card-title">Planning Orders Ready for Release</div><div class="card-sub">Approved schedule, material confirmed.</div></div></div>
+            <div class="card-body" style="padding:0;overflow:auto;max-height:70vh">
+              <table class="table">
+                <thead><tr><th></th><th>PO ID</th><th>SOs</th><th>Qty MT</th><th>Grade</th><th>Heats</th><th>Material</th><th>Actions</th></tr></thead>
+                <tbody id="releaseBoard"></tbody>
+              </table>
             </div>
           </div>
         </div>
@@ -1778,6 +1907,281 @@ document.querySelectorAll('[data-camp-filter]').forEach(btn=>btn.addEventListene
   renderCampaigns();
 }));
 
+// ===== APS PLANNING WORKFLOW FUNCTIONS =====
+
+async function loadPlanningOrderPool(){
+  try {
+    const data = await apiFetch('/api/aps/planning/orders/pool');
+    state.poolOrders = data.orders || [];
+    renderPlanningOrderPool();
+  } catch(e) {
+    console.error('Failed to load order pool:', e);
+    qs('poolBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-soft)">Error loading orders: ' + e.message + '</td></tr>';
+  }
+}
+
+function renderPlanningOrderPool(){
+  const orders = state.poolOrders || [];
+  let filtered = orders;
+
+  const searchTerm = qs('poolSearch')?.value || '';
+  const gradeFilt = qs('poolGrade')?.value || '';
+  const priorityFilt = qs('poolPriority')?.value || '';
+
+  if(searchTerm){
+    const term = searchTerm.toLowerCase();
+    filtered = filtered.filter(so =>
+      String(so.so_id).toLowerCase().includes(term) ||
+      String(so.grade).toLowerCase().includes(term) ||
+      String(so.customer_id).toLowerCase().includes(term)
+    );
+  }
+  if(gradeFilt){
+    filtered = filtered.filter(so => so.grade === gradeFilt);
+  }
+  if(priorityFilt){
+    filtered = filtered.filter(so => so.priority === priorityFilt);
+  }
+
+  setText('poolCount', filtered.length + ' orders');
+
+  qs('poolBody').innerHTML = filtered.map(so => `<tr>
+    <td>${escapeHtml(so.so_id)}</td>
+    <td>${escapeHtml(so.customer_id)}</td>
+    <td>${escapeHtml(so.grade)}</td>
+    <td>${so.section_mm ? so.section_mm + 'mm' : '—'}</td>
+    <td>${num(so.qty_mt).toFixed(0)}</td>
+    <td>${fmtDate(so.due_date)}</td>
+    <td><span class="badge ${so.priority === 'URGENT' ? 'red' : so.priority === 'HIGH' ? 'amber' : 'blue'}">${escapeHtml(so.priority)}</span></td>
+    <td>${escapeHtml(so.status)}</td>
+  </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-soft)">No orders match filters.</td></tr>';
+
+  // Populate grade filter
+  const grades = [...new Set(orders.map(so => so.grade))].sort();
+  const gradeOpts = qs('poolGrade');
+  if(gradeOpts && !gradeOpts.dataset.populated){
+    gradeOpts.innerHTML = '<option value="">All grades</option>' + grades.map(g => `<option>${escapeHtml(g)}</option>`).join('');
+    gradeOpts.dataset.populated = 'true';
+  }
+}
+
+async function selectPlanningWindow(){
+  const windowDays = Number(qs('planningWindowDays')?.value || 7);
+  try {
+    setText('planningWindowLabel', 'Selecting...');
+    const data = await apiFetch('/api/aps/planning/window/select', {
+      method: 'POST',
+      body: JSON.stringify({days: windowDays})
+    });
+
+    state.windowSOs = data.candidates || [];
+    setText('planningWindowLabel', windowDays + ' days');
+    setText('planningCandidates', data.candidate_count || 0);
+
+    // Auto-propose after selecting window
+    await proposePlanningOrders();
+  } catch(e) {
+    alert('Failed to select planning window: ' + e.message);
+  }
+}
+
+async function proposePlanningOrders(){
+  try {
+    setText('planningProposeBtn', 'Proposing...');
+    const data = await apiFetch('/api/aps/planning/orders/propose', {
+      method: 'POST',
+      body: JSON.stringify({candidate_count: (state.windowSOs || []).length})
+    });
+
+    state.planningOrders = data.proposed_orders || [];
+    renderPlanningBoard();
+
+    setText('planningProposeBtn', 'Propose Orders');
+  } catch(e) {
+    alert('Failed to propose planning orders: ' + e.message);
+    setText('planningProposeBtn', 'Propose Orders');
+  }
+}
+
+function renderPlanningBoard(){
+  const pos = state.planningOrders || [];
+  const totalMT = pos.reduce((sum, po) => sum + num(po.total_qty_mt), 0);
+
+  setText('planningProposedCount', pos.length);
+  setText('planningTotalMT', totalMT.toFixed(0));
+  setText('planningNote', pos.length + ' proposed lots');
+
+  qs('planningBoard').innerHTML = pos.map(po => `<tr>
+    <td><strong>${escapeHtml(po.po_id)}</strong></td>
+    <td>${escapeHtml(po.selected_so_ids?.join(', ') || '—')}</td>
+    <td>${num(po.total_qty_mt).toFixed(0)}</td>
+    <td>${escapeHtml(po.grade_family)}</td>
+    <td>${po.due_window ? po.due_window[0] + ' to ' + po.due_window[1] : '—'}</td>
+    <td>${po.heats_required || 0}</td>
+    <td><span class="badge blue">${escapeHtml(po.planner_status)}</span></td>
+  </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-soft)">No planning orders proposed yet. Select a window first.</td></tr>';
+}
+
+async function deriveHeatBatches(){
+  if(!state.planningOrders || !state.planningOrders.length){
+    alert('No planning orders to derive heats from. Propose orders first.');
+    return;
+  }
+
+  try {
+    setText('heatDeriveBtn', 'Deriving...');
+    const data = await apiFetch('/api/aps/planning/heats/derive', {
+      method: 'POST',
+      body: JSON.stringify({planning_orders: state.planningOrders})
+    });
+
+    state.heatBatches = data.heats || [];
+    renderHeatBuilder();
+
+    setText('heatDeriveBtn', 'Derive Heats');
+  } catch(e) {
+    alert('Failed to derive heat batches: ' + e.message);
+    setText('heatDeriveBtn', 'Derive Heats');
+  }
+}
+
+function renderHeatBuilder(){
+  const heats = state.heatBatches || [];
+  const totalMT = heats.reduce((sum, h) => sum + num(h.qty_mt), 0);
+  const avgMT = heats.length > 0 ? totalMT / heats.length : 0;
+
+  setText('heatTotal', heats.length);
+  setText('heatMT', totalMT.toFixed(0));
+  setText('heatAvg', avgMT.toFixed(1));
+  setText('heatDuration', (heats.length * 2) + 'h');  // Assume 2h per heat
+
+  qs('heatBody').innerHTML = heats.map(h => `<tr>
+    <td><strong>${escapeHtml(h.heat_id)}</strong></td>
+    <td>${escapeHtml(h.planning_order_id)}</td>
+    <td>${escapeHtml(h.grade)}</td>
+    <td>${num(h.qty_mt).toFixed(0)}</td>
+    <td>${h.heat_number_seq || '—'}</td>
+    <td>${escapeHtml(h.upstream_route || '—')}</td>
+    <td>${h.expected_duration_hours || 0}h</td>
+  </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-soft)">No heats derived yet.</td></tr>';
+}
+
+async function simulateSchedule(){
+  if(!state.heatBatches || !state.heatBatches.length){
+    alert('No heat batches to schedule. Derive heats first.');
+    return;
+  }
+
+  try {
+    setText('schedulerSimulateBtn', 'Simulating...');
+    const data = await apiFetch('/api/aps/planning/simulate', {
+      method: 'POST',
+      body: JSON.stringify({heat_count: state.heatBatches.length})
+    });
+
+    const feasible = data.feasible ? 'Yes' : 'No';
+    const duration = data.total_duration_hours || 0;
+    const smsHours = data.sms_hours || 0;
+    const rmHours = data.rm_hours || 0;
+
+    setText('scheduleFeasible', feasible);
+    setText('scheduleDuration', duration + ' hours');
+    setText('scheduleSmsHours', smsHours + 'h');
+    setText('scheduleRmHours', rmHours + 'h');
+    setText('scheduleNote', data.message || 'Schedule generated');
+
+    qs('schedulerContent').innerHTML = `<div style="text-align:center;color:var(--text)">
+      <div style="font-size:2rem;font-weight:700;margin-bottom:1rem">${feasible}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem;font-size:.9rem">
+        <div><div style="color:var(--text-soft)">Total Duration</div><div style="font-weight:700;font-size:1.3rem">${duration}h</div></div>
+        <div><div style="color:var(--text-soft)">Load Factor</div><div style="font-weight:700;font-size:1.3rem">${data.load_factor || '—'}</div></div>
+      </div>
+      <div style="font-size:.8rem;color:var(--text-soft)">${data.message}</div>
+    </div>`;
+
+    setText('schedulerSimulateBtn', 'Simulate Schedule');
+  } catch(e) {
+    alert('Schedule simulation failed: ' + e.message);
+    setText('schedulerSimulateBtn', 'Simulate Schedule');
+  }
+}
+
+async function loadReleaseBoard(){
+  if(!state.planningOrders || !state.planningOrders.length){
+    qs('releaseBoard').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-soft)">No planning orders ready. Complete planning workflow first.</td></tr>';
+    return;
+  }
+
+  const pos = state.planningOrders || [];
+  const totalMT = pos.reduce((sum, po) => sum + num(po.total_qty_mt), 0);
+  const totalSOs = pos.reduce((sum, po) => sum + (po.selected_so_ids?.length || 0), 0);
+
+  setText('releaseReady', pos.length);
+  setText('releaseMT', totalMT.toFixed(0));
+  setText('releaseSOs', totalSOs);
+  setText('releaseStatus', 'Ready');
+
+  qs('releaseBoard').innerHTML = pos.map(po => `<tr>
+    <td><input type="checkbox" data-po="${escapeHtml(po.po_id)}" /></td>
+    <td><strong>${escapeHtml(po.po_id)}</strong></td>
+    <td>${escapeHtml(po.selected_so_ids?.join(', ') || '—')}</td>
+    <td>${num(po.total_qty_mt).toFixed(0)}</td>
+    <td>${escapeHtml(po.grade_family)}</td>
+    <td>${po.heats_required || 0}</td>
+    <td><span class="badge green">OK</span></td>
+    <td><button class="btn ghost" onclick="releaseSinglePO('${escapeHtml(po.po_id)}')">Release</button></td>
+  </tr>`).join('');
+
+  qs('releaseApproveBtn').disabled = false;
+}
+
+async function releaseSinglePO(poId){
+  try {
+    await apiFetch('/api/aps/planning/release', {
+      method: 'POST',
+      body: JSON.stringify({po_ids: [poId]})
+    });
+    alert('Planning order ' + poId + ' released successfully.');
+    await loadReleaseBoard();
+  } catch(e) {
+    alert('Release failed: ' + e.message);
+  }
+}
+
+async function releaseSelectedPOs(){
+  const checked = Array.from(qs('releaseBoard').querySelectorAll('input[type="checkbox"]:checked')).map(el => el.dataset.po);
+  if(!checked.length){
+    alert('Select at least one planning order.');
+    return;
+  }
+
+  try {
+    await apiFetch('/api/aps/planning/release', {
+      method: 'POST',
+      body: JSON.stringify({po_ids: checked})
+    });
+    alert('Released ' + checked.length + ' planning orders.');
+    await loadReleaseBoard();
+  } catch(e) {
+    alert('Release failed: ' + e.message);
+  }
+}
+
+// Event listeners for planning workflow
+qs('poolSelectWindowBtn')?.addEventListener('click', selectPlanningWindow);
+qs('poolSearch')?.addEventListener('input', renderPlanningOrderPool);
+qs('poolGrade')?.addEventListener('change', renderPlanningOrderPool);
+qs('poolPriority')?.addEventListener('change', renderPlanningOrderPool);
+
+qs('planningWindowDays')?.addEventListener('change', selectPlanningWindow);
+qs('planningProposeBtn')?.addEventListener('click', proposePlanningOrders);
+
+qs('heatDeriveBtn')?.addEventListener('click', deriveHeatBatches);
+
+qs('schedulerSimulateBtn')?.addEventListener('click', simulateSchedule);
+
+qs('releaseApproveBtn')?.addEventListener('click', releaseSelectedPOs);
+
 document.addEventListener('DOMContentLoaded', async ()=>{
   qs('horizonSelect').value = state.horizon;
   const d = new Date(Date.now() + state.horizon*86400000);
@@ -1790,10 +2194,14 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   await checkHealth();
   bar.style.width = '30%';
   await loadOrdersOnly();
+  bar.style.width = '40%';
+  await loadPlanningOrderPool();
   bar.style.width = '50%';
   await loadSkusForCtp();
   bar.style.width = '75%';
   await loadApplicationState();
+  bar.style.width = '85%';
+  await loadReleaseBoard();
   bar.style.width = '100%';
 
   setTimeout(()=>{ bar.style.opacity = '0'; }, 300);
