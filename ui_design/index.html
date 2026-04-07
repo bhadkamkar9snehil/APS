@@ -3449,24 +3449,17 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   const d = new Date(Date.now() + state.horizon*86400000);
   qs('ctpDate').value = d.toISOString().slice(0,10);
 
+  // Hide loading bar immediately
   const bar = qs('loadingBar');
-  bar.style.width = '10%';
-  bar.style.opacity = '1';
+  bar.style.opacity = '0';
 
   await checkHealth();
-  bar.style.width = '30%';
   await loadOrdersOnly();
-  bar.style.width = '40%';
   await loadPlanningOrderPool();
-  bar.style.width = '50%';
   await loadSkusForCtp();
-  bar.style.width = '75%';
   await loadApplicationState();
-  bar.style.width = '85%';
   await loadReleaseBoard();
-  bar.style.width = '100%';
-
-  setTimeout(()=>{ bar.style.opacity = '0'; }, 300);
+  await runBom(); // Pre-populate BOM on page load
 });
 </script>
 </body>
