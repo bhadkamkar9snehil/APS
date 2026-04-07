@@ -46,13 +46,13 @@
         <!-- Main Tabs -->
         <button class="tab active" data-page="dashboard">Dashboard</button>
         <button class="tab" data-page="planning">Planning</button>
+        <button class="tab" data-page="bom">BOM</button>
         <button class="tab" data-page="execution">Execution</button>
         <button class="tab" data-page="material">Material</button>
         <button class="tab" data-page="capacity">Capacity</button>
 
         <button class="tab" data-page="ctp">CTP</button>
         <button class="tab" data-page="scenarios">Scenarios</button>
-        <button class="tab" data-page="bom">BOM</button>
         <button class="tab" data-page="master">Master Data</button>
       </div>
     </div>
@@ -180,7 +180,9 @@
             <div id="pipelineStatusBadge" style="font-size:.75rem;padding:.25rem .6rem;border-radius:1rem;background:var(--border);color:var(--text-soft);white-space:nowrap">Idle</div>
           </div>
         </div>
-        <div style="flex:1;overflow:auto;min-height:0;display:flex;flex-direction:column;gap:.6rem;padding:.25rem .6rem 2.5rem">
+        <div style="flex:1;overflow:hidden;min-height:0;display:flex;gap:.6rem">
+          <!-- PIPELINE CONTAINER (LEFT) -->
+          <div style="flex:1;overflow:auto;display:flex;flex-direction:column;gap:.6rem;padding:.25rem .6rem 2.5rem">
 
           <!-- STAGE 1: ORDER POOL -->
           <div class="pipeline-stage" id="ps-pool">
@@ -201,9 +203,13 @@
                   <select class="sel" id="poolGrade"><option value="">All grades</option></select>
                   <select class="sel" id="poolPriority"><option value="">All priorities</option><option>URGENT</option><option>HIGH</option><option>NORMAL</option></select>
                 </div>
-                <div style="overflow:auto;max-height:300px;border:1px solid var(--border);border-radius:.3rem">
+                <div class="toolbar" style="margin-bottom:.5rem;gap:.4rem">
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="poolSelectAllBtn">Select All</button>
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="poolClearAllBtn">Clear All</button>
+                </div>
+                <div style="overflow:auto;max-height:280px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
-                    <thead><tr><th>SO ID</th><th>Customer</th><th>Grade</th><th>Section</th><th>Qty MT</th><th>Due Date</th><th>Priority</th><th>Status</th></tr></thead>
+                    <thead><tr><th style="width:2rem"><input type="checkbox" id="poolSelectAll" title="Select all"></th><th>SO ID</th><th>SKU</th><th>Customer</th><th>Grade</th><th>Section</th><th>Qty MT</th><th>Due Date</th><th>Priority</th><th>Status</th><th style="width:3rem"></th></tr></thead>
                     <tbody id="poolBody"></tbody>
                   </table>
                 </div>
@@ -232,9 +238,14 @@
                   <div class="metric"><div class="metric-label">Proposed POs</div><div class="metric-value" id="planningProposedCount">—</div></div>
                   <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="planningTotalMT">—</div></div>
                 </div>
-                <div style="overflow:auto;max-height:280px;border:1px solid var(--border);border-radius:.3rem">
+                <div class="toolbar" style="margin-bottom:.5rem;gap:.3rem">
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="mergeSelectedBtn" disabled onclick="mergeSelectedPOs()">Merge Selected</button>
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="freezeSelectedBtn" disabled onclick="freezeSelectedPOs()">Freeze Selected</button>
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" onclick="proposePlanningOrders()">Re-propose</button>
+                </div>
+                <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
-                    <thead><tr><th>PO ID</th><th>SOs</th><th>Qty MT</th><th>Grade</th><th>Due Window</th><th>Heats</th><th>Status</th></tr></thead>
+                    <thead><tr><th style="width:2rem"><input type="checkbox" id="poSelectAll"></th><th>PO ID</th><th>SOs</th><th>SKUs</th><th>Qty MT</th><th>Grade</th><th>Due Window</th><th>Heats</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody id="planningBoard"></tbody>
                   </table>
                 </div>
@@ -257,6 +268,11 @@
             </div>
             <div class="ps-body collapsed" id="ps-heats-body">
               <div class="ps-body-inner">
+                <div class="toolbar" style="margin-bottom:.6rem">
+                  <label style="font-size:.78rem;font-weight:600;color:var(--text-soft)">Heat size:</label>
+                  <input class="inp" id="heatSizeMt" type="number" value="50" min="10" max="200" step="5" style="width:4.5rem;height:1.8rem;font-size:.8rem" title="MT per heat">
+                  <span style="font-size:.75rem;color:var(--text-faint)">MT / heat</span>
+                </div>
                 <div class="grid-4" style="margin-bottom:.75rem">
                   <div class="metric"><div class="metric-label">Total heats</div><div class="metric-value" id="heatTotal">—</div></div>
                   <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="heatMT">—</div></div>
@@ -265,7 +281,7 @@
                 </div>
                 <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
-                    <thead><tr><th>Heat ID</th><th>PO ID</th><th>Grade</th><th>Qty MT</th><th>Seq</th><th>Route</th><th>Duration</th></tr></thead>
+                    <thead><tr><th>Heat ID</th><th>PO ID</th><th>SKU</th><th>Grade</th><th>Qty MT</th><th>Seq</th><th>Route</th><th>Duration</th></tr></thead>
                     <tbody id="heatBody"></tbody>
                   </table>
                 </div>
@@ -382,7 +398,25 @@
             </div>
           </div>
 
-        </div><!-- end pipeline -->
+          </div><!-- end pipeline left -->
+
+          <!-- MATERIAL PANEL (RIGHT) -->
+          <div id="planningMaterialPanel" class="bom-split-container" style="display:none;width:45%;border-left:1px solid var(--border);background:var(--panel);flex-direction:column;min-height:0;overflow:hidden">
+            <div style="padding:.6rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+              <div style="font-weight:600;font-size:.85rem" id="materialCheckTitle">Material Requirements</div>
+              <button class="btn ghost" style="font-size:.75rem;padding:.2rem .4rem;height:1.5rem" onclick="closeMaterialPanel()">✕</button>
+            </div>
+            <div class="bom-tree-panel" style="flex:1;min-height:0;overflow:auto;border:none;padding:.6rem">
+              <div class="bom-tree-header">Materials Needed</div>
+              <div class="bom-tree" id="planningBomTree"></div>
+            </div>
+            <div class="bom-split-divider" style="width:100%;height:1px"></div>
+            <div class="bom-detail-panel" style="flex:1;min-height:0;overflow:auto;border:none;padding:.6rem">
+              <div id="planningBomDetail"></div>
+            </div>
+          </div>
+        </div><!-- end main flex container -->
+
         <div style="flex-shrink:0;height:2.3rem;padding:0 .6rem;display:flex;align-items:center;gap:1rem;border-top:1px solid var(--border-soft);background:rgba(0,0,0,.02);font-size:.75rem;color:var(--text-soft);overflow-x:auto;overflow-y:hidden" id="pipelineStatusBar">
           <div id="pipelineStatusText">Ready</div>
         </div>
@@ -1865,6 +1899,7 @@ async function runBom() {
     state.bomGrouped = d.grouped_bom || [];
     state.bomSummary = d.summary || {};
     state.bomFlat = d.net_bom || [];
+    state.bom = d.gross_bom || [];  // Store raw BOM for planning material checks
 
     renderBomSummary();
     renderBomGrouped();
@@ -2211,7 +2246,9 @@ function renderPlanningOrderPool() {
 
   poolBody.innerHTML = filtered.map((so) => `
     <tr>
+      <td><input type="checkbox" class="pool-so-check" data-so="${escapeHtml(so.so_id)}" checked></td>
       <td>${escapeHtml(so.so_id)}</td>
+      <td style="font-size:.75rem;color:var(--text-soft)">${escapeHtml(so.sku_id || '—')}</td>
       <td>${escapeHtml(so.customer_id)}</td>
       <td>${escapeHtml(so.grade)}</td>
       <td>${so.section_mm ? `${so.section_mm}mm` : '—'}</td>
@@ -2223,10 +2260,11 @@ function renderPlanningOrderPool() {
         </span>
       </td>
       <td>${escapeHtml(so.status)}</td>
+      <td><button class="btn ghost" style="font-size:.7rem;padding:.2rem .4rem;height:1.5rem" onclick="checkMaterialForSO('${escapeHtml(so.so_id)}')">Mat</button></td>
     </tr>
   `).join('') || `
     <tr>
-      <td colspan="8" style="text-align:center;color:var(--text-soft)">No orders match filters.</td>
+      <td colspan="11" style="text-align:center;color:var(--text-soft)">No orders match filters.</td>
     </tr>
   `;
 
@@ -2288,9 +2326,12 @@ async function proposePlanningOrders() {
 
     const windowDays = state.planningWindow || Number(qs('planningWindowDays')?.value || 7);
 
+    // Collect checked SO IDs
+    const checkedSoIds = [...document.querySelectorAll('.pool-so-check:checked')].map(el => el.dataset.so);
+
     const data = await apiFetch('/api/aps/planning/orders/propose', {
       method: 'POST',
-      body: JSON.stringify({ days: windowDays })
+      body: JSON.stringify({ days: windowDays, so_ids: checkedSoIds.length > 0 ? checkedSoIds : undefined })
     });
 
     state.planningOrders = data.planning_orders || [];
@@ -2331,15 +2372,61 @@ function renderPlanningBoard(){
   setText('planningTotalMT', totalMT.toFixed(0));
   setText('planningNote', pos.length + ' proposed lots');
 
-  qs('planningBoard').innerHTML = pos.map(po => `<tr>
-    <td><strong>${escapeHtml(po.po_id)}</strong></td>
-    <td>${escapeHtml(po.selected_so_ids?.join(', ') || '—')}</td>
-    <td>${num(po.total_qty_mt).toFixed(0)}</td>
-    <td>${escapeHtml(po.grade_family)}</td>
-    <td>${po.due_window ? po.due_window[0] + ' to ' + po.due_window[1] : '—'}</td>
-    <td>${po.heats_required || 0}</td>
-    <td><span class="badge blue">${escapeHtml(po.planner_status)}</span></td>
-  </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-soft)">No planning orders proposed yet. Select a window first.</td></tr>';
+  const statusBadgeClass = (status) => {
+    if (status === 'FROZEN') return 'amber';
+    if (status === 'RELEASED') return 'green';
+    return 'blue';
+  };
+
+  const rows = pos.map(po => {
+    const soIds = po.selected_so_ids || [];
+    const skuIds = [...new Set(soIds.map(soId => {
+      const so = state.poolOrders?.find(o => o.so_id === soId);
+      return so?.sku_id || null;
+    }).filter(Boolean))].join(', ');
+
+    const soRows = soIds.map(soId => {
+      const so = state.poolOrders?.find(o => o.so_id === soId) || {};
+      return `<tr>
+        <td><input type="checkbox" class="po-so-split-check" data-po="${escapeHtml(po.po_id)}" data-so="${escapeHtml(soId)}"></td>
+        <td>${escapeHtml(soId)}</td>
+        <td>${so.qty_mt ? num(so.qty_mt).toFixed(0) : '—'}</td>
+        <td>${so.due_date ? fmtDate(so.due_date) : '—'}</td>
+        <td>${so.priority || '—'}</td>
+      </tr>`;
+    }).join('');
+
+    return `<tr class="po-row" id="po-row-${escapeHtml(po.po_id)}" onclick="togglePODetail('${escapeHtml(po.po_id)}')">
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="po-check" data-po="${escapeHtml(po.po_id)}"></td>
+      <td><strong>${escapeHtml(po.po_id)}</strong></td>
+      <td>${escapeHtml(soIds.join(', ') || '—')}</td>
+      <td style="font-size:.75rem;color:var(--text-soft)">${escapeHtml(skuIds || '—')}</td>
+      <td>${num(po.total_qty_mt).toFixed(0)}</td>
+      <td>${escapeHtml(po.grade_family)}</td>
+      <td>${po.due_window ? po.due_window[0] + ' to ' + po.due_window[1] : '—'}</td>
+      <td>${po.heats_required || 0}</td>
+      <td><span class="badge ${statusBadgeClass(po.planner_status)}">${escapeHtml(po.planner_status)}</span></td>
+      <td onclick="event.stopPropagation()"><button class="btn ghost ps-action" style="margin-right:.2rem" onclick="freezePO('${escapeHtml(po.po_id)}')">Freeze</button><button class="btn ghost ps-action" onclick="checkMaterialForPO('${escapeHtml(po.po_id)}')">Mat</button></td>
+    </tr>
+    <tr class="po-detail-row" id="po-detail-${escapeHtml(po.po_id)}" style="display:none">
+      <td colspan="10">
+        <div style="padding:.5rem 1rem;background:var(--panel-soft);border-top:1px solid var(--border-soft)">
+          <table class="table" style="font-size:.75rem">
+            <thead><tr>
+              <th style="width:2rem"><input type="checkbox" class="po-so-split-all" data-po="${escapeHtml(po.po_id)}"></th>
+              <th>SO ID</th><th>Qty MT</th><th>Due Date</th><th>Priority</th>
+            </tr></thead>
+            <tbody>
+              ${soRows}
+            </tbody>
+          </table>
+          <button class="btn ghost" style="margin-top:.5rem;font-size:.75rem" onclick="splitPO('${escapeHtml(po.po_id)}')">Move checked to new lot</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  qs('planningBoard').innerHTML = rows || '<tr><td colspan="10" style="text-align:center;color:var(--text-soft)">No planning orders proposed yet. Select a window first.</td></tr>';
 }
 
 async function deriveHeatBatches(){
@@ -2351,9 +2438,10 @@ async function deriveHeatBatches(){
   try {
     setPipelineStageStatus('ps-heats', 'running', 'Deriving heats…');
     setText('heatDeriveBtn', 'Deriving…');
+    const heatSizeMt = Number(qs('heatSizeMt')?.value || 50);
     const data = await apiFetch('/api/aps/planning/heats/derive', {
       method: 'POST',
-      body: JSON.stringify({planning_orders: state.planningOrders})
+      body: JSON.stringify({planning_orders: state.planningOrders, heat_size_mt: heatSizeMt})
     });
 
     state.heatBatches = data.heats || [];
@@ -2386,17 +2474,40 @@ function renderHeatBuilder(){
   setText('heatTotal', heats.length);
   setText('heatMT', totalMT.toFixed(0));
   setText('heatAvg', avgMT.toFixed(1));
-  setText('heatDuration', (heats.length * 2) + 'h');  // Assume 2h per heat
+  setText('heatDuration', (heats.length * 2) + 'h');
 
-  qs('heatBody').innerHTML = heats.map(h => `<tr>
-    <td><strong>${escapeHtml(h.heat_id)}</strong></td>
-    <td>${escapeHtml(h.planning_order_id)}</td>
-    <td>${escapeHtml(h.grade)}</td>
-    <td>${num(h.qty_mt).toFixed(0)}</td>
-    <td>${h.heat_number_seq || '—'}</td>
-    <td>${escapeHtml(h.upstream_route || '—')}</td>
-    <td>${h.expected_duration_hours || 0}h</td>
-  </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--text-soft)">No heats derived yet.</td></tr>';
+  // Find last heat per PO for fill visualization
+  const lastHeatByPO = {};
+  heats.forEach(h => { lastHeatByPO[h.planning_order_id] = h.heat_id; });
+  const heatSize = Number(qs('heatSizeMt')?.value || 50);
+
+  qs('heatBody').innerHTML = heats.map(h => {
+    // Get SKU IDs for this heat's PO
+    const po = state.planningOrders?.find(p => p.po_id === h.planning_order_id);
+    const skuIds = po ? [...new Set((po.selected_so_ids || []).map(soId => {
+      const so = state.poolOrders?.find(o => o.so_id === soId);
+      return so?.sku_id || null;
+    }).filter(Boolean))].join(', ') : '—';
+
+    const isLast = lastHeatByPO[h.planning_order_id] === h.heat_id;
+    const fillPct = isLast ? Math.min(100, (num(h.qty_mt) / heatSize) * 100) : 100;
+    const fillColor = fillPct < 70 ? 'var(--warning)' : 'var(--success)';
+    const fillBar = isLast
+      ? `<div style="display:inline-block;width:2.5rem;height:.35rem;background:var(--border);border-radius:.2rem;margin-left:.4rem;vertical-align:middle">
+           <div style="width:${fillPct.toFixed(0)}%;height:100%;background:${fillColor};border-radius:.2rem"></div>
+         </div>`
+      : '';
+    return `<tr>
+      <td><strong>${escapeHtml(h.heat_id)}</strong></td>
+      <td>${escapeHtml(h.planning_order_id)}</td>
+      <td style="font-size:.75rem;color:var(--text-soft)">${escapeHtml(skuIds)}</td>
+      <td>${escapeHtml(h.grade)}</td>
+      <td>${num(h.qty_mt).toFixed(0)}${fillBar}</td>
+      <td>${h.heat_number_seq || '—'}</td>
+      <td>${escapeHtml(h.upstream_route || '—')}</td>
+      <td>${h.expected_duration_hours || 0}h</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-soft)">No heats derived yet.</td></tr>';
 }
 
 async function simulateSchedule(){
@@ -2728,6 +2839,309 @@ async function releaseAllSelected(){
 qs('poolSearch')?.addEventListener('input', renderPlanningOrderPool);
 qs('poolGrade')?.addEventListener('change', renderPlanningOrderPool);
 qs('poolPriority')?.addEventListener('change', renderPlanningOrderPool);
+
+// Pool checkbox handlers
+qs('poolSelectAll')?.addEventListener('change', (e) => {
+  const checked = e.target.checked;
+  document.querySelectorAll('.pool-so-check').forEach(cb => cb.checked = checked);
+});
+qs('poolSelectAllBtn')?.addEventListener('click', () => {
+  document.querySelectorAll('.pool-so-check').forEach(cb => cb.checked = true);
+});
+qs('poolClearAllBtn')?.addEventListener('click', () => {
+  document.querySelectorAll('.pool-so-check').forEach(cb => cb.checked = false);
+});
+document.querySelectorAll('.pool-so-check')?.forEach(cb => {
+  cb.addEventListener('change', () => {
+    const allChecked = [...document.querySelectorAll('.pool-so-check')].every(c => c.checked);
+    const someChecked = [...document.querySelectorAll('.pool-so-check')].some(c => c.checked);
+    const selectAllCb = qs('poolSelectAll');
+    if (selectAllCb) {
+      selectAllCb.checked = allChecked;
+      selectAllCb.indeterminate = someChecked && !allChecked;
+    }
+  });
+});
+
+// PO checkbox handlers and toolbar button state management
+qs('poSelectAll')?.addEventListener('change', (e) => {
+  const checked = e.target.checked;
+  document.querySelectorAll('.po-check').forEach(cb => cb.checked = checked);
+  updatePOToolbarButtons();
+});
+document.addEventListener('change', (e) => {
+  if (e.target.classList.contains('po-check')) {
+    const allChecked = [...document.querySelectorAll('.po-check')].every(c => c.checked);
+    const someChecked = [...document.querySelectorAll('.po-check')].some(c => c.checked);
+    const selectAllCb = qs('poSelectAll');
+    if (selectAllCb) {
+      selectAllCb.checked = allChecked;
+      selectAllCb.indeterminate = someChecked && !allChecked;
+    }
+    updatePOToolbarButtons();
+  }
+  if (e.target.classList.contains('po-so-split-all')) {
+    const poId = e.target.dataset.po;
+    const checked = e.target.checked;
+    document.querySelectorAll(`.po-so-split-check[data-po="${poId}"]`).forEach(cb => cb.checked = checked);
+  }
+});
+
+function updatePOToolbarButtons() {
+  const checkedCount = document.querySelectorAll('.po-check:checked').length;
+  const mergeBtn = qs('mergeSelectedBtn');
+  const freezeBtn = qs('freezeSelectedBtn');
+  if (mergeBtn) mergeBtn.disabled = checkedCount < 2;
+  if (freezeBtn) freezeBtn.disabled = checkedCount === 0;
+}
+
+function togglePODetail(poId) {
+  const detailRow = qs('po-detail-' + poId);
+  if (detailRow) {
+    detailRow.style.display = detailRow.style.display === 'none' ? 'table-row' : 'none';
+  }
+}
+
+async function freezePO(poId) {
+  try {
+    const data = await apiFetch('/api/aps/planning/orders/update', {
+      method: 'POST',
+      body: JSON.stringify({action: 'freeze', po_id: poId})
+    });
+    if (data && data.planning_orders) {
+      state.planningOrders = data.planning_orders;
+      renderPlanningBoard();
+    }
+  } catch (e) {
+    alert('Failed to freeze PO: ' + e.message);
+  }
+}
+
+async function freezeSelectedPOs() {
+  const poIds = [...document.querySelectorAll('.po-check:checked')].map(cb => cb.dataset.po);
+  if (!poIds.length) return;
+  try {
+    for (const poId of poIds) {
+      await freezePO(poId);
+    }
+  } catch (e) {
+    alert('Failed to freeze POs: ' + e.message);
+  }
+}
+
+async function splitPO(poId) {
+  const checkedSos = [...document.querySelectorAll(`.po-so-split-check[data-po="${poId}"]:checked`)].map(cb => cb.dataset.so);
+  if (!checkedSos.length) {
+    alert('Select at least one SO to move.');
+    return;
+  }
+  try {
+    // Build split_map: keep unchecked in original PO, move checked to new PO
+    const po = state.planningOrders?.find(p => p.po_id === poId);
+    if (!po) return;
+
+    const uncheckedSos = po.selected_so_ids.filter(so => !checkedSos.includes(so));
+    const newPoId = poId + '-SPLIT';
+
+    const splitMap = {};
+    if (uncheckedSos.length > 0) {
+      splitMap[poId] = uncheckedSos;
+    }
+    splitMap[newPoId] = checkedSos;
+
+    const data = await apiFetch('/api/aps/planning/orders/update', {
+      method: 'POST',
+      body: JSON.stringify({action: 'split', source_po_id: poId, split_map: splitMap})
+    });
+    if (data && data.planning_orders) {
+      state.planningOrders = data.planning_orders;
+      renderPlanningBoard();
+    }
+  } catch (e) {
+    alert('Failed to split PO: ' + e.message);
+  }
+}
+
+async function mergeSelectedPOs() {
+  const poIds = [...document.querySelectorAll('.po-check:checked')].map(cb => cb.dataset.po);
+  if (poIds.length < 3) {
+    alert('Select at least 3 POs to merge (1 target + at least 2 sources).');
+    return;
+  }
+  try {
+    // Merge all into the first PO
+    const targetPoId = poIds[0];
+    const sourcePoIds = poIds.slice(1);
+    const data = await apiFetch('/api/aps/planning/orders/update', {
+      method: 'POST',
+      body: JSON.stringify({action: 'merge', source_po_ids: sourcePoIds, target_po_id: targetPoId})
+    });
+    if (data && data.planning_orders) {
+      state.planningOrders = data.planning_orders;
+      renderPlanningBoard();
+      updatePOToolbarButtons();
+    }
+  } catch (e) {
+    alert('Failed to merge POs: ' + e.message);
+  }
+}
+
+// ===== MATERIAL CHECK FUNCTIONS =====
+function checkMaterialForSO(soId) {
+  const so = state.poolOrders?.find(o => o.so_id === soId);
+  if (!so || !so.sku_id) {
+    alert('SO not found or missing SKU');
+    return;
+  }
+  const skuIds = [so.sku_id];
+  const title = `Material for SO-${soId} (${so.sku_id})`;
+  openMaterialPanel(title, skuIds);
+}
+
+function checkMaterialForPO(poId) {
+  const po = state.planningOrders?.find(p => p.po_id === poId);
+  if (!po) {
+    alert('PO not found');
+    return;
+  }
+  const skuIds = [...new Set((po.selected_so_ids || []).map(soId => {
+    const so = state.poolOrders?.find(o => o.so_id === soId);
+    return so?.sku_id || null;
+  }).filter(Boolean))];
+
+  if (skuIds.length === 0) {
+    alert('No SKUs found for this PO');
+    return;
+  }
+
+  const title = `Materials for PO-${poId} (${skuIds.join(', ')})`;
+  openMaterialPanel(title, skuIds);
+}
+
+function openMaterialPanel(title, skuIds) {
+  const panel = qs('planningMaterialPanel');
+  if (!panel) return;
+
+  setText('materialCheckTitle', title);
+
+  if (!state.bom || state.bom.length === 0) {
+    qs('planningBomTree').innerHTML = '<div style="padding:.5rem;color:var(--text-soft);font-size:.75rem">Run BOM Explosion first in the BOM tab to view material requirements.</div>';
+    qs('planningBomDetail').innerHTML = '';
+    panel.style.display = 'flex';
+    return;
+  }
+
+  // Filter BOM for these SKUs
+  const filteredBom = state.bom.filter(item => skuIds.includes(item.Parent_SKU));
+
+  if (filteredBom.length === 0) {
+    qs('planningBomTree').innerHTML = '<div style="padding:.5rem;color:var(--text-soft);font-size:.75rem">No materials found for selected SKUs.</div>';
+    qs('planningBomDetail').innerHTML = '';
+    panel.style.display = 'flex';
+    return;
+  }
+
+  // Build simple tree by Parent_SKU
+  const grouped = {};
+  filteredBom.forEach(item => {
+    if (!grouped[item.Parent_SKU]) grouped[item.Parent_SKU] = [];
+    grouped[item.Parent_SKU].push(item);
+  });
+
+  // Render tree
+  let treeHtml = '';
+  Object.keys(grouped).sort().forEach(parentSku => {
+    const items = grouped[parentSku];
+    treeHtml += `<div class="bom-tree-item">
+      <div class="bom-tree-node" onclick="toggleBomNode(this); selectMaterialDetail('${escapeHtml(parentSku)}')" style="cursor:pointer">
+        <div class="bom-tree-toggle collapsed"></div>
+        <div class="bom-tree-icon">📦</div>
+        <span>${escapeHtml(parentSku)}</span>
+        <span style="margin-left:auto;font-size:.7rem;color:var(--text-faint)">${items.length}</span>
+      </div>
+      <div class="bom-tree-children">`;
+
+    items.forEach(item => {
+      const statusColor = item.Produced_Qty >= item.Required_Qty ? 'var(--success)' :
+                         item.Produced_Qty >= item.Required_Qty * 0.7 ? 'var(--warning)' : 'var(--danger)';
+      const statusLabel = item.Produced_Qty >= item.Required_Qty ? '✓ OK' :
+                         item.Produced_Qty >= item.Required_Qty * 0.7 ? '⚠ PARTIAL' : '✗ SHORT';
+
+      treeHtml += `<div class="bom-tree-item">
+        <div class="bom-tree-node" onclick="selectMaterialDetail('${escapeHtml(parentSku)}', '${escapeHtml(item.SKU_ID)}')" style="cursor:pointer;padding-left:1rem">
+          <div class="bom-tree-toggle leaf"></div>
+          <div class="bom-tree-icon">⚙</div>
+          <span>${escapeHtml(item.SKU_ID)}</span>
+          <span style="margin-left:auto;font-size:.65rem;color:${statusColor};font-weight:600">${statusLabel}</span>
+        </div>
+      </div>`;
+    });
+
+    treeHtml += `</div></div>`;
+  });
+
+  qs('planningBomTree').innerHTML = treeHtml;
+
+  // Show first parent's details
+  if (Object.keys(grouped).length > 0) {
+    selectMaterialDetail(Object.keys(grouped)[0]);
+  }
+
+  panel.style.display = 'flex';
+}
+
+function selectMaterialDetail(parentSku, skuId) {
+  const filteredBom = state.bom.filter(item => item.Parent_SKU === parentSku);
+  if (!filteredBom.length) {
+    qs('planningBomDetail').innerHTML = '<div style="padding:.5rem;color:var(--text-soft)">No details available.</div>';
+    return;
+  }
+
+  const items = skuId ? filteredBom.filter(i => i.SKU_ID === skuId) : filteredBom;
+
+  let html = `<div style="padding-bottom:.5rem;border-bottom:1px solid var(--border-soft);margin-bottom:.5rem">
+    <div style="font-weight:600;font-size:.8rem;margin-bottom:.3rem">Production: ${escapeHtml(parentSku)}</div>`;
+
+  let totalRequired = 0, totalProduced = 0;
+  items.forEach(item => {
+    totalRequired += num(item.Required_Qty);
+    totalProduced += num(item.Produced_Qty);
+  });
+
+  html += `<div style="font-size:.75rem;color:var(--text-soft);display:flex;gap:1rem">
+    <div>Required: <strong>${totalRequired.toFixed(0)}</strong> MT</div>
+    <div>Produced: <strong>${totalProduced.toFixed(0)}</strong> MT</div>
+  </div></div>`;
+
+  html += `<table class="table" style="font-size:.75rem;margin-bottom:0">
+    <thead><tr><th>SKU</th><th>Required</th><th>Produced</th><th>Status</th></tr></thead>
+    <tbody>`;
+
+  items.forEach(item => {
+    const req = num(item.Required_Qty);
+    const prod = num(item.Produced_Qty);
+    const fillPct = req > 0 ? (prod / req) * 100 : 0;
+    const statusClass = fillPct >= 100 ? 'green' : fillPct >= 70 ? 'amber' : 'red';
+    const statusLabel = fillPct >= 100 ? 'COVERED' : fillPct >= 70 ? 'PARTIAL' : 'SHORT';
+
+    html += `<tr>
+      <td style="font-weight:600">${escapeHtml(item.SKU_ID)}</td>
+      <td>${req.toFixed(0)} MT</td>
+      <td>${prod.toFixed(0)} MT</td>
+      <td><span class="badge ${statusClass}" style="font-size:.7rem">${statusLabel}</span></td>
+    </tr>`;
+  });
+
+  html += `</tbody></table>`;
+  qs('planningBomDetail').innerHTML = html;
+}
+
+function closeMaterialPanel() {
+  const panel = qs('planningMaterialPanel');
+  if (panel) panel.style.display = 'none';
+  qs('planningBomTree').innerHTML = '';
+  qs('planningBomDetail').innerHTML = '';
+}
 
 qs('pipelineRunBtn')?.addEventListener('click', runFullPipeline);
 
