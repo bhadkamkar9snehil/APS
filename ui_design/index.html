@@ -2732,11 +2732,11 @@ function renderSODueGantt(soList){
 
   let html = `
     <div style="border:1px solid var(--border);border-radius:.3rem;overflow:hidden;background:var(--panel);font-size:.75rem">
-      <!-- Header -->
-      <div style="display:flex;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--panel);z-index:10">
-        <div style="width:9rem;flex-shrink:0;padding:.5rem;font-weight:600;border-right:1px solid var(--border)">SO | Due Date</div>
-        <div style="display:flex;width:${ganttWidth}px">
-          ${dateLabels.map(d => `<div style="width:${dayWidth}px;padding:.3rem;text-align:center;font-size:.7rem;border-right:1px solid var(--border-soft);color:var(--text-soft)">${d}</div>`).join('')}
+      <!-- Header - FROZEN (sticky) -->
+      <div style="display:flex;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--panel);z-index:11;box-shadow:0 2px 4px rgba(0,0,0,.08)">
+        <div style="width:11rem;flex-shrink:0;padding:.5rem;font-weight:600;border-right:1px solid var(--border)">SO | SKU | Qty</div>
+        <div style="display:flex;width:${ganttWidth}px;background:var(--panel)">
+          ${dateLabels.map(d => `<div style="width:${dayWidth}px;padding:.3rem;text-align:center;font-size:.7rem;border-right:1px solid var(--border-soft);color:var(--text-soft);background:var(--panel)">${d}</div>`).join('')}
         </div>
       </div>
 
@@ -2755,14 +2755,16 @@ function renderSODueGantt(soList){
               const dueDate = new Date(so.due_date).getTime();
               const dueLeft = Math.max(0, (dueDate - minTime) / span * 100);
               const qty = num(so.qty_mt || 0).toFixed(0);
+              const skuId = so.sku_id ? escapeHtml(so.sku_id.substring(0, 12)) : '—';
 
               return `
                 <div style="display:flex;border-bottom:1px solid var(--border-soft);align-items:center">
-                  <div style="width:9rem;flex-shrink:0;padding:.5rem;border-right:1px solid var(--border)">
+                  <div style="width:11rem;flex-shrink:0;padding:.5rem;border-right:1px solid var(--border);min-height:2.2rem;display:flex;flex-direction:column;justify-content:center">
                     <div style="font-weight:600;font-size:.8rem">${soId}</div>
-                    <div style="font-size:.7rem;color:var(--text-soft);margin-top:.15rem">${qty}MT</div>
+                    <div style="font-size:.7rem;color:var(--text-soft);margin-top:.15rem">${skuId}</div>
+                    <div style="font-size:.7rem;color:var(--text-soft)">${qty}MT</div>
                   </div>
-                  <div style="position:relative;width:${ganttWidth}px;height:2.2rem">
+                  <div style="position:relative;width:${ganttWidth}px;height:2.4rem">
                     ${dateLabels.map((d,i) => `<div style="position:absolute;left:${i*dayWidth}px;width:${dayWidth}px;height:100%;border-right:1px solid var(--border-soft);opacity:.1"></div>`).join('')}
                     <div style="position:absolute;left:${dueLeft}%;width:2.5rem;top:.5rem;bottom:.5rem;background:${priorityColor};opacity:.85;border-radius:.2rem;border:2px solid ${priorityColor};display:flex;align-items:center;justify-content:center;font-size:.65rem;color:#fff;font-weight:700;white-space:nowrap;padding:0 .2rem" title="${so.due_date}">DUE</div>
                   </div>
@@ -3071,7 +3073,7 @@ function showPoolSOGantt(){
 // Show gantt modal - clean large panel (not cramped overlay)
 function showGanttModal(title, data, type = 'so'){
   const modal = document.createElement('div');
-  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;z-index:9999;padding:.5rem';
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999;padding:.5rem;backdrop-filter:blur(2px)';
 
   let ganttContent = '';
   if(type === 'so') ganttContent = renderSOGantt(data);
