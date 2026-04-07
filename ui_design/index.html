@@ -2520,13 +2520,16 @@ async function proposePlanningOrders() {
 
     const totalMT = state.planningOrders.reduce((sum, po) => sum + num(po.total_qty_mt), 0);
 
+    // Display correct candidate count based on user selection
+    const candidateLabel = checkedSoIds.length > 0 ? `${checkedSoIds.length} selected` : `${(state.windowSOs || []).length} candidates`;
+
     setText('planningProposedCount', state.planningOrders.length);
     setText('planningTotalMT', totalMT.toFixed(0));
 
     setPipelineStageStatus(
       'ps-propose',
       'done',
-      `${windowDays}-day window · ${(state.windowSOs || []).length} candidates`,
+      `${windowDays}-day window · ${candidateLabel}`,
       [
         { v: state.planningOrders.length, l: 'POs' },
         { v: `${totalMT.toFixed(0)}MT`, l: 'total' }

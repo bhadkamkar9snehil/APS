@@ -2383,6 +2383,10 @@ def aps_planning_orders_propose():
     try:
         payload = request.get_json(silent=True) or {}
         window_days = int(payload.get("days", 7) or 7)
+        selected_so_ids = payload.get("so_ids", []) or []
+        if selected_so_ids and not isinstance(selected_so_ids, list):
+            selected_so_ids = [selected_so_ids]
+        selected_so_ids = [str(x).strip() for x in selected_so_ids if x]
 
         d = _load_all()
         all_sos = []
@@ -2411,6 +2415,11 @@ def aps_planning_orders_propose():
         }
         window = window_map.get(window_days, PlanningHorizon.NEXT_7_DAYS)
         window_sos = planner.select_planning_window(all_sos, window)
+
+        # If specific SOs were selected, filter to only those
+        if selected_so_ids:
+            window_sos = [so for so in window_sos if so.so_id in selected_so_ids]
+
         pos = planner.propose_planning_orders(window_sos)
         validation = planner.validate_planning_orders(pos)
 
