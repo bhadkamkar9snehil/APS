@@ -245,7 +245,7 @@
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="mergeSelectedBtn" disabled onclick="mergeSelectedPOs()">Merge Selected</button>
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="freezeSelectedBtn" disabled onclick="freezeSelectedPOs()">Freeze Selected</button>
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" onclick="proposePlanningOrders()">Re-propose</button>
-                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;margin-left:auto" onclick="state.lastScheduleRows ? showGanttModal('Planning Orders - Timeline', state.lastScheduleRows) : alert('Run Feasibility Check first to see timeline')" title="View timeline for proposed POs (plant-based)">📅 Gantt</button>
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;margin-left:auto" onclick="state.lastScheduleRows ? showGanttModal('Planning Orders - Production Timeline', state.lastScheduleRows, 'po') : alert('Run Feasibility Check first')" title="View timeline for proposed POs">📅 Gantt</button>
                 </div>
                 <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
@@ -285,7 +285,7 @@
                 </div>
                 <div class="toolbar" style="margin-bottom:.5rem;gap:.3rem">
                   <div style="flex:1"></div>
-                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem" onclick="state.lastScheduleRows ? showGanttModal('Heat Batches - Timeline', state.lastScheduleRows) : alert('Run Feasibility Check first to see timeline')" title="View timeline for heat batches (plant-based)">📅 Gantt</button>
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem" onclick="state.lastScheduleRows ? showGanttModal('Equipment & Resource Timeline', state.lastScheduleRows, 'heat') : alert('Run Feasibility Check first')" title="View equipment utilization and timeline">📅 Gantt</button>
                 </div>
                 <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
@@ -2530,51 +2530,23 @@ function renderHeatBuilder(){
   }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-soft)">No heats derived yet.</td></tr>';
 }
 
-// Show gantt for selected SOs in pool
-function showPoolSOGantt(){
-  if(!state.lastScheduleRows || !state.lastScheduleRows.length){
-    alert('Run Feasibility Check first (click Simulate button in Stage 4)');
-    return;
-  }
+// SO Gantt - show each SO as a row, visually separated by plant
+function renderSOGantt(scheduleRows){
+  if(!scheduleRows || !scheduleRows.length) return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No schedule data.</div>';
 
-  const selectedCheckboxes = Array.from(qs('poolBody').querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.dataset.so).filter(Boolean);
-
-  if(!selectedCheckboxes.length){
-    alert('Select at least one SO first');
-    return;
-  }
-
-  const soId = selectedCheckboxes[0]; // Show gantt for first selected SO
-  showGanttModal(`SO ${escapeHtml(soId)} - Timeline`, state.lastScheduleRows, soId);
-}
-
-// World-class SO gantt - consolidated plant flow view
-function renderSOGantt(scheduleRows, soId){
-  if(!scheduleRows || !scheduleRows.length) return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No schedule data available.</div>';
-
-  // Get heats for this SO (trace: SO → PO → Heats)
-  let soRows = scheduleRows;
-  if(soId){
-    // Find PO containing this SO
-    const po = state.planningOrders?.find(p => p.selected_so_ids?.includes(soId));
-    if(po && state.heatBatches){
-      // Get heats for this PO
-      const heatIds = state.heatBatches.filter(h => h.planning_order_id === po.po_id).map(h => h.heat_id);
-      // Filter schedule rows to only these heats
-      soRows = scheduleRows.filter(r => heatIds.some(hid => r.Campaign && r.Campaign.includes(hid)));
-    }
-  }
-
-  if(!soRows.length) soRows = scheduleRows; // Fallback to all rows if filtering returns nothing
-
-  // Get time bounds and operations per plant
   let minTime = Infinity, maxTime = -Infinity;
-  const byPlant = {};
+  const bySO = {};
+  const plantColor = {BF: '#3b82f6', SMS: '#f97316', RM: '#8b5cf6'};
 
-  soRows.forEach(row => {
-    const plant = row.Plant || 'SMS';
-    if(!byPlant[plant]) byPlant[plant] = [];
-    byPlant[plant].push(row);
+  // Group by SO and get time bounds
+  scheduleRows.forEach(row => {
+    const campaign = row.Campaign || '';
+    // Extract SO from campaign name (format: SO-XXX-HeatID)
+    const soMatch = campaign.match(/SO-\d+/);
+    const so = soMatch ? soMatch[0] : 'Unknown';
+
+    if(!bySO[so]) bySO[so] = [];
+    bySO[so].push(row);
 
     const start = new Date(row.Planned_Start);
     const end = new Date(row.Planned_End);
@@ -2582,130 +2554,302 @@ function renderSOGantt(scheduleRows, soId){
     if(!isNaN(end)) maxTime = Math.max(maxTime, end.getTime());
   });
 
-  if(minTime === Infinity || maxTime === -Infinity) return '<div style="padding:1rem;color:var(--text-soft)">Invalid time data.</div>';
+  if(minTime === Infinity) return '<div style="padding:1rem;color:var(--text-soft)">No valid time data.</div>';
 
   const span = maxTime - minTime || 86400000;
-  const plantOrder = ['BF', 'SMS', 'RM'];
-  const plants = plantOrder.filter(p => byPlant[p]);
-  const plantColor = {BF: '#3b82f6', SMS: '#f97316', RM: '#8b5cf6'};
+  const soList = Object.keys(bySO).sort();
+  const dayWidth = 100;
+  const totalDays = span / 86400000;
+  const ganttWidth = Math.max(900, dayWidth * (totalDays + 1));
 
-  // Build timeline grid - show 12-hour intervals
-  const hours = span / 3600000;
-  const intervals = Math.ceil(hours / 12) + 1;
-  const gridWidth = 80; // pixels per 12-hour interval
-  const totalWidth = gridWidth * intervals;
+  // Date headers
+  const dateLabels = [];
+  for(let i = 0; i <= Math.ceil(totalDays); i++){
+    const d = new Date(minTime + i * 86400000);
+    dateLabels.push(fmtDate(d));
+  }
 
   let html = `
-    <div style="display:flex;flex-direction:column;gap:1rem">
-      <!-- Timeline Gantt -->
-      <div style="overflow-x:auto;border:1px solid var(--border);border-radius:.3rem;background:var(--panel)">
-        <!-- Header with time labels -->
-        <div style="display:flex;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--panel)">
-          <div style="width:6rem;flex-shrink:0;padding:.5rem .4rem;font-weight:600;border-right:1px solid var(--border);font-size:.75rem">Plant</div>
-          <div style="display:flex;width:${totalWidth}px">
-            ${Array.from({length: intervals}, (_, i) => {
-              const time = new Date(minTime + i * 12 * 3600000);
-              return `<div style="width:${gridWidth}px;padding:.4rem .3rem;text-align:center;font-size:.7rem;border-right:1px solid var(--border-soft);color:var(--text-soft);white-space:nowrap">${fmtDateTime(time).substring(11,16)}</div>`;
-            }).join('')}
-          </div>
+    <div style="border:1px solid var(--border);border-radius:.3rem;overflow:hidden;background:var(--panel)">
+      <!-- Header -->
+      <div style="display:flex;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--panel)">
+        <div style="width:7rem;flex-shrink:0;padding:.5rem;font-weight:600;border-right:1px solid var(--border);font-size:.75rem">SO ID</div>
+        <div style="display:flex;width:${ganttWidth}px">
+          ${dateLabels.map(d => `<div style="width:${dayWidth}px;padding:.3rem;text-align:center;font-size:.7rem;border-right:1px solid var(--border-soft);color:var(--text-soft)">${d}</div>`).join('')}
         </div>
+      </div>
 
-        <!-- Plant rows with operations -->
-        ${plants.map(plant => {
-          const ops = byPlant[plant];
-          const plantStart = Math.min(...ops.map(o => new Date(o.Planned_Start).getTime()));
-          const plantEnd = Math.max(...ops.map(o => new Date(o.Planned_End).getTime()));
-          const totalHours = ops.reduce((sum, o) => sum + (num(o.Duration_Hrs) || 0), 0);
+      <!-- SO rows grouped by plant -->
+      ${(() => {
+        let html = '';
+        const plantOrder = ['BF', 'SMS', 'RM'];
 
-          return `
-            <div style="display:flex;border-bottom:1px solid var(--border-soft)">
-              <div style="width:6rem;flex-shrink:0;padding:.8rem .4rem;font-weight:600;border-right:1px solid var(--border);color:${plantColor[plant]};font-size:.85rem">${plant}</div>
-              <div style="position:relative;width:${totalWidth}px;height:3rem;display:flex;align-items:center">
-                <!-- Grid lines -->
-                ${Array.from({length: intervals}, (_, i) => `<div style="position:absolute;left:${i*gridWidth}px;width:${gridWidth}px;height:100%;border-right:1px solid var(--border-soft);opacity:.15"></div>`).join('')}
+        plantOrder.forEach(plant => {
+          const sosInPlant = soList.filter(so => {
+            const ops = bySO[so];
+            return ops.some(o => (o.Plant || 'SMS') === plant);
+          });
 
-                <!-- Operation segments -->
-                ${ops.map(op => {
-                  const opStart = new Date(op.Planned_Start).getTime();
-                  const opEnd = new Date(op.Planned_End).getTime();
-                  const opLeft = Math.max(0, (opStart - minTime) / span * 100);
-                  const opWidth = Math.max(1.5, (opEnd - opStart) / span * 100);
-                  const dur = num(op.Duration_Hrs || 0).toFixed(0);
-                  const res = (op.Resource_ID || '').substring(0, 8);
+          if(sosInPlant.length === 0) return;
 
-                  return `
-                    <div style="position:absolute;left:${opLeft}%;width:${opWidth}%;top:.4rem;bottom:.4rem;background:${plantColor[plant]};opacity:.8;border-radius:.3rem;border:1px solid ${plantColor[plant]};display:flex;align-items:center;justify-content:center;padding:0 .4rem" title="${res} | ${dur}h">
-                      <span style="font-size:.7rem;color:#fff;font-weight:600;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.3)">${dur}h</span>
-                    </div>
-                  `;
-                }).join('')}
+          // Plant separator
+          html += `<div style="padding:.4rem;background:${plantColor[plant]};color:#fff;font-weight:600;font-size:.8rem;border-bottom:2px solid var(--border)">${plant} Plant</div>`;
+
+          // SO rows for this plant
+          sosInPlant.forEach(so => {
+            const ops = bySO[so].filter(o => (o.Plant || 'SMS') === plant);
+            html += `
+              <div style="display:flex;border-bottom:1px solid var(--border-soft)">
+                <div style="width:7rem;flex-shrink:0;padding:.6rem;font-weight:600;border-right:1px solid var(--border);font-size:.8rem;color:var(--text)">${so}</div>
+                <div style="position:relative;width:${ganttWidth}px;height:2rem">
+                  <!-- Grid lines -->
+                  ${dateLabels.map((d,i) => `<div style="position:absolute;left:${i*dayWidth}px;width:${dayWidth}px;height:100%;border-right:1px solid var(--border-soft);opacity:.15"></div>`).join('')}
+
+                  <!-- Operation bars -->
+                  ${ops.map(op => {
+                    const opStart = new Date(op.Planned_Start);
+                    const opEnd = new Date(op.Planned_End);
+                    const opLeft = Math.max(0, (opStart.getTime() - minTime) / span * 100);
+                    const opWidth = Math.max(1, (opEnd.getTime() - opStart.getTime()) / span * 100);
+                    const dur = num(op.Duration_Hrs || 0).toFixed(0);
+                    return `
+                      <div style="position:absolute;left:${opLeft}%;width:${opWidth}%;top:.3rem;bottom:.3rem;background:${plantColor[plant]};opacity:.8;border-radius:.2rem;border:1px solid ${plantColor[plant]};display:flex;align-items:center;justify-content:center;font-size:.65rem;color:#fff;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,.3)" title="${op.Resource_ID} | ${dur}h">${dur}h</div>
+                    `;
+                  }).join('')}
+                </div>
               </div>
-            </div>
-          `;
-        }).join('')}
-      </div>
+            `;
+          });
+        });
 
-      <!-- Legend & Stats -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
-        <!-- Legend -->
-        <div style="display:flex;gap:1.2rem;font-size:.75rem;flex-wrap:wrap">
-          ${plants.map(p => `
-            <div style="display:flex;gap:.4rem;align-items:center">
-              <div style="width:0.8rem;height:0.8rem;background:${plantColor[p]};border-radius:.15rem"></div>
-              <span>${p}</span>
-            </div>
-          `).join('')}
-        </div>
+        return html;
+      })()}
+    </div>
 
-        <!-- Key Metrics -->
-        <div style="display:flex;gap:1rem;font-size:.75rem;flex-wrap:wrap;justify-content:flex-end">
-          <div><span style="color:var(--text-soft)">Start:</span> <strong>${fmtDateTime(minTime).substring(0, 16)}</strong></div>
-          <div><span style="color:var(--text-soft)">End:</span> <strong>${fmtDateTime(maxTime).substring(0, 16)}</strong></div>
-          <div><span style="color:var(--text-soft)">Duration:</span> <strong>${(span / 3600000).toFixed(1)}h</strong></div>
-        </div>
-      </div>
-
-      <!-- Plant details table -->
-      <div style="border:1px solid var(--border);border-radius:.3rem;overflow:hidden">
-        <table class="table" style="margin:0;font-size:.75rem">
-          <thead>
-            <tr style="background:var(--panel-soft)">
-              <th>Plant</th><th>Operations</th><th>Total Hours</th><th>Start Time</th><th>End Time</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${plants.map(plant => {
-              const ops = byPlant[plant];
-              const pStart = Math.min(...ops.map(o => new Date(o.Planned_Start).getTime()));
-              const pEnd = Math.max(...ops.map(o => new Date(o.Planned_End).getTime()));
-              const totalHours = ops.reduce((sum, o) => sum + (num(o.Duration_Hrs) || 0), 0);
-              return `
-                <tr>
-                  <td style="color:${plantColor[plant]};font-weight:600">${plant}</td>
-                  <td>${ops.length}</td>
-                  <td><strong>${totalHours.toFixed(1)}h</strong></td>
-                  <td>${fmtDateTime(pStart).substring(0, 16)}</td>
-                  <td>${fmtDateTime(pEnd).substring(0, 16)}</td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
+    <!-- Summary -->
+    <div style="margin-top:1rem;display:flex;gap:1rem;font-size:.75rem">
+      <div><span style="color:var(--text-soft)">Start:</span> <strong>${fmtDateTime(minTime).substring(0, 16)}</strong></div>
+      <div><span style="color:var(--text-soft)">End:</span> <strong>${fmtDateTime(maxTime).substring(0, 16)}</strong></div>
+      <div><span style="color:var(--text-soft)">Total Duration:</span> <strong>${(span / 3600000).toFixed(1)}h</strong></div>
+      <div><span style="color:var(--text-soft)">Total SOs:</span> <strong>${soList.length}</strong></div>
     </div>
   `;
 
   return html;
 }
 
-// Show gantt modal for SO/PO/Heat
-function showGanttModal(title, scheduleRows, soId = null){
+// PO Gantt - show each PO as a row, with plant it's assigned to
+function renderPOGantt(scheduleRows){
+  if(!scheduleRows || !scheduleRows.length) return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No schedule data.</div>';
+
+  let minTime = Infinity, maxTime = -Infinity;
+  const byPO = {};
+  const plantColor = {BF: '#3b82f6', SMS: '#f97316', RM: '#8b5cf6'};
+
+  // Group by PO
+  scheduleRows.forEach(row => {
+    const campaign = row.Campaign || '';
+    const poMatch = campaign.match(/PO-\d+/);
+    const po = poMatch ? poMatch[0] : 'Unknown';
+
+    if(!byPO[po]) byPO[po] = [];
+    byPO[po].push(row);
+
+    const start = new Date(row.Planned_Start);
+    const end = new Date(row.Planned_End);
+    if(!isNaN(start)) minTime = Math.min(minTime, start.getTime());
+    if(!isNaN(end)) maxTime = Math.max(maxTime, end.getTime());
+  });
+
+  if(minTime === Infinity) return '<div style="padding:1rem;color:var(--text-soft)">No valid time data.</div>';
+
+  const span = maxTime - minTime || 86400000;
+  const poList = Object.keys(byPO).sort();
+  const dayWidth = 100;
+  const totalDays = span / 86400000;
+  const ganttWidth = Math.max(900, dayWidth * (totalDays + 1));
+
+  const dateLabels = [];
+  for(let i = 0; i <= Math.ceil(totalDays); i++){
+    const d = new Date(minTime + i * 86400000);
+    dateLabels.push(fmtDate(d));
+  }
+
+  let html = `
+    <div style="border:1px solid var(--border);border-radius:.3rem;overflow:hidden;background:var(--panel)">
+      <!-- Header -->
+      <div style="display:flex;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--panel)">
+        <div style="width:7rem;flex-shrink:0;padding:.5rem;font-weight:600;border-right:1px solid var(--border);font-size:.75rem">PO ID | Plant</div>
+        <div style="display:flex;width:${ganttWidth}px">
+          ${dateLabels.map(d => `<div style="width:${dayWidth}px;padding:.3rem;text-align:center;font-size:.7rem;border-right:1px solid var(--border-soft);color:var(--text-soft)">${d}</div>`).join('')}
+        </div>
+      </div>
+
+      <!-- PO rows -->
+      ${poList.map(po => {
+        const ops = byPO[po];
+        const primaryPlant = ops[0]?.Plant || 'SMS';
+        const color = plantColor[primaryPlant];
+        const totalHours = ops.reduce((sum, o) => sum + (num(o.Duration_Hrs) || 0), 0);
+
+        return `
+          <div style="display:flex;border-bottom:1px solid var(--border-soft)">
+            <div style="width:7rem;flex-shrink:0;padding:.6rem;font-weight:600;border-right:1px solid var(--border);font-size:.8rem">
+              <div>${po}</div>
+              <div style="font-size:.7rem;color:${color};margin-top:.2rem">${primaryPlant}</div>
+            </div>
+            <div style="position:relative;width:${ganttWidth}px;height:2.5rem">
+              <!-- Grid -->
+              ${dateLabels.map((d,i) => `<div style="position:absolute;left:${i*dayWidth}px;width:${dayWidth}px;height:100%;border-right:1px solid var(--border-soft);opacity:.15"></div>`).join('')}
+
+              <!-- Bars -->
+              ${ops.map(op => {
+                const opStart = new Date(op.Planned_Start);
+                const opEnd = new Date(op.Planned_End);
+                const opLeft = Math.max(0, (opStart.getTime() - minTime) / span * 100);
+                const opWidth = Math.max(1, (opEnd.getTime() - opStart.getTime()) / span * 100);
+                const dur = num(op.Duration_Hrs || 0).toFixed(0);
+                return `
+                  <div style="position:absolute;left:${opLeft}%;width:${opWidth}%;top:.4rem;bottom:.4rem;background:${color};opacity:.8;border-radius:.2rem;border:1px solid ${color};display:flex;align-items:center;justify-content:center;font-size:.65rem;color:#fff;font-weight:600" title="${op.Resource_ID} | ${dur}h">${dur}h</div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+
+    <div style="margin-top:1rem;display:flex;gap:1rem;font-size:.75rem">
+      <div><span style="color:var(--text-soft)">Start:</span> <strong>${fmtDateTime(minTime).substring(0, 16)}</strong></div>
+      <div><span style="color:var(--text-soft)">End:</span> <strong>${fmtDateTime(maxTime).substring(0, 16)}</strong></div>
+      <div><span style="color:var(--text-soft)">Total POs:</span> <strong>${poList.length}</strong></div>
+    </div>
+  `;
+
+  return html;
+}
+
+// Heat/Equipment Gantt - per equipment with plant grouping
+function renderEquipmentGantt(scheduleRows){
+  if(!scheduleRows || !scheduleRows.length) return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No schedule data.</div>';
+
+  let minTime = Infinity, maxTime = -Infinity;
+  const byEquip = {};
+  const plantColor = {BF: '#3b82f6', SMS: '#f97316', RM: '#8b5cf6'};
+
+  scheduleRows.forEach(row => {
+    const equip = row.Resource_ID || 'Unknown';
+    if(!byEquip[equip]) byEquip[equip] = [];
+    byEquip[equip].push(row);
+
+    const start = new Date(row.Planned_Start);
+    const end = new Date(row.Planned_End);
+    if(!isNaN(start)) minTime = Math.min(minTime, start.getTime());
+    if(!isNaN(end)) maxTime = Math.max(maxTime, end.getTime());
+  });
+
+  if(minTime === Infinity) return '<div style="padding:1rem;color:var(--text-soft)">No valid time data.</div>';
+
+  const span = maxTime - minTime || 86400000;
+  const dayWidth = 100;
+  const totalDays = span / 86400000;
+  const ganttWidth = Math.max(900, dayWidth * (totalDays + 1));
+
+  const dateLabels = [];
+  for(let i = 0; i <= Math.ceil(totalDays); i++){
+    const d = new Date(minTime + i * 86400000);
+    dateLabels.push(fmtDate(d));
+  }
+
+  let html = `
+    <div style="border:1px solid var(--border);border-radius:.3rem;overflow:hidden;background:var(--panel)">
+      <!-- Header -->
+      <div style="display:flex;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--panel)">
+        <div style="width:9rem;flex-shrink:0;padding:.5rem;font-weight:600;border-right:1px solid var(--border);font-size:.75rem">Equipment | Plant</div>
+        <div style="display:flex;width:${ganttWidth}px">
+          ${dateLabels.map(d => `<div style="width:${dayWidth}px;padding:.3rem;text-align:center;font-size:.7rem;border-right:1px solid var(--border-soft);color:var(--text-soft)">${d}</div>`).join('')}
+        </div>
+      </div>
+
+      <!-- Equipment rows grouped by plant -->
+      ${(() => {
+        let html = '';
+        const plantOrder = ['BF', 'SMS', 'RM'];
+
+        plantOrder.forEach(plant => {
+          const equipInPlant = Object.keys(byEquip).filter(equip => {
+            return byEquip[equip].some(o => (o.Plant || 'SMS') === plant);
+          }).sort();
+
+          if(equipInPlant.length === 0) return;
+
+          html += `<div style="padding:.4rem;background:${plantColor[plant]};color:#fff;font-weight:600;font-size:.8rem;border-bottom:2px solid var(--border)">${plant} Plant</div>`;
+
+          equipInPlant.forEach(equip => {
+            const ops = byEquip[equip].filter(o => (o.Plant || 'SMS') === plant);
+            const color = plantColor[plant];
+            const utilization = (ops.reduce((sum, o) => sum + (num(o.Duration_Hrs) || 0), 0) / (totalDays * 24) * 100).toFixed(0);
+
+            html += `
+              <div style="display:flex;border-bottom:1px solid var(--border-soft)">
+                <div style="width:9rem;flex-shrink:0;padding:.5rem;border-right:1px solid var(--border);font-size:.75rem">
+                  <div style="font-weight:600">${equip}</div>
+                  <div style="font-size:.7rem;color:var(--text-soft);margin-top:.2rem">${utilization}% util</div>
+                </div>
+                <div style="position:relative;width:${ganttWidth}px;height:2rem">
+                  <!-- Grid -->
+                  ${dateLabels.map((d,i) => `<div style="position:absolute;left:${i*dayWidth}px;width:${dayWidth}px;height:100%;border-right:1px solid var(--border-soft);opacity:.15"></div>`).join('')}
+
+                  <!-- Bars -->
+                  ${ops.map(op => {
+                    const opStart = new Date(op.Planned_Start);
+                    const opEnd = new Date(op.Planned_End);
+                    const opLeft = Math.max(0, (opStart.getTime() - minTime) / span * 100);
+                    const opWidth = Math.max(1, (opEnd.getTime() - opStart.getTime()) / span * 100);
+                    const campaign = (op.Campaign || '').substring(0, 10);
+                    return `
+                      <div style="position:absolute;left:${opLeft}%;width:${opWidth}%;top:.3rem;bottom:.3rem;background:${color};opacity:.8;border-radius:.2rem;border:1px solid ${color};display:flex;align-items:center;justify-content:center;font-size:.65rem;color:#fff;font-weight:600;overflow:hidden" title="${campaign}">${campaign}</div>
+                    `;
+                  }).join('')}
+                </div>
+              </div>
+            `;
+          });
+        });
+
+        return html;
+      })()}
+    </div>
+
+    <div style="margin-top:1rem;display:flex;gap:1rem;font-size:.75rem">
+      <div><span style="color:var(--text-soft)">Start:</span> <strong>${fmtDateTime(minTime).substring(0, 16)}</strong></div>
+      <div><span style="color:var(--text-soft)">End:</span> <strong>${fmtDateTime(maxTime).substring(0, 16)}</strong></div>
+      <div><span style="color:var(--text-soft)">Total Equipment:</span> <strong>${Object.keys(byEquip).length}</strong></div>
+    </div>
+  `;
+
+  return html;
+}
+
+// Show gantt for selected SOs in pool
+function showPoolSOGantt(){
+  if(!state.lastScheduleRows || !state.lastScheduleRows.length){
+    alert('Run Feasibility Check first (click Simulate button in Stage 4)');
+    return;
+  }
+  showGanttModal('Sales Orders - Production Timeline', state.lastScheduleRows, 'so');
+}
+
+// Show gantt modal - different types
+function showGanttModal(title, scheduleRows, type = 'so'){
   const modal = document.createElement('div');
   modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem';
 
-  // Use SO gantt if title contains "SO" or has soId
-  const useSOGantt = soId || title.includes('SO');
-  const ganttContent = useSOGantt ? renderSOGantt(scheduleRows, soId) : renderPlantGantt(scheduleRows, title);
+  let ganttContent = '';
+  if(type === 'so') ganttContent = renderSOGantt(scheduleRows);
+  else if(type === 'po') ganttContent = renderPOGantt(scheduleRows);
+  else if(type === 'heat') ganttContent = renderEquipmentGantt(scheduleRows);
+  else ganttContent = renderSOGantt(scheduleRows);
 
   modal.innerHTML = `
     <div style="background:var(--page-bg);border:1px solid var(--border);border-radius:.5rem;box-shadow:0 20px 25px rgba(0,0,0,.25);max-width:95%;max-height:90vh;overflow:auto;padding:1.5rem;width:1200px">
@@ -3449,17 +3593,27 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   const d = new Date(Date.now() + state.horizon*86400000);
   qs('ctpDate').value = d.toISOString().slice(0,10);
 
-  // Hide loading bar immediately
+  // Show loading bar
   const bar = qs('loadingBar');
-  bar.style.opacity = '0';
+  bar.style.width = '10%';
+  bar.style.opacity = '1';
 
   await checkHealth();
+  bar.style.width = '30%';
   await loadOrdersOnly();
+  bar.style.width = '40%';
   await loadPlanningOrderPool();
+  bar.style.width = '50%';
   await loadSkusForCtp();
+  bar.style.width = '60%';
+  await runBom();
+  bar.style.width = '75%';
   await loadApplicationState();
+  bar.style.width = '85%';
   await loadReleaseBoard();
-  await runBom(); // Pre-populate BOM on page load
+  bar.style.width = '100%';
+
+  setTimeout(()=>{ bar.style.opacity = '0'; }, 300);
 });
 </script>
 </body>
