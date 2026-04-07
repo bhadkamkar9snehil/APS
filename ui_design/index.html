@@ -207,6 +207,7 @@
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="poolSelectAllBtn">Select All</button>
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="poolClearAllBtn">Clear All</button>
                   <div style="flex:1"></div>
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;background:rgba(107,114,207,.08);border:1px solid rgba(107,114,207,.2)" onclick="state.lastScheduleRows ? showGanttModal('Order Pool - Timeline', state.lastScheduleRows) : alert('Run Feasibility Check first to see timeline')" title="View timeline for selected SOs (plant-based)">📅 Gantt</button>
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;background:rgba(107,114,207,.08);border:1px solid rgba(107,114,207,.2)" data-page-link="bom" title="View complete BOM explosion for all SOs">📊 Full BOM</button>
                 </div>
                 <div style="overflow:auto;max-height:280px;border:1px solid var(--border);border-radius:.3rem">
@@ -244,6 +245,7 @@
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="mergeSelectedBtn" disabled onclick="mergeSelectedPOs()">Merge Selected</button>
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="freezeSelectedBtn" disabled onclick="freezeSelectedPOs()">Freeze Selected</button>
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" onclick="proposePlanningOrders()">Re-propose</button>
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;margin-left:auto" onclick="state.lastScheduleRows ? showGanttModal('Planning Orders - Timeline', state.lastScheduleRows) : alert('Run Feasibility Check first to see timeline')" title="View timeline for proposed POs (plant-based)">📅 Gantt</button>
                 </div>
                 <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
@@ -280,6 +282,10 @@
                   <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="heatMT">—</div></div>
                   <div class="metric"><div class="metric-label">Avg / heat</div><div class="metric-value" id="heatAvg">—</div></div>
                   <div class="metric"><div class="metric-label">Est. duration</div><div class="metric-value" id="heatDuration">—</div></div>
+                </div>
+                <div class="toolbar" style="margin-bottom:.5rem;gap:.3rem">
+                  <div style="flex:1"></div>
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem" onclick="state.lastScheduleRows ? showGanttModal('Heat Batches - Timeline', state.lastScheduleRows) : alert('Run Feasibility Check first to see timeline')" title="View timeline for heat batches (plant-based)">📅 Gantt</button>
                 </div>
                 <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
@@ -2524,18 +2530,19 @@ function renderHeatBuilder(){
   }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-soft)">No heats derived yet.</td></tr>';
 }
 
-// Render mini resource gantt for Planning tab with bottleneck highlighting
-function renderPlanningGantt(scheduleRows, totalHorizonHours = 168){
-  if(!scheduleRows || !scheduleRows.length) return '';
+// Render plant-based gantt modal (BF, SMS, RM split)
+function renderPlantGantt(scheduleRows, title = 'Timeline'){
+  if(!scheduleRows || !scheduleRows.length) return '<div style="padding:1rem;text-align:center;color:var(--text-soft)">No schedule data yet. Run simulation first.</div>';
 
-  // Group by resource and get time bounds
-  const byResource = {};
+  // Group by plant and get time bounds
+  const byPlant = {};
   let minTime = Infinity, maxTime = -Infinity;
+  const plants = ['BF', 'SMS', 'RM']; // Standard plant order
 
   scheduleRows.forEach(row => {
-    const res = row.Resource_ID || 'UNKNOWN';
-    if(!byResource[res]) byResource[res] = [];
-    byResource[res].push(row);
+    const plant = row.Plant || 'BF'; // Default to BF if not specified
+    if(!byPlant[plant]) byPlant[plant] = [];
+    byPlant[plant].push(row);
 
     const start = new Date(row.Planned_Start);
     const end = new Date(row.Planned_End);
@@ -2543,61 +2550,61 @@ function renderPlanningGantt(scheduleRows, totalHorizonHours = 168){
     if(!isNaN(end)) maxTime = Math.max(maxTime, end.getTime());
   });
 
-  if(minTime === Infinity || maxTime === -Infinity) return '';
+  if(minTime === Infinity || maxTime === -Infinity) return '<div style="padding:1rem;color:var(--text-soft)">Invalid schedule data.</div>';
 
-  const span = maxTime - minTime;
-  const resources = Object.keys(byResource).sort();
+  const span = maxTime - minTime || 1;
+  const plantsToShow = plants.filter(p => byPlant[p]);
 
-  // Identify bottleneck resource (max capacity utilization)
-  let bottleneckRes = null;
-  let maxUtil = 0;
-  resources.forEach(res => {
-    const totalHours = byResource[res].reduce((sum, j) => sum + (num(j.Duration_Hrs) || 0), 0);
-    const utilPct = (totalHours / totalHorizonHours) * 100;
-    if(utilPct > maxUtil){
-      maxUtil = utilPct;
-      bottleneckRes = res;
-    }
-  });
+  let html = `<div style="border:1px solid var(--border);border-radius:.3rem;overflow:hidden;font-size:.75rem;background:var(--panel)">`;
 
-  // Build mini gantt HTML
-  let ganttHtml = `<div style="margin-top:1rem;border:1px solid var(--border);border-radius:.3rem;overflow:hidden;font-size:.75rem">
-    <div style="padding:.5rem .6rem;background:var(--panel-soft);font-weight:600;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-      <span>Resource Timeline</span>
-      ${bottleneckRes && maxUtil > 100 ? `<span style="color:#dc2626;font-weight:700;font-size:.7rem">⚠ BOTTLENECK: ${escapeHtml(bottleneckRes)} (${maxUtil.toFixed(0)}%)</span>` : ''}
-    </div>
-    <div style="max-height:250px;overflow-y:auto">`;
+  plantsToShow.forEach(plant => {
+    const jobs = byPlant[plant];
+    const plantColor = plant === 'BF' ? '#3b82f6' : plant === 'SMS' ? '#f97316' : '#8b5cf6';
 
-  resources.forEach(res => {
-    const jobs = byResource[res];
-    const totalHours = jobs.reduce((sum, j) => sum + (num(j.Duration_Hrs) || 0), 0);
-    const utilPct = (totalHours / totalHorizonHours) * 100;
-    const isBn = res === bottleneckRes;
-    const load = utilPct > 100 ? '#dc2626' : utilPct > 80 ? '#f59e0b' : '#10b981';
-    const bgStyle = isBn ? 'background:#fee2e2;border-left:3px solid #dc2626' : '';
+    html += `<div style="border-bottom:1px solid var(--border-soft)">
+      <div style="padding:.4rem .6rem;background:var(--panel-soft);font-weight:600;color:${plantColor}">${plant}</div>
+      <div style="padding:.3rem .6rem">`;
 
-    ganttHtml += `<div style="display:flex;align-items:center;gap:.6rem;padding:.35rem .6rem;border-bottom:1px solid var(--border-soft);${bgStyle}">
-      <div style="width:5rem;font-weight:${isBn?700:600};white-space:nowrap;color:${isBn?'#dc2626':'inherit'}">${escapeHtml(res)}</div>
-      <div style="flex:1;height:1.2rem;background:var(--border);border-radius:.2rem;position:relative;overflow:hidden">`;
-
-    jobs.forEach(j => {
-      const jStart = new Date(j.Planned_Start);
-      const jEnd = new Date(j.Planned_End);
+    jobs.forEach(job => {
+      const jStart = new Date(job.Planned_Start);
+      const jEnd = new Date(job.Planned_End);
       if(!isNaN(jStart) && !isNaN(jEnd)){
         const left = Math.max(0, (jStart.getTime() - minTime) / span * 100);
         const width = Math.max(1, (jEnd.getTime() - jStart.getTime()) / span * 100);
-        const opColor = j.Operation === 'SMS' ? '#3b82f6' : j.Operation === 'EAF' ? '#f97316' : j.Operation === 'RM' ? '#8b5cf6' : '#6b7280';
-        ganttHtml += `<div style="position:absolute;left:${left.toFixed(1)}%;width:${Math.min(width, 100-left).toFixed(1)}%;top:0;bottom:0;background:${opColor};opacity:.8" title="${j.Operation} ${j.Duration_Hrs}h"></div>`;
+        const duration = num(job.Duration_Hrs || 0).toFixed(1);
+
+        html += `<div style="display:flex;gap:.4rem;margin-bottom:.3rem;align-items:center">
+          <div style="width:3.5rem;font-size:.7rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml((job.Job_ID||'').substring(0,10))}</div>
+          <div style="flex:1;height:1rem;background:var(--border);border-radius:.15rem;position:relative;min-width:100px">
+            <div style="position:absolute;left:${left.toFixed(1)}%;width:${Math.min(width, 100-left).toFixed(1)}%;top:0;bottom:0;background:${plantColor};opacity:.7;border-radius:.15rem" title="${job.Campaign} | ${duration}h"></div>
+          </div>
+          <div style="width:2.5rem;text-align:right;font-size:.7rem;color:var(--text-soft)">${duration}h</div>
+        </div>`;
       }
     });
 
-    ganttHtml += `</div>
-      <div style="width:4.5rem;text-align:right;color:${load};font-weight:${isBn?700:600}">${totalHours}h (${utilPct.toFixed(0)}%)</div>
-    </div>`;
+    html += `</div></div>`;
   });
 
-  ganttHtml += `</div></div>`;
-  return ganttHtml;
+  html += `</div>`;
+  return html;
+}
+
+// Show gantt modal for SO/PO/Heat
+function showGanttModal(title, scheduleRows){
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:9999';
+  modal.innerHTML = `
+    <div style="background:var(--page-bg);border:1px solid var(--border);border-radius:.5rem;box-shadow:0 20px 25px rgba(0,0,0,.15);max-width:90%;max-height:80vh;overflow:auto;padding:1.5rem;width:800px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <h3 style="margin:0;font-size:1rem">${escapeHtml(title)}</h3>
+        <button onclick="this.closest('div').parentElement.remove()" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:var(--text-soft)">✕</button>
+      </div>
+      ${renderPlantGantt(scheduleRows, title)}
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', (e) => { if(e.target === modal) modal.remove(); });
 }
 
 async function simulateSchedule(){
@@ -2628,39 +2635,9 @@ async function simulateSchedule(){
     const statusColor = feasible ? '#10b981' : '#ef4444';
     const bottleneck = data.bottleneck || '—';
 
-    // Build schedule gantt + table
+    // Store schedule rows for gantt modal
     const scheduleRows = data.schedule_rows || [];
-    const horizonHours = data.horizon_hours || 168; // Default 7 days = 168 hours
-    const ganttHtml = renderPlanningGantt(scheduleRows, horizonHours);
-    const scheduleTableHtml = scheduleRows.length > 0 ? `
-      <div style="margin-top:.75rem;border:1px solid var(--border);border-radius:.3rem;overflow:hidden">
-        <div style="padding:.5rem .6rem;background:var(--panel-soft);font-weight:600;border-bottom:1px solid var(--border);font-size:.75rem">Job Details</div>
-        <div style="overflow-x:auto;max-height:200px">
-          <table class="table" style="margin:0;font-size:.7rem">
-            <thead>
-              <tr>
-                <th>Job</th><th>Campaign</th><th>Op</th><th>Resource</th><th>Start</th><th>End</th><th>Dur</th><th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${scheduleRows.slice(0, 30).map(row => `
-                <tr>
-                  <td style="font-size:.7rem">${escapeHtml((row.Job_ID||'').substring(0,10))}</td>
-                  <td style="font-size:.7rem">${escapeHtml(row.Campaign||'—')}</td>
-                  <td style="font-size:.7rem"><strong>${escapeHtml((row.Operation||'—').substring(0,3))}</strong></td>
-                  <td style="font-size:.7rem">${escapeHtml(row.Resource_ID||'—')}</td>
-                  <td style="font-size:.7rem">${escapeHtml((row.Planned_Start||'—').substring(0,16))}</td>
-                  <td style="font-size:.7rem">${escapeHtml((row.Planned_End||'—').substring(0,16))}</td>
-                  <td style="font-size:.7rem">${row.Duration_Hrs ? num(row.Duration_Hrs).toFixed(1) + 'h' : '—'}</td>
-                  <td style="font-size:.7rem"><span style="color:${row.Status==='LATE'?'#dc2626':'#16a34a'}">${escapeHtml(row.Status||'—')}</span></td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    ` : '';
-    const scheduleHtml = ganttHtml + scheduleTableHtml;
+    state.lastScheduleRows = scheduleRows;
 
     qs('schedulerContent').innerHTML = `
       <div style="display:flex;align-items:center;gap:2rem;padding:.5rem 0">
@@ -2674,7 +2651,7 @@ async function simulateSchedule(){
         </div>
         <div style="font-size:.75rem;color:var(--text-soft);flex:1">${data.message}</div>
       </div>
-      ${scheduleHtml}
+      ${scheduleRows.length > 0 ? `<button class="btn ghost" style="margin-top:.75rem;font-size:.75rem" onclick="showGanttModal('Feasibility Check - Timeline', state.lastScheduleRows)">📊 View Gantt</button>` : ''}
     `;
 
     // Show/hide remediation panel with resource utilization
@@ -2790,39 +2767,9 @@ async function remSimulate(){
     if(horizonHours) config.push(Math.round(Number(horizonHours)/24)+'d horizon');
     const configStr = config.length ? ' [' + config.join(', ') + ']' : '';
 
-    // Build schedule gantt + table
+    // Store schedule rows for gantt modal
     const scheduleRows = data.schedule_rows || [];
-    const horizonHours = data.horizon_hours || 168; // Default 7 days = 168 hours
-    const ganttHtml = renderPlanningGantt(scheduleRows, horizonHours);
-    const scheduleTableHtml = scheduleRows.length > 0 ? `
-      <div style="margin-top:.75rem;border:1px solid var(--border);border-radius:.3rem;overflow:hidden">
-        <div style="padding:.5rem .6rem;background:var(--panel-soft);font-weight:600;border-bottom:1px solid var(--border);font-size:.75rem">Job Details</div>
-        <div style="overflow-x:auto;max-height:200px">
-          <table class="table" style="margin:0;font-size:.7rem">
-            <thead>
-              <tr>
-                <th>Job</th><th>Campaign</th><th>Op</th><th>Resource</th><th>Start</th><th>End</th><th>Dur</th><th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${scheduleRows.slice(0, 30).map(row => `
-                <tr>
-                  <td style="font-size:.7rem">${escapeHtml((row.Job_ID||'').substring(0,10))}</td>
-                  <td style="font-size:.7rem">${escapeHtml(row.Campaign||'—')}</td>
-                  <td style="font-size:.7rem"><strong>${escapeHtml((row.Operation||'—').substring(0,3))}</strong></td>
-                  <td style="font-size:.7rem">${escapeHtml(row.Resource_ID||'—')}</td>
-                  <td style="font-size:.7rem">${escapeHtml((row.Planned_Start||'—').substring(0,16))}</td>
-                  <td style="font-size:.7rem">${escapeHtml((row.Planned_End||'—').substring(0,16))}</td>
-                  <td style="font-size:.7rem">${row.Duration_Hrs ? num(row.Duration_Hrs).toFixed(1) + 'h' : '—'}</td>
-                  <td style="font-size:.7rem"><span style="color:${row.Status==='LATE'?'#dc2626':'#16a34a'}">${escapeHtml(row.Status||'—')}</span></td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    ` : '';
-    const scheduleHtml = ganttHtml + scheduleTableHtml;
+    state.lastScheduleRows = scheduleRows;
 
     qs('schedulerContent').innerHTML = `
       <div style="display:flex;align-items:center;gap:2rem;padding:.5rem 0">
@@ -2834,7 +2781,7 @@ async function remSimulate(){
         </div>
         <div style="font-size:.75rem;color:var(--text-soft);flex:1">${data.message}</div>
       </div>
-      ${scheduleHtml}
+      ${scheduleRows.length > 0 ? `<button class="btn ghost" style="margin-top:.75rem;font-size:.75rem" onclick="showGanttModal('Feasibility Check - Timeline (Adjusted)', state.lastScheduleRows)">📊 View Gantt</button>` : ''}
     `;
 
     setPipelineStageStatus('ps-schedule', feasible ? 'done' : 'warn',
