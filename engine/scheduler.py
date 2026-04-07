@@ -17,8 +17,23 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - environment-dependent import
     cp_model = None
 
-from engine.campaign import HEAT_SIZE_MT, billet_family_for_grade, rm_minutes_for_qty
+from engine.campaign import billet_family_for_grade, rm_minutes_for_qty, needs_vd_for_grade, _get_heat_size_mt
+from engine.config import get_config
 
+# Cycle times are now config-driven (read from Algorithm_Config)
+# Defaults are embedded for backward compatibility
+def _get_cycle_times():
+    """Get all cycle times from Algorithm_Config."""
+    config = get_config()
+    return {
+        'EAF': config.get_duration_minutes('CYCLE_TIME_EAF_MIN', 90),
+        'LRF': config.get_duration_minutes('CYCLE_TIME_LRF_MIN', 40),
+        'VD': config.get_duration_minutes('CYCLE_TIME_VD_MIN', 45),
+        'CCM_130': config.get_duration_minutes('CYCLE_TIME_CCM_130_MIN', 50),
+        'CCM_150': config.get_duration_minutes('CYCLE_TIME_CCM_150_MIN', 60),
+    }
+
+# Legacy constants for backward compatibility (don't use directly)
 EAF_TIME = 90
 LRF_TIME = 40
 VD_TIME = 45
@@ -45,7 +60,13 @@ DEFAULT_MACHINE_GROUPS = {
     "CCM": ["CCM-01", "CCM-02"],
     "RM": ["RM-01", "RM-02"],
 }
+# Queue violation weight now config-driven (from Algorithm_Config)
+# Legacy constant for backward compatibility
 QUEUE_VIOLATION_WEIGHT = 500
+
+def _get_queue_violation_weight() -> int:
+    """Get queue violation penalty weight from Algorithm_Config."""
+    return get_config().get_weight('OBJECTIVE_QUEUE_VIOLATION_WEIGHT', 500)
 
 
 def _floor_hour(ts: datetime) -> datetime:
@@ -206,17 +227,21 @@ def _operation_duration(profile: dict | None, *, include_setup: bool = False) ->
 
 
 def _ccm_time(grade: str) -> int:
-    return CCM_130 if billet_family_for_grade(grade) == "BIL-130" else CCM_150
+    """Get CCM cycle time for grade based on billet family and config."""
+    cycles = _get_cycle_times()
+    return cycles['CCM_130'] if billet_family_for_grade(grade) == "BIL-130" else cycles['CCM_150']
 
 
 def _priority_weight(priority_rank_value: int) -> int:
+    """Get lateness weight multiplier for priority rank from Algorithm_Config."""
+    config = get_config()
     if priority_rank_value <= 1:
-        return 4
+        return config.get_weight('PRIORITY_WEIGHT_URGENT', 4)
     if priority_rank_value == 2:
-        return 3
+        return config.get_weight('PRIORITY_WEIGHT_HIGH', 3)
     if priority_rank_value == 3:
-        return 2
-    return 1
+        return config.get_weight('PRIORITY_WEIGHT_NORMAL', 2)
+    return config.get_weight('PRIORITY_WEIGHT_LOW', 1)
 
 
 def _section_display(section_value, sections_covered: str = "") -> str:
@@ -318,23 +343,23 @@ def build_operation_times(
     op_lookup: dict[str, str] | None = None,
     allow_defaults: bool = False,
 ) -> dict[str, dict[str, float]]:
-    defaults = (
-        {
-            "EAF": {"cycle": EAF_TIME, "setup": 30.0},
-            "LRF": {"cycle": LRF_TIME, "setup": 10.0},
-            "VD": {"cycle": VD_TIME, "setup": 15.0},
+    if allow_defaults:
+        cycles = _get_cycle_times()
+        defaults = {
+            "EAF": {"cycle": cycles['EAF'], "setup": 30.0},
+            "LRF": {"cycle": cycles['LRF'], "setup": 10.0},
+            "VD": {"cycle": cycles['VD'], "setup": 15.0},
             "CCM": {"cycle": float(_ccm_time(grade)), "setup": 20.0},
             "RM": {"cycle": 0.0, "setup": 40.0},
         }
-        if allow_defaults
-        else {
+    else:
+        defaults = {
             "EAF": {"cycle": 0.0, "setup": 0.0},
             "LRF": {"cycle": 0.0, "setup": 0.0},
             "VD": {"cycle": 0.0, "setup": 0.0},
             "CCM": {"cycle": 0.0, "setup": 0.0},
             "RM": {"cycle": 0.0, "setup": 0.0},
         }
-    )
 
     if routing is None or getattr(routing, "empty", True):
         routing_rows_available = False
@@ -625,6 +650,30 @@ def _master_data_mode(config: dict | None = None) -> str:
     return "DEFAULT_MASTERS_ALLOWED" if _allow_scheduler_default_masters(config) else "STRICT_MASTERS"
 
 
+def _preferred_resource_for_operation(
+    routing: pd.DataFrame | None,
+    operation: str,
+    *,
+    grade: str | None = None,
+    sku_id: str | None = None,
+    op_lookup: dict[str, str] | None = None,
+) -> str | None:
+    """Extract preferred resource from routing for given operation and SKU/grade."""
+    if routing is None or getattr(routing, "empty", True):
+        return None
+
+    rows = _routing_rows_for_op(routing, operation, grade=grade, sku_id=sku_id, op_lookup=op_lookup)
+    if rows.empty:
+        return None
+
+    # Get preferred resource from first matching row (should be same across all)
+    preferred = rows.iloc[0].get("Preferred_Resource")
+    if preferred and str(preferred).strip().upper() not in {"", "NONE", "NA"}:
+        return str(preferred).strip()
+
+    return None
+
+
 def _changeover_minutes(changeover_matrix: pd.DataFrame | None, from_grade: str, to_grade: str) -> int:
     if changeover_matrix is None or getattr(changeover_matrix, "empty", True):
         return 0
@@ -676,7 +725,8 @@ def _rm_duration(
     changeover = max(int(round(changeover_minutes or 0)), 0) if add_changeover_to_duration else 0
     if cycle > 0:
         setup = routing_setup if include_setup else 0
-        duration = (cycle * (qty_mt / HEAT_SIZE_MT)) + setup + changeover
+        heat_size = _get_heat_size_mt()
+        duration = (cycle * (qty_mt / heat_size)) + setup + changeover
         return max(1, int(round(duration)))
     if not allow_defaults:
         raise ValueError(
@@ -775,6 +825,65 @@ def _next_available_start(start_min: int, duration: int, downtime_window: tuple[
     return candidate
 
 
+def _validate_resource_feasibility(
+    campaigns: list,
+    machine_groups: dict[str, list[str]],
+    routing: pd.DataFrame | None = None,
+    op_lookup: dict[str, str] | None = None,
+    allow_defaults: bool = False,
+) -> list[str]:
+    """Check resource feasibility before scheduling.
+
+    Returns: List of warning messages (empty if all OK)
+    """
+    warnings = []
+
+    # Check: Each operation has at least one available resource
+    for operation, machines in machine_groups.items():
+        if not machines:
+            warnings.append(
+                f"WARNING: No resources available for operation {operation}. "
+                f"This will cause scheduling to fail."
+            )
+        if len(machines) == 1:
+            warnings.append(
+                f"NOTE: Single resource for {operation} ({machines[0]}). "
+                f"Any downtime will block entire operation."
+            )
+
+    # Check: For each campaign, required operations are staffed
+    for camp in campaigns:
+        grade = camp.get("grade", "")
+        heats = int(camp.get("heats", 1))
+        needs_vd = needs_vd_for_grade(grade)
+
+        required_ops = ["EAF", "LRF", "CCM"]
+        if needs_vd:
+            required_ops.append("VD")
+
+        for op in required_ops:
+            if not machine_groups.get(op):
+                warnings.append(
+                    f"ERROR: Campaign {camp.get('campaign_id')} requires {op}, "
+                    f"but no {op} resources are available."
+                )
+
+    # Check: Preferred resources exist and are available
+    if routing is not None and not getattr(routing, "empty", True):
+        for _, route_row in routing.iterrows():
+            preferred = str(route_row.get("Preferred_Resource", "")).strip()
+            if preferred and preferred.upper() not in {"", "NONE", "NA"}:
+                op = _normalize_operation(route_row.get("Operation"), op_lookup)
+                available = machine_groups.get(op, [])
+                if preferred not in available:
+                    warnings.append(
+                        f"WARNING: Preferred resource {preferred} for {op} is not available. "
+                        f"Will use alternate: {available}"
+                    )
+
+    return warnings
+
+
 def schedule(
     campaigns: list,
     resources: pd.DataFrame,
@@ -792,6 +901,7 @@ def schedule(
 ) -> dict:
     """Run the CP-SAT scheduler."""
     if not _cp_sat_available():
+        print("[Scheduler] ⚠️  OR-Tools CP-SAT not available, using greedy fallback. Install with: pip install ortools")
         return _greedy_fallback(
             campaigns,
             resources=resources,
@@ -809,6 +919,7 @@ def schedule(
         )
 
     model = cp_model.CpModel()
+    print("[Scheduler] ✓ Using OR-Tools CP-SAT solver")
 
     planning_horizon_days = max(int(planning_horizon_days or 14), 1)
     frozen_jobs = frozen_jobs or {}
@@ -819,6 +930,14 @@ def schedule(
     op_order = _build_operation_order(routing, op_lookup)
     allow_default_masters = _allow_scheduler_default_masters(config)
     machine_groups = _machine_groups(resources, op_lookup=op_lookup, allow_defaults=allow_default_masters)
+
+    # Fix 8.1: Validate resource feasibility before building model
+    feasibility_warnings = _validate_resource_feasibility(
+        campaigns, machine_groups, routing=routing, op_lookup=op_lookup, allow_defaults=allow_default_masters
+    )
+    for warning in feasibility_warnings:
+        print(f"[Scheduler] {warning}")
+
     normalized_queue_times = _normalize_queue_times(queue_times, op_lookup=op_lookup)
     default_queue_enforcement = str((config or {}).get("Queue_Enforcement", "Hard") or "Hard").strip().upper()
     serialization_mode = _campaign_serialization_mode(config)
@@ -975,6 +1094,18 @@ def schedule(
                 sms_queue_status[(cid, heat_idx, op)] = ""
                 sms_end_vars.append(op_task["end"])
 
+                # Fix 4.1: Add soft preference cost for non-preferred resource selection
+                if op_task.get("fixed_machine") is None:  # Only if not frozen/fixed
+                    preferred = _preferred_resource_for_operation(
+                        routing, op, grade=grade, op_lookup=op_lookup
+                    )
+                    if preferred and preferred in op_task.get("choices", {}):
+                        for machine in op_task.get("candidates", []):
+                            if machine != preferred:
+                                cost = model.NewIntVar(0, 1, f"cost_{prefix}_{op}_{machine}")
+                                model.Add(cost == 1).OnlyEnforceIf(op_task["choices"][machine])
+                                objective_terms.append((cost, 10))  # Soft penalty: prefer preferred resource
+
                 if op == "EAF" and heat_idx == 0:
                     first_eaf_task = op_task
                 if prev_stage_tasks.get(op):
@@ -994,7 +1125,7 @@ def schedule(
                         else:
                             q_viol = model.NewIntVar(0, max_time, f"qviol_{cid}_{heat_idx + 1}_{previous_op}_{op}")
                             model.Add(q_viol >= op_task["start"] - (previous_task["end"] + transfer_gap + max_queue))
-                            objective_terms.append((q_viol, QUEUE_VIOLATION_WEIGHT))
+                            objective_terms.append((q_viol, _get_queue_violation_weight()))  # Proportional: q_viol = violation_magnitude
 
                 previous_task = op_task
                 previous_op = op
@@ -1038,6 +1169,18 @@ def schedule(
                 rm_job_id,
             )
 
+            # Fix 4.1: Add soft preference cost for RM resource selection
+            if rm_task.get("fixed_machine") is None:  # Only if not frozen/fixed
+                preferred = _preferred_resource_for_operation(
+                    routing, "RM", grade=grade, sku_id=rm_order.get("sku_id"), op_lookup=op_lookup
+                )
+                if preferred and preferred in rm_task.get("choices", {}):
+                    for machine in rm_task.get("candidates", []):
+                        if machine != preferred:
+                            cost = model.NewIntVar(0, 1, f"cost_{cid}_RM_{rm_idx}_{machine}")
+                            model.Add(cost == 1).OnlyEnforceIf(rm_task["choices"][machine])
+                            objective_terms.append((cost, 10))  # Soft penalty: prefer preferred resource
+
             if previous_rm_end is None:
                 last_ccm_end = model.NewIntVar(0, max_time, f"last_ccm_end_{cid}")
                 model.AddMaxEquality(last_ccm_end, ccm_end_vars)
@@ -1053,7 +1196,7 @@ def schedule(
                     else:
                         q_viol = model.NewIntVar(0, max_time, f"qviol_{cid}_CCM_RM")
                         model.Add(q_viol >= rm_task["start"] - (last_ccm_end + transfer_gap + max_queue))
-                        objective_terms.append((q_viol, QUEUE_VIOLATION_WEIGHT))
+                        objective_terms.append((q_viol, 100))  # Proportional per-minute penalty (was QUEUE_VIOLATION_WEIGHT=500)
             else:
                 model.Add(previous_rm_end <= rm_task["start"])
 
@@ -1093,7 +1236,7 @@ def schedule(
             objective_terms.append(
                 (
                     sms_lateness,
-                    max(1, math.ceil(_priority_weight(int(camp.get("priority_rank", 9))) * 0.5)),
+                    max(1, math.ceil(_priority_weight(int(camp.get("priority_rank", 9))))),  # Fix 1.1: Removed 0.5x discount
                 )
             )
             completion_candidates = list(rm_end_vars) if rm_end_vars else [last_ccm_end]
@@ -1225,7 +1368,7 @@ def schedule(
                         "Planned_End": end_dt.strftime("%Y-%m-%d %H:%M"),
                         "Duration_Hrs": round((solver.Value(task["end"]) - solver.Value(task["start"])) / 60, 2),
                         "Heat_No": heat_idx + 1,
-                        "Qty_MT": HEAT_SIZE_MT,
+                        "Qty_MT": _get_heat_size_mt(),
                         "Queue_Violation": queue_status,
                         "Status": status_text,
                         "_sort_start": start_dt,
@@ -1524,7 +1667,7 @@ def _greedy_fallback(
                         "Planned_End": end_dt.strftime("%Y-%m-%d %H:%M"),
                         "Duration_Hrs": round((end_min - start_min) / 60, 2),
                         "Heat_No": heat_idx + 1,
-                        "Qty_MT": HEAT_SIZE_MT,
+                        "Qty_MT": _get_heat_size_mt(),
                         "Queue_Violation": queue_status,
                         "Status": status_text,
                         "_sort_start": start_dt,

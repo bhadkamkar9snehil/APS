@@ -1,0 +1,651 @@
+# APS for Steel Manufacturing — Correct Design Approach for Claude from ChatGPT
+
+You need to stop thinking in terms of a false binary like:
+
+* campaign model
+* PO model
+* heat model
+
+These are **not competing end states**. They are different layers of the planning problem.
+
+The earlier design discussion became confused because it kept replacing one object with another instead of defining a coherent APS architecture. That confusion showed up clearly in the progression from a campaign-based planning UI, to a PO-per-SO idea, to a heat-pack approach, and then back to questions about what production orders even mean in the design. The result was a muddled model, plus API mismatches such as the planning endpoint returning 404 while order listing still worked.  
+
+This writeup explains how APS should actually work for a steel plant when the only firm input is a list of Sales Orders.
+
+---
+
+## 1. First principle: APS must be layered
+
+The correct way to think about APS is as a layered planning and execution preparation system.
+
+### Layer 1 — Sales Orders
+
+Sales Orders are the **demand source**.
+
+They tell us:
+
+* what customer demand exists
+* quantity
+* due date
+* grade
+* section / size / route relevance
+* commercial urgency
+
+Sales Orders are not the final scheduling object. They are the starting point.
+
+### Layer 2 — Planning Orders / Manufacturing Lots
+
+APS should convert Sales Orders into **Planning Orders** or **Manufacturing Lots**.
+
+These are the planner-friendly and scheduler-friendly groupings that answer:
+
+* what exactly are we planning to manufacture together
+* which SOs are bundled
+* whether one SO is split
+* whether multiple SOs are merged
+* what quantity and grade compatibility exist in the lot
+
+This is the first real planning object.
+
+### Layer 3 — Heat / Cast / Batch Requirements
+
+Steel production has physical upstream constraints. SMS does not “make sales orders.” It makes **heats**, and those heats are subject to:
+
+* heat size
+* grade transitions
+* metallurgy constraints
+* casting / routing constraints
+* upstream machine capacity
+
+APS must therefore derive **heat requirements** from the manufacturing lots.
+
+Important nuance:
+Do not think of heat as replacing planning orders. Also do not think of heat as some totally independent object that exists before demand logic. In APS, heats are usually **derived manufacturing batches** needed to satisfy the selected manufacturing lots.
+
+### Layer 4 — Finite Scheduled Operations
+
+Only after the above is defined should the APS generate a finite schedule on actual resources:
+
+* SMS / EAF / LRF / CCM
+* reheating / RM
+* downstream steps if in scope
+
+This layer decides:
+
+* when each operation starts
+* on which resource
+* in what sequence
+* with what changeover cost
+* with what lateness tradeoff
+
+This layered model is already visible in the revised discussion as SO → Planning Order → Heat Batch → Schedule, and that is the correct direction to preserve.  
+
+---
+
+## 2. What was wrong with the earlier campaign design
+
+The campaign design became invalid not because grouping is bad, but because the model grouped too early and too rigidly.
+
+The specific problem was this pattern:
+
+* all same-grade SOs were grouped into a campaign
+* campaign 1 had to finish before campaign 2
+* campaign 2 had to finish before campaign 3
+* the scheduler was therefore solving a problem with artificial serial dependencies
+
+That is the real design failure.
+
+The earlier thread itself correctly identifies that the campaign implementation still had the old structure:
+
+* select SOs
+* group them into campaigns
+* generate POs from campaigns
+* sequence campaigns in the backend
+
+That is still campaign-first logic, and it is the wrong backbone for APS. 
+
+### What must be removed
+
+Remove these assumptions:
+
+* all same-grade demand must become a single master campaign
+* campaign-to-campaign sequencing is a core production law
+* all planning must revolve around campaign objects
+* campaigns are the final object the scheduler should optimize
+
+### What may remain
+
+What may remain is **sequence-aware grouping logic**:
+
+* reduce grade changeovers
+* avoid metallurgical incompatibilities
+* create short-horizon sequence blocks
+* bundle compatible work
+
+In other words:
+
+> sequencing logic is necessary
+> giant master campaigns are not
+
+---
+
+## 3. What the APS should do instead
+
+APS should work as a rolling, finite-capacity, proposal-driven planning engine.
+
+### The correct flow
+
+1. Start from SO backlog
+2. Select planning horizon
+3. Auto-propose Planning Orders / Manufacturing Lots
+4. Derive required heats / casts / upstream batches
+5. Run finite scheduling on actual resources
+6. Show KPIs and conflicts
+7. Allow planner intervention on policy and exceptions
+8. Release approved work to execution
+
+This combines the strongest parts of the later reasoning:
+
+* rolling window selection
+* lot formation
+* heat-aware batching
+* finite scheduling
+* planner review and release  
+
+---
+
+## 4. How APS should begin when only Sales Orders exist
+
+You said the only thing available today is a list of Sales Orders.
+
+That is enough to start.
+
+### Input object
+
+A Sales Order should contain at least:
+
+* SO number
+* customer
+* due date
+* quantity
+* grade
+* section / dimension / size
+* route or process family if known
+* priority / urgency
+* optional commercial weight / service class
+
+### APS should not ask the planner to manually build everything
+
+The planner should not be forced to manually review and hand-pick every order every time. That does not scale.
+
+Instead, APS should first auto-select a **planning horizon**.
+
+Examples:
+
+* due in next 3 days
+* due in next 7 days
+* due in next 10 days
+* overdue + next 5 days
+* manually pinned urgent orders + next 7 days
+
+The later discussion correctly identifies this as a missing piece: who picks the initial SO set? The answer should be: **the system proposes the set using horizon rules**, and the planner can override. 
+
+---
+
+## 5. Lot formation is the heart of APS
+
+The earlier discussions rightly reached the point that the real intelligence is not just in scheduling. It is in **how the system proposes lots**.  
+
+This is the correct position.
+
+### APS must propose manufacturing lots using rules like:
+
+* same or compatible grade first
+* compatible size / section / route
+* due-date proximity
+* minimum / maximum lot size
+* heat-size constraint
+* customer / dispatch coherence if relevant
+* urgent order protection
+* already-started or frozen material protection
+
+### Planning objective of lot formation
+
+The lot-formation stage should strike a balance between:
+
+* on-time delivery
+* manageable number of lots
+* good upstream batching
+* lower changeovers
+* realistic resource loading
+
+### What a Planning Order is
+
+A Planning Order is a manufacturable lot proposal. It is not necessarily:
+
+* one SO
+* one heat
+* one final MES production order
+
+It is a planning object that says:
+
+> “these SOs, in this quantity and compatibility envelope, should be treated together for planning and scheduling.”
+
+That is the right role of Planning Orders in APS.
+
+---
+
+## 6. Heat-aware batching must be explicit
+
+Steel planning cannot stop at abstract planning lots.
+
+The system must derive heat requirements.
+
+### Why
+
+Because upstream production is constrained by:
+
+* physical heat size
+* grade compatibility
+* transition constraints
+* upstream resource availability
+* casting continuity or batch rules if applicable
+
+### Correct way to think about it
+
+Do not say:
+
+* “ignore heats and just schedule POs”
+* or “heats replace planning orders entirely”
+
+Instead say:
+
+* Planning Orders express manufacturable lots
+* APS derives the required heats needed to fulfill those lots
+* those heats are then scheduled on actual upstream resources
+
+### Important mapping note
+
+Do not assume 1:1 mapping between objects.
+
+Possible relationships:
+
+* 1 SO → multiple Planning Orders
+* multiple SOs → 1 Planning Order
+* 1 Planning Order → multiple heats
+* 1 heat → contributes to multiple SO allocations
+* released execution orders may sit at heat level, lot level, or stage level depending on the system design
+
+That complexity must be acknowledged up front.
+
+---
+
+## 7. What “campaign” should mean in the new APS
+
+The word “campaign” can still exist in the UI if users understand it, but it must be redefined.
+
+### Campaign must NOT mean:
+
+* one giant grade-wise backlog block
+* all same-grade demand clubbed together
+* a serial object that forces the next group to wait
+
+### Campaign may mean:
+
+* a short-horizon sequence block
+* a planner-approved bundle of lots
+* a visible grouping for release and review
+* a batch of compatible work chosen for a given planning window
+
+So if the UI wants to preserve familiar language, that is acceptable. But the internals should not be driven by a rigid campaign-first architecture.
+
+---
+
+## 8. The scheduler must be finite and resource-driven
+
+Once lots and heat requirements are available, the scheduler must solve a **finite-capacity** problem.
+
+### Minimum scheduling considerations
+
+* resource non-overlap
+* operation precedence
+* alternate resources if available
+* setup / transition penalties
+* due-date penalties
+* freeze / lock constraints for committed work
+* work already started
+* optional split or no-split rules
+* planning horizon and rescheduling limits
+
+### What not to do
+
+Do not hard-code giant sequential chains like:
+
+* campaign A ends before campaign B starts
+* campaign B ends before campaign C starts
+
+unless those are true physical constraints, which in most of this discussion they were not.
+
+### What to do instead
+
+Let the scheduler decide sequence using:
+
+* finite resource constraints
+* changeover penalty matrices
+* due-date penalties
+* priority weights
+
+That is where the real optimization should happen.
+
+---
+
+## 9. Manual intervention — what planners should control
+
+The planner should control policy and exceptions, not micromanage every machine move by default.
+
+### Planner should be able to control:
+
+* planning horizon
+* objective priorities
+* urgent customer override
+* forced include / exclude orders
+* split / merge decisions for selected lots
+* whether to allow partial fulfillment
+* freeze already committed work
+* acceptable lateness vs setup tradeoff
+* preferred resource if needed
+
+### Planner should not be expected to:
+
+* manually build every heat from scratch
+* manually pick each order from an 81-order backlog every cycle
+* manually create the whole machine-level schedule unless resolving an exception
+
+The correct operating model is:
+
+> system proposes → planner adjusts → system reschedules → planner releases
+
+---
+
+## 10. Recommended practical APS workflow
+
+This is the workflow Claude should implement.
+
+### Step 1 — Order Pool
+
+Display backlog of Sales Orders with filters:
+
+* due date
+* priority
+* grade
+* section / size
+* customer
+* route family
+* status
+
+System suggests a default planning horizon, for example next 7 days.
+
+### Step 2 — Planning Board
+
+System auto-selects candidate SOs in the window.
+
+Then it proposes Planning Orders by applying rules such as:
+
+* grade compatibility
+* due-date closeness
+* size / route compatibility
+* lot-size and heat-size feasibility
+
+Planner can:
+
+* merge
+* split
+* pin
+* exclude
+* force urgent inclusion
+
+### Step 3 — Heat Builder
+
+System derives heat requirements from the Planning Orders:
+
+* heats needed
+* expected tonnage per heat
+* partial allocations
+* compatibility warnings
+* likely transitions
+
+Planner can review and override only where required.
+
+### Step 4 — Finite Scheduler
+
+System generates a schedule on actual resources:
+
+* SMS
+* RM
+* other included stages
+
+Optimization objective may be a weighted combination of:
+
+* on-time delivery
+* reduced grade changeovers
+* maximized throughput
+* minimized WIP
+* minimized rescheduling instability
+
+### Step 5 — Review Board
+
+Planner reviews:
+
+* total tons planned
+* due-date service level
+* late orders
+* transition count
+* resource utilization
+* bottlenecks
+* conflicts
+* frozen vs rescheduled work
+
+### Step 6 — Release
+
+Approved work is released to execution.
+
+At release, the system should create the execution-level objects required by MES / shop floor:
+
+* production orders
+* heat instructions
+* operation tasks
+* dispatch sequence
+  depending on plant design.
+
+---
+
+## 11. Core data objects to implement
+
+Claude should structure the APS around these logical objects.
+
+### SalesOrder
+
+Demand object from customer side.
+
+Fields:
+
+* so_id
+* customer_id
+* due_date
+* priority
+* grade
+* size / section
+* qty_mt
+* route_family
+* status
+
+### PlanningOrder
+
+Manufacturing lot proposed by APS.
+
+Fields:
+
+* planning_order_id
+* selected_so_ids
+* total_qty_mt
+* grade_family
+* size_family
+* due_window
+* route_family
+* heats_required
+* planner_status
+* frozen_flag
+
+### HeatBatch
+
+Derived upstream manufacturing batch.
+
+Fields:
+
+* heat_id
+* planning_order_id or planning_group_id
+* grade
+* qty_mt
+* heat_number_seq
+* upstream_route
+* casting_group if relevant
+* compatibility_class
+
+### ScheduledOperation
+
+Machine-level scheduled task.
+
+Fields:
+
+* operation_id
+* parent_object_type
+* parent_object_id
+* resource_id
+* operation_type
+* start_time
+* end_time
+* setup_before
+* lateness_cost
+* sequence_position
+
+### ReleaseObject
+
+Execution handoff object.
+
+Fields depend on how MES wants to receive execution instructions.
+
+---
+
+## 12. What to explicitly delete from the current design
+
+Claude should delete or rewrite anything that enforces the wrong backbone.
+
+### Delete
+
+* campaign-first logic as the main APS architecture
+* giant same-grade campaign generation across the full backlog
+* mandatory campaign-to-campaign sequencing
+* APIs that are built around obsolete campaign assumptions
+* UI flows that assume campaign is the only planning object
+
+The earlier implementation explicitly created rolling campaign logic and campaign endpoints, then later admitted that this was still solving the wrong problem. That part should not be preserved as-is.  
+
+### Rewrite
+
+* planning UI around Order Pool / Planning Board / Heat Builder / Schedule / Release
+* APIs around planning horizon, lot proposal, heat derivation, simulation, and release
+* scheduler input model to accept Planning Orders + Heats, not giant campaigns
+
+---
+
+## 13. What to keep from the earlier discussion
+
+Not everything from the earlier discussion was wrong. Keep the following insights:
+
+### Keep
+
+* rolling horizon planning
+* finite scheduling
+* resource conflict handling
+* sequence-aware planning
+* due-date-driven selection
+* planner review before release
+* distinction between commercial demand and physical production constraints
+
+### Do not keep
+
+* unsupported exact performance claims
+* unsupported “industry standard” claims stated as fact
+* one-object-fits-all thinking
+* campaign sequencing as the organizing principle
+
+The later discussion itself already acknowledges that earlier numbers and some claims were overconfident and that the architecture had become muddled. Claude should accept that and proceed with a clean rebuild.  
+
+---
+
+## 14. The clean statement of intent Claude should follow
+
+Use this as the final guiding statement:
+
+> APS for this steel use case should begin from Sales Orders, automatically propose manufacturable Planning Orders within a short rolling horizon, derive required heat-level batches from those lots, and then finite-schedule the resulting operations on real plant resources using due-date, changeover, and capacity logic.
+>
+> Campaigns, if retained at all, should only be short-horizon sequence or review groupings in the UI, not the fundamental planning backbone.
+
+---
+
+## 15. Implementation direction Claude should adopt
+
+Claude should rebuild the APS module using this target flow:
+
+### Target flow
+
+1. `list_sales_orders()`
+2. `select_planning_window(days)`
+3. `propose_planning_orders(window, rules, priorities)`
+4. `review_and_edit_planning_orders()`
+5. `derive_heat_batches(planning_orders)`
+6. `simulate_finite_schedule(heats, resources, objective_weights)`
+7. `review_schedule_kpis()`
+8. `release_to_execution()`
+
+### UI concept
+
+* Order Pool
+* Planning Board
+* Heat Builder
+* Finite Schedule
+* Release Board
+
+### API concept
+
+* `/api/aps/orders/list`
+* `/api/aps/planning/window/select`
+* `/api/aps/planning/orders/propose`
+* `/api/aps/planning/orders/update`
+* `/api/aps/planning/heats/derive`
+* `/api/aps/planning/simulate`
+* `/api/aps/planning/release`
+
+This is much cleaner than the earlier campaign endpoint design that was partially implemented and already contradicted by the later reasoning. 
+
+---
+
+## 16. Final instruction to Claude
+
+Do not rebuild APS around:
+
+* giant campaigns
+* one PO per SO
+* heat-only planning
+* manual planner micromanagement
+
+Do rebuild APS around:
+
+* SO-driven demand intake
+* system-proposed lot formation
+* heat-aware manufacturing planning
+* finite-capacity scheduling
+* planner-controlled policy and exceptions
+* rolling-horizon replanning
+
+That is the correct architecture.

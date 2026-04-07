@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>X-APS iframe application</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="xaps_iframe_app.css">
+</head>
+<body>
+<div id="loadingBar" class="loading-bar"></div>
+<div class="app">
+  <div class="shell">
+    <div class="top">
+      <div class="brand-row">
+        <div class="brand">APS</div>
+        <div class="summary-grid">
+          <div class="metric"><div class="metric-label">Campaigns</div><div class="metric-value" id="summaryCampaigns">—</div><div class="metric-sub" id="summaryCampaignsSub">Loading…</div></div>
+          <div class="metric success"><div class="metric-label">Heats planned</div><div class="metric-value" id="summaryHeats">—</div><div class="metric-sub" id="summaryHeatsSub">—</div></div>
+          <div class="metric"><div class="metric-label">MT planned</div><div class="metric-value" id="summaryMt">—</div><div class="metric-sub" id="summaryMtSub">14-day horizon</div></div>
+          <div class="metric warn"><div class="metric-label">On-time</div><div class="metric-value" id="summaryOt">—</div><div class="metric-sub" id="summaryOtSub">—</div></div>
+          <div class="metric danger"><div class="metric-label">Late</div><div class="metric-value" id="summaryLate">—</div><div class="metric-sub" id="summaryLateSub">—</div></div>
+        </div>
+      </div>
+      <div class="actions">
+        <div class="chip" id="chipApi"><span class="dot"></span><span id="chipApiText">API unknown</span></div>
+        <div class="chip success" id="chipSolver"><span class="dot"></span><span id="chipSolverText">Solver —</span></div>
+        <div class="chip warn"><span class="dot"></span><span id="chipHeld">— on hold</span></div>
+        <div class="chip danger"><span class="dot"></span><span id="chipLate">— late</span></div>
+        <select class="sel" id="solverDepth">
+          <option value="30">Fast 30s</option>
+          <option value="60" selected>Standard 60s</option>
+          <option value="120">Deep 120s</option>
+          <option value="300">Full 5m</option>
+        </select>
+        <button class="btn primary" id="runBtn">Run Schedule</button>
+      </div>
+    </div>
+
+    <div class="navbar">
+      <div class="tabs" id="topTabs">
+        <button class="tab active" data-page="dashboard">Dashboard</button>
+        <button class="tab" data-page="campaigns">Campaigns</button>
+        <button class="tab" data-page="schedule">Schedule</button>
+        <button class="tab" data-page="orders">Sales Orders</button>
+        <button class="tab" data-page="dispatch">Dispatch</button>
+        <button class="tab" data-page="material">Material</button>
+        <button class="tab" data-page="capacity">Capacity</button>
+        <button class="tab" data-page="scenarios">Scenarios</button>
+        <button class="tab" data-page="ctp">CTP</button>
+        <button class="tab" data-page="master">Master Data</button>
+      </div>
+      <div class="page-actions">
+        <button class="btn ghost" id="horizonBtn">14-day horizon</button>
+        <button class="btn ghost" id="routeBtn">Route manifest</button>
+      </div>
+    </div>
+
+    <div class="body">
+      <section class="page active" id="page-dashboard">
+        <div class="page-header">
+          <div><div class="page-title">Dashboard</div><div class="page-sub">Iframe shell using the denser concept, now backed by the X-APS application API.</div></div>
+        </div>
+
+        <div class="kpi-grid">
+          <div class="card kpi-card"><div class="metric-label">Campaigns</div><div class="metric-value" id="dbCampaigns">—</div><div class="metric-sub" id="dbCampaignsSub">—</div></div>
+          <div class="card kpi-card"><div class="metric-label">Heats planned</div><div class="metric-value" id="dbHeats">—</div><div class="metric-sub" id="dbHeatsSub">—</div></div>
+          <div class="card kpi-card"><div class="metric-label">On-time delivery</div><div class="metric-value" id="dbOt">—</div><div class="metric-sub" id="dbOtSub">—</div></div>
+          <div class="card kpi-card"><div class="metric-label">Throughput</div><div class="metric-value" id="dbThroughput">—</div><div class="metric-sub">MT/day average</div></div>
+        </div>
+
+        <div class="split">
+          <div class="stack">
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Campaign timeline overview</div><div class="card-sub">Release queue rendered from live campaign + gantt payloads.</div></div><button class="btn" data-page-link="schedule">Open schedule</button></div>
+              <div class="card-body"><div id="dashboardTimeline" class="timeline-list"><div class="notice">Run Schedule to populate campaign execution timeline.</div></div></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Campaign release queue</div><div class="card-sub">Sorted by due date from the application API.</div></div></div>
+              <div class="card-body" style="padding:0;overflow:auto;max-height:35vh">
+                <table class="table">
+                  <thead><tr><th>Campaign</th><th>Grade</th><th>MT</th><th>Due</th><th>Margin</th><th>Status</th></tr></thead>
+                  <tbody id="releaseQueueBody"><tr><td colspan="6">Loading…</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="stack">
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Bottleneck analysis</div><div class="card-sub">Current peak resource and top loads.</div></div><div class="metric-sub" id="bottleneckPeak">—</div></div>
+              <div class="card-body">
+                <div class="bottleneck-box"><div class="card-title" style="font-size:1.02rem" id="bottleneckName">—</div><div class="card-sub" style="font-size:.76rem;margin-top:.15rem" id="bottleneckSub">Run Schedule to identify the bottleneck.</div></div>
+                <div class="resource-list" id="bottleneckList"></div>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Planning alerts</div><div class="card-sub">Late campaigns, material holds, solver condition.</div></div><div class="metric-sub" id="alertsCount">—</div></div>
+              <div class="card-body"><div class="alerts" id="alertsList"></div></div>
+            </div>
+
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Route coverage</div><div class="card-sub">Detected backend route families.</div></div></div>
+              <div class="card-body">
+                <div class="grid-2">
+                  <div class="metric"><div class="metric-label">Legacy routes</div><div class="metric-value" id="legacyRouteCount">—</div></div>
+                  <div class="metric"><div class="metric-label">Application routes</div><div class="metric-value" id="appRouteCount">—</div></div>
+                </div>
+                <div class="notice" id="routePreview">Waiting for route manifest.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-campaigns">
+        <div class="page-header">
+          <div><div class="page-title">Campaigns</div><div class="page-sub">Status transitions, holds, due margins, SO assignment visibility.</div></div>
+          <div class="page-actions"><button class="btn primary" id="campaignRerunBtn">Re-run Schedule</button></div>
+        </div>
+        <div class="filters">
+          <button class="subtab active" data-camp-filter="all">All</button>
+          <button class="subtab" data-camp-filter="released">Released</button>
+          <button class="subtab" data-camp-filter="held">Held</button>
+          <button class="subtab" data-camp-filter="late">Late</button>
+        </div>
+        <div class="stack" id="campaignCards"></div>
+      </section>
+
+      <section class="page" id="page-schedule">
+        <div class="page-header">
+          <div><div class="page-title">Schedule</div></div>
+          <div class="page-actions"><button class="btn ghost" id="patchJobBtn">Patch Job</button></div>
+        </div>
+        <div class="card" style="display:flex;flex-direction:column;height:calc(100vh - 200px)"><div class="card-body" style="padding:0;overflow:auto;flex:1;min-height:0"><div class="gantt-wrap"><div id="scheduleTimeline" style="display:grid;gap:0;position:relative"></div><div id="tt"></div></div></div></div>
+      </section>
+
+      <section class="page" id="page-orders">
+        <div class="page-header">
+          <div><div class="page-title">Sales Orders</div><div class="page-sub">List, create, update, delete, and assign through the application API.</div></div>
+          <div class="page-actions"><button class="btn success" id="newOrderBtn">New Order</button><button class="btn primary" id="assignOrdersBtn" disabled>Assign Selected</button></div>
+        </div>
+        <div class="filters">
+          <input class="inp" id="orderSearch" placeholder="Search SO / Grade / Customer…" />
+          <select class="sel" id="orderPriority"><option value="">All priorities</option><option>URGENT</option><option>HIGH</option><option>NORMAL</option></select>
+          <select class="sel" id="orderGrade"><option value="">All grades</option></select>
+        </div>
+        <div class="orders-layout">
+          <div class="card">
+            <div class="card-header"><div><div class="card-title">Open sales orders</div><div class="card-sub" id="ordersCount">—</div></div></div>
+            <div class="card-body" style="padding:0;overflow:auto;max-height:65vh">
+              <table class="table">
+                <thead><tr><th></th><th>SO ID</th><th>Customer</th><th>Grade</th><th>Qty MT</th><th>Due</th><th>Priority</th><th>Campaign</th><th>Status</th><th>Actions</th></tr></thead>
+                <tbody id="ordersBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div><div class="card-title">Campaign drop zones</div><div class="card-sub">Drag or bulk-assign orders.</div></div></div>
+            <div class="card-body" id="dropZones"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-dispatch">
+        <div class="page-header"><div><div class="page-title">Equipment Schedule</div><div id="selectedCampaignInfo" style="color:var(--text-soft);font-size:0.85rem;margin-top:0.2rem">Click a campaign in Schedule tab to view equipment timeline</div></div><div class="page-actions"><button class="btn ghost" id="clearCampaignBtn" style="display:none" onclick="clearCampaignSelection()">Clear Selection</button></div></div>
+        <div class="grid-4" style="margin-bottom:.75rem">
+          <div class="metric"><div class="metric-label">Equipment active</div><div class="metric-value" id="dispatchMachines">—</div></div>
+          <div class="metric"><div class="metric-label">Operations</div><div class="metric-value" id="dispatchJobs">—</div></div>
+          <div class="metric"><div class="metric-label">Total duration</div><div class="metric-value" id="dispatchDuration">—</div></div>
+          <div class="metric"><div class="metric-label">Total material</div><div class="metric-value" id="dispatchMt">—</div></div>
+        </div>
+        <div class="dispatch-grid" id="dispatchGrid"><div class="notice">Run Schedule to populate the equipment schedule view.</div></div>
+      </section>
+
+      <section class="page" id="page-material">
+        <div class="page-header"><div><div class="page-title">Material</div><div class="page-sub">Material plan and hold rows from the material endpoints.</div></div></div>
+        <div class="grid-4" style="margin-bottom:.75rem">
+          <div class="metric success"><div class="metric-label">OK</div><div class="metric-value" id="matOk">—</div></div>
+          <div class="metric warn"><div class="metric-label">Low / hold</div><div class="metric-value" id="matLow">—</div></div>
+          <div class="metric danger"><div class="metric-label">Critical</div><div class="metric-value" id="matCrit">—</div></div>
+          <div class="metric"><div class="metric-label">Held campaigns</div><div class="metric-value" id="matHeld">—</div></div>
+        </div>
+        <div class="material-split-container">
+          <div class="material-tree-panel">
+            <div class="material-tree-header">Campaigns & Plants</div>
+            <div class="material-tree" id="materialTree"></div>
+          </div>
+          <div class="material-split-divider" id="materialDivider"></div>
+          <div class="material-detail-panel">
+            <div id="materialDetailContent"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-capacity">
+        <div class="page-header"><div><div class="page-title">Capacity</div><div class="page-sub">Utilisation map plus bottleneck list.</div></div></div>
+        <div class="grid-2" style="margin-bottom:.75rem">
+          <div class="metric"><div class="metric-label">Bottleneck resource</div><div class="metric-value" id="capBottleneck">—</div><div class="metric-sub" id="capBottleneckSub">—</div></div>
+          <div class="metric"><div class="metric-label">Average utilisation</div><div class="metric-value" id="capAvg">—</div><div class="metric-sub">Across visible resources</div></div>
+        </div>
+        <div class="card"><div class="card-header"><div><div class="card-title">Capacity map</div><div class="card-sub">Includes data from <code class="inline">/api/aps/capacity/map</code> and <code class="inline">/api/aps/capacity/bottlenecks</code>.</div></div></div>
+          <div class="card-body" style="padding:0;overflow:auto;max-height:65vh">
+            <table class="table">
+              <thead><tr><th>Resource</th><th>Operation</th><th>Demand Hrs</th><th>Avail Hrs</th><th>Util %</th><th>Status</th></tr></thead>
+              <tbody id="capacityBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-scenarios">
+        <div class="page-header"><div><div class="page-title">Scenarios</div><div class="page-sub">Preview, create, update, delete, and apply scenarios.</div></div></div>
+        <div class="grid-3" style="margin-bottom:.75rem" id="scenarioCards"></div>
+        <div class="card">
+          <div class="card-header"><div><div class="card-title">Scenario list</div><div class="card-sub">Workbook-backed scenario rows.</div></div><button class="btn success" id="newScenarioBtn">Add Scenario</button></div>
+          <div class="card-body" style="padding:0;overflow:auto;max-height:55vh">
+            <table class="table">
+              <thead><tr><th>Key</th><th>Value</th><th>Actions</th></tr></thead>
+              <tbody id="scenarioTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-ctp">
+        <div class="page-header"><div><div class="page-title">CTP</div><div class="page-sub">Capable-to-Promise check plus request/output history.</div></div></div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header"><div><div class="card-title">Run CTP check</div><div class="card-sub">Calls <code class="inline">/api/aps/ctp/check</code>.</div></div></div>
+            <div class="card-body">
+              <div class="stack">
+                <select class="sel" id="ctpSku"><option value="">Loading SKUs…</option></select>
+                <div class="grid-2">
+                  <input class="inp" id="ctpQty" value="120" />
+                  <input class="inp" id="ctpDate" type="date" />
+                </div>
+                <button class="btn primary" id="ctpRunBtn">Run CTP</button>
+                <div class="notice" id="ctpResult">No request yet.</div>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-header"><div><div class="card-title">Recent CTP activity</div><div class="card-sub">Merged request and output history.</div></div></div>
+            <div class="card-body" style="padding:0;overflow:auto;max-height:50vh">
+              <table class="table">
+                <thead><tr><th>SKU</th><th>Qty</th><th>Requested</th><th>Earliest</th><th>Margin</th><th>Feasible</th></tr></thead>
+                <tbody id="ctpHistoryBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-master">
+        <div class="page-header"><div><div class="page-title">Master Data</div><div class="page-sub">All workbook sections surfaced through the application API.</div></div></div>
+        <div class="toolbar">
+          <select class="sel" id="masterSection">
+            <option value="config">Config</option>
+            <option value="resources">Resources</option>
+            <option value="routing">Routing</option>
+            <option value="queue">Queue</option>
+            <option value="changeover">Changeover</option>
+            <option value="skus">SKUs</option>
+            <option value="bom">BOM</option>
+            <option value="inventory">Inventory</option>
+            <option value="campaign-config">Campaign Config</option>
+            <option value="scenarios">Scenarios</option>
+          </select>
+          <button class="btn" id="masterRefreshBtn">Refresh</button>
+          <button class="btn success" id="masterAddBtn">Add Row</button>
+          <button class="btn" id="masterEditBtn">Patch Row</button>
+          <button class="btn danger" id="masterDeleteBtn">Delete Row</button>
+          <button class="btn warning" id="masterBulkBtn">Bulk Replace</button>
+          <span class="master-toolbar-note" id="masterSelectionNote">No row selected.</span>
+        </div>
+        <div class="card">
+          <div class="card-header"><div><div class="card-title" id="masterTitle">Master Data</div><div class="card-sub">Section rows loaded from <code class="inline">/api/aps/masterdata</code>.</div></div></div>
+          <div class="card-body" style="padding:0;overflow:auto;max-height:70vh">
+            <table class="table">
+              <thead id="masterHead"></thead>
+              <tbody id="masterBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="dock" id="dockNav">
+      <button class="dock-btn active" data-page="dashboard">DB</button>
+      <button class="dock-btn" data-page="orders">SO</button>
+      <button class="dock-btn" data-page="campaigns">CP</button>
+      <button class="dock-btn" data-page="schedule">GS</button>
+      <button class="dock-btn" data-page="dispatch">EQ</button>
+      <button class="dock-btn" data-page="material">MT</button>
+      <button class="dock-btn" data-page="capacity">CM</button>
+      <button class="dock-btn" data-page="scenarios">WF</button>
+      <button class="dock-btn" data-page="ctp">CT</button>
+      <button class="dock-btn" data-page="master">MD</button>
+    </div>
+  </div>
+</div>
+
+<div class="master-form-modal" id="masterModal">
+  <div class="master-form-card">
+    <div class="master-form-head">
+      <div>
+        <div id="masterModalTitle" style="font-size:1rem;font-weight:850;color:var(--text)">Edit Master Data</div>
+        <div id="masterModalSub" style="font-size:.75rem;color:var(--text-soft);margin-top:.125rem"></div>
+      </div>
+      <button class="btn" id="masterModalCloseBtn">Close</button>
+    </div>
+    <div class="master-form-body">
+      <form id="masterForm">
+        <div id="masterFormGrid" class="master-form-grid"></div>
+      </form>
+      <div id="masterBulkBox" style="display:none">
+        <div class="master-form-field">
+          <label>JSON Array</label>
+          <textarea id="masterBulkText"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="master-form-foot">
+      <button class="btn" id="masterModalCancelBtn" type="button">Cancel</button>
+      <button class="btn primary" id="masterSaveBtn" type="submit" form="masterForm">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:5000';
+const MASTER_KEYS = {config:'Key',resources:'Resource_ID',routing:'SKU_ID',queue:'From_Operation',changeover:'From \\ To',skus:'SKU_ID',bom:'BOM_ID',inventory:'SKU_ID','campaign-config':'Grade',scenarios:'Parameter'};
+const MASTER_LABELS = {config:'Config',resources:'Resource Master',routing:'Routing',queue:'Queue Times',changeover:'Changeover Matrix',skus:'SKU Master',bom:'BOM',inventory:'Inventory','campaign-config':'Campaign Config',scenarios:'Scenarios'};
+const state = {overview:null,campaigns:[],gantt:[],capacity:[],material:[],orders:[],dispatch:[],scenarios:[],ctpRequests:[],ctpOutput:[],master:{},selectedOrders:new Set(),selectedMasterKey:null,masterMode:'create',campFilter:'all',routeManifest:null};
+
+function qs(id){ return document.getElementById(id); }
+function setText(id,v){ const el=qs(id); if(el) el.textContent = v; }
+function escapeHtml(v){ return String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function fmtDate(v){ if(!v) return '—'; const d=new Date(v); if(Number.isNaN(d.getTime())) return String(v); return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}).replace(' ','-'); }
+function fmtDateTime(v){ if(!v) return '—'; const d=new Date(v); if(Number.isNaN(d.getTime())) return String(v); return d.toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}).replace(',',''); }
+function num(v, fallback=0){ const n = Number(v); return Number.isFinite(n) ? n : fallback; }
+function badgeForStatus(status){
+  const s = String(status || '').toUpperCase();
+  if (s.includes('HOLD')) return '<span class="badge amber">'+escapeHtml(status || 'HOLD')+'</span>';
+  if (s.includes('LATE') || s==='CRITICAL' || s==='BLOCKED') return '<span class="badge red">'+escapeHtml(status || 'LATE')+'</span>';
+  if (s.includes('RUN')) return '<span class="badge blue">'+escapeHtml(status || 'RUNNING')+'</span>';
+  return '<span class="badge green">'+escapeHtml(status || 'RELEASED')+'</span>';
+}
+function formatStatus(text){
+  if(!text) return '—';
+  return String(text).replace(/_/g, ' ');
+}
+function utilBar(u){
+  const cls = u > 100 ? 'red' : u > 85 ? 'gold' : u > 60 ? 'green' : 'blue';
+  return '<div class="mini-track"><div class="mini-bar '+cls+'" style="left:0;width:'+Math.min(Math.max(u,0),100)+'%"></div></div>';
+}
+async function apiFetch(url, opts={}){
+  const res = await fetch(API + url, {headers:{'Content-Type':'application/json'}, ...opts});
+  const data = await res.json().catch(()=>({}));
+  if(!res.ok) throw new Error(data.error || ('API error ' + res.status));
+  return data;
+}
+function activatePage(page){
+  document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active', el.id === 'page-' + page));
+  document.querySelectorAll('#topTabs .tab').forEach(el=>el.classList.toggle('active', el.dataset.page === page));
+  document.querySelectorAll('#dockNav .dock-btn').forEach(el=>el.classList.toggle('active', el.dataset.page === page));
+  if(page === 'material') initMaterialResizable();
+}
+function initMaterialResizable(){
+  const divider = qs('materialDivider');
+  if(!divider) return;
+  let isResizing = false;
+  divider.addEventListener('mousedown', ()=>{ isResizing = true; });
+  document.addEventListener('mouseup', ()=>{ isResizing = false; });
+  document.addEventListener('mousemove', (e)=>{
+    if(!isResizing) return;
+    const container = divider.parentElement;
+    const rect = container.getBoundingClientRect();
+    const newWidth = e.clientX - rect.left;
+    const minWidth = 200, maxWidth = rect.width - 300;
+    if(newWidth >= minWidth && newWidth <= maxWidth){
+      container.children[0].style.flex = '0 0 '+newWidth+'px';
+    }
+  });
+}
+document.querySelectorAll('#topTabs .tab, #dockNav .dock-btn').forEach(btn=>btn.addEventListener('click', ()=>activatePage(btn.dataset.page)));
+document.querySelectorAll('[data-page-link]').forEach(btn=>btn.addEventListener('click', ()=>activatePage(btn.dataset.pageLink)));
+
+async function checkHealth(){
+  try{
+    const d = await apiFetch('/api/health');
+    qs('chipApi').className = 'chip success';
+    setText('chipApiText', d.workbook_ok ? 'API + workbook connected' : 'API up, workbook issue');
+  }catch(e){
+    qs('chipApi').className = 'chip danger';
+    setText('chipApiText', 'API unavailable');
+  }
+}
+async function loadRouteManifest(){
+  try{
+    const d = await apiFetch('/api/meta/xaps/routes');
+    state.routeManifest = d;
+    setText('legacyRouteCount', (d.legacy||[]).length);
+    setText('appRouteCount', (d.application||[]).length);
+    const preview = (d.application||[]).slice(0,6).join(' · ');
+    qs('routePreview').textContent = preview || 'No route manifest returned.';
+  }catch(e){
+    setText('legacyRouteCount','—'); setText('appRouteCount','—');
+    qs('routePreview').textContent = 'Route manifest unavailable: ' + e.message;
+  }
+}
+function hydrateSummary(summary){
+  const total = num(summary.campaigns_total);
+  const released = num(summary.campaigns_released);
+  const held = num(summary.campaigns_held);
+  const late = num(summary.campaigns_late);
+  const heats = num(summary.total_heats);
+  const mt = num(summary.total_mt);
+  const ot = summary.on_time_pct == null ? '—' : num(summary.on_time_pct).toFixed(1) + '%';
+
+  setText('summaryCampaigns', total || '—');
+  setText('summaryCampaignsSub', released + ' released · ' + held + ' held');
+  setText('summaryHeats', heats || '—');
+  setText('summaryHeatsSub', mt ? (mt.toLocaleString() + ' MT') : '—');
+  setText('summaryMt', mt ? mt.toLocaleString() : '—');
+  setText('summaryMtSub', (summary.throughput_mt_day != null ? num(summary.throughput_mt_day).toFixed(1) : '—') + ' MT/day');
+  setText('summaryOt', ot);
+  setText('summaryOtSub', summary.solver_status || '—');
+  setText('summaryLate', late || '—');
+  setText('summaryLateSub', summary.bottleneck ? ('Bottleneck ' + summary.bottleneck) : 'No bottleneck yet');
+  setText('chipSolverText', 'Solver ' + (summary.solver_status || '—'));
+  setText('chipHeld', held + ' on hold');
+  setText('chipLate', late + ' late');
+
+  setText('dbCampaigns', total || '—');
+  setText('dbCampaignsSub', released + ' released · ' + held + ' held');
+  setText('dbHeats', heats || '—');
+  setText('dbHeatsSub', mt ? (mt.toLocaleString() + ' MT over horizon') : '—');
+  setText('dbOt', ot);
+  setText('dbOtSub', summary.solver_detail || '—');
+  setText('dbThroughput', summary.throughput_mt_day != null ? num(summary.throughput_mt_day).toFixed(1) : '—');
+}
+function renderReleaseQueue(){
+  const rows = [...(state.campaigns||[])].sort((a,b)=>String(a.Due_Date || '').localeCompare(String(b.Due_Date || ''))).slice(0,8);
+  const body = qs('releaseQueueBody');
+  if(!rows.length){ body.innerHTML = '<tr><td colspan="6">Run Schedule to populate the queue.</td></tr>'; return; }
+  body.innerHTML = rows.map(r=>{
+    const margin = r.Margin_Hrs == null ? '—' : (num(r.Margin_Hrs) >= 0 ? '+' : '') + Math.round(num(r.Margin_Hrs)) + 'h';
+    return '<tr>'+
+      '<td><strong>'+escapeHtml(r.campaign_id || r.Campaign_ID || '—')+'</strong></td>'+
+      '<td>'+escapeHtml(r.grade || r.Grade || '—')+'</td>'+
+      '<td>'+escapeHtml(r.total_mt || r.Total_MT || '—')+'</td>'+
+      '<td>'+escapeHtml(fmtDate(r.Due_Date))+'</td>'+
+      '<td>'+escapeHtml(margin)+'</td>'+
+      '<td>'+badgeForStatus(r.release_status || r.Release_Status || r.Status || '—')+'</td>'+
+    '</tr>';
+  }).join('');
+}
+function renderDashboardTimeline(){
+  const wrap = qs('dashboardTimeline');
+  const groups = [...(state.campaigns||[])].slice(0,8);
+  if(!groups.length){ wrap.innerHTML = '<div class="notice">Run Schedule to populate campaign execution timeline.</div>'; return; }
+  wrap.innerHTML = groups.map((c, i)=>{
+    const width = Math.max(10, Math.min(96, num(c.total_mt || c.Total_MT || 0) / 30));
+    const left = Math.min(78, i * 8 + 2);
+    const colors = ['orange','green','purple','gold','blue','pink'];
+    return '<div class="timeline-row">'+
+      '<div class="timeline-name">'+escapeHtml(c.campaign_id || c.Campaign_ID || '—')+'</div>'+
+      '<div class="track"><div class="bar '+colors[i % colors.length]+'" style="left:'+left+'%;width:'+width+'%"></div></div>'+
+      '<div class="timeline-meta">'+escapeHtml(String(c.total_mt || c.Total_MT || '—'))+' MT</div>'+
+    '</div>';
+  }).join('');
+}
+function renderBottleneck(summary){
+  setText('bottleneckPeak', summary.max_utilisation != null ? (Math.round(num(summary.max_utilisation)) + '% peak') : '—');
+  setText('bottleneckName', summary.bottleneck || '—');
+  setText('bottleneckSub', summary.bottleneck ? ('Highest utilisation in current horizon.') : 'Run Schedule to identify the bottleneck.');
+  const sorted = [...(state.capacity||[])].sort((a,b)=>num(b.Utilisation_Percent || b['Utilisation_%'] || b.utilisation) - num(a.Utilisation_Percent || a['Utilisation_%'] || a.utilisation)).slice(0,5);
+  qs('bottleneckList').innerHTML = sorted.map(r=>{
+    const util = Math.round(num(r['Utilisation_%'] || r.Utilisation_Percent || r.utilisation));
+    return '<div class="resource-row"><div>'+escapeHtml(r.Resource_ID || r.resource_id || '—')+'</div><div>'+utilBar(util)+'</div><div style="text-align:right;font-weight:800">'+util+'%</div></div>';
+  }).join('') || '<div class="notice">No capacity rows loaded.</div>';
+}
+function renderAlerts(summary){
+  const alerts = [];
+  const late = num(summary.campaigns_late);
+  const held = num(summary.campaigns_held);
+  if(late) alerts.push({cls:'high',title: late + ' late campaigns', sub:'Review overdue campaigns and due-date margin.'});
+  if(held) alerts.push({cls:'warn',title: held + ' campaigns on material hold', sub:'Material shortages are blocking release.'});
+  (summary.shortage_alerts || []).slice(0,3).forEach(s=>{
+    alerts.push({cls: s.severity === 'HIGH' ? 'high' : 'warn', title: (s.sku_id || 'SKU') + ' short', sub: (s.shortage_qty || '—') + ' MT shortage on ' + (s.campaign_id || 'campaign')});
+  });
+  if(summary.solver_status && !['OPTIMAL','NOT RUN','WORKBOOK'].includes(String(summary.solver_status).toUpperCase())){
+    alerts.push({cls:'info',title:'Solver ' + summary.solver_status, sub: formatStatus(summary.solver_detail) || 'A non-optimal or fallback condition was reported.'});
+  }
+  if(!alerts.length) alerts.push({cls:'info',title:'Plan healthy',sub:'No major lateness or hold conditions detected.'});
+  setText('alertsCount', alerts.length + ' alerts');
+  qs('alertsList').innerHTML = alerts.map(a=>'<div class="alert '+a.cls+'"><div class="alert-title">'+escapeHtml(a.title)+'</div><div class="alert-sub">'+escapeHtml(a.sub)+'</div></div>').join('');
+}
+function renderCampaigns(){
+  const box = qs('campaignCards');
+  let items = [...(state.campaigns||[])];
+  if(state.campFilter === 'released') items = items.filter(x=>String(x.release_status || x.Release_Status || '').toUpperCase() === 'RELEASED');
+  if(state.campFilter === 'held') items = items.filter(x=>String(x.release_status || x.Release_Status || x.Status || '').toUpperCase().includes('HOLD'));
+  if(state.campFilter === 'late') items = items.filter(x=>String(x.Status || '').toUpperCase().includes('LATE'));
+  if(!items.length){ box.innerHTML = '<div class="notice">No campaigns match the current filter.</div>'; return; }
+  box.innerHTML = items.map(c=>{
+    const cid = c.campaign_id || c.Campaign_ID || '';
+    const status = c.release_status || c.Release_Status || c.Status || '—';
+    return '<div class="card"><div class="card-body">'+
+      '<div class="grid-4" style="grid-template-columns:1.3fr repeat(3,.8fr) 1.2fr;align-items:center">'+
+        '<div><div class="page-title" style="font-size:1.02rem">'+escapeHtml(cid)+'</div><div class="page-sub">'+escapeHtml(c.grade || c.Grade || '—')+'</div></div>'+
+        '<div><div class="metric-label">Volume</div><div class="card-title">'+escapeHtml(c.total_mt || c.Total_MT || '—')+' MT</div><div class="page-sub">'+escapeHtml(c.heats || c.Heats || '—')+' heats</div></div>'+
+        '<div><div class="metric-label">Due</div><div class="card-title">'+escapeHtml(fmtDate(c.Due_Date))+'</div><div class="page-sub">'+escapeHtml(c.Margin_Hrs == null ? '—' : ((num(c.Margin_Hrs)>=0?'+':'') + Math.round(num(c.Margin_Hrs)) + 'h margin'))+'</div></div>'+
+        '<div><div class="metric-label">Status</div>'+badgeForStatus(status)+'</div>'+
+        '<div style="display:flex;gap:.45rem;justify-content:flex-end;flex-wrap:wrap">'+
+          '<button class="btn" onclick="updateCampaignStatus(\''+escapeHtml(cid)+'\', \'Release_Status\', \'RELEASED\')">Release</button>'+
+          '<button class="btn" onclick="updateCampaignStatus(\''+escapeHtml(cid)+'\', \'Release_Status\', \'MATERIAL HOLD\')">Hold</button>'+
+          '<button class="btn ghost" onclick="activatePage(\'schedule\')">Schedule</button>'+
+        '</div>'+
+      '</div>'+
+    '</div></div>';
+  }).join('');
+}
+function renderSchedule(){
+  const wrap = qs('scheduleTimeline');
+  const jobs = (state.gantt||[]);
+  if(!jobs.length){ wrap.innerHTML = '<div class="notice">Run Schedule to populate the Gantt.</div>'; return; }
+  const days = 14;
+  const starts = jobs.map(j=>new Date(j.Planned_Start)).filter(d=>!isNaN(d));
+  const t0 = starts.length ? new Date(Math.min(...starts)) : new Date();
+  t0.setHours(0,0,0,0);
+  const horizonMs = days*86400000;
+
+  // Group by campaign (for campaign-level view)
+  const campaigns = {};
+  jobs.forEach(job=>{
+    const cid = job.Campaign || 'Unknown';
+    if(!campaigns[cid]) campaigns[cid] = {id:cid, grade:job.Grade, jobs:[], minStart:new Date(8640000000000000), maxEnd:new Date(0)};
+    const s = new Date(job.Planned_Start);
+    const e = new Date(job.Planned_End);
+    if(!isNaN(s) && !isNaN(e)){
+      campaigns[cid].jobs.push(job);
+      if(s < campaigns[cid].minStart) campaigns[cid].minStart = s;
+      if(e > campaigns[cid].maxEnd) campaigns[cid].maxEnd = e;
+    }
+  });
+
+  const dayLabels=Array.from({length:days},(_,i)=>{const d=new Date(t0.getTime()+i*86400000);const m=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return`${d.getDate()}<small>${m[d.getMonth()]}</small>`;});
+  wrap.innerHTML='';
+  const hdr=document.createElement('div');hdr.className='gantt-hdr';hdr.innerHTML=`<div class="gantt-res-col" style="font-weight:700">Campaign</div><div class="gantt-days">${dayLabels.map(d=>`<div class="gantt-day">${d}</div>`).join('')}</div>`;wrap.appendChild(hdr);
+
+  Object.values(campaigns).sort((a,b)=>a.id.localeCompare(b.id)).forEach(camp=>{
+    const row=document.createElement('div');row.className='gantt-row';row.innerHTML=`<div class="gantt-res-lbl"><div class="rid">${camp.id}</div><div class="rop" style="font-size:.7rem">${camp.grade||'—'}</div></div>`;
+    const tl=document.createElement('div');tl.className='gantt-tl';
+    const s = camp.minStart; const e = camp.maxEnd;
+    if(!isNaN(s) && !isNaN(e) && s <= e){
+      const left=Math.max(0,(s-t0)/horizonMs*100);
+      const width=Math.max(1,(e-s)/horizonMs*100);
+      const bar=document.createElement('div');bar.className='gantt-job eaf';bar.style.left=left+'%';bar.style.width=Math.min(width,100-left)+'%';bar.style.cursor='pointer';
+      bar.innerHTML=`<span>${camp.id}</span> <span style="opacity:.6;font-size:9px">${camp.jobs.length}H</span>`;
+      bar.addEventListener('click',()=>{selectCampaignFromGantt(camp.id);});
+      bar.addEventListener('mouseenter',ev=>{const tt=document.getElementById('tt');tt.innerHTML=`<strong>${camp.id}</strong><br>Grade: ${camp.grade||'—'}<br>Heats: ${camp.jobs.length}<br>Start: ${fmtDate(s)}<br>End: ${fmtDate(e)}<br><small style="color:var(--brand)">Click to view equipment schedule</small>`;tt.classList.add('show');});
+      bar.addEventListener('mousemove',ev=>{const tt=document.getElementById('tt');tt.style.left=(ev.clientX+14)+'px';tt.style.top=(ev.clientY-10)+'px';});
+      bar.addEventListener('mouseleave',()=>{document.getElementById('tt').classList.remove('show');});
+      tl.appendChild(bar);
+    }
+    row.appendChild(tl);
+    wrap.appendChild(row);
+  });
+}
+function selectCampaignFromGantt(campaignId){
+  state.selectedCampaign = campaignId;
+  document.getElementById('selectedCampaignInfo').innerHTML = `<strong>Viewing:</strong> ${escapeHtml(campaignId)}`;
+  document.getElementById('clearCampaignBtn').style.display = 'block';
+  renderDispatch();
+  const dispatchTab = document.querySelector('button[data-page="dispatch"]');
+  if(dispatchTab) dispatchTab.click();
+}
+function clearCampaignSelection(){
+  state.selectedCampaign = null;
+  document.getElementById('selectedCampaignInfo').innerHTML = 'Click a campaign in Schedule tab to view equipment timeline';
+  document.getElementById('clearCampaignBtn').style.display = 'none';
+  renderDispatch();
+}
+function renderOrderGradeOptions(){
+  const grades = [...new Set((state.orders||[]).map(o=>o.Grade).filter(Boolean))].sort();
+  const gradeSelect = qs('orderGrade');
+  gradeSelect.innerHTML = '<option value="">All grades</option>' + grades.map(g=>'<option>'+escapeHtml(g)+'</option>').join('');
+  gradeSelect.removeEventListener('change', renderOrders);
+  gradeSelect.addEventListener('change', renderOrders);
+}
+function renderOrders(){
+  renderOrderGradeOptions();
+  const search = (qs('orderSearch').value || '').toLowerCase();
+  const pr = qs('orderPriority').value;
+  const gr = qs('orderGrade').value;
+  let rows = [...(state.orders||[])].filter(o=>{
+    if(!o.SO_ID || !String(o.SO_ID).trim()) return false;
+    const text = [o.SO_ID,o.Customer,o.Grade,o.SKU_ID].join(' ').toLowerCase();
+    if(search && !text.includes(search)) return false;
+    if(pr && String(o.Priority || '').toUpperCase() !== pr.toUpperCase()) return false;
+    if(gr && String(o.Grade || '') !== gr) return false;
+    return true;
+  });
+  setText('ordersCount', rows.length + ' orders');
+  qs('ordersBody').innerHTML = rows.map(o=>{
+    const so = o.SO_ID || '';
+    const checked = state.selectedOrders.has(so) ? 'checked' : '';
+    const status = o.Status || 'Open';
+    return '<tr draggable="true" data-so="'+escapeHtml(so)+'">'+
+      '<td><input type="checkbox" '+checked+' onchange="toggleOrderSelection(\''+escapeHtml(so)+'\', this.checked)"></td>'+
+      '<td><strong>'+escapeHtml(so)+'</strong></td>'+
+      '<td>'+escapeHtml(o.Customer || '—')+'</td>'+
+      '<td>'+escapeHtml(o.Grade || '—')+'</td>'+
+      '<td>'+escapeHtml(o.Order_Qty_MT || '—')+'</td>'+
+      '<td>'+escapeHtml(fmtDate(o.Delivery_Date))+'</td>'+
+      '<td>'+escapeHtml(o.Priority || '—')+'</td>'+
+      '<td>'+escapeHtml(o.Campaign_ID || '—')+'</td>'+
+      '<td>'+badgeForStatus(status)+'</td>'+
+      '<td><button class="btn" onclick="editOrder(\''+escapeHtml(so)+'\')">Edit</button> <button class="btn danger" onclick="deleteOrder(\''+escapeHtml(so)+'\')">Delete</button></td>'+
+    '</tr>';
+  }).join('') || '<tr><td colspan="10">No orders found.</td></tr>';
+  qs('assignOrdersBtn').disabled = state.selectedOrders.size === 0;
+  renderDropZones();
+  qs('ordersBody').querySelectorAll('tr[data-so]').forEach(tr=>{
+    tr.addEventListener('dragstart', ev=>ev.dataTransfer.setData('so_id', tr.dataset.so));
+  });
+}
+function renderDropZones(){
+  const zones = qs('dropZones');
+  const camps = [...(state.campaigns||[])].filter(c=>String(c.release_status || c.Release_Status || c.Status || '').toUpperCase().includes('RELEASED') || String(c.release_status || c.Release_Status || c.Status || '').toUpperCase().includes('HOLD'));
+  if(!camps.length){ zones.innerHTML = '<div class="notice">No campaigns available for assignment.</div>'; return; }
+  zones.innerHTML = camps.slice(0,8).map(c=>{
+    const cid = c.campaign_id || c.Campaign_ID || '';
+    return '<div class="drop-zone" data-campaign="'+escapeHtml(cid)+'">'+
+      '<div class="dropzone-title">'+escapeHtml(cid)+' · '+escapeHtml(c.grade || c.Grade || '—')+'</div>'+
+      '<div class="dropzone-sub">'+escapeHtml(c.total_mt || c.Total_MT || '—')+' MT · '+escapeHtml(c.heats || c.Heats || '—')+' heats</div>'+
+    '</div>';
+  }).join('');
+  zones.querySelectorAll('.drop-zone').forEach(z=>{
+    z.addEventListener('dragover', ev=>{ ev.preventDefault(); z.classList.add('drag-over'); });
+    z.addEventListener('dragleave', ()=>z.classList.remove('drag-over'));
+    z.addEventListener('drop', async ev=>{
+      ev.preventDefault();
+      z.classList.remove('drag-over');
+      const so = ev.dataTransfer.getData('so_id');
+      if(so) await assignOrdersToCampaign([so], z.dataset.campaign);
+    });
+  });
+}
+function renderDispatch(){
+  const grid = qs('dispatchGrid');
+  let jobs = state.gantt || [];
+
+  // Filter by selected campaign if one is selected
+  if(state.selectedCampaign){
+    jobs = jobs.filter(j=>(j.Campaign || j.campaign_id) === state.selectedCampaign);
+  }
+
+  if(!jobs.length){
+    grid.innerHTML = '<div class="notice">'+(state.selectedCampaign ? 'No jobs found for this campaign.' : 'Run Schedule to populate the equipment schedule view.')+'</div>';
+    setText('dispatchMachines', '—');
+    setText('dispatchJobs', '—');
+    setText('dispatchDuration', '—');
+    setText('dispatchMt', '—');
+    return;
+  }
+
+  // Group by plant and resource
+  const byPlant = {};
+  jobs.forEach(j=>{
+    const plant = j.Plant || 'Shared';
+    const rid = j.Resource_ID || 'UNKNOWN';
+    if(!byPlant[plant]) byPlant[plant] = {};
+    if(!byPlant[plant][rid]) byPlant[plant][rid] = [];
+    byPlant[plant][rid].push(j);
+  });
+
+  // Calculate metrics
+  const uniqueResources = new Set(jobs.map(j=>j.Resource_ID).filter(Boolean)).size;
+  const starts = jobs.map(j=>new Date(j.Planned_Start)).filter(d=>!isNaN(d));
+  const ends = jobs.map(j=>new Date(j.Planned_End)).filter(d=>!isNaN(d));
+  const minStart = starts.length ? new Date(Math.min(...starts)) : new Date();
+  const maxEnd = ends.length ? new Date(Math.max(...ends)) : new Date();
+  const durationMs = maxEnd - minStart;
+  const durationHours = Math.round(durationMs / 3600000);
+  const totalMt = jobs.reduce((a,j)=>a + num(j.Qty_MT || j.qty_mt), 0);
+
+  setText('dispatchMachines', uniqueResources || '—');
+  setText('dispatchJobs', jobs.length || '—');
+  setText('dispatchDuration', durationHours + 'h');
+  setText('dispatchMt', totalMt.toFixed(1) + ' MT');
+
+  // Calculate timeline bounds for gantt
+  minStart.setHours(0,0,0,0);
+  const horizonMs = Math.max(durationMs, 86400000);
+
+  // Render by plant with accordion and gantt
+  grid.innerHTML = Object.keys(byPlant).sort().map(plant=>{
+    const plantId = 'plant-'+plant.replace(/\s+/g,'-');
+    const resources = byPlant[plant];
+    const resourceRows = Object.keys(resources).sort().map(rid=>{
+      const list = resources[rid];
+      const utilRow = (state.capacity || []).find(c=>(c.Resource_ID || c.resource_id) === rid);
+      const util = Math.round(num(utilRow && (utilRow['Utilisation_%'] || utilRow.utilisation)));
+      const op = list[0]?.Operation || utilRow?.Operation_Group || '—';
+      const opCls = ['EAF','LRF','VD','CCM','RM'].includes(String(op).toUpperCase()) ? String(op).toLowerCase() : 'rm';
+      const pillCls = util > 100 ? 'over' : util > 85 ? 'high' : 'ok';
+
+      // Build gantt bars for this equipment
+      const bars = list.map(j=>{
+        const s = new Date(j.Planned_Start);
+        const e = new Date(j.Planned_End);
+        if(isNaN(s) || isNaN(e)) return '';
+        const left = Math.max(0, (s - minStart) / horizonMs * 100);
+        const width = Math.max(0.5, (e - s) / horizonMs * 100);
+        const jCls = ['EAF','LRF','VD','CCM','RM'].includes(String(j.Operation || '').toUpperCase()) ? String(j.Operation).toLowerCase() : 'eaf';
+        return '<div class="eq-gantt-bar '+jCls+'" style="left:'+left+'%;width:'+Math.min(width, 100-left)+'%;position:absolute;height:100%;top:0" title="'+escapeHtml(j.Campaign)+' Heat '+escapeHtml(j.Heat_No)+' '+fmtDateTime(j.Planned_Start)+'">'+
+          '<span style="font-size:.65rem;padding:2px 4px">'+escapeHtml(j.Campaign)+' H'+escapeHtml(j.Heat_No)+'</span>'+
+        '</div>';
+      }).join('');
+
+      return '<div class="eq-row">'+
+        '<div class="eq-label"><div class="eq-name">'+escapeHtml(rid)+'</div><div class="eq-op">'+escapeHtml(op)+'</div><div class="eq-util '+pillCls+'">'+(util || 0)+'%</div></div>'+
+        '<div class="eq-gantt" style="position:relative;background:var(--panel-soft);border-radius:.2rem;height:32px;border:1px solid var(--border-soft)">'+bars+'</div>'+
+      '</div>';
+    }).join('');
+
+    return '<div class="plant-group">'+
+      '<div class="plant-header" onclick="togglePlant(\''+plantId+'\')"><span style="font-weight:700;color:var(--brand)">▼</span> '+escapeHtml(plant)+'</div>'+
+      '<div class="plant-body" id="'+plantId+'">'+resourceRows+'</div>'+
+    '</div>';
+  }).join('');
+}
+function togglePlant(plantId){
+  const body = document.getElementById(plantId);
+  if(body) body.style.display = body.style.display === 'none' ? 'block' : 'none';
+  const header = body?.previousElementSibling;
+  if(header) header.querySelector('span').textContent = body.style.display === 'none' ? '▶' : '▼';
+}
+function deriveMaterialRows(){
+  return (state.campaigns || []).flatMap(c=>{
+    const shortages = c.shortages || [];
+    if(shortages.length){
+      return shortages.map(s=>({
+        Campaign_ID: c.campaign_id || c.Campaign_ID,
+        Grade: c.grade || c.Grade,
+        Material_SKU: s.sku_id || s.Material_SKU,
+        Required_Qty: s.qty || s.Required_Qty,
+        Status: c.release_status || c.Release_Status || 'MATERIAL HOLD'
+      }));
+    }
+    return [];
+  });
+}
+function renderMaterial(){
+  const rows = (state.material && state.material.length ? state.material : deriveMaterialRows());
+  if(!rows.length){ qs('materialDetailContent').innerHTML = '<div class="material-detail-empty">No material data loaded.</div>'; return; }
+
+  const critical = rows.filter(r=>['CRITICAL','BLOCKED'].includes(String(r.Status || '').toUpperCase())).length;
+  const held = rows.filter(r=>String(r.Status || '').toUpperCase().includes('HOLD')).length;
+  setText('matOk', Math.max(rows.length - held - critical, 0));
+  setText('matLow', held);
+  setText('matCrit', critical);
+  setText('matHeld', held);
+
+  buildMaterialTree(rows);
+}
+
+function buildMaterialTree(rows){
+  const campaigns = {};
+  rows.forEach(r=>{
+    const cid = r.Campaign_ID || 'Unknown';
+    if(!campaigns[cid]) campaigns[cid] = {id:cid, grade:r.Grade, rows:[]};
+    campaigns[cid].rows.push(r);
+  });
+
+  state.materialCampaigns = Object.values(campaigns);
+  const tree = qs('materialTree');
+  tree.innerHTML = state.materialCampaigns.map((camp, idx)=>{
+    return '<div class="tree-item">'+
+      '<div class="tree-node campaign" onclick="selectMaterialCampaign(this,'+idx+')" data-campaign="'+escapeHtml(camp.id)+'">'+
+        '<div class="tree-toggle leaf"></div>'+
+        '<div class="tree-node-icon">📦</div>'+
+        '<span>'+escapeHtml(camp.id)+' · '+escapeHtml(camp.grade)+'</span>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+
+  if(state.materialCampaigns.length > 0){
+    renderMaterialDetail(state.materialCampaigns[0]);
+  }
+}
+
+function selectMaterialCampaign(el, idx){
+  document.querySelectorAll('.tree-node.campaign').forEach(n=>n.classList.remove('selected'));
+  el.classList.add('selected');
+  renderMaterialDetail(state.materialCampaigns[idx]);
+}
+
+function renderMaterialDetail(campaign){
+  const rows = campaign.rows || [];
+  if(!rows.length){
+    qs('materialDetailContent').innerHTML = '<div class="material-detail-empty">No materials for this campaign.</div>';
+    return;
+  }
+  const campaignId = campaign.id || 'Unknown';
+  const grade = campaign.grade || '—';
+  const totalQty = rows.reduce((a,r)=>a+num(r.Required_Qty || r.Shortage_Qty || 0),0);
+  const shortageQty = rows.filter(r=>String(r.Status||'').toUpperCase().includes('SHORT')).reduce((a,r)=>a+num(r.Required_Qty || r.Shortage_Qty || 0),0);
+  const holdQty = rows.filter(r=>String(r.Status||'').toUpperCase().includes('HOLD')).reduce((a,r)=>a+num(r.Required_Qty || r.Shortage_Qty || 0),0);
+
+  qs('materialDetailContent').innerHTML = '<div class="material-detail-header">'+
+    '<div class="material-detail-title">'+escapeHtml(campaignId)+'</div>'+
+    '<div class="material-detail-subtitle">'+escapeHtml(grade)+' - Material requirements for campaign</div>'+
+  '</div>'+
+  '<div class="material-detail-stats">'+
+    '<div class="material-detail-stat"><div class="material-detail-stat-label">Total Demand</div><div class="material-detail-stat-value">'+totalQty.toFixed(1)+' MT</div></div>'+
+    '<div class="material-detail-stat"><div class="material-detail-stat-label">Shortage</div><div class="material-detail-stat-value">'+shortageQty.toFixed(1)+' MT</div></div>'+
+    '<div class="material-detail-stat"><div class="material-detail-stat-label">On Hold</div><div class="material-detail-stat-value">'+holdQty.toFixed(1)+' MT</div></div>'+
+  '</div>'+
+  '<table class="material-detail-table"><thead><tr><th>Material SKU</th><th>Required</th><th>Available</th><th>Status</th></tr></thead><tbody>'+
+    rows.map(r=>'<tr>'+
+      '<td><strong>'+escapeHtml(r.Material_SKU || r.Shortage_SKU || '—')+'</strong></td>'+
+      '<td>'+num(r.Required_Qty || r.Shortage_Qty || 0).toFixed(1)+' MT</td>'+
+      '<td>'+num(r.Available_Qty || 0).toFixed(1)+' MT</td>'+
+      '<td>'+badgeForStatus(r.Status || 'OK')+'</td>'+
+    '</tr>').join('')+
+  '</tbody></table>';
+}
+function renderCapacity(){
+  const rows = [...(state.capacity||[])].sort((a,b)=>num(b['Utilisation_%'] || b.utilisation) - num(a['Utilisation_%'] || a.utilisation));
+  const body = qs('capacityBody');
+  if(!rows.length){ body.innerHTML = '<tr><td colspan="6">No capacity rows loaded.</td></tr>'; return; }
+  const avg = rows.reduce((a,r)=>a + num(r['Utilisation_%'] || r.utilisation),0) / Math.max(rows.length,1);
+  setText('capAvg', avg.toFixed(1) + '%');
+  setText('capBottleneck', rows[0].Resource_ID || rows[0].resource_id || '—');
+  setText('capBottleneckSub', Math.round(num(rows[0]['Utilisation_%'] || rows[0].utilisation)) + '% utilisation');
+  body.innerHTML = rows.map(r=>{
+    const util = Math.round(num(r['Utilisation_%'] || r.utilisation));
+    return '<tr>'+
+      '<td><strong>'+escapeHtml(r.Resource_ID || r.resource_id || '—')+'</strong></td>'+
+      '<td>'+escapeHtml(r.Operation_Group || r.operation || '—')+'</td>'+
+      '<td>'+escapeHtml(r.Demand_Hrs || r.demand_hrs || '—')+'</td>'+
+      '<td>'+escapeHtml(r.Avail_Hrs_14d || r.avail_hrs || '—')+'</td>'+
+      '<td>'+util+'%</td>'+
+      '<td>'+badgeForStatus(r.Status || (util > 100 ? 'Overloaded' : util > 85 ? 'High' : 'OK'))+'</td>'+
+    '</tr>';
+  }).join('');
+}
+function renderScenarios(){
+  const items = state.scenarios || [];
+  const cardBox = qs('scenarioCards');
+  const tableBody = qs('scenarioTableBody');
+  const top = items.slice(0,3);
+  cardBox.innerHTML = top.map((r, idx)=>{
+    const key = Object.keys(r)[0];
+    const value = r[key];
+    return '<div class="card"><div class="card-body">'+
+      '<div class="metric-label">Scenario</div><div class="metric-value">'+escapeHtml(key || ('Scenario ' + (idx+1)))+'</div>'+
+      '<div class="metric-sub">'+escapeHtml(value || 'Workbook-backed scenario row')+'</div>'+
+      '<div style="margin-top:.75rem;display:flex;gap:.45rem;flex-wrap:wrap"><button class="btn primary" onclick="applyScenarioByName(\''+escapeHtml(key || '')+'\')">Apply</button><button class="btn" onclick="editScenario(\''+escapeHtml(key || '')+'\')">Edit</button></div>'+
+    '</div></div>';
+  }).join('') || '<div class="notice">No scenario rows available.</div>';
+  tableBody.innerHTML = items.map(r=>{
+    const key = Object.keys(r)[0] || '—';
+    const value = r[key];
+    return '<tr><td><strong>'+escapeHtml(key)+'</strong></td><td>'+escapeHtml(value)+'</td><td><button class="btn" onclick="applyScenarioByName(\''+escapeHtml(key)+'\')">Apply</button> <button class="btn" onclick="editScenario(\''+escapeHtml(key)+'\')">Edit</button> <button class="btn danger" onclick="deleteScenario(\''+escapeHtml(key)+'\')">Delete</button></td></tr>';
+  }).join('') || '<tr><td colspan="3">No scenarios returned.</td></tr>';
+}
+function renderCTPHistory(){
+  const body = qs('ctpHistoryBody');
+  const reqs = state.ctpRequests || [];
+  const outs = state.ctpOutput || [];
+  const merged = reqs.slice(0,12).map(r=>{
+    const key = r.Request_ID || r.request_id;
+    const out = outs.find(o=>String(o.Request_ID || o.request_id || '') === String(key || '')) || {};
+    return {
+      sku: r.SKU_ID || r.sku_id || '—',
+      qty: r.Qty_MT || r.qty_mt || '—',
+      requested: r.Requested_Date || r.requested_date || '',
+      earliest: out.Earliest_Delivery || out.earliest_delivery || '',
+      margin: out.Lateness_Days ?? out.lateness_days ?? '—',
+      feasible: out.Feasible ?? out.feasible ?? out.Plant_Completion_Feasible ?? out.plant_completion_feasible
+    };
+  });
+  body.innerHTML = merged.map(r=>'<tr>'+
+    '<td>'+escapeHtml(r.sku)+'</td><td>'+escapeHtml(r.qty)+'</td><td>'+escapeHtml(fmtDate(r.requested))+'</td><td>'+escapeHtml(fmtDate(r.earliest))+'</td><td>'+escapeHtml(r.margin)+'</td><td>'+badgeForStatus(r.feasible === true ? 'FEASIBLE' : r.feasible === false ? 'NOT FEASIBLE' : '—')+'</td>'+
+  '</tr>').join('') || '<tr><td colspan="6">No CTP history yet.</td></tr>';
+}
+function renderMaster(){
+  const section = qs('masterSection').value;
+  const rows = state.master[section] || [];
+  setText('masterTitle', MASTER_LABELS[section] || section);
+  const head = qs('masterHead');
+  const body = qs('masterBody');
+  if(!rows.length){
+    head.innerHTML = '';
+    body.innerHTML = '<tr><td>No rows returned for this section.</td></tr>';
+    setText('masterSelectionNote', 'No row selected.');
+    state.selectedMasterKey = null;
+    return;
+  }
+  const cols = Object.keys(rows[0]);
+  head.innerHTML = '<tr>' + cols.map(c=>'<th>'+escapeHtml(c)+'</th>').join('') + '</tr>';
+  const keyField = MASTER_KEYS[section] || cols[0];
+  body.innerHTML = rows.map(r=>{
+    const key = String(r[keyField] ?? r[cols[0]] ?? '');
+    const selected = state.selectedMasterKey === key ? ' class="master-row-selected"' : '';
+    return '<tr'+selected+' data-key="'+escapeHtml(key)+'">'+cols.map(c=>'<td>'+escapeHtml(r[c] ?? '—')+'</td>').join('')+'</tr>';
+  }).join('');
+  body.querySelectorAll('tr[data-key]').forEach(tr=>{
+    tr.addEventListener('click', ()=>{
+      state.selectedMasterKey = tr.dataset.key;
+      setText('masterSelectionNote', 'Selected ' + state.selectedMasterKey);
+      renderMaster();
+    });
+  });
+}
+async function loadApplicationState(){
+  const [overview, campaigns, releaseQueue, gantt, capacity, material, dispatch, scenarios, ctpReqs, ctpOut, master] = await Promise.all([
+    apiFetch('/api/aps/dashboard/overview').catch(()=>null),
+    apiFetch('/api/aps/campaigns/list').catch(()=>({items:[]})),
+    apiFetch('/api/aps/campaigns/release-queue').catch(()=>({items:[]})),
+    apiFetch('/api/aps/schedule/gantt').catch(()=>({jobs:[]})),
+    apiFetch('/api/aps/capacity/map').catch(()=>({items:[]})),
+    apiFetch('/api/aps/material/plan').catch(()=>({items:[]})),
+    apiFetch('/api/aps/dispatch/board').catch(()=>({resources:[]})),
+    apiFetch('/api/aps/scenarios/list').catch(()=>({items:[]})),
+    apiFetch('/api/aps/ctp/requests').catch(()=>({items:[]})),
+    apiFetch('/api/aps/ctp/output').catch(()=>({items:[]})),
+    apiFetch('/api/aps/masterdata').catch(()=>({}))
+  ]);
+
+  state.overview = overview ? overview.summary || overview : null;
+  state.campaigns = campaigns.items || [];
+  state.releaseQueue = releaseQueue.items || [];
+  state.gantt = gantt.jobs || [];
+  state.capacity = capacity.items || [];
+  state.material = material.items || [];
+  state.dispatch = dispatch.resources || [];
+  state.scenarios = scenarios.items || [];
+  state.ctpRequests = ctpReqs.items || [];
+  state.ctpOutput = ctpOut.items || [];
+  state.master = master || {};
+
+  if(state.overview){
+    hydrateSummary(state.overview);
+    renderBottleneck(state.overview);
+    renderAlerts(state.overview);
+  }
+  renderReleaseQueue();
+  renderDashboardTimeline();
+  renderCampaigns();
+  renderSchedule();
+  renderOrders();
+  renderDispatch();
+  renderMaterial();
+  renderCapacity();
+  renderScenarios();
+  renderCTPHistory();
+  renderMaster();
+}
+async function loadOrdersOnly(){
+  const d = await apiFetch('/api/aps/orders/list').catch(()=>({items:[]}));
+  state.orders = d.items || [];
+  renderOrders();
+}
+async function loadSkusForCtp(){
+  const d = await apiFetch('/api/aps/masterdata/skus').catch(async ()=>await apiFetch('/api/data/skus').catch(()=>({items:[], skus:[]})));
+  const rows = d.items || d.skus || [];
+  qs('ctpSku').innerHTML = '<option value="">Select SKU…</option>' + rows.map(r=>{
+    const id = r.SKU_ID || r.sku_id || '';
+    const nm = r.SKU_Name || r.sku_name || '';
+    return '<option value="'+escapeHtml(id)+'">'+escapeHtml(id + (nm ? (' · ' + nm) : ''))+'</option>';
+  }).join('');
+}
+async function runSchedule(){
+  const btn = qs('runBtn');
+  const old = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner"></span> Running…';
+  btn.disabled = true;
+  try{
+    await apiFetch('/api/aps/schedule/run', {method:'POST', body: JSON.stringify({time_limit: Number(qs('solverDepth').value || 60)})});
+    await loadApplicationState();
+    await loadOrdersOnly();
+  }catch(e){
+    alert('Schedule error: ' + e.message);
+  }finally{
+    btn.innerHTML = old;
+    btn.disabled = false;
+  }
+}
+async function updateCampaignStatus(campaignId, fieldName, value){
+  try{
+    const payload = {}; payload[fieldName] = value;
+    await apiFetch('/api/aps/campaigns/' + encodeURIComponent(campaignId) + '/status', {method:'PATCH', body: JSON.stringify({data: payload})});
+    await loadApplicationState();
+  }catch(e){ alert('Campaign update failed: ' + e.message); }
+}
+function toggleOrderSelection(so, checked){
+  if(checked) state.selectedOrders.add(so); else state.selectedOrders.delete(so);
+  qs('assignOrdersBtn').disabled = state.selectedOrders.size === 0;
+}
+async function assignOrdersToCampaign(orderIds, campaignId){
+  try{
+    await apiFetch('/api/aps/orders/assign', {method:'POST', body: JSON.stringify({assignments: orderIds.map(so_id=>({so_id, campaign_id: campaignId}))})});
+    state.selectedOrders.clear();
+    await loadOrdersOnly();
+    await loadApplicationState();
+  }catch(e){ alert('Assign failed: ' + e.message); }
+}
+async function assignSelectedOrders(){
+  const cid = prompt('Enter Campaign ID');
+  if(!cid) return;
+  await assignOrdersToCampaign([...state.selectedOrders], cid);
+}
+async function createOrder(){
+  const so = prompt('SO_ID');
+  if(!so) return;
+  const payload = {
+    SO_ID: so,
+    SKU_ID: prompt('SKU_ID','') || '',
+    Customer: prompt('Customer','') || '',
+    Grade: prompt('Grade','') || '',
+    Order_Qty_MT: Number(prompt('Order Qty MT','0') || 0),
+    Delivery_Date: prompt('Delivery Date (YYYY-MM-DD)','') || '',
+    Status: prompt('Status','Open') || 'Open',
+    Priority: prompt('Priority','NORMAL') || 'NORMAL'
+  };
+  try{
+    await apiFetch('/api/aps/orders', {method:'POST', body: JSON.stringify(payload)});
+    await loadOrdersOnly();
+  }catch(e){ alert('Create order failed: ' + e.message); }
+}
+async function editOrder(so){
+  const row = (state.orders || []).find(x=>String(x.SO_ID || '') === String(so));
+  if(!row){ alert('Order not found.'); return; }
+  const payload = {
+    SKU_ID: prompt('SKU_ID', row.SKU_ID || '') || '',
+    Customer: prompt('Customer', row.Customer || '') || '',
+    Grade: prompt('Grade', row.Grade || '') || '',
+    Order_Qty_MT: Number(prompt('Order Qty MT', row.Order_Qty_MT || 0) || 0),
+    Delivery_Date: prompt('Delivery Date (YYYY-MM-DD)', row.Delivery_Date || '') || '',
+    Status: prompt('Status', row.Status || 'Open') || 'Open',
+    Priority: prompt('Priority', row.Priority || 'NORMAL') || 'NORMAL'
+  };
+  try{
+    await apiFetch('/api/aps/orders/' + encodeURIComponent(so), {method:'PUT', body: JSON.stringify(payload)});
+    await loadOrdersOnly();
+  }catch(e){ alert('Update order failed: ' + e.message); }
+}
+async function deleteOrder(so){
+  if(!confirm('Delete order ' + so + '?')) return;
+  try{
+    await apiFetch('/api/aps/orders/' + encodeURIComponent(so), {method:'DELETE'});
+    await loadOrdersOnly();
+  }catch(e){ alert('Delete order failed: ' + e.message); }
+}
+async function runCtp(){
+  const sku = qs('ctpSku').value;
+  if(!sku){ alert('Select a SKU first.'); return; }
+  const payload = {sku_id: sku, qty_mt: Number(qs('ctpQty').value || 0), requested_date: qs('ctpDate').value};
+  const btn = qs('ctpRunBtn');
+  const old = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner"></span> Checking…';
+  btn.disabled = true;
+  try{
+    await apiFetch('/api/aps/ctp/requests', {method:'POST', body: JSON.stringify({data:{Request_ID:'REQ-'+Date.now(), SKU_ID: payload.sku_id, Qty_MT: payload.qty_mt, Requested_Date: payload.requested_date}})}).catch(()=>null);
+    const d = await apiFetch('/api/aps/ctp/check', {method:'POST', body: JSON.stringify(payload)});
+    qs('ctpResult').innerHTML = '<strong>' + escapeHtml((d.feasible || d.plant_completion_feasible) ? 'Feasible' : 'Not feasible') + '</strong><br>' +
+      'Earliest delivery: ' + escapeHtml(fmtDate(d.earliest_delivery)) + '<br>' +
+      'Margin / lateness days: ' + escapeHtml(d.lateness_days ?? '—') + '<br>' +
+      'Material gaps: ' + escapeHtml((d.material_gaps || []).length);
+    const reqs = await apiFetch('/api/aps/ctp/requests').catch(()=>({items:[]}));
+    const outs = await apiFetch('/api/aps/ctp/output').catch(()=>({items:[]}));
+    state.ctpRequests = reqs.items || [];
+    state.ctpOutput = outs.items || [];
+    renderCTPHistory();
+  }catch(e){ qs('ctpResult').textContent = 'CTP failed: ' + e.message; }
+  finally{ btn.innerHTML = old; btn.disabled = false; }
+}
+async function applyScenarioByName(name){
+  try{
+    await apiFetch('/api/aps/scenarios/apply', {method:'POST', body: JSON.stringify({scenario: name})});
+    alert('Scenario apply acknowledged for ' + name);
+  }catch(e){ alert('Scenario apply failed: ' + e.message); }
+}
+async function createScenario(){
+  const key = prompt('Scenario key / parameter');
+  if(!key) return;
+  const value = prompt('Scenario value', '') || '';
+  const data = {Parameter: key, Value: value};
+  try{
+    await apiFetch('/api/aps/scenarios', {method:'POST', body: JSON.stringify({data})});
+    await loadApplicationState();
+  }catch(e){ alert('Create scenario failed: ' + e.message); }
+}
+async function editScenario(keyValue){
+  const row = (state.scenarios || []).find(r=>String(Object.values(r)[0] || '') === String(keyValue));
+  if(!row){ alert('Scenario row not found.'); return; }
+  const key = Object.keys(row)[0];
+  const value = prompt('Update value', row[key]) || row[key];
+  try{
+    await apiFetch('/api/aps/scenarios/' + encodeURIComponent(keyValue), {method:'PATCH', body: JSON.stringify({data:{[key]: value}})});
+    await loadApplicationState();
+  }catch(e){ alert('Update scenario failed: ' + e.message); }
+}
+async function deleteScenario(keyValue){
+  if(!confirm('Delete scenario ' + keyValue + '?')) return;
+  try{
+    await apiFetch('/api/aps/scenarios/' + encodeURIComponent(keyValue), {method:'DELETE'});
+    await loadApplicationState();
+  }catch(e){ alert('Delete scenario failed: ' + e.message); }
+}
+function openMasterModal(mode){
+  state.masterMode = mode;
+  qs('masterModal').classList.add('show');
+}
+function closeMasterModal(){
+  qs('masterModal').classList.remove('show');
+  qs('masterFormGrid').innerHTML = '';
+  qs('masterBulkBox').style.display = 'none';
+  qs('masterSaveBtn').style.display = '';
+}
+function buildMasterForm(section, row={}){
+  const rows = state.master[section] || [];
+  const sample = Object.keys(row).length ? row : (rows[0] || {});
+  const cols = Object.keys(sample);
+  qs('masterFormGrid').innerHTML = cols.map(c=>'<div class="master-form-field"><label>'+escapeHtml(c)+'</label><input name="'+escapeHtml(c)+'" value="'+escapeHtml(row[c] ?? '')+'"></div>').join('') || '<div class="notice">No columns detected for this section.</div>';
+}
+function currentMasterSection(){ return qs('masterSection').value; }
+function openMasterCreate(){
+  const section = currentMasterSection();
+  qs('masterModalTitle').textContent = 'Add ' + (MASTER_LABELS[section] || section) + ' row';
+  qs('masterModalSub').textContent = 'Create a new workbook-backed row.';
+  buildMasterForm(section, {});
+  openMasterModal('create');
+}
+function openMasterEdit(){
+  const section = currentMasterSection();
+  if(!state.selectedMasterKey){ alert('Select a row first.'); return; }
+  const keyField = MASTER_KEYS[section];
+  const row = (state.master[section] || []).find(r=>String(r[keyField] ?? r[Object.keys(r)[0]] ?? '') === String(state.selectedMasterKey));
+  if(!row){ alert('Selected row not found.'); return; }
+  qs('masterModalTitle').textContent = 'Patch ' + (MASTER_LABELS[section] || section) + ' row';
+  qs('masterModalSub').textContent = 'Editing key ' + state.selectedMasterKey;
+  buildMasterForm(section, row);
+  openMasterModal('edit');
+}
+function openMasterBulk(){
+  const section = currentMasterSection();
+  qs('masterModalTitle').textContent = 'Bulk replace ' + (MASTER_LABELS[section] || section);
+  qs('masterModalSub').textContent = 'Paste a JSON array for the section.';
+  qs('masterFormGrid').innerHTML = '';
+  qs('masterBulkBox').style.display = 'block';
+  qs('masterBulkText').value = JSON.stringify(state.master[section] || [], null, 2);
+  openMasterModal('bulk');
+}
+async function submitMasterForm(ev){
+  ev.preventDefault();
+  const section = currentMasterSection();
+  try{
+    if(state.masterMode === 'bulk'){
+      const items = JSON.parse(qs('masterBulkText').value || '[]');
+      await apiFetch('/api/aps/masterdata/' + encodeURIComponent(section) + '/bulk-replace', {method:'PUT', body: JSON.stringify({items})});
+    }else{
+      const fd = new FormData(qs('masterForm'));
+      const data = {};
+      fd.forEach((v,k)=>data[k]=v);
+      if(state.masterMode === 'create'){
+        await apiFetch('/api/aps/masterdata/' + encodeURIComponent(section), {method:'POST', body: JSON.stringify({data})});
+      }else{
+        await apiFetch('/api/aps/masterdata/' + encodeURIComponent(section) + '/' + encodeURIComponent(state.selectedMasterKey), {method:'PATCH', body: JSON.stringify({data})});
+      }
+    }
+    closeMasterModal();
+    await loadApplicationState();
+  }catch(e){ alert('Master data save failed: ' + e.message); }
+}
+async function deleteMasterRow(){
+  const section = currentMasterSection();
+  if(!state.selectedMasterKey){ alert('Select a row first.'); return; }
+  if(!confirm('Delete ' + state.selectedMasterKey + ' from ' + section + '?')) return;
+  try{
+    await apiFetch('/api/aps/masterdata/' + encodeURIComponent(section) + '/' + encodeURIComponent(state.selectedMasterKey), {method:'DELETE'});
+    state.selectedMasterKey = null;
+    await loadApplicationState();
+  }catch(e){ alert('Delete failed: ' + e.message); }
+}
+async function patchJob(){
+  const jobId = prompt('Job_ID to patch');
+  if(!jobId) return;
+  const payloadText = prompt('JSON patch', '{"Planned_Start":"2026-04-04T08:00:00","Planned_End":"2026-04-04T12:00:00"}');
+  if(!payloadText) return;
+  try{
+    await apiFetch('/api/aps/schedule/jobs/' + encodeURIComponent(jobId) + '/reschedule', {method:'PATCH', body: JSON.stringify({data: JSON.parse(payloadText)})});
+    await loadApplicationState();
+    activatePage('schedule');
+  }catch(e){ alert('Job patch failed: ' + e.message); }
+}
+
+qs('runBtn').addEventListener('click', runSchedule);
+qs('campaignRerunBtn').addEventListener('click', runSchedule);
+qs('assignOrdersBtn').addEventListener('click', assignSelectedOrders);
+qs('newOrderBtn').addEventListener('click', createOrder);
+qs('orderSearch').addEventListener('input', renderOrders);
+qs('orderPriority').addEventListener('change', renderOrders);
+qs('orderGrade').addEventListener('change', renderOrders);
+qs('ctpRunBtn').addEventListener('click', runCtp);
+qs('newScenarioBtn').addEventListener('click', createScenario);
+qs('masterSection').addEventListener('change', ()=>{ state.selectedMasterKey = null; renderMaster(); });
+qs('masterRefreshBtn').addEventListener('click', loadApplicationState);
+qs('masterAddBtn').addEventListener('click', openMasterCreate);
+qs('masterEditBtn').addEventListener('click', openMasterEdit);
+qs('masterDeleteBtn').addEventListener('click', deleteMasterRow);
+qs('masterBulkBtn').addEventListener('click', openMasterBulk);
+qs('masterModalCloseBtn').addEventListener('click', closeMasterModal);
+qs('masterModalCancelBtn').addEventListener('click', closeMasterModal);
+qs('masterForm').addEventListener('submit', submitMasterForm);
+qs('routeBtn').addEventListener('click', loadRouteManifest);
+qs('patchJobBtn').addEventListener('click', patchJob);
+document.querySelectorAll('[data-camp-filter]').forEach(btn=>btn.addEventListener('click', ()=>{
+  document.querySelectorAll('[data-camp-filter]').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  state.campFilter = btn.dataset.campFilter;
+  renderCampaigns();
+}));
+
+document.addEventListener('DOMContentLoaded', async ()=>{
+  const d = new Date(Date.now() + 14*86400000);
+  qs('ctpDate').value = d.toISOString().slice(0,10);
+
+  const bar = qs('loadingBar');
+  bar.style.width = '10%';
+  bar.style.opacity = '1';
+
+  await checkHealth();
+  bar.style.width = '30%';
+  await loadRouteManifest();
+  bar.style.width = '50%';
+  await loadOrdersOnly();
+  bar.style.width = '65%';
+  await loadSkusForCtp();
+  bar.style.width = '80%';
+  await loadApplicationState();
+  bar.style.width = '100%';
+
+  setTimeout(()=>{ bar.style.opacity = '0'; }, 300);
+});
+</script>
+</body>
+</html>

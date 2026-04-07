@@ -1,0 +1,54 @@
+================================================================================
+EXCEL PARAMETERS THAT EXIST BUT WERE HARDCODED IN CODE (NOT USED)
+================================================================================
+
+EXCEL PARAMETERS PRESENT BUT UNUSED:
+
+1. Campaign_Config Sheet (8 parameters):
+   - Min_Campaign_Heats           [hardcoded in campaign.py]
+   - Max_Campaign_Heats           [hardcoded in campaign.py]
+   - Grade_Seq_Order              [hardcoded in scheduler.py]
+   - Needs_VD per grade           [hardcoded in campaign.py needs_vd_for_grade()]
+
+2. Scenarios Sheet (10 parameters NOT USED):
+   - Demand Spike (%)             [only read, not applied]
+   - Machine Down (Hrs)           [only read, not applied]
+   - Machine Down Resource        [only read, not applied]
+   - Machine Down Start (Hr)      [only read, not applied]
+   - Yield Loss (%)               [exists in sheet, hardcoded in campaign.py]
+   - Rush Order MT                [only read, not applied]
+   - Extra Shift Hours            [only read, not applied]
+
+3. Config Sheet (18 parameters):
+   - Most are legacy/informational
+   - Actual algorithmic config never reads from Config sheet
+   - All algorithm decisions hardcoded in Python
+
+TOTAL UNUSED PARAMETERS: ~25+ parameters existed in Excel but code was hardcoded
+
+KEY ISSUE: 
+Solver started with standard OR-Tools CP-SAT, then hand-written code
+was added to adjust behavior. These adjustments were hardcoded directly
+in Python instead of being externalized to Excel configuration.
+
+SOLUTION IMPLEMENTED:
+Created Algorithm_Config sheet with 46 comprehensive parameters that
+were previously scattered and hardcoded. Phase 2 will refactor all
+5 engine modules to read from this central configuration.
+
+BEFORE (Hardcoded):
+  CYCLE_TIME_EAF_MIN = 90     # in scheduler.py line 25
+  HEAT_SIZE_MT = 50           # in campaign.py line 78
+  CCM_YIELD = 0.95            # in campaign.py line 92
+
+AFTER (Config-Driven):
+  eaf_time = get_config().get_duration_minutes("CYCLE_TIME_EAF_MIN", 90)
+  heat_size = get_config().get_float("HEAT_SIZE_MT", 50.0)
+  ccm_yield = get_config().get_percentage("YIELD_CCM_PCT", 95)
+
+EFFORT SUMMARY:
+  Phase 1 (Complete):   2-3 hours - Created infrastructure
+  Phase 2 (Pending):    6-8 hours - Refactor 5 modules (47 replacements)
+  Phase 3 (Pending):    2-3 hours - API, docs, testing
+
+STATUS: Phase 1 complete. Ready for Phase 2 refactoring.

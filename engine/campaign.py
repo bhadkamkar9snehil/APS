@@ -20,11 +20,73 @@ from engine.bom_explosion import (
     inventory_map,
     simulate_material_commit,
 )
+from engine.config import get_config
 
-HEAT_SIZE_MT = 50.0
-CCM_YIELD = 0.95
-RM_YIELD_BY_SEC = {5.5: 0.88, 6.5: 0.89, 8.0: 0.90, 10.0: 0.91, 12.0: 0.92}
-DEFAULT_RM_YIELD = 0.89
+# Core batch and yield parameters from Algorithm_Config
+def _get_heat_size_mt():
+    """SMS standard heat size (MT)."""
+    return get_config().get_float('HEAT_SIZE_MT', 50.0)
+
+def _get_ccm_yield():
+    """CCM casting yield factor."""
+    return get_config().get_percentage('YIELD_CCM_PCT', 95) / 100
+
+def _get_rm_yield_by_section():
+    """RM rolling yield factors per section size (mm)."""
+    config = get_config()
+    return {
+        5.5: config.get_percentage('YIELD_RM_5_5MM_PCT', 88) / 100,
+        6.5: config.get_percentage('YIELD_RM_6_5MM_PCT', 89) / 100,
+        8.0: config.get_percentage('YIELD_RM_8_0MM_PCT', 90) / 100,
+        10.0: config.get_percentage('YIELD_RM_10_0MM_PCT', 91) / 100,
+        12.0: config.get_percentage('YIELD_RM_12_0MM_PCT', 92) / 100,
+    }
+
+def _get_default_rm_yield():
+    """Default RM rolling yield (when section not specified)."""
+    return get_config().get_percentage('YIELD_RM_DEFAULT_PCT', 89) / 100
+
+def _get_vd_required_grades():
+    """Grades that require VD (vacuum degassing)."""
+    vd_list = get_config().get_list('VD_REQUIRED_GRADES', ['1080', 'CHQ1006', 'CrMo4140'])
+    return set(vd_list)
+
+def _get_low_carbon_billet_grades():
+    """Grades that use BIL-130 (low carbon) vs BIL-150."""
+    lc_list = get_config().get_list('LOW_CARBON_BILLET_GRADES', ['1008', '1018', '1035'])
+    return set(lc_list)
+
+
+def _normalize_grade_for_config(grade: str) -> str:
+    """Normalize grade string to config format.
+
+    Examples:
+        'SAE 1080' -> '1080'
+        'SAE 1008' -> '1008'
+        'CHQ 1006' -> 'CHQ1006'
+        'Cr-Mo 4140' -> 'CrMo4140'
+        '1080' -> '1080' (already normalized)
+    """
+    grade_text = str(grade or "").strip()
+
+    # Remove leading 'SAE ' if present
+    if grade_text.startswith("SAE "):
+        return grade_text[4:].strip()
+
+    # Handle 'CHQ ' prefix -> 'CHQ' + number
+    if grade_text.startswith("CHQ "):
+        num = grade_text[4:].strip()
+        return f"CHQ{num}"
+
+    # Handle 'Cr-Mo ' prefix -> 'CrMo' + number
+    if grade_text.startswith("Cr-Mo "):
+        num = grade_text[6:].strip()
+        return f"CrMo{num}"
+
+    # Return as-is if already normalized
+    return grade_text
+
+# Primary batch resource prefixes (these don't change)
 PRIMARY_BATCH_PREFIXES = {
     "EAF": ("EAF-OUT-",),
     "LRF": ("LRF-OUT-",),
@@ -33,6 +95,7 @@ PRIMARY_BATCH_PREFIXES = {
     "RM": ("RM-OUT-",),
 }
 
+# Grade scheduling order (these don't change)
 GRADE_ORDER = {
     "SAE 1008": 1,
     "SAE 1018": 2,
@@ -43,9 +106,9 @@ GRADE_ORDER = {
     "CHQ 1006": 7,
     "Cr-Mo 4140": 8,
 }
-VD_GRADES = {"SAE 1080", "CHQ 1006", "Cr-Mo 4140"}
+
+# Priority order (standard APS)
 PRIORITY_ORDER = {"URGENT": 1, "HIGH": 2, "NORMAL": 3, "LOW": 4}
-LOW_CARBON_BILLET_GRADES = {"SAE 1008", "SAE 1018", "SAE 1035"}
 
 
 def priority_rank(priority: str) -> int:
@@ -53,11 +116,17 @@ def priority_rank(priority: str) -> int:
 
 
 def needs_vd_for_grade(grade: str) -> bool:
-    return str(grade or "").strip() in VD_GRADES
+    """Check if grade requires VD (vacuum degassing) based on config."""
+    vd_grades = _get_vd_required_grades()
+    normalized = _normalize_grade_for_config(grade)
+    return normalized in vd_grades
 
 
 def billet_family_for_grade(grade: str) -> str:
-    return "BIL-130" if str(grade or "").strip() in LOW_CARBON_BILLET_GRADES else "BIL-150"
+    """Determine billet family (BIL-130 or BIL-150) based on grade and config."""
+    lc_grades = _get_low_carbon_billet_grades()
+    normalized = _normalize_grade_for_config(grade)
+    return "BIL-130" if normalized in lc_grades else "BIL-150"
 
 
 def rm_minutes_for_qty(qty_coil_mt: float, section_mm: float, include_setup: bool = True) -> int:
@@ -134,8 +203,10 @@ def _manual_campaign_grouping_mode(config: dict | None = None) -> str:
 def _legacy_primary_batch_qty(line: dict, yield_loss_pct: float = 0.0) -> float:
     section = pd.to_numeric(pd.Series([line["section_mm"]]), errors="coerce").fillna(6.5).iloc[0]
     yield_factor = max(0.01, 1 - (float(yield_loss_pct or 0.0) / 100.0))
-    rm_yield = max(RM_YIELD_BY_SEC.get(section, DEFAULT_RM_YIELD) * yield_factor, 0.01)
-    ccm_yield = max(CCM_YIELD * yield_factor, 0.01)
+    rm_yield_map = _get_rm_yield_by_section()
+    default_rm_yield = _get_default_rm_yield()
+    rm_yield = max(rm_yield_map.get(section, default_rm_yield) * yield_factor, 0.01)
+    ccm_yield = max(_get_ccm_yield() * yield_factor, 0.01)
     billet_mt = float(line["qty_mt"]) / rm_yield
     return billet_mt / ccm_yield
 
@@ -241,8 +312,10 @@ def _heats_estimate_from_lines(
     bom: pd.DataFrame | None = None,
     config: dict | None = None,
     yield_loss_pct: float = 0.0,
-    batch_size_mt: float = HEAT_SIZE_MT,
+    batch_size_mt: float | None = None,
 ) -> dict:
+    if batch_size_mt is None:
+        batch_size_mt = _get_heat_size_mt()
     total_primary_batch_mt = 0.0
     primary_group = str((config or {}).get("Primary_Batch_Resource_Group", "EAF") or "EAF").strip().upper()
     bom_lookup = _bom_input_lookup(bom)
@@ -278,7 +351,7 @@ def _heats_estimate_from_lines(
             errors.append(issue)
         total_primary_batch_mt += float(required_primary_mt or 0.0) / scenario_yield
 
-    heats = max(1, math.ceil(total_primary_batch_mt / max(float(batch_size_mt or HEAT_SIZE_MT), 1.0)))
+    heats = max(1, math.ceil(total_primary_batch_mt / max(float(batch_size_mt), 1.0)))
     return {
         "heats": heats,
         "total_primary_batch_mt": round(total_primary_batch_mt, 3),
@@ -296,9 +369,11 @@ def _heats_needed_from_lines(
     bom: pd.DataFrame | None = None,
     config: dict | None = None,
     yield_loss_pct: float = 0.0,
-    batch_size_mt: float = HEAT_SIZE_MT,
+    batch_size_mt: float | None = None,
     return_details: bool = False,
 ) -> int | dict:
+    if batch_size_mt is None:
+        batch_size_mt = _get_heat_size_mt()
     result = _heats_estimate_from_lines(
         order_lines,
         bom=bom,
@@ -343,8 +418,8 @@ def _normalize_sales_orders(
 
     so["Order_Qty_MT"] = pd.to_numeric(so["Order_Qty_MT"], errors="coerce").fillna(0.0)
     so["Section_mm"] = pd.to_numeric(so["Section_mm"], errors="coerce")
-    so["Delivery_Date"] = pd.to_datetime(so["Delivery_Date"])
-    so["Order_Date"] = pd.to_datetime(so["Order_Date"])
+    so["Delivery_Date"] = pd.to_datetime(so["Delivery_Date"], errors="coerce")
+    so["Order_Date"] = pd.to_datetime(so["Order_Date"], errors="coerce")
     so["Priority"] = so["Priority"].fillna("NORMAL").astype(str).str.upper().str.strip()
     so["Priority_Rank"] = so["Priority"].map(priority_rank).fillna(9).astype(int)
     so["Campaign_Group"] = so["Campaign_Group"].fillna(so["Grade"]).astype(str).str.strip()
@@ -439,8 +514,10 @@ def _finalize_campaign(
     bom: pd.DataFrame | None = None,
     config: dict | None = None,
     yield_loss_pct: float = 0.0,
-    batch_size_mt: float = HEAT_SIZE_MT,
+    batch_size_mt: float | None = None,
 ) -> dict:
+    if batch_size_mt is None:
+        batch_size_mt = _get_heat_size_mt()
     line_df = pd.DataFrame(campaign_lines)
     grade = str(line_df["grade"].iloc[0])
     sections = sorted(
@@ -574,7 +651,9 @@ def build_campaigns(
     if make_so.empty:
         return []
 
-    batch_size_mt = float((config or {}).get("Default_Batch_Size_MT", HEAT_SIZE_MT) or HEAT_SIZE_MT)
+    # Use Algorithm_Config for batch size, allow legacy config dict override
+    default_batch_size = _get_heat_size_mt()
+    batch_size_mt = float((config or {}).get("Default_Batch_Size_MT") or default_batch_size)
     max_campaign_mt = max(float(max_campaign_mt or 0.0), 1.0)
     min_campaign_mt = max(float(min_campaign_mt or 0.0), 0.0)
 
@@ -779,10 +858,19 @@ def build_campaigns(
 
     campaigns = sorted(campaigns, key=_campaign_sort_key)
 
+    # Check for missing BOM - never auto-release, always hold with status
     if bom is None or getattr(bom, "empty", True):
         for camp in campaigns:
-            camp["release_status"] = "RELEASED"
-            camp["material_status"] = "READY"
+            # According to rule 4.1: missing BOM blocks release
+            camp["release_status"] = "MATERIAL HOLD"
+            camp["material_status"] = "MASTER_DATA_MISSING"
+            camp["material_shortages"] = {}
+            camp["material_consumed"] = {}
+            camp["material_gross_requirements"] = {}
+            camp["material_structure_errors"] = [{"type": "MISSING_BOM", "message": "BOM master data is not configured"}]
+            camp["inventory_before"] = {}
+            camp["inventory_after"] = {}
+            camp["material_issue"] = "BOM missing for material simulation"
         return _renumber_campaigns(campaigns)
 
     committed_inventory = dict(release_inventory)

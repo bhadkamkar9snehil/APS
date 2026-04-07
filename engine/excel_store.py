@@ -13,7 +13,8 @@ from .workbook_schema import SHEETS, SheetConfig
 
 class ExcelStore:
     def __init__(self, workbook_path: str | Path):
-        self.workbook_path = Path(workbook_path)
+        clean_path = str(workbook_path).strip().strip('"').strip("'")
+        self.workbook_path = Path(clean_path)
 
     def _open(self):
         if not self.workbook_path.exists():
@@ -42,18 +43,25 @@ class ExcelStore:
         return headers
 
     def _iter_records_with_rows(self, cfg: SheetConfig) -> Tuple[List[str], List[Tuple[int, Dict[str, Any]]]]:
-        wb = self._open()
-        ws = wb[cfg.excel_name]
-        headers = self._headers(ws, cfg.header_row_1_based)
-        records: List[Tuple[int, Dict[str, Any]]] = []
-        for row_idx in range(cfg.header_row_1_based + 1, ws.max_row + 1):
-            row_values = [ws.cell(row_idx, col_idx).value for col_idx in range(1, len(headers) + 1)]
-            if all(v is None for v in row_values):
-                continue
-            record = {headers[i]: self._clean_value(row_values[i]) for i in range(len(headers))}
-            records.append((row_idx, record))
-        wb.close()
-        return headers, records
+        wb = None
+        try:
+            wb = self._open()
+            ws = wb[cfg.excel_name]
+            headers = self._headers(ws, cfg.header_row_1_based)
+            records: List[Tuple[int, Dict[str, Any]]] = []
+            for row_idx in range(cfg.header_row_1_based + 1, ws.max_row + 1):
+                row_values = [ws.cell(row_idx, col_idx).value for col_idx in range(1, len(headers) + 1)]
+                if all(v is None for v in row_values):
+                    continue
+                record = {headers[i]: self._clean_value(row_values[i]) for i in range(len(headers))}
+                records.append((row_idx, record))
+            return headers, records
+        finally:
+            if wb is not None:
+                try:
+                    wb.close()
+                except Exception:
+                    pass
 
     def list_sheet_configs(self) -> List[Dict[str, Any]]:
         return [
@@ -81,6 +89,13 @@ class ExcelStore:
         cfg = SHEETS[api_name]
         headers, rows = self._iter_records_with_rows(cfg)
         items = [deepcopy(r) for _, r in rows]
+
+        # Filter out rows with null/empty key field (data integrity check)
+        if cfg.key_field:
+            items = [
+                x for x in items
+                if x.get(cfg.key_field) and str(x.get(cfg.key_field, '')).strip()
+            ]
 
         if filters:
             def match_filters(item: Dict[str, Any]) -> bool:
@@ -122,22 +137,32 @@ class ExcelStore:
         cfg = SHEETS[api_name]
         if cfg.read_only:
             raise ValueError(f"{api_name} is read-only")
-        wb = self._open()
-        ws = wb[cfg.excel_name]
-        headers = self._headers(ws, cfg.header_row_1_based)
+        wb = None
+        try:
+            wb = self._open()
+            ws = wb[cfg.excel_name]
+            headers = self._headers(ws, cfg.header_row_1_based)
 
-        if cfg.key_field and (payload.get(cfg.key_field) is None or str(payload.get(cfg.key_field)).strip() == ""):
-            raise ValueError(f"Missing required key field: {cfg.key_field}")
+            if cfg.key_field and (payload.get(cfg.key_field) is None or str(payload.get(cfg.key_field)).strip() == ""):
+                raise ValueError(f"Missing required key field: {cfg.key_field}")
 
-        if cfg.key_field and self._row_index_by_key_ws(ws, cfg, str(payload[cfg.key_field]), headers) is not None:
-            raise ValueError(f"Duplicate key: {payload[cfg.key_field]}")
+            if cfg.key_field and self._row_index_by_key_ws(ws, cfg, str(payload[cfg.key_field]), headers) is not None:
+                raise ValueError(f"Duplicate key: {payload[cfg.key_field]}")
 
-        row_idx = ws.max_row + 1
-        for col_idx, header in enumerate(headers, start=1):
-            ws.cell(row_idx, col_idx).value = self._parse_value(payload.get(header))
-        wb.save(self.workbook_path)
-        wb.close()
-        return self.get_row(api_name, str(payload[cfg.key_field])) if cfg.key_field else payload
+            row_idx = ws.max_row + 1
+            for col_idx, header in enumerate(headers, start=1):
+                ws.cell(row_idx, col_idx).value = self._parse_value(payload.get(header))
+            wb.save(self.workbook_path)
+            
+            # Build result directly from payload instead of re-reading
+            result = {h: payload.get(h) for h in headers}
+            return result
+        finally:
+            if wb is not None:
+                try:
+                    wb.close()
+                except Exception:
+                    pass
 
     def update_row(self, api_name: str, key_value: str, payload: Dict[str, Any], *, partial: bool) -> Dict[str, Any]:
         cfg = SHEETS[api_name]
@@ -145,32 +170,38 @@ class ExcelStore:
             raise ValueError(f"{api_name} is read-only")
         if not cfg.key_field:
             raise ValueError(f"{api_name} does not expose a row key")
-        wb = self._open()
-        ws = wb[cfg.excel_name]
-        headers = self._headers(ws, cfg.header_row_1_based)
-        row_idx = self._row_index_by_key_ws(ws, cfg, key_value, headers)
-        if row_idx is None:
-            wb.close()
-            raise KeyError(f"Row not found for {cfg.key_field}={key_value}")
+        wb = None
+        try:
+            wb = self._open()
+            ws = wb[cfg.excel_name]
+            headers = self._headers(ws, cfg.header_row_1_based)
+            row_idx = self._row_index_by_key_ws(ws, cfg, key_value, headers)
+            if row_idx is None:
+                raise KeyError(f"Row not found for {cfg.key_field}={key_value}")
 
-        current = {headers[i - 1]: ws.cell(row_idx, i).value for i in range(1, len(headers) + 1)}
-        merged = current.copy() if partial else {h: None for h in headers}
-        for k, v in payload.items():
-            if k in headers:
-                merged[k] = self._parse_value(v)
+            current = {headers[i - 1]: ws.cell(row_idx, i).value for i in range(1, len(headers) + 1)}
+            merged = current.copy() if partial else {h: None for h in headers}
+            for k, v in payload.items():
+                if k in headers:
+                    merged[k] = self._parse_value(v)
 
-        if cfg.key_field in payload and str(payload[cfg.key_field]) != str(key_value):
-            existing = self._row_index_by_key_ws(ws, cfg, str(payload[cfg.key_field]), headers)
-            if existing is not None and existing != row_idx:
-                wb.close()
-                raise ValueError(f"Duplicate key: {payload[cfg.key_field]}")
+            if cfg.key_field in payload and str(payload[cfg.key_field]) != str(key_value):
+                existing = self._row_index_by_key_ws(ws, cfg, str(payload[cfg.key_field]), headers)
+                if existing is not None and existing != row_idx:
+                    raise ValueError(f"Duplicate key: {payload[cfg.key_field]}")
 
-        for col_idx, header in enumerate(headers, start=1):
-            ws.cell(row_idx, col_idx).value = merged.get(header)
-        wb.save(self.workbook_path)
-        wb.close()
-        new_key = str(merged.get(cfg.key_field, key_value))
-        return self.get_row(api_name, new_key)
+            for col_idx, header in enumerate(headers, start=1):
+                ws.cell(row_idx, col_idx).value = merged.get(header)
+            wb.save(self.workbook_path)
+            
+            # Return merged data directly instead of re-reading
+            return merged
+        finally:
+            if wb is not None:
+                try:
+                    wb.close()
+                except Exception:
+                    pass
 
     def delete_row(self, api_name: str, key_value: str) -> None:
         cfg = SHEETS[api_name]
@@ -178,34 +209,47 @@ class ExcelStore:
             raise ValueError(f"{api_name} is read-only")
         if not cfg.key_field:
             raise ValueError(f"{api_name} does not expose a row key")
-        wb = self._open()
-        ws = wb[cfg.excel_name]
-        headers = self._headers(ws, cfg.header_row_1_based)
-        row_idx = self._row_index_by_key_ws(ws, cfg, key_value, headers)
-        if row_idx is None:
-            wb.close()
-            raise KeyError(f"Row not found for {cfg.key_field}={key_value}")
-        ws.delete_rows(row_idx, 1)
-        wb.save(self.workbook_path)
-        wb.close()
+        wb = None
+        try:
+            wb = self._open()
+            ws = wb[cfg.excel_name]
+            headers = self._headers(ws, cfg.header_row_1_based)
+            row_idx = self._row_index_by_key_ws(ws, cfg, key_value, headers)
+            if row_idx is None:
+                raise KeyError(f"Row not found for {cfg.key_field}={key_value}")
+            ws.delete_rows(row_idx, 1)
+            wb.save(self.workbook_path)
+        finally:
+            if wb is not None:
+                try:
+                    wb.close()
+                except Exception:
+                    pass
 
     def bulk_replace(self, api_name: str, items: List[Dict[str, Any]]) -> Dict[str, Any]:
         cfg = SHEETS[api_name]
         if cfg.read_only:
             raise ValueError(f"{api_name} is read-only")
-        wb = self._open()
-        ws = wb[cfg.excel_name]
-        headers = self._headers(ws, cfg.header_row_1_based)
-        if ws.max_row > cfg.header_row_1_based:
-            ws.delete_rows(cfg.header_row_1_based + 1, ws.max_row - cfg.header_row_1_based)
-        row_idx = cfg.header_row_1_based + 1
-        for item in items:
-            for col_idx, header in enumerate(headers, start=1):
-                ws.cell(row_idx, col_idx).value = self._parse_value(item.get(header))
-            row_idx += 1
-        wb.save(self.workbook_path)
-        wb.close()
-        return {"replaced": len(items)}
+        wb = None
+        try:
+            wb = self._open()
+            ws = wb[cfg.excel_name]
+            headers = self._headers(ws, cfg.header_row_1_based)
+            if ws.max_row > cfg.header_row_1_based:
+                ws.delete_rows(cfg.header_row_1_based + 1, ws.max_row - cfg.header_row_1_based)
+            row_idx = cfg.header_row_1_based + 1
+            for item in items:
+                for col_idx, header in enumerate(headers, start=1):
+                    ws.cell(row_idx, col_idx).value = self._parse_value(item.get(header))
+                row_idx += 1
+            wb.save(self.workbook_path)
+            return {"replaced": len(items)}
+        finally:
+            if wb is not None:
+                try:
+                    wb.close()
+                except Exception:
+                    pass
 
     def workbook_snapshot(self) -> Dict[str, Any]:
         snapshot: Dict[str, Any] = {}

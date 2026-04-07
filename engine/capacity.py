@@ -1,11 +1,12 @@
 """
 Capacity Engine — maps demand to machine hours vs available capacity.
-Planning horizon defaults to 14 days but can be scenario-driven.
+Planning horizon and setup defaults are config-driven.
 """
 from __future__ import annotations
 
 import pandas as pd
 
+from engine.config import get_config
 from engine.scheduler import (
     _changeover_minutes,
     _build_op_lookup,
@@ -19,6 +20,21 @@ from engine.scheduler import (
 
 ROUGH_CUT_CAPACITY_BASIS = "ROUGH_CUT_HEURISTIC"
 FINITE_SCHEDULE_CAPACITY_BASIS = "FINITE_SCHEDULE"
+
+
+def _get_capacity_horizon_days() -> int:
+    """Get capacity planning horizon in days from Algorithm_Config."""
+    return get_config().get('CAPACITY_HORIZON_DAYS', 14)
+
+
+def _get_capacity_setup_hours_default() -> float:
+    """Get default setup hours for capacity planning from Algorithm_Config."""
+    return get_config().get_duration_minutes('CAPACITY_SETUP_HOURS_DEFAULT', 0) / 60.0
+
+
+def _get_capacity_changeover_hours_default() -> float:
+    """Get default changeover hours for capacity planning from Algorithm_Config."""
+    return get_config().get_duration_minutes('CAPACITY_CHANGEOVER_HOURS_DEFAULT', 0) / 60.0
 
 
 def _require_resource_columns(resources: pd.DataFrame, required: list[str]) -> None:
@@ -287,17 +303,19 @@ def compute_schedule_demand_hours(schedule_df: pd.DataFrame | None) -> pd.DataFr
 def capacity_map(
     demand_hrs: pd.DataFrame,
     resources: pd.DataFrame,
-    horizon_days: int = 14,
+    horizon_days: int | None = None,
     *,
     basis: str = ROUGH_CUT_CAPACITY_BASIS,
 ) -> pd.DataFrame:
     """
     Compare rough-cut machine occupancy hours vs available per resource.
     """
+    if horizon_days is None:
+        horizon_days = _get_capacity_horizon_days()
     _require_resource_columns(resources, ["Resource_ID", "Resource_Name", "Plant", "Avail_Hours_Day"])
     res = resources[["Resource_ID", "Resource_Name", "Plant", "Avail_Hours_Day"]].copy()
     res["Avail_Hours_Day"] = pd.to_numeric(res["Avail_Hours_Day"], errors="coerce").fillna(20)
-    horizon_days = max(int(horizon_days or 14), 1)
+    horizon_days = max(int(horizon_days or _get_capacity_horizon_days()), 1)
     horizon_col = f"Avail_Hrs_{horizon_days}d"
     res[horizon_col] = res["Avail_Hours_Day"] * horizon_days
 
