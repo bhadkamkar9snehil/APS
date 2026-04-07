@@ -2530,17 +2530,20 @@ function renderHeatBuilder(){
   }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-soft)">No heats derived yet.</td></tr>';
 }
 
-// Render plant-based gantt modal (BF, SMS, RM split)
-function renderPlantGantt(scheduleRows, title = 'Timeline'){
-  if(!scheduleRows || !scheduleRows.length) return '<div style="padding:1rem;text-align:center;color:var(--text-soft)">No schedule data yet. Run simulation first.</div>';
+// World-class SO gantt - consolidated plant flow view
+function renderSOGantt(scheduleRows, soId){
+  if(!scheduleRows || !scheduleRows.length) return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No schedule data available.</div>';
 
-  // Group by plant and get time bounds
-  const byPlant = {};
+  // Filter to only this SO's operations
+  const soRows = scheduleRows.filter(r => r.Campaign && r.Campaign.includes(soId || ''));
+  if(!soRows.length) return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No operations for this SO.</div>';
+
+  // Get time bounds and operations per plant
   let minTime = Infinity, maxTime = -Infinity;
-  const plants = ['BF', 'SMS', 'RM']; // Standard plant order
+  const byPlant = {};
 
-  scheduleRows.forEach(row => {
-    const plant = row.Plant || 'BF'; // Default to BF if not specified
+  soRows.forEach(row => {
+    const plant = row.Plant || 'SMS';
     if(!byPlant[plant]) byPlant[plant] = [];
     byPlant[plant].push(row);
 
@@ -2550,57 +2553,138 @@ function renderPlantGantt(scheduleRows, title = 'Timeline'){
     if(!isNaN(end)) maxTime = Math.max(maxTime, end.getTime());
   });
 
-  if(minTime === Infinity || maxTime === -Infinity) return '<div style="padding:1rem;color:var(--text-soft)">Invalid schedule data.</div>';
+  if(minTime === Infinity || maxTime === -Infinity) return '<div style="padding:1rem;color:var(--text-soft)">Invalid time data.</div>';
 
-  const span = maxTime - minTime || 1;
-  const plantsToShow = plants.filter(p => byPlant[p]);
+  const span = maxTime - minTime || 86400000;
+  const plantOrder = ['BF', 'SMS', 'RM'];
+  const plants = plantOrder.filter(p => byPlant[p]);
+  const plantColor = {BF: '#3b82f6', SMS: '#f97316', RM: '#8b5cf6'};
 
-  let html = `<div style="border:1px solid var(--border);border-radius:.3rem;overflow:hidden;font-size:.75rem;background:var(--panel)">`;
+  // Build timeline grid - show 12-hour intervals
+  const hours = span / 3600000;
+  const intervals = Math.ceil(hours / 12) + 1;
+  const gridWidth = 80; // pixels per 12-hour interval
+  const totalWidth = gridWidth * intervals;
 
-  plantsToShow.forEach(plant => {
-    const jobs = byPlant[plant];
-    const plantColor = plant === 'BF' ? '#3b82f6' : plant === 'SMS' ? '#f97316' : '#8b5cf6';
-
-    html += `<div style="border-bottom:1px solid var(--border-soft)">
-      <div style="padding:.4rem .6rem;background:var(--panel-soft);font-weight:600;color:${plantColor}">${plant}</div>
-      <div style="padding:.3rem .6rem">`;
-
-    jobs.forEach(job => {
-      const jStart = new Date(job.Planned_Start);
-      const jEnd = new Date(job.Planned_End);
-      if(!isNaN(jStart) && !isNaN(jEnd)){
-        const left = Math.max(0, (jStart.getTime() - minTime) / span * 100);
-        const width = Math.max(1, (jEnd.getTime() - jStart.getTime()) / span * 100);
-        const duration = num(job.Duration_Hrs || 0).toFixed(1);
-
-        html += `<div style="display:flex;gap:.4rem;margin-bottom:.3rem;align-items:center">
-          <div style="width:3.5rem;font-size:.7rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml((job.Job_ID||'').substring(0,10))}</div>
-          <div style="flex:1;height:1rem;background:var(--border);border-radius:.15rem;position:relative;min-width:100px">
-            <div style="position:absolute;left:${left.toFixed(1)}%;width:${Math.min(width, 100-left).toFixed(1)}%;top:0;bottom:0;background:${plantColor};opacity:.7;border-radius:.15rem" title="${job.Campaign} | ${duration}h"></div>
+  let html = `
+    <div style="display:flex;flex-direction:column;gap:1rem">
+      <!-- Timeline Gantt -->
+      <div style="overflow-x:auto;border:1px solid var(--border);border-radius:.3rem;background:var(--panel)">
+        <!-- Header with time labels -->
+        <div style="display:flex;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--panel)">
+          <div style="width:6rem;flex-shrink:0;padding:.5rem .4rem;font-weight:600;border-right:1px solid var(--border);font-size:.75rem">Plant</div>
+          <div style="display:flex;width:${totalWidth}px">
+            ${Array.from({length: intervals}, (_, i) => {
+              const time = new Date(minTime + i * 12 * 3600000);
+              return `<div style="width:${gridWidth}px;padding:.4rem .3rem;text-align:center;font-size:.7rem;border-right:1px solid var(--border-soft);color:var(--text-soft);white-space:nowrap">${fmtDateTime(time).substring(11,16)}</div>`;
+            }).join('')}
           </div>
-          <div style="width:2.5rem;text-align:right;font-size:.7rem;color:var(--text-soft)">${duration}h</div>
-        </div>`;
-      }
-    });
+        </div>
 
-    html += `</div></div>`;
-  });
+        <!-- Plant rows with operations -->
+        ${plants.map(plant => {
+          const ops = byPlant[plant];
+          const plantStart = Math.min(...ops.map(o => new Date(o.Planned_Start).getTime()));
+          const plantEnd = Math.max(...ops.map(o => new Date(o.Planned_End).getTime()));
+          const totalHours = ops.reduce((sum, o) => sum + (num(o.Duration_Hrs) || 0), 0);
 
-  html += `</div>`;
+          return `
+            <div style="display:flex;border-bottom:1px solid var(--border-soft)">
+              <div style="width:6rem;flex-shrink:0;padding:.8rem .4rem;font-weight:600;border-right:1px solid var(--border);color:${plantColor[plant]};font-size:.85rem">${plant}</div>
+              <div style="position:relative;width:${totalWidth}px;height:3rem;display:flex;align-items:center">
+                <!-- Grid lines -->
+                ${Array.from({length: intervals}, (_, i) => `<div style="position:absolute;left:${i*gridWidth}px;width:${gridWidth}px;height:100%;border-right:1px solid var(--border-soft);opacity:.15"></div>`).join('')}
+
+                <!-- Operation segments -->
+                ${ops.map(op => {
+                  const opStart = new Date(op.Planned_Start).getTime();
+                  const opEnd = new Date(op.Planned_End).getTime();
+                  const opLeft = Math.max(0, (opStart - minTime) / span * 100);
+                  const opWidth = Math.max(1.5, (opEnd - opStart) / span * 100);
+                  const dur = num(op.Duration_Hrs || 0).toFixed(0);
+                  const res = (op.Resource_ID || '').substring(0, 8);
+
+                  return `
+                    <div style="position:absolute;left:${opLeft}%;width:${opWidth}%;top:.4rem;bottom:.4rem;background:${plantColor[plant]};opacity:.8;border-radius:.3rem;border:1px solid ${plantColor[plant]};display:flex;align-items:center;justify-content:center;padding:0 .4rem" title="${res} | ${dur}h">
+                      <span style="font-size:.7rem;color:#fff;font-weight:600;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.3)">${dur}h</span>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+
+      <!-- Legend & Stats -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+        <!-- Legend -->
+        <div style="display:flex;gap:1.2rem;font-size:.75rem;flex-wrap:wrap">
+          ${plants.map(p => `
+            <div style="display:flex;gap:.4rem;align-items:center">
+              <div style="width:0.8rem;height:0.8rem;background:${plantColor[p]};border-radius:.15rem"></div>
+              <span>${p}</span>
+            </div>
+          `).join('')}
+        </div>
+
+        <!-- Key Metrics -->
+        <div style="display:flex;gap:1rem;font-size:.75rem;flex-wrap:wrap;justify-content:flex-end">
+          <div><span style="color:var(--text-soft)">Start:</span> <strong>${fmtDateTime(minTime).substring(0, 16)}</strong></div>
+          <div><span style="color:var(--text-soft)">End:</span> <strong>${fmtDateTime(maxTime).substring(0, 16)}</strong></div>
+          <div><span style="color:var(--text-soft)">Duration:</span> <strong>${(span / 3600000).toFixed(1)}h</strong></div>
+        </div>
+      </div>
+
+      <!-- Plant details table -->
+      <div style="border:1px solid var(--border);border-radius:.3rem;overflow:hidden">
+        <table class="table" style="margin:0;font-size:.75rem">
+          <thead>
+            <tr style="background:var(--panel-soft)">
+              <th>Plant</th><th>Operations</th><th>Total Hours</th><th>Start Time</th><th>End Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${plants.map(plant => {
+              const ops = byPlant[plant];
+              const pStart = Math.min(...ops.map(o => new Date(o.Planned_Start).getTime()));
+              const pEnd = Math.max(...ops.map(o => new Date(o.Planned_End).getTime()));
+              const totalHours = ops.reduce((sum, o) => sum + (num(o.Duration_Hrs) || 0), 0);
+              return `
+                <tr>
+                  <td style="color:${plantColor[plant]};font-weight:600">${plant}</td>
+                  <td>${ops.length}</td>
+                  <td><strong>${totalHours.toFixed(1)}h</strong></td>
+                  <td>${fmtDateTime(pStart).substring(0, 16)}</td>
+                  <td>${fmtDateTime(pEnd).substring(0, 16)}</td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+
   return html;
 }
 
 // Show gantt modal for SO/PO/Heat
-function showGanttModal(title, scheduleRows){
+function showGanttModal(title, scheduleRows, soId = null){
   const modal = document.createElement('div');
-  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:9999';
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem';
+
+  // Use SO gantt if title contains "SO" or has soId
+  const useSOGantt = soId || title.includes('SO');
+  const ganttContent = useSOGantt ? renderSOGantt(scheduleRows, soId) : renderPlantGantt(scheduleRows, title);
+
   modal.innerHTML = `
-    <div style="background:var(--page-bg);border:1px solid var(--border);border-radius:.5rem;box-shadow:0 20px 25px rgba(0,0,0,.15);max-width:90%;max-height:80vh;overflow:auto;padding:1.5rem;width:800px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-        <h3 style="margin:0;font-size:1rem">${escapeHtml(title)}</h3>
-        <button onclick="this.closest('div').parentElement.remove()" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:var(--text-soft)">✕</button>
+    <div style="background:var(--page-bg);border:1px solid var(--border);border-radius:.5rem;box-shadow:0 20px 25px rgba(0,0,0,.25);max-width:95%;max-height:90vh;overflow:auto;padding:1.5rem;width:1200px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;gap:1rem">
+        <h3 style="margin:0;font-size:1.1rem;font-weight:600">${escapeHtml(title)}</h3>
+        <button onclick="this.closest('div').parentElement.remove()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-soft);flex-shrink:0">✕</button>
       </div>
-      ${renderPlantGantt(scheduleRows, title)}
+      ${ganttContent}
     </div>
   `;
   document.body.appendChild(modal);
