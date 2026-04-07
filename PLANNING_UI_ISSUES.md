@@ -172,8 +172,8 @@ Plan says feasible but SMS is over 100%! When this IS infeasible, planner has NO
 | Byproduct as SHORT | ✅ FIXED | CRITICAL | Logic |
 | KPI calculation | ✅ FIXED | HIGH | Logic |
 | FG in Heat planning | 🟡 PARTIAL | CRITICAL | Design |
-| **Gantt in Planning Tab** | ⏳ PENDING | **CRITICAL** | **UX/Workflow** |
-| **Checkbox Sizing** | ⏳ PENDING | HIGH | UX |
+| **Gantt in Planning Tab** | 🟡 PARTIAL | **CRITICAL** | **UX/Workflow** |
+| **Checkbox Sizing** | ✅ FIXED | HIGH | UX |
 | Infeasible plan controls | ⏳ PENDING | **CRITICAL** | UX |
 | Heat table material display | ⏳ PENDING | MEDIUM | Design |
 | Ready band purpose | ⏳ PENDING | LOW | UX |
@@ -186,34 +186,47 @@ Plan says feasible but SMS is over 100%! When this IS infeasible, planner has NO
 
 ### High Priority (CRITICAL)
 
-**6. Gantt Visualization in Planning Tab** (CRITICAL - planning blind spot)
-Currently gantt is hidden in Execution tab behind "Run Schedule" button. Planner cannot see capacity/scheduling impact DURING planning.
+**6. Gantt Visualization in Planning Tab** (CRITICAL - planning visibility)
 
-**Problem:**
-```
-Current flow: SO → PO → Heat → [go to Execution tab] → [click Run Schedule] → [see Gantt]
-What planner sees: Nothing about scheduling during planning
-```
+**PARTIAL IMPLEMENTATION (Commit 4e9d9db):**
 
-**What Needs to Happen:**
-- [ ] Show SO-level Gantt in Planning tab (which resources each SO needs, when)
-- [ ] Show PO-level Gantt (consolidated, which resources grouped PO needs)
-- [ ] Show Heat-level Gantt (final view, exact heat sequence and resource allocation)
-- [ ] Integrate with feasibility check (if plan is INFEASIBLE, show why on gantt - which resource is bottleneck)
-- [ ] Allow planner to adjust PO/Heat sequence WITHOUT going to Execution
-- [ ] Show impact visually - red bars for overload, green for OK
-- [ ] Make gantt PART of Planning workflow, not separate from it
+✅ **DONE:**
+- [x] Resource-based Gantt NOW INTEGRATED into Feasibility Check stage (Stage 4)
+- [x] Shows timeline with operation bars color-coded by type (SMS=blue, EAF=orange, RM=purple, other=gray)
+- [x] Displays total hours per resource with load indicators:
+      * Green = normal load (≤120h)
+      * Yellow = warning load (120-160h)
+      * Red = over capacity (>160h)
+- [x] Gantt appears during Simulate and when re-simulating with remediation options
+- [x] Planner can see bottleneck resources at-a-glance without going to Execution tab
+- [x] Integrated with both `simulateSchedule()` and `remSimulate()` functions
 
-**Impact:** Planner can make informed decisions about PO grouping/heat sizing based on ACTUAL capacity, not guesses.
+**REMAINING (Future Enhancements):**
+- [ ] Show SO-level Gantt breakdown (when entering Planning tab, show preliminary schedule)
+- [ ] Show per-PO detailed gantt (after POs proposed, before heat derivation)
+- [ ] Add interactive gantt with drag-to-reorder capabilities
+- [ ] Allow planner to adjust PO sequence directly in gantt view
+- [ ] Show impact preview when adjusting parameters
+- [ ] Full heat-by-heat timeline view in Planning tab
+
+**Impact:** ✓ Planner now sees capacity impact during planning (not hidden in Execution tab). Can identify bottlenecks before committing to schedule.
 
 ---
 
-**7. Checkbox Sizing** (UX - consistency)
-Checkboxes in Planning tab SO/PO tables are tiny; checkboxes in Release Grid are properly sized.
+**7. Checkbox Sizing** (UX - consistency) ✅ FIXED (Commit 4e9d9db)
 
-**What Needs to Happen:**
-- [ ] Make Planning tab checkboxes match Release Grid size (larger, easier to click)
-- [ ] Ensure consistent checkbox styling across all tables
+**Problem:** Checkboxes in Planning tab (pool SO table, PO table) were tiny (browser default ~16px); Release Grid had properly sized checkboxes (1.2rem = 19.2px).
+
+**Solution Applied:**
+- [x] Added inline styling `width:1.2rem;height:1.2rem;cursor:pointer` to ALL Planning tab checkboxes:
+      * Pool SO header select-all checkbox
+      * Individual SO row checkboxes in pool table
+      * PO header select-all checkbox
+      * Individual PO row checkboxes
+      * Nested PO-SO split checkboxes (when expanding a PO)
+      * Nested select-all for PO detail SOs
+- [x] Checkbox styling now consistent across all tables (Planning + Release Grid)
+- [x] Larger target makes interaction easier on touch and mouse
 
 ---
 
