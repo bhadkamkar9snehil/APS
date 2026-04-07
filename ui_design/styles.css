@@ -856,7 +856,7 @@ textarea {
 .table {
   width: 100%;
   border-collapse: collapse;
-  table-layout: fixed
+  table-layout: auto
 }
 
 .table th {
@@ -865,16 +865,17 @@ textarea {
   letter-spacing: .08em;
   color: var(--text-faint);
   text-align: left;
-  padding: .64rem .78rem;
+  padding: .4rem .5rem;
   background: #fbfcfe;
-  border-bottom: 1px solid var(--border)
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap
 }
 
 .table td {
-  padding: .72rem .78rem;
+  padding: .4rem .5rem;
   border-bottom: 1px solid var(--border-soft);
-  font-size: .77rem;
-  vertical-align: top;
+  font-size: .75rem;
+  vertical-align: middle;
   word-break: break-word;
   overflow-wrap: break-word
 }
