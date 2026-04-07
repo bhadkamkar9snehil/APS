@@ -2553,6 +2553,93 @@ function renderHeatBuilder(){
   }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-soft)">No heats derived yet.</td></tr>';
 }
 
+// SO Due Date Gantt - based on due dates (no schedule simulation needed)
+function renderSODueGantt(soList){
+  if(!soList || !soList.length) return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No SOs selected.</div>';
+
+  let minTime = Infinity, maxTime = -Infinity;
+  const bySO = {};
+  const plantColor = {BF: '#3b82f6', SMS: '#f97316', RM: '#8b5cf6'};
+
+  soList.forEach(so => {
+    const soId = so.so_id;
+    const dueDate = new Date(so.due_date);
+
+    if(isNaN(dueDate)) return;
+
+    if(!bySO[soId]) bySO[soId] = so;
+
+    minTime = Math.min(minTime, dueDate.getTime());
+    maxTime = Math.max(maxTime, dueDate.getTime());
+  });
+
+  if(minTime === Infinity || Object.keys(bySO).length === 0)
+    return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No valid due dates.</div>';
+
+  // Extend range 3 days before earliest and 7 days after latest
+  minTime -= 3 * 86400000;
+  maxTime += 7 * 86400000;
+
+  const span = maxTime - minTime || 86400000;
+  const soIds = Object.keys(bySO).sort();
+  const dayWidth = 120;
+  const totalDays = Math.ceil(span / 86400000);
+  const ganttWidth = dayWidth * (totalDays + 1);
+
+  const dateLabels = [];
+  for(let i = 0; i <= totalDays; i++){
+    const d = new Date(minTime + i * 86400000);
+    dateLabels.push(d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}));
+  }
+
+  let html = `
+    <div style="border:1px solid var(--border);border-radius:.3rem;overflow:hidden;background:var(--panel);font-size:.75rem">
+      <!-- Header -->
+      <div style="display:flex;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--panel);z-index:10">
+        <div style="width:9rem;flex-shrink:0;padding:.5rem;font-weight:600;border-right:1px solid var(--border)">SO | Due Date</div>
+        <div style="display:flex;width:${ganttWidth}px">
+          ${dateLabels.map(d => `<div style="width:${dayWidth}px;padding:.3rem;text-align:center;font-size:.7rem;border-right:1px solid var(--border-soft);color:var(--text-soft)">${d}</div>`).join('')}
+        </div>
+      </div>
+
+      <!-- SO rows by priority -->
+      ${['URGENT', 'HIGH', 'NORMAL'].map(priority => {
+        const sosInPriority = soIds.filter(soId => bySO[soId].priority === priority);
+        if(sosInPriority.length === 0) return '';
+
+        const priorityColor = priority === 'URGENT' ? '#ef4444' : priority === 'HIGH' ? '#f59e0b' : '#3b82f6';
+
+        return `
+          <div style="border-bottom:1px solid var(--border)">
+            <div style="padding:.4rem;background:${priorityColor};color:#fff;font-weight:600;font-size:.8rem">${priority}</div>
+            ${sosInPriority.map(soId => {
+              const so = bySO[soId];
+              const dueDate = new Date(so.due_date).getTime();
+              const dueLeft = Math.max(0, (dueDate - minTime) / span * 100);
+              const qty = num(so.qty_mt || 0).toFixed(0);
+
+              return `
+                <div style="display:flex;border-bottom:1px solid var(--border-soft);align-items:center">
+                  <div style="width:9rem;flex-shrink:0;padding:.5rem;border-right:1px solid var(--border)">
+                    <div style="font-weight:600;font-size:.8rem">${soId}</div>
+                    <div style="font-size:.7rem;color:var(--text-soft);margin-top:.15rem">${qty}MT</div>
+                  </div>
+                  <div style="position:relative;width:${ganttWidth}px;height:2.2rem">
+                    ${dateLabels.map((d,i) => `<div style="position:absolute;left:${i*dayWidth}px;width:${dayWidth}px;height:100%;border-right:1px solid var(--border-soft);opacity:.1"></div>`).join('')}
+                    <div style="position:absolute;left:${dueLeft}%;width:2.5rem;top:.5rem;bottom:.5rem;background:${priorityColor};opacity:.85;border-radius:.2rem;border:2px solid ${priorityColor};display:flex;align-items:center;justify-content:center;font-size:.65rem;color:#fff;font-weight:700;white-space:nowrap;padding:0 .2rem" title="${so.due_date}">DUE</div>
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  return html;
+}
+
 // SO Gantt - clean, minimal: SO ID | Plant | Timeline bars
 function renderSOGantt(scheduleRows){
   if(!scheduleRows || !scheduleRows.length) return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No schedule data.</div>';
@@ -2832,22 +2919,27 @@ function renderEquipmentGantt(scheduleRows){
 
 // Show gantt for selected SOs in pool
 function showPoolSOGantt(){
-  if(!state.lastScheduleRows || !state.lastScheduleRows.length){
-    alert('Run Feasibility Check first (click Simulate button in Stage 4)');
+  // Show gantt based on SO due dates (no schedule simulation needed)
+  const checkedSoIds = [...document.querySelectorAll('.pool-so-check:checked')].map(el => el.dataset.so);
+  if (!checkedSoIds.length) {
+    alert('Select at least one SO to view gantt');
     return;
   }
-  showGanttModal('Sales Orders - Production Timeline', state.lastScheduleRows, 'so');
+
+  const selectedSOs = (state.poolOrders || []).filter(so => checkedSoIds.includes(so.so_id));
+  showGanttModal('Sales Orders - Due Date Timeline', selectedSOs, 'so-due');
 }
 
 // Show gantt modal - different types
-function showGanttModal(title, scheduleRows, type = 'so'){
+function showGanttModal(title, data, type = 'so'){
   const modal = document.createElement('div');
   modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem';
 
   let ganttContent = '';
-  if(type === 'so') ganttContent = renderSOGantt(scheduleRows);
-  else if(type === 'po') ganttContent = renderPOGantt(scheduleRows);
-  else if(type === 'heat') ganttContent = renderEquipmentGantt(scheduleRows);
+  if(type === 'so') ganttContent = renderSOGantt(data);
+  else if(type === 'so-due') ganttContent = renderSODueGantt(data);
+  else if(type === 'po') ganttContent = renderPOGantt(data);
+  else if(type === 'heat') ganttContent = renderEquipmentGantt(data);
 
   const content = document.createElement('div');
   content.style.cssText = 'background:var(--page-bg);border:1px solid var(--border);border-radius:.5rem;box-shadow:0 20px 25px rgba(0,0,0,.35);max-width:95%;max-height:90vh;overflow:auto;padding:1.5rem;width:1200px';
