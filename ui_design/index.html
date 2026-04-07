@@ -405,7 +405,7 @@
             <div style="padding:.6rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;gap:.5rem">
               <div style="font-weight:600;font-size:.85rem" id="materialCheckTitle">Material Requirements</div>
               <div style="display:flex;gap:.3rem;align-items:center">
-                <button class="btn ghost" style="font-size:.7rem;padding:.2rem .5rem;height:1.5rem;white-space:nowrap" onclick="nav('bom')">Full BOM →</button>
+                <button class="btn ghost" style="font-size:.7rem;padding:.2rem .5rem;height:1.5rem;white-space:nowrap" data-page-link="bom">Full BOM →</button>
                 <button class="btn ghost" style="font-size:.75rem;padding:.2rem .4rem;height:1.5rem" onclick="closeMaterialPanel()">✕</button>
               </div>
             </div>
@@ -2257,11 +2257,7 @@ function renderPlanningOrderPool() {
       <td>${so.section_mm ? `${so.section_mm}mm` : '—'}</td>
       <td>${num(so.qty_mt).toFixed(0)}</td>
       <td>${fmtDate(so.due_date)}</td>
-      <td>
-        <span class="badge ${so.priority === 'URGENT' ? 'red' : so.priority === 'HIGH' ? 'amber' : 'blue'}">
-          ${escapeHtml(so.priority)}
-        </span>
-      </td>
+      <td><span class="badge ${so.priority === 'URGENT' ? 'red' : so.priority === 'HIGH' ? 'amber' : 'blue'}" style="white-space:nowrap">${escapeHtml(so.priority)}</span></td>
       <td>${escapeHtml(so.status)}</td>
       <td><button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.8rem;white-space:nowrap" onclick="checkMaterialForSO('${escapeHtml(so.so_id)}')">Material</button></td>
     </tr>
