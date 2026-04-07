@@ -950,9 +950,17 @@ async function runFullPipeline(){
   const btn = qs('pipelineRunBtn');
   btn.textContent = '⏳ Running…';
   btn.disabled = true;
+
+  // Update top badge
   qs('pipelineStatusBadge').style.background = '#dbeafe';
   qs('pipelineStatusBadge').style.color = '#2563eb';
   qs('pipelineStatusBadge').textContent = 'Running…';
+
+  // Update bottom status bar
+  const statusBar = qs('pipelineStatusBar');
+  statusBar.style.background = '#dbeafe';
+  statusBar.style.color = '#2563eb';
+  setText('pipelineStatusText', '⏳ Pipeline running...');
 
   try {
     // Stage 1 - select window
@@ -971,20 +979,32 @@ async function runFullPipeline(){
     // Stage 4 - simulate
     setPipelineStageStatus('ps-schedule', 'running');
     stageExpand('ps-schedule');
-    await simulateSchedule();
+    await simulateWithConfig();
 
     // Stage 5 - load release
     setPipelineStageStatus('ps-release', 'running');
     stageExpand('ps-release');
     await loadReleaseBoard();
 
+    // SUCCESS - Update both top badge and bottom status bar
     qs('pipelineStatusBadge').style.background = '#dcfce7';
     qs('pipelineStatusBadge').style.color = '#16a34a';
     qs('pipelineStatusBadge').textContent = 'Complete';
+
+    statusBar.style.background = '#dcfce7';
+    statusBar.style.color = '#16a34a';
+    setText('pipelineStatusText', '✓ Pipeline complete - ready to release');
+
   } catch(e) {
+    // ERROR - Update both top badge and bottom status bar
     qs('pipelineStatusBadge').style.background = '#fee2e2';
     qs('pipelineStatusBadge').style.color = '#dc2626';
     qs('pipelineStatusBadge').textContent = 'Error';
+
+    statusBar.style.background = '#fee2e2';
+    statusBar.style.color = '#dc2626';
+    setText('pipelineStatusText', '✗ Pipeline error - ' + (e.message || 'unknown error'));
+
     console.error('Pipeline error:', e);
   }
 
