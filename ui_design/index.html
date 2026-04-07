@@ -313,13 +313,79 @@
             </div>
             <div class="ps-body collapsed" id="ps-schedule-body">
               <div class="ps-body-inner">
+                <!-- SIMULATION CONFIGURATION PANEL (before simulate) -->
+                <div id="simConfigPanel" style="background:#f0f9ff;border:1px solid #bfdbfe;border-radius:.4rem;padding:1rem;margin-bottom:1rem">
+                  <div style="font-weight:600;font-size:.85rem;color:#1e40af;margin-bottom:.8rem">⚙️ Simulation Configuration</div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.8rem;margin-bottom:.8rem">
+                    <!-- Planning Horizon -->
+                    <div>
+                      <label style="display:block;font-size:.75rem;font-weight:600;color:var(--text-soft);margin-bottom:.3rem">Planning Horizon (days)</label>
+                      <select class="sel" id="simHorizonDays" style="width:100%;font-size:.8rem">
+                        <option value="7">7 days</option>
+                        <option value="14">14 days</option>
+                        <option value="21">21 days</option>
+                        <option value="30">30 days</option>
+                      </select>
+                      <div style="font-size:.65rem;color:var(--text-faint);margin-top:.2rem">Default: <span id="configHorizonDefault">—</span> days</div>
+                    </div>
+                    <!-- Heat Size -->
+                    <div>
+                      <label style="display:block;font-size:.75rem;font-weight:600;color:var(--text-soft);margin-bottom:.3rem">Heat Size (MT)</label>
+                      <input type="number" class="inp" id="simHeatSizeMt" style="width:100%;font-size:.8rem" min="10" max="300" step="5">
+                      <div style="font-size:.65rem;color:var(--text-faint);margin-top:.2rem">Default: <span id="configHeatDefault">—</span> MT</div>
+                    </div>
+                    <!-- Priority Filter -->
+                    <div>
+                      <label style="display:block;font-size:.75rem;font-weight:600;color:var(--text-soft);margin-bottom:.3rem">Priority Filter</label>
+                      <select class="sel" id="simPriorityFilter" style="width:100%;font-size:.8rem">
+                        <option value="">All priorities</option>
+                        <option value="URGENT+HIGH">URGENT + HIGH only</option>
+                        <option value="URGENT">URGENT only</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-bottom:.8rem">
+                    <!-- SMS Lines -->
+                    <div>
+                      <label style="display:block;font-size:.75rem;font-weight:600;color:var(--text-soft);margin-bottom:.3rem">SMS Lines Available</label>
+                      <select class="sel" id="simSmsLines" style="width:100%;font-size:.8rem">
+                        <option value="1">1 line (baseline)</option>
+                        <option value="2">2 lines (parallel)</option>
+                        <option value="3">3 lines (parallel)</option>
+                      </select>
+                      <div style="font-size:.65rem;color:var(--text-faint);margin-top:.2rem">How many steelmaking furnaces available</div>
+                    </div>
+                    <!-- RM Lines -->
+                    <div>
+                      <label style="display:block;font-size:.75rem;font-weight:600;color:var(--text-soft);margin-bottom:.3rem">RM Lines Available</label>
+                      <select class="sel" id="simRmLines" style="width:100%;font-size:.8rem">
+                        <option value="1">1 line (baseline)</option>
+                        <option value="2">2 lines (parallel)</option>
+                        <option value="3">3 lines (parallel)</option>
+                      </select>
+                      <div style="font-size:.65rem;color:var(--text-faint);margin-top:.2rem">How many rolling mill lines available</div>
+                    </div>
+                  </div>
+                  <div style="background:rgba(30,58,138,.05);border-left:3px solid #1e40af;padding:.6rem;border-radius:.2rem;margin-bottom:.8rem;font-size:.75rem">
+                    <div style="font-weight:600;color:#1e40af;margin-bottom:.3rem">What gets simulated:</div>
+                    <div style="color:var(--text);line-height:1.4">
+                      ✓ All derived heats within the priority filter<br>
+                      ✓ Scheduled across SMS and RM lines with changeovers<br>
+                      ✓ Resource availability constraints checked<br>
+                      ✓ Result: FEASIBLE (fits in horizon) or INFEASIBLE (over capacity)
+                    </div>
+                  </div>
+                  <button class="btn primary" style="width:100%;font-size:.8rem;padding:.5rem" onclick="simulateWithConfig()">▶ Run Simulation</button>
+                </div>
+
+                <!-- SIMULATION RESULTS (shown after simulate) -->
                 <div class="grid-4" style="margin-bottom:.75rem">
                   <div class="metric"><div class="metric-label">Feasible</div><div class="metric-value" id="scheduleFeasible">—</div></div>
                   <div class="metric"><div class="metric-label">Total duration</div><div class="metric-value" id="scheduleDuration">—</div></div>
                   <div class="metric"><div class="metric-label">SMS hours</div><div class="metric-value" id="scheduleSmsHours">—</div></div>
                   <div class="metric"><div class="metric-label">RM hours</div><div class="metric-value" id="scheduleRmHours">—</div></div>
                 </div>
-                <div id="schedulerContent" style="color:var(--text-soft);text-align:center;font-size:.9rem;padding:.75rem;border:1px solid var(--border);border-radius:.3rem">Run simulation to see feasibility and timing.</div>
+                <div id="schedulerContent" style="color:var(--text-soft);text-align:center;font-size:.9rem;padding:.75rem;border:1px solid var(--border);border-radius:.3rem;display:none"></div>
                 <!-- Remediation panel - shown only when infeasible -->
                 <div id="remediationPanel" style="display:none;margin-top:.75rem;background:#fff7ed;border:1px solid #fed7aa;border-radius:.4rem;padding:.75rem">
                   <div style="font-weight:600;font-size:.82rem;color:#92400e;margin-bottom:.6rem">&#9888; Schedule infeasible — planner options:</div>
@@ -726,7 +792,24 @@ const state = {
   campFilter:'all', horizon: 14,
   // Planning workflow state
   poolOrders:[], windowSOs:[], planningOrders:[], heatBatches:[],
-  planningWindow: 7
+  planningWindow: 7,
+  // Configuration from Excel
+  config: {
+    horizon_days: 7,
+    heat_size_mt: 50,
+    section_tolerance_mm: 0.6,
+    max_lot_mt: 300,
+    max_heats_per_lot: 8,
+    max_due_spread_days: 3
+  },
+  // Simulation parameters (user-configurable before simulate)
+  simConfig: {
+    horizon_days: 7,
+    heat_size_mt: 50,
+    priority_filter: '',
+    sms_lines: 1,
+    rm_lines: 1
+  }
 };
 
 function qs(id){ return document.getElementById(id); }
@@ -2213,6 +2296,61 @@ document.querySelectorAll('[data-camp-filter]').forEach(btn=>btn.addEventListene
 
 // ===== APS PLANNING WORKFLOW FUNCTIONS =====
 
+async function loadConfig(){
+  try {
+    const data = await apiFetch('/api/aps/masterdata/config');
+    const configData = data.config || {};
+
+    // Map API response to state.config
+    state.config = {
+      horizon_days: num(configData.APS_PLANNING_HORIZON_DAYS, 7),
+      heat_size_mt: num(configData.HEAT_SIZE_MT, 50),
+      section_tolerance_mm: num(configData.APS_SECTION_TOLERANCE_MM, 0.6),
+      max_lot_mt: num(configData.APS_MAX_LOT_MT, 300),
+      max_heats_per_lot: num(configData.APS_MAX_HEATS_PER_LOT, 8),
+      max_due_spread_days: num(configData.APS_MAX_DUE_SPREAD_DAYS, 3)
+    };
+
+    // Initialize simulation config with defaults from APS config
+    state.simConfig = {
+      horizon_days: state.config.horizon_days,
+      heat_size_mt: state.config.heat_size_mt,
+      priority_filter: '',
+      sms_lines: 1,
+      rm_lines: 1
+    };
+
+    // Update UI with loaded config defaults
+    initializeSimulationPanel();
+
+  } catch(e) {
+    console.warn('Failed to load config, using defaults:', e);
+    // State already has defaults
+    initializeSimulationPanel();
+  }
+}
+
+function initializeSimulationPanel(){
+  // Set simulation config panel with defaults from loaded config
+  const horizonSelect = qs('simHorizonDays');
+  if(horizonSelect) {
+    horizonSelect.value = state.config.horizon_days;
+  }
+
+  const heatSizeInput = qs('simHeatSizeMt');
+  if(heatSizeInput) {
+    heatSizeInput.value = state.config.heat_size_mt;
+  }
+
+  // Show default values
+  setText('configHorizonDefault', state.config.horizon_days);
+  setText('configHeatDefault', state.config.heat_size_mt);
+
+  // Also update the heat size in Stage 3
+  const heatStageinput = qs('heatSizeMt');
+  if(heatStageinput) heatStageinput.value = state.config.heat_size_mt;
+}
+
 async function loadPlanningOrderPool(){
   try {
     setPipelineStageStatus('ps-pool', 'running', 'Loading order pool…');
@@ -2930,10 +3068,10 @@ function showPoolSOGantt(){
   showGanttModal('Sales Orders - Due Date Timeline', selectedSOs, 'so-due');
 }
 
-// Show gantt modal - different types
+// Show gantt modal - clean large panel (not cramped overlay)
 function showGanttModal(title, data, type = 'so'){
   const modal = document.createElement('div');
-  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1rem';
+  modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;z-index:9999;padding:.5rem';
 
   let ganttContent = '';
   if(type === 'so') ganttContent = renderSOGantt(data);
@@ -2942,13 +3080,15 @@ function showGanttModal(title, data, type = 'so'){
   else if(type === 'heat') ganttContent = renderEquipmentGantt(data);
 
   const content = document.createElement('div');
-  content.style.cssText = 'background:var(--page-bg);border:1px solid var(--border);border-radius:.5rem;box-shadow:0 20px 25px rgba(0,0,0,.35);max-width:95%;max-height:90vh;overflow:auto;padding:1.5rem;width:1200px';
+  content.style.cssText = 'background:var(--page-bg);border:1px solid var(--border);border-radius:.4rem;box-shadow:0 10px 40px rgba(0,0,0,.2);width:95%;height:92vh;overflow:auto;padding:1.25rem;display:flex;flex-direction:column';
   content.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-      <h3 style="margin:0;font-size:1.1rem;font-weight:600">${escapeHtml(title)}</h3>
-      <button style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-soft);flex-shrink:0;padding:0">✕</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-shrink:0;border-bottom:1px solid var(--border);padding-bottom:.8rem">
+      <h3 style="margin:0;font-size:1rem;font-weight:600">${escapeHtml(title)}</h3>
+      <button style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-soft);flex-shrink:0;padding:0;width:2rem;height:2rem;display:flex;align-items:center;justify-content:center">✕</button>
     </div>
-    ${ganttContent}
+    <div style="flex:1;overflow:auto;min-height:0">
+      ${ganttContent}
+    </div>
   `;
 
   const closeBtn = content.querySelector('button');
@@ -2962,7 +3102,22 @@ function showGanttModal(title, data, type = 'so'){
   });
 }
 
-async function simulateSchedule(){
+function simulateWithConfig(){
+  // Read configuration panel values
+  state.simConfig.horizon_days = Number(qs('simHorizonDays')?.value || state.config.horizon_days);
+  state.simConfig.heat_size_mt = Number(qs('simHeatSizeMt')?.value || state.config.heat_size_mt);
+  state.simConfig.priority_filter = qs('simPriorityFilter')?.value || '';
+  state.simConfig.sms_lines = Number(qs('simSmsLines')?.value || 1);
+  state.simConfig.rm_lines = Number(qs('simRmLines')?.value || 1);
+
+  // Hide config panel, show results
+  qs('simConfigPanel').style.display = 'none';
+  qs('schedulerContent').style.display = '';
+
+  simulateSchedule(state.simConfig);
+}
+
+async function simulateSchedule(config = {}){
   if(!state.heatBatches || !state.heatBatches.length){
     alert('Derive heats first (Stage 3).');
     return;
@@ -2971,9 +3126,18 @@ async function simulateSchedule(){
   try {
     setPipelineStageStatus('ps-schedule', 'running', 'Simulating…');
     setText('schedulerSimulateBtn', 'Simulating…');
+
+    const simParams = {
+      heat_batches: state.heatBatches,
+      horizon_hours: (config.horizon_days || state.simConfig.horizon_days) * 24,
+      sms_lines: config.sms_lines || state.simConfig.sms_lines || 1,
+      rm_lines: config.rm_lines || state.simConfig.rm_lines || 1,
+      priority_filter: config.priority_filter || state.simConfig.priority_filter || ''
+    };
+
     const data = await apiFetch('/api/aps/planning/simulate', {
       method: 'POST',
-      body: JSON.stringify({heat_batches: state.heatBatches})
+      body: JSON.stringify(simParams)
     });
 
     const feasible = data.feasible;
@@ -3715,6 +3879,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   bar.style.width = '10%';
   bar.style.opacity = '1';
 
+  await loadConfig();
   await checkHealth();
   bar.style.width = '30%';
   await loadOrdersOnly();
