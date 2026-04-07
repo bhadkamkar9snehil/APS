@@ -374,14 +374,11 @@ def _read_queue_times() -> dict:
 
 def _load_all() -> dict:
     config = _read_config()
-    so_raw = _read_sheet("Sales_Orders", ["SO_ID", "SKU_ID"])
-    # Filter out rows where SO_ID is NaN or 'nan' string (header/description rows)
-    so_raw = so_raw[so_raw["SO_ID"].notna() & (so_raw["SO_ID"] != 'nan')].reset_index(drop=True)
 
-    # Deduplicate by SO_ID - keep first occurrence, warn if duplicates found
-    dupe_sos = so_raw[so_raw.duplicated(subset=["SO_ID"], keep=False)]["SO_ID"].unique()
-    if len(dupe_sos) > 0:
-        print(f"[WARNING] Duplicate SO_IDs found: {list(dupe_sos)}. Keeping first occurrence only.")
+    so_raw = _read_sheet("Sales_Orders", ["SO_ID", "SKU_ID"])
+    so_raw = so_raw[so_raw["SO_ID"].notna()].copy()
+    so_raw["SO_ID"] = so_raw["SO_ID"].astype(str).str.strip()
+    so_raw = so_raw[so_raw["SO_ID"] != ""].copy()
     so_raw = so_raw.drop_duplicates(subset=["SO_ID"], keep="first").reset_index(drop=True)
 
     res = _read_sheet("Resource_Master", ["Resource_ID"])
@@ -390,46 +387,70 @@ def _load_all() -> dict:
     bom = _read_sheet("BOM", ["Parent_SKU", "Child_SKU"])
     inv = _read_sheet("Inventory", ["SKU_ID"])
     queue = _read_queue_times()
+    changeover = _read_sheet("Changeover_Matrix", ["From \\ To"])
 
     def _num(df, col, default=0.0):
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(default)
         return df
 
+    # Inventory
     if "Available_Qty" not in inv.columns and "Stock_Qty" in inv.columns:
         inv = inv.rename(columns={"Stock_Qty": "Available_Qty"})
     inv = _num(inv, "Available_Qty", 0.0)
+    inv = _num(inv, "Reserved_Qty", 0.0)
 
+    # Resources
     res = _num(res, "Avail_Hours_Day", 20.0)
     res = _num(res, "Max_Capacity_MT_Hr", 33.3)
+    res = _num(res, "Default_Cycle_Min", 0.0)
+    res = _num(res, "Default_Setup_Min", 0.0)
+    res = _num(res, "Efficiency_%", 100.0)
     if "Plant" not in res.columns:
         res["Plant"] = "Plant"
 
+    # BOM
     bom = _num(bom, "Qty_Per", 1.0)
     bom = _num(bom, "Yield_Pct", 100.0)
     bom = _num(bom, "Level", 1.0)
 
+    # Sales orders
     so_raw["Delivery_Date"] = pd.to_datetime(so_raw.get("Delivery_Date"), format="mixed", errors="coerce")
     so_raw["Order_Date"] = pd.to_datetime(so_raw.get("Order_Date"), format="mixed", errors="coerce")
     so_raw["Status"] = so_raw.get("Status", "Open").fillna("Open")
     so_raw = _num(so_raw, "Order_Qty_MT", 0.0)
     so_raw = _num(so_raw, "Section_mm", 6.5)
     if "Order_Qty_MT" not in so_raw.columns and "Order_Qty" in so_raw.columns:
-        so_raw["Order_Qty_MT"] = pd.to_numeric(so_raw["Order_Qty"], errors="coerce").fillna(0)
+        so_raw["Order_Qty_MT"] = pd.to_numeric(so_raw["Order_Qty"], errors="coerce").fillna(0.0)
     if "Order_Qty" not in so_raw.columns:
-        so_raw["Order_Qty"] = so_raw.get("Order_Qty_MT", 0)
+        so_raw["Order_Qty"] = so_raw.get("Order_Qty_MT", 0.0)
+
+    so_raw = so_raw[
+        so_raw["SO_ID"].astype(str).str.strip().ne("")
+        & so_raw["SKU_ID"].notna()
+        & (so_raw["Order_Qty_MT"] > 0)
+        & so_raw["Delivery_Date"].notna()
+    ].copy()
 
     open_mask = so_raw["Status"].astype(str).str.strip().str.upper().isin({"OPEN", "CONFIRMED", "PLANNED", ""})
     open_so = so_raw[open_mask].copy()
     if open_so.empty:
         open_so = so_raw.copy()
 
+    # Routing
     routing = _num(routing, "Cycle_Time_Min_Heat", 60.0)
     routing = _num(routing, "Setup_Time_Min", 0.0)
     routing = _num(routing, "Transfer_Time_Min", 0.0)
     routing = _num(routing, "Op_Seq", 10.0)
     if "Sequence" not in routing.columns and "Op_Seq" in routing.columns:
         routing["Sequence"] = routing["Op_Seq"]
+
+    # Changeover matrix numeric coercion
+    if not changeover.empty:
+        first_col = changeover.columns[0]
+        for col in changeover.columns[1:]:
+            changeover[col] = pd.to_numeric(changeover[col], errors="coerce").fillna(0.0)
+        changeover[first_col] = changeover[first_col].astype(str).str.strip()
 
     return {
         "config": config,
@@ -441,8 +462,8 @@ def _load_all() -> dict:
         "bom": bom,
         "inventory": inv,
         "queue_times": queue,
+        "changeover_matrix": changeover,
     }
-
 
 def _config_flag(config: dict | None, key: str, default: str = "N") -> bool:
     value = str((config or {}).get(key, default) or default).strip().upper()
@@ -1694,43 +1715,55 @@ def run_schedule():
 def run_schedule_api():
     try:
         d = _load_all()
-        config = d['config']
-        min_cmt = float(config.get('Min_Campaign_MT', 100.0) or 100.0)
-        max_cmt = float(config.get('Max_Campaign_MT', 500.0) or 500.0)
-        horizon = int(float(config.get('Planning_Horizon_Days', 14) or 14))
-        sec_lim = float(config.get('Default_Solver_Limit_Sec', 30.0) or 30.0)
+        config = d["config"]
+        horizon = int(float(config.get("Planning_Horizon_Days", 14) or 14))
+        sec_lim = float(config.get("Default_Solver_Limit_Sec", 30.0) or 30.0)
+
         body = request.get_json(silent=True) or {}
-        horizon = int(body.get('horizon', horizon))
-        sec_lim = float(body.get('solver_sec', body.get('time_limit', sec_lim)))
+        horizon = int(body.get("horizon", horizon))
+        sec_lim = float(body.get("solver_sec", body.get("time_limit", sec_lim)))
 
-        campaigns = build_campaigns(
-            d['sales_orders'],
-            min_campaign_mt=min_cmt,
-            max_campaign_mt=max_cmt,
-            inventory=d['inventory'],
-            bom=d['bom'],
-            config=config,
-            skus=d['skus'],
-        )
+        released_pos = _released_sales_orders_to_planning_orders(d)
 
-        released = [c for c in campaigns if str(c.get('release_status', '')).upper() == 'RELEASED']
+        if released_pos:
+            campaigns = _planning_orders_to_scheduler_campaigns(
+                planning_orders=released_pos,
+                all_orders_df=d["all_orders"],
+                config=config,
+            )
+        else:
+            min_cmt = float(config.get("Min_Campaign_MT", 100.0) or 100.0)
+            max_cmt = float(config.get("Max_Campaign_MT", 500.0) or 500.0)
+            campaigns = build_campaigns(
+                d["sales_orders"],
+                min_campaign_mt=min_cmt,
+                max_campaign_mt=max_cmt,
+                inventory=d["inventory"],
+                bom=d["bom"],
+                config=config,
+                skus=d["skus"],
+            )
+
+        released = [c for c in campaigns if str(c.get("release_status", "")).upper() == "RELEASED"]
 
         result = schedule(
             campaigns,
-            d['resources'],
+            d["resources"],
             planning_horizon_days=horizon,
             planning_start=datetime.now(),
-            routing=d['routing'],
-            queue_times=d['queue_times'],
+            routing=d["routing"],
+            queue_times=d["queue_times"],
+            changeover_matrix=d["changeover_matrix"],
             config=config,
             solver_time_limit_sec=sec_lim,
         )
-        heat_df = result.get('heat_schedule', pd.DataFrame())
-        camp_df = result.get('campaign_schedule', pd.DataFrame())
-        solver = result.get('solver_status', 'UNKNOWN')
-        s_detail = result.get('solver_detail', 'CP_SAT_NA')
 
-        allow_defaults = bool(result.get('allow_default_masters', False)) or _config_flag(config, 'Allow_Scheduler_Default_Masters', 'N')
+        heat_df = result.get("heat_schedule", pd.DataFrame())
+        camp_df = result.get("campaign_schedule", pd.DataFrame())
+        solver = result.get("solver_status", "UNKNOWN")
+        s_detail = result.get("solver_detail", "CP_SAT_NA")
+
+        allow_defaults = bool(result.get("allow_default_masters", False)) or _config_flag(config, "Allow_Scheduler_Default_Masters", "N")
         warnings: List[str] = []
         degraded_flags = {
             "default_masters_used": allow_defaults,
@@ -1743,11 +1776,12 @@ def run_schedule_api():
         try:
             demand_hrs = compute_demand_hours(
                 released,
-                d['resources'],
-                routing=d['routing'],
+                d["resources"],
+                routing=d["routing"],
+                changeover_matrix=d["changeover_matrix"],
                 allow_defaults=allow_defaults,
             )
-            cap_df = capacity_map(demand_hrs, d['resources'], horizon_days=horizon)
+            cap_df = capacity_map(demand_hrs, d["resources"], horizon_days=horizon)
         except Exception as cap_err:
             cap_df = pd.DataFrame()
             degraded_flags["capacity_unavailable"] = True
@@ -1791,7 +1825,7 @@ def run_schedule_api():
         }
         return _jsonify(response_payload)
     except Exception as e:
-        _state['error'] = str(e)
+        _state["error"] = str(e)
         return _error_response(
             error_message=f"Scheduling failed: {str(e)}",
             error_code="SCHEDULE_ERROR",
@@ -1801,29 +1835,37 @@ def run_schedule_api():
             status_code=500,
         )[0]
 
-
 @app.route('/api/run/ctp', methods=['POST'])
 def run_ctp_api():
     try:
         body = request.get_json(silent=True) or {}
-        sku_id = str(body.get('sku_id', '')).strip()
-        qty_mt = float(body.get('qty_mt', 100.0))
-        requested_date = body.get('requested_date', (datetime.now() + pd.Timedelta(days=14)).isoformat())
+        sku_id = str(body.get("sku_id", "")).strip()
+        qty_mt = float(body.get("qty_mt", 100.0))
+        requested_date = body.get("requested_date", (datetime.now() + pd.Timedelta(days=14)).isoformat())
 
         d = _load_all()
-        config = d['config']
-        min_cmt = float(config.get('Min_Campaign_MT', 100.0) or 100.0)
-        max_cmt = float(config.get('Max_Campaign_MT', 500.0) or 500.0)
+        config = d["config"]
 
-        campaigns = _active_run_campaigns() or build_campaigns(
-            d['sales_orders'],
-            min_cmt,
-            max_cmt,
-            inventory=d['inventory'],
-            bom=d['bom'],
-            config=config,
-            skus=d['skus'],
-        )
+        released_pos = _released_sales_orders_to_planning_orders(d)
+        if released_pos:
+            campaigns = _planning_orders_to_scheduler_campaigns(
+                planning_orders=released_pos,
+                all_orders_df=d["all_orders"],
+                config=config,
+            )
+        else:
+            min_cmt = float(config.get("Min_Campaign_MT", 100.0) or 100.0)
+            max_cmt = float(config.get("Max_Campaign_MT", 500.0) or 500.0)
+            campaigns = _active_run_campaigns() or build_campaigns(
+                d["sales_orders"],
+                min_cmt,
+                max_cmt,
+                inventory=d["inventory"],
+                bom=d["bom"],
+                config=config,
+                skus=d["skus"],
+            )
+
         schedule_df = _active_run_heat_schedule()
         frozen_jobs = _frozen_jobs_from_schedule_dataframe(schedule_df)
 
@@ -1832,14 +1874,15 @@ def run_ctp_api():
             qty_mt=qty_mt,
             requested_date=requested_date,
             campaigns=campaigns,
-            resources=d['resources'],
-            bom=d['bom'],
-            inventory=d['inventory'],
-            routing=d['routing'],
-            skus=d['skus'],
+            resources=d["resources"],
+            bom=d["bom"],
+            inventory=d["inventory"],
+            routing=d["routing"],
+            skus=d["skus"],
             planning_start=datetime.now(),
             config=config,
-            queue_times=d['queue_times'],
+            queue_times=d["queue_times"],
+            changeover_matrix=d["changeover_matrix"],
             frozen_jobs=frozen_jobs,
         )
         return _jsonify({k: _safe(v) for k, v in res.items()})
@@ -2183,11 +2226,14 @@ def aps_masterdata_section(section):
 def aps_masterdata_section_create(section):
     api_name = _section_sheet(section)
     if not api_name:
-        return _jsonify({"error": f'Unknown master data section: {section}'}, 404)
+        return _jsonify({"error": f"Unknown master data section: {section}"}, 404)
+
     payload = request.get_json(silent=True) or {}
-    data = payload if isinstance(payload, dict) and 'data' not in payload else payload.get('data', {})
+    data = payload if isinstance(payload, dict) and "data" not in payload else payload.get("data", {})
+
     try:
-        return _jsonify({"item": store.create_row(api_name, data)})
+        clean = _validate_masterdata_payload(section, data)
+        return _jsonify({"item": store.create_row(api_name, clean)})
     except ValueError as e:
         return _jsonify({"error": str(e)}, 400)
 
@@ -2196,36 +2242,49 @@ def aps_masterdata_section_create(section):
 def aps_masterdata_section_item(section, key_value):
     api_name = _section_sheet(section)
     if not api_name:
-        return _jsonify({"error": f'Unknown master data section: {section}'}, 404)
-    if request.method == 'GET':
+        return _jsonify({"error": f"Unknown master data section: {section}"}, 404)
+
+    if request.method == "GET":
         row = store.get_row(api_name, key_value)
-        return _jsonify({"item": row} if row else {"error": 'Not found'}, 200 if row else 404)
-    if request.method == 'DELETE':
+        return _jsonify({"item": row} if row else {"error": "Not found"}, 200 if row else 404)
+
+    if request.method == "DELETE":
         try:
             store.delete_row(api_name, key_value)
-            return _jsonify({"deleted": True, 'key': key_value})
+            return _jsonify({"deleted": True, "key": key_value})
         except KeyError as e:
             return _jsonify({"error": str(e)}, 404)
         except ValueError as e:
             return _jsonify({"error": str(e)}, 400)
+
     payload = request.get_json(silent=True) or {}
-    data = payload if isinstance(payload, dict) and 'data' not in payload else payload.get('data', {})
-    partial = request.method == 'PATCH'
+    data = payload if isinstance(payload, dict) and "data" not in payload else payload.get("data", {})
+    partial = request.method == "PATCH"
+
     try:
-        return _jsonify({"item": store.update_row(api_name, key_value, data, partial=partial)})
+        current = store.get_row(api_name, key_value) or {}
+        merged = current.copy()
+        merged.update(data if partial else data)
+        clean = _validate_masterdata_payload(section, merged, existing=current)
+        return _jsonify({"item": store.update_row(api_name, key_value, clean, partial=False)})
     except KeyError as e:
         return _jsonify({"error": str(e)}, 404)
+    except ValueError as e:
+        return _jsonify({"error": str(e)}, 400)
 
 
 @app.route('/api/aps/masterdata/<section>/bulk-replace', methods=['PUT'])
 def aps_masterdata_bulk_replace(section):
     api_name = _section_sheet(section)
     if not api_name:
-        return _jsonify({"error": f'Unknown master data section: {section}'}, 404)
+        return _jsonify({"error": f"Unknown master data section: {section}"}, 404)
+
     payload = request.get_json(silent=True) or {}
-    items = payload.get('items', []) if isinstance(payload, dict) else []
+    items = payload.get("items", []) if isinstance(payload, dict) else []
+
     try:
-        return _jsonify(store.bulk_replace(api_name, items))
+        cleaned = [_validate_masterdata_payload(section, item) for item in items]
+        return _jsonify(store.bulk_replace(api_name, cleaned))
     except ValueError as e:
         return _jsonify({"error": str(e)}, 400)
 
@@ -2234,32 +2293,29 @@ def aps_masterdata_bulk_replace(section):
 
 @app.route('/api/aps/planning/orders/pool', methods=['GET'])
 def aps_planning_orders_pool():
-    """List all open sales orders for planning (Order Pool view)."""
+    """List all valid open sales orders for planning."""
     try:
-        result = store.list_rows('sales-orders', filters=[], limit=1000)
-        sos = result.get('items', [])
+        d = _load_all()
+        so_df = d["sales_orders"].copy()
 
-        # Filter to open orders only
-        open_sos = [so for so in sos if so.get('Status') != 'Completed']
-
-        # Convert to domain objects for response
-        so_list = []
-        for so in open_sos:
-            so_list.append({
-                'so_id': so.get('SO_ID'),
-                'customer_id': so.get('Customer'),
-                'grade': so.get('Grade'),
-                'section_mm': float(so.get('Section_mm', 0)) if so.get('Section_mm') else 0,
-                'qty_mt': float(so.get('Order_Qty_MT', 0)) if so.get('Order_Qty_MT') else 0,
-                'due_date': so.get('Delivery_Date'),
-                'priority': so.get('Priority', 'NORMAL'),
-                'route_family': 'SMS→RM',
-                'status': so.get('Status', 'Open'),
+        orders = []
+        for _, so in so_df.iterrows():
+            orders.append({
+                "so_id": str(so.get("SO_ID", "")).strip(),
+                "customer_id": so.get("Customer"),
+                "grade": so.get("Grade"),
+                "section_mm": float(so.get("Section_mm", 0) or 0),
+                "qty_mt": float(so.get("Order_Qty_MT", 0) or 0),
+                "due_date": _safe(so.get("Delivery_Date")),
+                "priority": so.get("Priority", "NORMAL"),
+                "route_family": "SMS→RM",
+                "status": so.get("Status", "Open"),
+                "sku_id": so.get("SKU_ID"),
             })
 
         return _jsonify({
-            'total_orders': len(so_list),
-            'orders': so_list,
+            "total_orders": len(orders),
+            "orders": orders,
         })
     except Exception as e:
         return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
@@ -2267,60 +2323,54 @@ def aps_planning_orders_pool():
 
 @app.route('/api/aps/planning/window/select', methods=['POST'])
 def aps_planning_window_select():
-    """Select planning window and get candidate SOs."""
+    """Select planning window and return candidate SOs."""
     try:
         payload = request.get_json(silent=True) or {}
-        window_days = payload.get('days', 7)  # default 7 days
+        window_days = int(payload.get("days", 7) or 7)
 
-        result = store.list_rows('sales-orders', filters=[], limit=1000)
-        sos = result.get('items', [])
-
-        # Get SO objects
+        d = _load_all()
         all_sos = []
-        for so in sos:
-            if so.get('Status') != 'Completed':
-                try:
-                    so_obj = SalesOrder(
-                        so_id=so.get('SO_ID'),
-                        customer_id=so.get('Customer'),
-                        grade=so.get('Grade'),
-                        section_mm=float(so.get('Section_mm', 0)) if so.get('Section_mm') else 0,
-                        qty_mt=float(so.get('Order_Qty_MT', 0)) if so.get('Order_Qty_MT') else 0,
-                        due_date=so.get('Delivery_Date', '2099-12-31'),
-                        priority=so.get('Priority', 'NORMAL'),
-                        route_family='SMS→RM',
-                        status=so.get('Status', 'Open'),
-                    )
-                    all_sos.append(so_obj)
-                except Exception:
-                    continue
+        for _, so in d["sales_orders"].iterrows():
+            all_sos.append(
+                SalesOrder(
+                    so_id=str(so.get("SO_ID", "")).strip(),
+                    customer_id=so.get("Customer"),
+                    grade=so.get("Grade"),
+                    section_mm=float(so.get("Section_mm", 0) or 0),
+                    qty_mt=float(so.get("Order_Qty_MT", 0) or 0),
+                    due_date=_safe(so.get("Delivery_Date")) or "2099-12-31",
+                    priority=so.get("Priority", "NORMAL"),
+                    route_family="SMS→RM",
+                    status=so.get("Status", "Open"),
+                    order_date=_safe(so.get("Order_Date")),
+                )
+            )
 
-        # Use planner to select window
-        planner = APSPlanner(get_config().all_params())
-        window = PlanningHorizon.NEXT_7_DAYS
-        if window_days == 3:
-            window = PlanningHorizon.NEXT_3_DAYS
-        elif window_days == 10:
-            window = PlanningHorizon.NEXT_10_DAYS
-        elif window_days == 14:
-            window = PlanningHorizon.NEXT_14_DAYS
-
-        window_sos = planner.select_planning_window(all_sos, window)
+        planner = APSPlanner(d["config"])
+        window_map = {
+            3: PlanningHorizon.NEXT_3_DAYS,
+            7: PlanningHorizon.NEXT_7_DAYS,
+            10: PlanningHorizon.NEXT_10_DAYS,
+            14: PlanningHorizon.NEXT_14_DAYS,
+        }
+        window = window_map.get(window_days, PlanningHorizon.NEXT_7_DAYS)
+        selected = planner.select_planning_window(all_sos, window)
 
         return _jsonify({
-            'window_days': window_days,
-            'candidate_count': len(window_sos),
-            'candidates': [
+            "window_days": window_days,
+            "candidate_count": len(selected),
+            "candidates": [
                 {
-                    'so_id': so.so_id,
-                    'customer_id': so.customer_id,
-                    'grade': so.grade,
-                    'qty_mt': so.qty_mt,
-                    'due_date': so.due_date,
-                    'priority': so.priority,
-                    'hours_until_due': max(0, so.hours_until_due()),
+                    "so_id": so.so_id,
+                    "customer_id": so.customer_id,
+                    "grade": so.grade,
+                    "section_mm": so.section_mm,
+                    "qty_mt": so.qty_mt,
+                    "due_date": so.due_date,
+                    "priority": so.priority,
+                    "hours_until_due": round(max(0, so.hours_until_due()), 2),
                 }
-                for so in window_sos
+                for so in selected
             ],
         })
     except Exception as e:
@@ -2329,214 +2379,843 @@ def aps_planning_window_select():
 
 @app.route('/api/aps/planning/orders/propose', methods=['POST'])
 def aps_planning_orders_propose():
-    """System proposes Planning Orders (manufacturing lots) from window SOs."""
+    """Propose Planning Orders from valid SOs in the selected window."""
     try:
         payload = request.get_json(silent=True) or {}
-        window_days = payload.get('days', 7)
+        window_days = int(payload.get("days", 7) or 7)
 
-        result = store.list_rows('sales-orders', filters=[], limit=1000)
-        sos = result.get('items', [])
-
-        # Get SO objects
+        d = _load_all()
         all_sos = []
-        for so in sos:
-            if so.get('Status') != 'Completed':
-                try:
-                    so_obj = SalesOrder(
-                        so_id=so.get('SO_ID'),
-                        customer_id=so.get('Customer'),
-                        grade=so.get('Grade'),
-                        section_mm=float(so.get('Section_mm', 0)) if so.get('Section_mm') else 0,
-                        qty_mt=float(so.get('Order_Qty_MT', 0)) if so.get('Order_Qty_MT') else 0,
-                        due_date=so.get('Delivery_Date', '2099-12-31'),
-                        priority=so.get('Priority', 'NORMAL'),
-                        route_family='SMS→RM',
-                        status=so.get('Status', 'Open'),
-                    )
-                    all_sos.append(so_obj)
-                except Exception:
-                    continue
+        for _, so in d["sales_orders"].iterrows():
+            all_sos.append(
+                SalesOrder(
+                    so_id=str(so.get("SO_ID", "")).strip(),
+                    customer_id=so.get("Customer"),
+                    grade=so.get("Grade"),
+                    section_mm=float(so.get("Section_mm", 0) or 0),
+                    qty_mt=float(so.get("Order_Qty_MT", 0) or 0),
+                    due_date=_safe(so.get("Delivery_Date")) or "2099-12-31",
+                    priority=so.get("Priority", "NORMAL"),
+                    route_family="SMS→RM",
+                    status=so.get("Status", "Open"),
+                    order_date=_safe(so.get("Order_Date")),
+                )
+            )
 
-        # Use planner
-        planner = APSPlanner(get_config().all_params())
-        window = PlanningHorizon.NEXT_7_DAYS
-        if window_days == 3:
-            window = PlanningHorizon.NEXT_3_DAYS
-        elif window_days == 10:
-            window = PlanningHorizon.NEXT_10_DAYS
-        elif window_days == 14:
-            window = PlanningHorizon.NEXT_14_DAYS
-
+        planner = APSPlanner(d["config"])
+        window_map = {
+            3: PlanningHorizon.NEXT_3_DAYS,
+            7: PlanningHorizon.NEXT_7_DAYS,
+            10: PlanningHorizon.NEXT_10_DAYS,
+            14: PlanningHorizon.NEXT_14_DAYS,
+        }
+        window = window_map.get(window_days, PlanningHorizon.NEXT_7_DAYS)
         window_sos = planner.select_planning_window(all_sos, window)
         pos = planner.propose_planning_orders(window_sos)
-
         validation = planner.validate_planning_orders(pos)
 
-        # Store planning orders for release endpoint
         aps_planning_orders_propose._planning_orders = [po.to_dict() for po in pos]
 
         return _jsonify({
-            'po_count': len(pos),
-            'validation': validation,
-            'planning_orders': aps_planning_orders_propose._planning_orders,
+            "window_days": window_days,
+            "po_count": len(pos),
+            "validation": validation,
+            "planning_orders": aps_planning_orders_propose._planning_orders,
         })
     except Exception as e:
         return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
 
-
 @app.route('/api/aps/planning/orders/update', methods=['POST'])
 def aps_planning_orders_update():
-    """Planner can adjust Planning Orders (split/merge)."""
+    """Planner adjustments to Planning Orders (replace / merge / split / freeze / status)."""
     try:
         payload = request.get_json(silent=True) or {}
-        # This endpoint receives user edits to Planning Orders
-        # For now, just acknowledge - will be extended with actual merge/split logic
+
+        current_orders = list(getattr(aps_planning_orders_propose, "_planning_orders", []) or [])
+        if not current_orders:
+            return _jsonify({
+                "error": "No proposed planning orders found. Run /api/aps/planning/orders/propose first."
+            }, 400)
+
+        def _norm_po(po: dict) -> dict:
+            po = dict(po or {})
+            po_id = str(po.get("po_id", "")).strip()
+            selected_so_ids = [str(x).strip() for x in (po.get("selected_so_ids") or []) if str(x).strip()]
+            total_qty_mt = float(pd.to_numeric(pd.Series([po.get("total_qty_mt", 0)]), errors="coerce").fillna(0).iloc[0])
+            heats_required = int(pd.to_numeric(pd.Series([po.get("heats_required", 0)]), errors="coerce").fillna(0).iloc[0])
+            due_window = po.get("due_window", ("", ""))
+            if isinstance(due_window, list):
+                due_window = tuple(due_window)
+            if not isinstance(due_window, tuple):
+                due_window = ("", "")
+            return {
+                "po_id": po_id,
+                "selected_so_ids": selected_so_ids,
+                "total_qty_mt": total_qty_mt,
+                "grade_family": str(po.get("grade_family", "")).strip(),
+                "size_family": str(po.get("size_family", "")).strip(),
+                "due_window": due_window,
+                "route_family": str(po.get("route_family", "SMS→RM")).strip() or "SMS→RM",
+                "heats_required": heats_required,
+                "planner_status": str(po.get("planner_status", "PROPOSED")).strip() or "PROPOSED",
+                "frozen_flag": bool(po.get("frozen_flag", False)),
+            }
+
+        def _validate_orders(orders: list[dict]) -> list[str]:
+            issues = []
+            seen_po_ids = set()
+            seen_so_ids = set()
+
+            for po in orders:
+                po_id = str(po.get("po_id", "")).strip()
+                if not po_id:
+                    issues.append("Blank po_id found.")
+                elif po_id in seen_po_ids:
+                    issues.append(f"Duplicate po_id: {po_id}")
+                seen_po_ids.add(po_id)
+
+                if float(po.get("total_qty_mt", 0) or 0) <= 0:
+                    issues.append(f"{po_id}: total_qty_mt must be > 0")
+
+                if int(po.get("heats_required", 0) or 0) <= 0:
+                    issues.append(f"{po_id}: heats_required must be > 0")
+
+                so_ids = [str(x).strip() for x in (po.get("selected_so_ids") or []) if str(x).strip()]
+                if not so_ids:
+                    issues.append(f"{po_id}: selected_so_ids cannot be empty")
+
+                for so_id in so_ids:
+                    if so_id in seen_so_ids:
+                        issues.append(f"SO {so_id} exists in more than one Planning Order")
+                    seen_so_ids.add(so_id)
+
+            return issues
+
+        # Normalize current state first
+        current_orders = [_norm_po(po) for po in current_orders]
+
+        # Mode 1: full replacement from UI
+        if isinstance(payload.get("planning_orders"), list):
+            updated_orders = [_norm_po(po) for po in payload.get("planning_orders", [])]
+            issues = _validate_orders(updated_orders)
+            if issues:
+                return _jsonify({
+                    "updated": False,
+                    "error": "Planning order validation failed",
+                    "issues": issues,
+                }, 400)
+
+            aps_planning_orders_propose._planning_orders = updated_orders
+            return _jsonify({
+                "updated": True,
+                "mode": "replace",
+                "po_count": len(updated_orders),
+                "planning_orders": updated_orders,
+                "issues": [],
+            })
+
+        # Mode 2: action-based incremental update
+        action = str(payload.get("action", "")).strip().lower()
+        if not action:
+            return _jsonify({
+                "error": "No update action provided. Use planning_orders=[...] for full replace or action=merge/split/freeze/status."
+            }, 400)
+
+        po_map = {po["po_id"]: dict(po) for po in current_orders}
+
+        if action == "merge":
+            source_po_ids = [str(x).strip() for x in (payload.get("source_po_ids") or []) if str(x).strip()]
+            target_po_id = str(payload.get("target_po_id") or "").strip()
+
+            if len(source_po_ids) < 2:
+                return _jsonify({"error": "merge requires at least two source_po_ids"}, 400)
+            if not target_po_id:
+                return _jsonify({"error": "merge requires target_po_id"}, 400)
+            if any(pid not in po_map for pid in source_po_ids):
+                missing = [pid for pid in source_po_ids if pid not in po_map]
+                return _jsonify({"error": f"Unknown planning orders for merge: {missing}"}, 404)
+
+            source_orders = [po_map[pid] for pid in source_po_ids]
+            grades = {po["grade_family"] for po in source_orders}
+            if len(grades) > 1:
+                return _jsonify({"error": "Cannot merge planning orders with different grade_family values"}, 400)
+
+            merged_so_ids = []
+            merged_qty = 0.0
+            merged_heats = 0
+            due_starts = []
+            due_ends = []
+            size_families = set()
+            route_family = source_orders[0]["route_family"]
+            frozen_flag = any(po.get("frozen_flag") for po in source_orders)
+
+            for po in source_orders:
+                merged_so_ids.extend(po["selected_so_ids"])
+                merged_qty += float(po["total_qty_mt"] or 0)
+                merged_heats += int(po["heats_required"] or 0)
+                if po.get("size_family"):
+                    size_families.update([x.strip() for x in str(po["size_family"]).split(",") if x.strip()])
+                dw = po.get("due_window") or ("", "")
+                if len(dw) >= 2:
+                    if dw[0]:
+                        due_starts.append(dw[0])
+                    if dw[1]:
+                        due_ends.append(dw[1])
+
+            for pid in source_po_ids:
+                po_map.pop(pid, None)
+
+            po_map[target_po_id] = {
+                "po_id": target_po_id,
+                "selected_so_ids": sorted(set(merged_so_ids)),
+                "total_qty_mt": round(merged_qty, 3),
+                "grade_family": source_orders[0]["grade_family"],
+                "size_family": ",".join(sorted(size_families)),
+                "due_window": (
+                    min(due_starts) if due_starts else "",
+                    max(due_ends) if due_ends else "",
+                ),
+                "route_family": route_family,
+                "heats_required": max(1, merged_heats),
+                "planner_status": "MERGED",
+                "frozen_flag": frozen_flag,
+            }
+
+        elif action == "split":
+            source_po_id = str(payload.get("source_po_id") or "").strip()
+            split_map = payload.get("split_map") or {}
+
+            if not source_po_id:
+                return _jsonify({"error": "split requires source_po_id"}, 400)
+            if source_po_id not in po_map:
+                return _jsonify({"error": f"Unknown source planning order: {source_po_id}"}, 404)
+            if not isinstance(split_map, dict) or not split_map:
+                return _jsonify({"error": "split requires split_map of {new_po_id: [so_ids...]}"}, 400)
+
+            source = po_map[source_po_id]
+            source_so_set = set(source["selected_so_ids"])
+            assigned_so_set = set()
+
+            for new_po_id, so_ids in split_map.items():
+                clean_ids = {str(x).strip() for x in (so_ids or []) if str(x).strip()}
+                if not clean_ids:
+                    return _jsonify({"error": f"Split target {new_po_id} has no SOs"}, 400)
+                if not clean_ids.issubset(source_so_set):
+                    unknown = sorted(clean_ids - source_so_set)
+                    return _jsonify({"error": f"Split target {new_po_id} contains SOs not in source PO: {unknown}"}, 400)
+                if assigned_so_set.intersection(clean_ids):
+                    overlap = sorted(assigned_so_set.intersection(clean_ids))
+                    return _jsonify({"error": f"Split targets overlap on SOs: {overlap}"}, 400)
+                assigned_so_set.update(clean_ids)
+
+            if assigned_so_set != source_so_set:
+                missing = sorted(source_so_set - assigned_so_set)
+                extra = sorted(assigned_so_set - source_so_set)
+                return _jsonify({
+                    "error": "split_map must fully partition the source selected_so_ids",
+                    "missing_from_split": missing,
+                    "extra_in_split": extra,
+                }, 400)
+
+            # need SO master rows to recalc qty and due windows
+            d = _load_all()
+            so_df = d["all_orders"].copy()
+            so_df["SO_ID"] = so_df["SO_ID"].astype(str).str.strip()
+            so_map = {str(row["SO_ID"]).strip(): row for _, row in so_df.iterrows()}
+
+            po_map.pop(source_po_id, None)
+
+            for new_po_id, so_ids in split_map.items():
+                clean_so_ids = [str(x).strip() for x in (so_ids or []) if str(x).strip()]
+                rows = [so_map[so_id] for so_id in clean_so_ids if so_id in so_map]
+
+                total_qty = float(sum(float(pd.to_numeric(pd.Series([r.get("Order_Qty_MT", 0)]), errors="coerce").fillna(0).iloc[0]) for r in rows))
+                due_dates = [pd.to_datetime(r.get("Delivery_Date"), errors="coerce") for r in rows]
+                due_dates = [d for d in due_dates if pd.notna(d)]
+                section_vals = sorted({
+                    float(pd.to_numeric(pd.Series([r.get("Section_mm", 0)]), errors="coerce").fillna(0).iloc[0])
+                    for r in rows
+                })
+
+                heat_size = float(pd.to_numeric(pd.Series([d["config"].get("HEAT_SIZE_MT", 50)]), errors="coerce").fillna(50).iloc[0])
+                heats_required = max(1, int(np.ceil(total_qty / heat_size))) if heat_size > 0 else 1
+
+                po_map[str(new_po_id).strip()] = {
+                    "po_id": str(new_po_id).strip(),
+                    "selected_so_ids": clean_so_ids,
+                    "total_qty_mt": round(total_qty, 3),
+                    "grade_family": source["grade_family"],
+                    "size_family": ",".join(f"{x:g}mm" for x in section_vals if x > 0),
+                    "due_window": (
+                        min(due_dates).date().isoformat() if due_dates else source["due_window"][0],
+                        max(due_dates).date().isoformat() if due_dates else source["due_window"][1],
+                    ),
+                    "route_family": source["route_family"],
+                    "heats_required": heats_required,
+                    "planner_status": "SPLIT",
+                    "frozen_flag": bool(source.get("frozen_flag", False)),
+                }
+
+        elif action in {"freeze", "unfreeze"}:
+            po_id = str(payload.get("po_id") or "").strip()
+            if not po_id or po_id not in po_map:
+                return _jsonify({"error": f"Unknown planning order: {po_id}"}, 404)
+            po_map[po_id]["frozen_flag"] = (action == "freeze")
+            po_map[po_id]["planner_status"] = "FROZEN" if action == "freeze" else "PROPOSED"
+
+        elif action == "status":
+            po_id = str(payload.get("po_id") or "").strip()
+            new_status = str(payload.get("planner_status") or "").strip().upper()
+            if not po_id or po_id not in po_map:
+                return _jsonify({"error": f"Unknown planning order: {po_id}"}, 404)
+            if not new_status:
+                return _jsonify({"error": "status action requires planner_status"}, 400)
+            po_map[po_id]["planner_status"] = new_status
+
+        else:
+            return _jsonify({"error": f"Unsupported planning update action: {action}"}, 400)
+
+        updated_orders = list(po_map.values())
+        issues = _validate_orders(updated_orders)
+        if issues:
+            return _jsonify({
+                "updated": False,
+                "error": "Planning order validation failed after update",
+                "issues": issues,
+            }, 400)
+
+        aps_planning_orders_propose._planning_orders = updated_orders
 
         return _jsonify({
-            'status': 'acknowledged',
-            'message': 'PO updates received (merge/split logic to be implemented)',
+            "updated": True,
+            "mode": "action",
+            "action": action,
+            "po_count": len(updated_orders),
+            "planning_orders": updated_orders,
+            "issues": [],
         })
     except Exception as e:
-        return _jsonify({"error": str(e)}, 500)
+        return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
 
 
 @app.route('/api/aps/planning/heats/derive', methods=['POST'])
 def aps_planning_heats_derive():
-    """System derives heat requirements from Planning Orders."""
+    """Derive heats from proposed Planning Orders."""
     try:
         payload = request.get_json(silent=True) or {}
-        planning_orders_data = payload.get('planning_orders', [])
+        planning_orders_data = payload.get("planning_orders") or getattr(aps_planning_orders_propose, "_planning_orders", [])
 
-        # Convert to PlanningOrder objects
         from engine.aps_planner import PlanningOrder
+
         pos = []
         for po_data in planning_orders_data:
-            po = PlanningOrder(
-                po_id=po_data.get('po_id'),
-                selected_so_ids=po_data.get('selected_so_ids', []),
-                total_qty_mt=po_data.get('total_qty_mt', 0),
-                grade_family=po_data.get('grade_family'),
-                size_family=po_data.get('size_family'),
-                due_window=tuple(po_data.get('due_window', ('', ''))),
-                route_family=po_data.get('route_family', 'SMS→RM'),
-                heats_required=po_data.get('heats_required', 1),
-                planner_status='PROPOSED',
+            pos.append(
+                PlanningOrder(
+                    po_id=po_data.get("po_id"),
+                    selected_so_ids=po_data.get("selected_so_ids", []),
+                    total_qty_mt=float(po_data.get("total_qty_mt", 0) or 0),
+                    grade_family=po_data.get("grade_family"),
+                    size_family=po_data.get("size_family", ""),
+                    due_window=tuple(po_data.get("due_window", ("", ""))),
+                    route_family=po_data.get("route_family", "SMS→RM"),
+                    heats_required=int(po_data.get("heats_required", 1) or 1),
+                    planner_status=po_data.get("planner_status", "PROPOSED"),
+                    frozen_flag=bool(po_data.get("frozen_flag", False)),
+                )
             )
-            pos.append(po)
 
-        # Derive heats
         planner = APSPlanner(get_config().all_params())
-        heats = planner.derive_heat_batches(pos, heat_size_mt=50.0)
+        heats = planner.derive_heat_batches(pos, heat_size_mt=float(get_config().get("HEAT_SIZE_MT", 50) or 50))
 
-        # Store heats for simulate endpoint to use
+        aps_planning_orders_propose._planning_orders = [po.to_dict() for po in pos]
         aps_planning_simulate._heat_batches = [h.to_dict() for h in heats]
 
         return _jsonify({
-            'total_heats': len(heats),
-            'total_mt': sum(h.qty_mt for h in heats),
-            'heats': [h.to_dict() for h in heats],
+            "total_heats": len(heats),
+            "total_mt": round(sum(float(h.qty_mt or 0) for h in heats), 3),
+            "heats": [h.to_dict() for h in heats],
         })
     except Exception as e:
         return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
-
 
 @app.route('/api/aps/planning/simulate', methods=['POST'])
 def aps_planning_simulate():
-    """Simulate: Run finite scheduler on heats and return feasibility."""
+    """Authoritative planning simulation using Planning Orders bridged into the real scheduler."""
     try:
-        from engine.aps_planner import HeatBatch
         payload = request.get_json(silent=True) or {}
-        heats_data = payload.get('heat_batches', [])
+        planning_orders_data = payload.get("planning_orders") or getattr(aps_planning_orders_propose, "_planning_orders", [])
+        solver_sec = float(payload.get("solver_sec", 30.0) or 30.0)
+        horizon_days = int(payload.get("horizon_days", 7) or 7)
 
-        if not heats_data:
+        if not planning_orders_data:
             return _jsonify({
-                'feasible': False,
-                'total_duration_hours': 0,
-                'sms_hours': 0,
-                'rm_hours': 0,
-                'load_factor': '0%',
-                'message': 'No heat batches provided for simulation',
+                "authoritative": True,
+                "feasible": False,
+                "solver_status": "NO_DATA",
+                "message": "No planning orders available for simulation",
+                "total_duration_hours": 0.0,
+                "sms_hours": 0.0,
+                "rm_hours": 0.0,
+                "schedule_rows": [],
             })
 
-        # Reconstruct heat batch objects from request data
-        heat_batches = []
-        for h in heats_data:
-            if isinstance(h, dict):
-                heat = HeatBatch(
-                    heat_id=h.get('heat_id', f'HEAT-{len(heat_batches)+1}'),
-                    planning_order_id=h.get('planning_order_id', ''),
-                    grade=h.get('grade', ''),
-                    qty_mt=float(h.get('qty_mt', 0)),
-                    heat_number_seq=int(h.get('heat_number_seq', len(heat_batches)+1)),
-                    upstream_route=h.get('upstream_route', 'SMS→RM'),
-                    compatibility_class=h.get('compatibility_class', 'standard'),
-                    expected_duration_hours=float(h.get('expected_duration_hours', 2.0)),
-                )
-                heat_batches.append(heat)
+        d = _load_all()
+        scheduler_inputs = _planning_orders_to_scheduler_campaigns(
+            planning_orders=planning_orders_data,
+            all_orders_df=d["all_orders"],
+            config=d["config"],
+        )
 
-        # Run scheduler simulation
-        planner = APSPlanner(get_config().all_params())
-        result = planner.simulate_finite_schedule(heat_batches)
+        result = schedule(
+            scheduler_inputs,
+            d["resources"],
+            planning_start=datetime.now(),
+            planning_horizon_days=horizon_days,
+            routing=d["routing"],
+            queue_times=d["queue_times"],
+            changeover_matrix=d["changeover_matrix"],
+            config=d["config"],
+            solver_time_limit_sec=solver_sec,
+        )
+
+        heat_df = result.get("heat_schedule", pd.DataFrame())
+        solver_status = result.get("solver_status", "UNKNOWN")
+        solver_detail = result.get("solver_detail", "")
+
+        if heat_df is not None and not heat_df.empty and "Planned_Start" in heat_df.columns and "Planned_End" in heat_df.columns:
+            starts = pd.to_datetime(heat_df["Planned_Start"], errors="coerce")
+            ends = pd.to_datetime(heat_df["Planned_End"], errors="coerce")
+            total_duration_hours = round(((ends.max() - starts.min()).total_seconds() / 3600.0), 2)
+        else:
+            total_duration_hours = 0.0
+
+        sms_hours = 0.0
+        rm_hours = 0.0
+        if heat_df is not None and not heat_df.empty and {"Operation", "Duration_Hrs"}.issubset(set(heat_df.columns)):
+            dur = pd.to_numeric(heat_df["Duration_Hrs"], errors="coerce").fillna(0.0)
+            ops = heat_df["Operation"].astype(str).str.upper()
+            sms_hours = round(dur[ops.isin(["EAF", "LRF", "VD", "CCM"])].sum(), 2)
+            rm_hours = round(dur[ops.eq("RM")].sum(), 2)
+
+        feasible = solver_status not in {"INFEASIBLE", "MODEL_INVALID"}
+
+        aps_planning_simulate._last_result = {
+            "authoritative": True,
+            "feasible": feasible,
+            "solver_status": solver_status,
+            "solver_detail": solver_detail,
+        }
+        aps_planning_simulate._scheduler_inputs = scheduler_inputs
+        aps_planning_orders_propose._planning_orders = planning_orders_data
 
         return _jsonify({
-            'feasible': result.get('feasible'),
-            'total_duration_hours': result.get('total_duration_hours'),
-            'sms_hours': result.get('sms_hours'),
-            'rm_hours': result.get('rm_hours'),
-            'load_factor': result.get('load_factor'),
-            'message': result.get('message'),
+            "authoritative": True,
+            "feasible": feasible,
+            "solver_status": solver_status,
+            "solver_detail": solver_detail,
+            "total_duration_hours": total_duration_hours,
+            "sms_hours": sms_hours,
+            "rm_hours": rm_hours,
+            "schedule_rows": _df_to_records(heat_df),
+            "message": "Finite schedule generated" if feasible else "Finite schedule is infeasible with current APS planning orders / master data",
         })
     except Exception as e:
-        import traceback
         return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
-
 
 @app.route('/api/aps/planning/release', methods=['POST'])
 def aps_planning_release():
-    """Release approved Planning Orders to operations."""
+    """Release approved Planning Orders to execution and persist APS release markers to Sales_Orders."""
     try:
         payload = request.get_json(silent=True) or {}
-        po_ids = payload.get('po_ids', [])
+        po_ids = [str(x).strip() for x in (payload.get("po_ids") or []) if str(x).strip()]
 
-        # Mark SOs as assigned to planning
-        result = store.list_rows('sales-orders', filters=[], limit=1000)
-        sos = result.get('items', [])
+        if not po_ids:
+            return _jsonify({"error": "po_ids is required and cannot be empty"}, 400)
 
-        # For now, just acknowledge release
-        # Will update SO Campaign_ID in actual implementation
+        planning_orders = list(getattr(aps_planning_orders_propose, "_planning_orders", []) or [])
+        if not planning_orders:
+            return _jsonify({
+                "error": "No planning orders available for release. Run /api/aps/planning/orders/propose first."
+            }, 400)
+
+        po_map = {
+            str(po.get("po_id", "")).strip(): dict(po)
+            for po in planning_orders
+            if str(po.get("po_id", "")).strip()
+        }
+
+        missing_po_ids = [po_id for po_id in po_ids if po_id not in po_map]
+        if missing_po_ids:
+            return _jsonify({
+                "error": "Some requested planning orders do not exist",
+                "missing_po_ids": missing_po_ids,
+            }, 404)
+
+        sim_result = getattr(aps_planning_simulate, "_last_result", None)
+        if sim_result is not None:
+            if not bool(sim_result.get("authoritative", False)):
+                return _jsonify({"error": "Planning simulation is not authoritative. Re-run simulation before release."}, 400)
+            if not bool(sim_result.get("feasible", False)):
+                return _jsonify({"error": "Cannot release planning orders because the current simulation is infeasible."}, 400)
+
+        released_orders = [po_map[po_id] for po_id in po_ids]
+
+        so_to_po = {}
+        for po in released_orders:
+            for so_id in (po.get("selected_so_ids") or []):
+                clean_so = str(so_id).strip()
+                if clean_so:
+                    if clean_so in so_to_po and so_to_po[clean_so] != po["po_id"]:
+                        return _jsonify({
+                            "error": f"SO {clean_so} is mapped to multiple release planning orders",
+                            "existing_po": so_to_po[clean_so],
+                            "new_po": po["po_id"],
+                        }, 400)
+                    so_to_po[clean_so] = po["po_id"]
+
+        if not so_to_po:
+            return _jsonify({"error": "Selected planning orders have no sales orders to release"}, 400)
+
+        result = store.list_rows("sales-orders", filters=[], limit=5000)
+        sos = result.get("items", []) or []
+        existing_so_ids = {str(so.get("SO_ID", "")).strip() for so in sos if str(so.get("SO_ID", "")).strip()}
+
+        missing_sos = sorted([so_id for so_id in so_to_po if so_id not in existing_so_ids])
+        if missing_sos:
+            return _jsonify({
+                "error": "Some Sales Orders linked to planning orders were not found in workbook",
+                "missing_so_ids": missing_sos,
+            }, 404)
+
+        updated_sales_orders = []
+        for so_id, po_id in so_to_po.items():
+            update_data = {
+                "Status": "Planned",
+                "Campaign_ID": po_id,
+                "Campaign_Group": "APS_RELEASED",
+            }
+            try:
+                item = store.update_row("sales-orders", so_id, update_data, partial=True)
+                updated_sales_orders.append(item)
+            except PermissionError as pe:
+                return _jsonify({"error": "Cannot write to Excel file - it may be open in another application. Please close the file and try again.", "details": str(pe)}, 409)
+            except Exception as e:
+                return _jsonify({"error": f"Failed to update sales order {so_id}: {str(e)}"}, 400)
+
+        refreshed_orders = []
+        for po in planning_orders:
+            po_id = str(po.get("po_id", "")).strip()
+            if po_id in po_ids:
+                po = dict(po)
+                po["planner_status"] = "RELEASED"
+                po["released_at"] = datetime.now().isoformat()
+            refreshed_orders.append(po)
+
+        aps_planning_orders_propose._planning_orders = refreshed_orders
+        aps_planning_release._released_po_ids = po_ids
+        aps_planning_release._released_sales_orders = list(so_to_po.keys())
+
+        total_mt = round(sum(float(po.get("total_qty_mt", 0) or 0) for po in released_orders), 3)
+        total_heats = int(sum(int(po.get("heats_required", 0) or 0) for po in released_orders))
 
         return _jsonify({
-            'released': True,
-            'po_count': len(po_ids),
-            'message': 'Planning orders released to operations',
-            'next_step': 'Operations begins execution',
+            "released": True,
+            "po_count": len(released_orders),
+            "released_po_ids": po_ids,
+            "sales_order_count": len(so_to_po),
+            "released_so_ids": sorted(so_to_po.keys()),
+            "total_mt": total_mt,
+            "total_heats": total_heats,
+            "message": "Planning orders released to execution",
         })
     except Exception as e:
         return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
-
 
 @app.route('/api/meta/xaps/routes')
 def xaps_route_manifest():
     return _jsonify({
         'legacy': [
-            '/api/health', '/api/data/dashboard', '/api/data/config', '/api/data/orders', '/api/data/skus',
-            '/api/data/campaigns', '/api/data/gantt', '/api/data/capacity', '/api/run/bom', '/api/run/schedule',
-            '/api/run/ctp', '/api/orders', '/api/orders/<so_id>', '/api/orders/assign'
+            '/api/health',
+            '/api/data/dashboard',
+            '/api/data/config',
+            '/api/data/orders',
+            '/api/data/skus',
+            '/api/data/campaigns',
+            '/api/data/gantt',
+            '/api/data/capacity',
+            '/api/run/bom',
+            '/api/run/schedule',
+            '/api/run/ctp',
+            '/api/orders',
+            '/api/orders/<so_id>',
+            '/api/orders/assign',
         ],
         'application': [
-            '/api/aps/dashboard/overview', '/api/aps/orders/list', '/api/aps/orders', '/api/aps/orders/<so_id>',
-            '/api/aps/orders/assign', '/api/aps/campaigns/list', '/api/aps/campaigns/release-queue',
-            '/api/aps/campaigns/<campaign_id>', '/api/aps/campaigns/<campaign_id>/status',
-            '/api/aps/schedule/gantt', '/api/aps/schedule/run', '/api/aps/schedule/jobs/<job_id>',
-            '/api/aps/schedule/jobs/<job_id>/reschedule', '/api/aps/dispatch/board',
-            '/api/aps/dispatch/resources/<resource_id>', '/api/aps/capacity/map',
-            '/api/aps/capacity/bottlenecks', '/api/aps/material/plan', '/api/aps/material/holds',
-            '/api/aps/ctp/check', '/api/aps/ctp/requests', '/api/aps/ctp/output', '/api/aps/scenarios/list',
-            '/api/aps/scenarios', '/api/aps/scenarios/<key_value>', '/api/aps/scenarios/output',
-            '/api/aps/scenarios/apply', '/api/aps/masterdata', '/api/aps/masterdata/<section>',
-            '/api/aps/masterdata/<section>/<key_value>', '/api/aps/masterdata/<section>/bulk-replace'
+            # Dashboard
+            '/api/aps/dashboard/overview',
+
+            # Orders
+            '/api/aps/orders/list',
+            '/api/aps/orders',
+            '/api/aps/orders/<so_id>',
+            '/api/aps/orders/assign',
+
+            # APS planning workflow
+            '/api/aps/planning/orders/pool',
+            '/api/aps/planning/window/select',
+            '/api/aps/planning/orders/propose',
+            '/api/aps/planning/orders/update',
+            '/api/aps/planning/heats/derive',
+            '/api/aps/planning/simulate',
+            '/api/aps/planning/release',
+
+            # Campaigns
+            '/api/aps/campaigns/list',
+            '/api/aps/campaigns/release-queue',
+            '/api/aps/campaigns/<campaign_id>',
+            '/api/aps/campaigns/<campaign_id>/status',
+
+            # Schedule
+            '/api/aps/schedule/gantt',
+            '/api/aps/schedule/run',
+            '/api/aps/schedule/jobs/<job_id>',
+            '/api/aps/schedule/jobs/<job_id>/reschedule',
+
+            # Dispatch
+            '/api/aps/dispatch/board',
+            '/api/aps/dispatch/resources/<resource_id>',
+
+            # Capacity
+            '/api/aps/capacity/map',
+            '/api/aps/capacity/bottlenecks',
+
+            # Material
+            '/api/aps/material/plan',
+            '/api/aps/material/holds',
+
+            # CTP
+            '/api/aps/ctp/check',
+            '/api/aps/ctp/requests',
+            '/api/aps/ctp/output',
+
+            # Scenarios
+            '/api/aps/scenarios/list',
+            '/api/aps/scenarios',
+            '/api/aps/scenarios/<key_value>',
+            '/api/aps/scenarios/output',
+            '/api/aps/scenarios/apply',
+
+            # Master data
+            '/api/aps/masterdata',
+            '/api/aps/masterdata/<section>',
+            '/api/aps/masterdata/<section>/<key_value>',
+            '/api/aps/masterdata/<section>/bulk-replace',
         ],
+        'notes': {
+            'planning_model': 'SO → PlanningOrder → HeatBatch → finite schedule',
+            'authoritative_scheduler': '/api/aps/planning/simulate and /api/run/schedule',
+            'legacy_routes_retained': True,
+        }
     })
+
+
+def _planning_orders_to_scheduler_campaigns(
+    planning_orders: List[Dict[str, Any]],
+    all_orders_df: pd.DataFrame,
+    config: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """
+    Bridge APS PlanningOrder objects into the legacy scheduler's expected campaign shape.
+
+    This lets the real scheduler stay unchanged while APS becomes the primary planning model.
+    """
+    from engine.campaign import billet_family_for_grade, needs_vd_for_grade
+
+    if all_orders_df is None or all_orders_df.empty:
+        all_orders_df = pd.DataFrame()
+
+    so_df = all_orders_df.copy()
+    if "SO_ID" in so_df.columns:
+        so_df["SO_ID"] = so_df["SO_ID"].astype(str).str.strip()
+    so_map = {
+        str(row.get("SO_ID", "")).strip(): row
+        for _, row in so_df.iterrows()
+        if str(row.get("SO_ID", "")).strip()
+    }
+
+    def _priority_rank(priority: str) -> int:
+        p = str(priority or "").strip().upper()
+        return {"URGENT": 1, "HIGH": 2, "NORMAL": 3, "LOW": 4}.get(p, 9)
+
+    campaigns: List[Dict[str, Any]] = []
+    heat_size = float(pd.to_numeric(pd.Series([config.get("HEAT_SIZE_MT", 50)]), errors="coerce").fillna(50).iloc[0])
+
+    for po in planning_orders:
+        po_id = str(po.get("po_id", "")).strip()
+        if not po_id:
+            continue
+
+        so_ids = [str(x).strip() for x in (po.get("selected_so_ids") or []) if str(x).strip()]
+        source_rows = [so_map[x] for x in so_ids if x in so_map]
+
+        priorities = [str(r.get("Priority", "NORMAL")).strip().upper() for r in source_rows] or ["NORMAL"]
+        if "URGENT" in priorities:
+            priority = "URGENT"
+        elif "HIGH" in priorities:
+            priority = "HIGH"
+        elif "LOW" in priorities:
+            priority = "LOW"
+        else:
+            priority = "NORMAL"
+
+        sections = []
+        for r in source_rows:
+            try:
+                sections.append(float(pd.to_numeric(pd.Series([r.get("Section_mm", 0)]), errors="coerce").fillna(0).iloc[0]))
+            except Exception:
+                pass
+
+        if not sections:
+            for x in str(po.get("size_family", "")).split(","):
+                x = x.strip().replace("mm", "")
+                try:
+                    sections.append(float(x))
+                except Exception:
+                    pass
+
+        section_mm = min(sections) if sections else float(pd.to_numeric(pd.Series([config.get("Default_Section_Fallback", 6.5)]), errors="coerce").fillna(6.5).iloc[0])
+
+        due_window = po.get("due_window", ("", ""))
+        due_value = None
+        if isinstance(due_window, (list, tuple)) and len(due_window) >= 2:
+            due_value = due_window[1]
+        due_ts = pd.to_datetime(due_value, errors="coerce")
+        if pd.isna(due_ts):
+            due_ts = pd.Timestamp.now() + pd.Timedelta(days=int(config.get("Planning_Horizon_Days", 7) or 7))
+
+        total_mt = float(pd.to_numeric(pd.Series([po.get("total_qty_mt", 0)]), errors="coerce").fillna(0).iloc[0])
+        heats_required = int(pd.to_numeric(pd.Series([po.get("heats_required", 0)]), errors="coerce").fillna(0).iloc[0])
+        if heats_required <= 0:
+            heats_required = max(1, int(np.ceil(total_mt / heat_size))) if heat_size > 0 else 1
+
+        grade = str(po.get("grade_family", "")).strip()
+        route_family = str(po.get("route_family", "SMS→RM")).strip() or "SMS→RM"
+        planner_status = str(po.get("planner_status", "PROPOSED")).strip().upper()
+
+        production_orders = []
+        if source_rows:
+            for idx, row in enumerate(source_rows, start=1):
+                qty_mt = float(pd.to_numeric(pd.Series([row.get("Order_Qty_MT", row.get("Order_Qty", 0))]), errors="coerce").fillna(0).iloc[0])
+                po_due = pd.to_datetime(row.get("Delivery_Date"), errors="coerce")
+                production_orders.append({
+                    "production_order_id": f"{po_id}-SO{idx:02d}",
+                    "so_id": str(row.get("SO_ID", "")).strip(),
+                    "sku_id": str(row.get("SKU_ID", "")).strip(),
+                    "section_mm": float(pd.to_numeric(pd.Series([row.get("Section_mm", section_mm)]), errors="coerce").fillna(section_mm).iloc[0]),
+                    "qty_mt": qty_mt,
+                    "due_date": po_due if pd.notna(po_due) else due_ts,
+                    "priority_rank": _priority_rank(row.get("Priority", priority)),
+                    "priority": str(row.get("Priority", priority)).strip().upper(),
+                })
+        else:
+            production_orders.append({
+                "production_order_id": f"{po_id}-PO01",
+                "so_id": ", ".join(so_ids),
+                "sku_id": "",
+                "section_mm": section_mm,
+                "qty_mt": total_mt,
+                "due_date": due_ts,
+                "priority_rank": _priority_rank(priority),
+                "priority": priority,
+            })
+
+        campaigns.append({
+            "campaign_id": po_id,
+            "campaign_group": "APS",
+            "grade": grade,
+            "heats": heats_required,
+            "needs_vd": bool(needs_vd_for_grade(grade)),
+            "billet_family": billet_family_for_grade(grade),
+            "due_date": due_ts,
+            "priority": priority,
+            "priority_rank": _priority_rank(priority),
+            "total_coil_mt": total_mt,
+            "total_mt": total_mt,
+            "section_mm": section_mm,
+            "so_ids": so_ids,
+            "release_status": "RELEASED" if planner_status == "RELEASED" else "PLANNED",
+            "planner_status": planner_status,
+            "sku_attributes": {
+                "sections_covered": str(po.get("size_family", "")),
+                "route_family": route_family,
+            },
+            "production_orders": production_orders,
+        })
+
+    return campaigns
+
+def _released_sales_orders_to_planning_orders(d: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Reconstruct released APS planning orders from Sales_Orders workbook rows.
+    Uses Campaign_ID = PO_ID and Campaign_Group = APS_RELEASED written by release step.
+    """
+    so_df = d["all_orders"].copy()
+    if so_df.empty:
+        return []
+
+    for col in ["SO_ID", "Campaign_ID", "Campaign_Group", "Grade", "SKU_ID", "Priority", "Status"]:
+        if col in so_df.columns:
+            so_df[col] = so_df[col].astype(str).str.strip()
+
+    released_mask = (
+        so_df.get("Campaign_Group", pd.Series([""] * len(so_df))).astype(str).str.strip().str.upper().eq("APS_RELEASED")
+        & so_df.get("Campaign_ID", pd.Series([""] * len(so_df))).astype(str).str.strip().ne("")
+    )
+    aps_rows = so_df[released_mask].copy()
+    if aps_rows.empty:
+        return []
+
+    aps_rows["Order_Qty_MT"] = pd.to_numeric(aps_rows.get("Order_Qty_MT"), errors="coerce").fillna(
+        pd.to_numeric(aps_rows.get("Order_Qty"), errors="coerce").fillna(0.0)
+    )
+    aps_rows["Section_mm"] = pd.to_numeric(aps_rows.get("Section_mm"), errors="coerce").fillna(
+        float(pd.to_numeric(pd.Series([d["config"].get("Default_Section_Fallback", 6.5)]), errors="coerce").fillna(6.5).iloc[0])
+    )
+    aps_rows["Delivery_Date"] = pd.to_datetime(aps_rows.get("Delivery_Date"), errors="coerce")
+
+    heat_size = float(pd.to_numeric(pd.Series([d["config"].get("HEAT_SIZE_MT", 50)]), errors="coerce").fillna(50).iloc[0])
+
+    planning_orders: List[Dict[str, Any]] = []
+    for po_id, grp in aps_rows.groupby("Campaign_ID", dropna=False):
+        po_id = str(po_id).strip()
+        if not po_id:
+            continue
+
+        grade_mode = grp["Grade"].mode()
+        grade = str(grade_mode.iloc[0]).strip() if not grade_mode.empty else ""
+
+        due_dates = grp["Delivery_Date"].dropna()
+        sections = sorted({float(x) for x in grp["Section_mm"].dropna().tolist()})
+        total_qty = float(grp["Order_Qty_MT"].sum())
+        heats_required = max(1, int(np.ceil(total_qty / heat_size))) if heat_size > 0 else 1
+
+        planning_orders.append({
+            "po_id": po_id,
+            "selected_so_ids": [str(x).strip() for x in grp["SO_ID"].tolist() if str(x).strip()],
+            "total_qty_mt": round(total_qty, 3),
+            "grade_family": grade,
+            "size_family": ",".join(f"{x:g}mm" for x in sections),
+            "due_window": (
+                due_dates.min().date().isoformat() if not due_dates.empty else "",
+                due_dates.max().date().isoformat() if not due_dates.empty else "",
+            ),
+            "route_family": "SMS→RM",
+            "heats_required": heats_required,
+            "planner_status": "RELEASED",
+            "frozen_flag": False,
+        })
+
+    return planning_orders
 
 
 if __name__ == '__main__':

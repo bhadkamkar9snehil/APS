@@ -901,6 +901,7 @@ def schedule(
 ) -> dict:
     """Run the CP-SAT scheduler."""
     if not _cp_sat_available():
+        print("[Scheduler] ⚠️  OR-Tools CP-SAT not available, using greedy fallback. Install with: pip install ortools")
         return _greedy_fallback(
             campaigns,
             resources=resources,
@@ -918,6 +919,7 @@ def schedule(
         )
 
     model = cp_model.CpModel()
+    print("[Scheduler] ✓ Using OR-Tools CP-SAT solver")
 
     planning_horizon_days = max(int(planning_horizon_days or 14), 1)
     frozen_jobs = frozen_jobs or {}

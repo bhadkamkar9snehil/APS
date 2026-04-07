@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Tuple
 from enum import Enum
-
+import math
 
 class PlanningHorizon(Enum):
     """Planning window options."""
@@ -155,28 +155,54 @@ class APSPlanner:
         window: PlanningHorizon = PlanningHorizon.NEXT_7_DAYS,
     ) -> List[SalesOrder]:
         """
-        Select candidate SOs within planning window.
+        Select valid candidate SOs within the planning window.
 
-        Args:
-            all_sos: All available sales orders
-            window: Planning horizon (next 3/7/10/14 days, or overdue+5)
-
-        Returns:
-            List of SOs in the planning window
+        Rules:
+        - only open / planned / confirmed work
+        - valid SO_ID required
+        - positive quantity required
+        - valid due date required
+        - sorted by due date, then priority, then qty desc
         """
         now = datetime.now()
-        candidates = [so for so in all_sos if so.status == 'Open']
+
+        def _priority_rank(priority: str) -> int:
+            p = str(priority or "").strip().upper()
+            return {"URGENT": 0, "HIGH": 1, "NORMAL": 2, "LOW": 3}.get(p, 9)
+
+        valid = []
+        for so in all_sos:
+            if not so:
+                continue
+            if not str(so.so_id or "").strip():
+                continue
+            if float(so.qty_mt or 0) <= 0:
+                continue
+            status = str(so.status or "").strip().upper()
+            if status not in {"OPEN", "CONFIRMED", "PLANNED", ""}:
+                continue
+            due_dt = so.due_date_obj()
+            if due_dt.year >= 2099:
+                continue
+            valid.append(so)
 
         if window == PlanningHorizon.OVERDUE_PLUS_5_DAYS:
-            # Include overdue + next 5 days
             cutoff = now + timedelta(days=5)
-            return [so for so in candidates if so.due_date_obj() <= cutoff]
+            selected = [so for so in valid if so.due_date_obj() <= cutoff]
         else:
-            # Next N days
-            days = window.value if isinstance(window.value, int) else 7
+            days = int(window.value) if isinstance(window.value, int) else 7
             cutoff = now + timedelta(days=days)
-            return [so for so in candidates if so.due_date_obj() <= cutoff]
+            selected = [so for so in valid if so.due_date_obj() <= cutoff]
 
+        selected.sort(
+            key=lambda so: (
+                so.due_date_obj(),
+                _priority_rank(so.priority),
+                -float(so.qty_mt or 0),
+                str(so.so_id),
+            )
+        )
+        return selected
     # ===== STEP 2: PROPOSE PLANNING ORDERS =====
 
     def propose_planning_orders(
@@ -185,99 +211,117 @@ class APSPlanner:
         rules: Dict[str, Any] = None,
     ) -> List[PlanningOrder]:
         """
-        Auto-propose Planning Orders (manufacturing lots) from selected SOs.
+        Auto-propose manufacturing lots.
 
-        Rules applied (in order):
-        1. Grade compatibility (prefer same grade to minimize changeovers)
-        2. Due-date proximity (group similar due dates)
-        3. Size/section compatibility if available
-        4. Heat-size constraint (≤50 MT per heat typically)
-        5. Urgent order protection (don't delay urgent orders)
-
-        Args:
-            window_sos: SOs in the planning window
-            rules: Override rules (optional)
-
-        Returns:
-            List of proposed PlanningOrder objects
+        Grouping logic:
+        1. urgent jobs can stand alone or only combine with near-due compatible jobs
+        2. same grade required
+        3. same / near section preferred
+        4. due-window spread capped
+        5. max lot tonnage / max heats respected
         """
         if not window_sos:
+            self.planning_orders = []
             return []
 
-        # Default rules
-        if rules is None:
-            rules = {
-                'max_lot_mt': 500,
-                'max_heats_per_lot': 12,
-                'heat_size_mt': 50,
-                'urgent_window_hours': 48,
-            }
+        rules = rules or {
+            "heat_size_mt": float(self.config.get("HEAT_SIZE_MT", 50) or 50),
+            "max_lot_mt": float(self.config.get("APS_MAX_LOT_MT", 300) or 300),
+            "max_heats_per_lot": int(self.config.get("APS_MAX_HEATS_PER_LOT", 8) or 8),
+            "urgent_window_hours": int(self.config.get("APS_URGENT_WINDOW_HOURS", 48) or 48),
+            "max_due_spread_days": int(self.config.get("APS_MAX_DUE_SPREAD_DAYS", 3) or 3),
+            "section_tolerance_mm": float(self.config.get("APS_SECTION_TOLERANCE_MM", 0.6) or 0.6),
+        }
 
-        # Group by grade first (primary axis)
-        grade_groups: Dict[str, List[SalesOrder]] = {}
-        for so in window_sos:
-            if so.grade not in grade_groups:
-                grade_groups[so.grade] = []
-            grade_groups[so.grade].append(so)
+        def _priority_rank(priority: str) -> int:
+            p = str(priority or "").strip().upper()
+            return {"URGENT": 0, "HIGH": 1, "NORMAL": 2, "LOW": 3}.get(p, 9)
 
-        # Within each grade, sub-group by due-date proximity
-        planning_orders = []
+        def _is_urgent(so: SalesOrder) -> bool:
+            return so.hours_until_due() <= rules["urgent_window_hours"] or str(so.priority or "").upper() == "URGENT"
+
+        def _section_ok(a: SalesOrder, b: SalesOrder) -> bool:
+            try:
+                return abs(float(a.section_mm or 0) - float(b.section_mm or 0)) <= rules["section_tolerance_mm"]
+            except Exception:
+                return True
+
+        def _due_spread_ok(lot: List[SalesOrder], candidate: SalesOrder) -> bool:
+            dates = [x.due_date_obj() for x in lot] + [candidate.due_date_obj()]
+            return (max(dates) - min(dates)).days <= rules["max_due_spread_days"]
+
+        # Sort strongest planning signal first
+        ordered = sorted(
+            window_sos,
+            key=lambda so: (
+                _priority_rank(so.priority),
+                so.due_date_obj(),
+                str(so.grade or ""),
+                float(so.section_mm or 0),
+                -float(so.qty_mt or 0),
+                str(so.so_id),
+            ),
+        )
+
+        planning_orders: List[PlanningOrder] = []
+        used: set[str] = set()
         po_counter = 1
 
-        for grade in sorted(grade_groups.keys()):
-            grade_sos = grade_groups[grade]
+        for seed in ordered:
+            if seed.so_id in used:
+                continue
 
-            # Sort by due date (nearest first)
-            grade_sos.sort(key=lambda so: so.due_date_obj())
+            lot = [seed]
+            used.add(seed.so_id)
 
-            # Create lots within this grade
-            i = 0
-            while i < len(grade_sos):
-                # Start a new lot with this SO
-                lot_sos = [grade_sos[i]]
-                lot_mt = grade_sos[i].qty_mt
-                lot_due_min = grade_sos[i].due_date_obj()
-                lot_due_max = lot_due_min
+            for candidate in ordered:
+                if candidate.so_id in used:
+                    continue
 
-                i += 1
+                # hard compatibility checks
+                if str(candidate.grade or "").strip() != str(seed.grade or "").strip():
+                    continue
+                if not _section_ok(seed, candidate):
+                    continue
+                if not _due_spread_ok(lot, candidate):
+                    continue
 
-                # Greedily add compatible SOs to this lot
-                while i < len(grade_sos):
-                    next_so = grade_sos[i]
-                    new_mt = lot_mt + next_so.qty_mt
-                    new_heats = self._estimate_heats([so for so in lot_sos] + [next_so], rules)
+                # urgent protection: do not bury urgent SOs in large pools
+                if _is_urgent(seed) and len(lot) >= 2:
+                    continue
+                if _is_urgent(candidate) and not _is_urgent(seed):
+                    continue
 
-                    # Check constraints
-                    mt_ok = new_mt <= rules['max_lot_mt']
-                    heats_ok = new_heats <= rules['max_heats_per_lot']
-                    grade_ok = next_so.grade == grade
+                trial_lot = lot + [candidate]
+                trial_mt = sum(float(x.qty_mt or 0) for x in trial_lot)
+                trial_heats = self._estimate_heats(trial_lot, rules)
 
-                    if mt_ok and heats_ok and grade_ok:
-                        lot_sos.append(next_so)
-                        lot_mt = new_mt
-                        lot_due_max = next_so.due_date_obj()
-                        i += 1
-                    else:
-                        break
+                if trial_mt > rules["max_lot_mt"]:
+                    continue
+                if trial_heats > rules["max_heats_per_lot"]:
+                    continue
 
-                # Create PlanningOrder
-                heats = self._estimate_heats(lot_sos, rules)
-                po = PlanningOrder(
-                    po_id=f'PO-{po_counter:04d}',
-                    selected_so_ids=[so.so_id for so in lot_sos],
-                    total_qty_mt=lot_mt,
-                    grade_family=grade,
-                    size_family=','.join(sorted(set(f'{so.section_mm}mm' for so in lot_sos))),
-                    due_window=(
-                        lot_due_min.isoformat()[:10],
-                        lot_due_max.isoformat()[:10],
-                    ),
-                    route_family='SMS→RM',  # Typical steel path
-                    heats_required=heats,
-                    planner_status='PROPOSED',
-                )
-                planning_orders.append(po)
-                po_counter += 1
+                lot.append(candidate)
+                used.add(candidate.so_id)
+
+            total_mt = round(sum(float(x.qty_mt or 0) for x in lot), 3)
+            heats = self._estimate_heats(lot, rules)
+            due_dates = sorted(x.due_date_obj() for x in lot)
+            section_values = sorted({float(x.section_mm or 0) for x in lot if x.section_mm is not None})
+
+            po = PlanningOrder(
+                po_id=f"PO-{po_counter:04d}",
+                selected_so_ids=[x.so_id for x in lot],
+                total_qty_mt=total_mt,
+                grade_family=str(seed.grade or "").strip(),
+                size_family=",".join(f"{v:g}mm" for v in section_values) if section_values else "",
+                due_window=(due_dates[0].date().isoformat(), due_dates[-1].date().isoformat()),
+                route_family=str(seed.route_family or "SMS→RM"),
+                heats_required=heats,
+                planner_status="PROPOSED",
+            )
+            planning_orders.append(po)
+            po_counter += 1
 
         self.planning_orders = planning_orders
         return planning_orders
@@ -290,42 +334,36 @@ class APSPlanner:
         heat_size_mt: float = 50.0,
     ) -> List[HeatBatch]:
         """
-        Derive heat requirements from Planning Orders.
-
-        Args:
-            planning_orders: The manufacturing lots
-            heat_size_mt: Standard heat size (MT)
-
-        Returns:
-            List of HeatBatch objects
+        Derive heats using ceiling-based fill logic.
         """
-        heats = []
+        heat_size_mt = float(heat_size_mt or self.config.get("HEAT_SIZE_MT", 50) or 50)
+        heats: List[HeatBatch] = []
         heat_counter = 1
 
         for po in planning_orders:
-            # Calculate heats for this PO
-            heats_needed = po.heats_required
+            total_qty = float(po.total_qty_mt or 0)
+            heats_needed = max(1, int(math.ceil(total_qty / heat_size_mt))) if heat_size_mt > 0 else 1
+            remaining = total_qty
 
-            # Distribute PO qty across heats
-            qty_per_heat = po.total_qty_mt / heats_needed
-            remaining_qty = po.total_qty_mt
-
-            for heat_seq in range(1, heats_needed + 1):
-                heat_qty = min(qty_per_heat, remaining_qty)
+            for seq in range(1, heats_needed + 1):
+                if seq < heats_needed:
+                    heat_qty = min(heat_size_mt, remaining)
+                else:
+                    heat_qty = remaining
 
                 heat = HeatBatch(
-                    heat_id=f'HEAT-{heat_counter:05d}',
+                    heat_id=f"HEAT-{heat_counter:05d}",
                     planning_order_id=po.po_id,
                     grade=po.grade_family,
-                    qty_mt=heat_qty,
-                    heat_number_seq=heat_seq,
-                    upstream_route='SMS→RM',
-                    compatibility_class='standard',
-                    expected_duration_hours=2.0,  # Typical SMS melt
+                    qty_mt=round(float(heat_qty), 3),
+                    heat_number_seq=seq,
+                    upstream_route=po.route_family or "SMS→RM",
+                    compatibility_class=str(po.grade_family or "").strip(),
+                    expected_duration_hours=float(self.config.get("default_heat_duration", 2.0) or 2.0),
                 )
                 heats.append(heat)
                 heat_counter += 1
-                remaining_qty -= heat_qty
+                remaining = round(remaining - heat_qty, 6)
 
         self.heat_batches = heats
         return heats
@@ -337,24 +375,59 @@ class APSPlanner:
         sos: List[SalesOrder],
         rules: Dict[str, Any] = None,
     ) -> int:
-        """Estimate number of heats needed."""
-        if rules is None:
-            rules = {'heat_size_mt': 50}
-
-        total_mt = sum(so.qty_mt for so in sos)
-        heat_size = rules.get('heat_size_mt', 50)
-        return max(1, round(total_mt / heat_size))
+        """Estimate heats using ceiling, never round."""
+        rules = rules or {"heat_size_mt": float(self.config.get("HEAT_SIZE_MT", 50) or 50)}
+        total_mt = sum(float(so.qty_mt or 0) for so in sos)
+        heat_size = float(rules.get("heat_size_mt", 50) or 50)
+        if heat_size <= 0:
+            heat_size = 50.0
+        return max(1, int(math.ceil(total_mt / heat_size)))
 
     def validate_planning_orders(self, pos: List[PlanningOrder]) -> Dict[str, Any]:
-        """Validate proposed planning orders."""
-        return {
-            'valid': True,
-            'total_sos': sum(len(po.selected_so_ids) for po in pos),
-            'total_mt': sum(po.total_qty_mt for po in pos),
-            'total_heats': sum(po.heats_required for po in pos),
-            'po_count': len(pos),
-        }
+        issues: List[str] = []
+        total_mt = 0.0
+        total_heats = 0
+        total_sos = 0
 
+        seen_po_ids = set()
+        seen_so_ids = set()
+
+        for po in pos:
+            if po.po_id in seen_po_ids:
+                issues.append(f"Duplicate PO_ID: {po.po_id}")
+            seen_po_ids.add(po.po_id)
+
+            po_mt = float(po.total_qty_mt or 0)
+            if po_mt <= 0:
+                issues.append(f"{po.po_id}: non-positive total_qty_mt")
+            if not po.selected_so_ids:
+                issues.append(f"{po.po_id}: no linked sales orders")
+            if int(po.heats_required or 0) <= 0:
+                issues.append(f"{po.po_id}: non-positive heats_required")
+            if not str(po.grade_family or "").strip():
+                issues.append(f"{po.po_id}: blank grade_family")
+
+            for so_id in (po.selected_so_ids or []):
+                so_id = str(so_id).strip()
+                if not so_id:
+                    issues.append(f"{po.po_id}: blank sales order id in selected_so_ids")
+                    continue
+                if so_id in seen_so_ids:
+                    issues.append(f"{po.po_id}: sales order {so_id} appears in more than one planning order")
+                seen_so_ids.add(so_id)
+
+            total_mt += po_mt
+            total_heats += int(po.heats_required or 0)
+            total_sos += len(po.selected_so_ids or [])
+
+        return {
+            "valid": len(issues) == 0,
+            "issues": issues,
+            "total_sos": total_sos,
+            "total_mt": round(total_mt, 3),
+            "total_heats": total_heats,
+            "po_count": len(pos),
+        }
     # ===== STEP 4: FINITE CAPACITY SCHEDULING =====
 
     def simulate_finite_schedule(
@@ -366,47 +439,44 @@ class APSPlanner:
         solver_time_limit_sec: float = 30.0,
     ) -> Dict[str, Any]:
         """
-        Simulate finite-capacity schedule using CP-SAT solver.
-
-        Args:
-            heat_batches: Heat batches to schedule (from derive_heat_batches)
-            planning_orders: Original planning orders (for context)
-            sms_resources: SMS machines available (default: SMS-01)
-            rm_resources: RM machines available (default: RM-01)
-            solver_time_limit_sec: CP-SAT solver timeout
-
-        Returns:
-            Schedule feasibility and timing metrics
+        Load estimator only.
+        This is NOT the authoritative scheduler; the API should use engine.scheduler.schedule(...)
+        for authoritative feasibility.
         """
         if not heat_batches:
             return {
-                'feasible': False,
-                'message': 'No heat batches to schedule',
-                'total_duration_hours': 0,
-                'sms_hours': 0,
-                'rm_hours': 0,
-                'load_factor': 0,
+                "authoritative": False,
+                "solver_status": "NO_DATA",
+                "feasible": False,
+                "message": "No heat batches to schedule",
+                "total_duration_hours": 0.0,
+                "sms_hours": 0.0,
+                "rm_hours": 0.0,
+                "load_factor": "0%",
             }
 
-        sms_resources = sms_resources or ['SMS-01']
-        rm_resources = rm_resources or ['RM-01']
+        sms_count = max(1, len(sms_resources or ["SMS-01"]))
+        rm_count = max(1, len(rm_resources or ["RM-01"]))
 
-        # Calculate total SMS hours (sequential, one SMS runs all heats)
-        total_sms_hours = len(heat_batches) * (self.config.get('default_heat_duration', 2.0) or 2.0)
+        default_heat_hrs = float(self.config.get("default_heat_duration", 2.0) or 2.0)
+        rm_factor = float(self.config.get("rm_duration_factor", 1.2) or 1.2)
+        horizon_hours = float(self.config.get("planning_horizon_hours", 168) or 168)
 
-        # Calculate total RM hours (heats run sequentially through RM)
-        total_rm_hours = sum(heat.expected_duration_hours or 2.0 for heat in heat_batches) * 2  # 2x for rolling
+        total_sms_hours = sum(float(h.expected_duration_hours or default_heat_hrs) for h in heat_batches)
+        total_rm_hours = sum(float(h.expected_duration_hours or default_heat_hrs) * rm_factor for h in heat_batches)
 
-        # Simple feasibility check
-        planning_horizon_hours = self.config.get('planning_horizon_hours', 168) or 168  # 7 days
-        total_duration = max(total_sms_hours, total_rm_hours)
-        feasible = total_duration <= planning_horizon_hours
+        sms_span = total_sms_hours / sms_count
+        rm_span = total_rm_hours / rm_count
+        total_duration = max(sms_span, rm_span)
+        feasible = total_duration <= horizon_hours
 
         return {
-            'feasible': feasible,
-            'message': 'Schedule is feasible' if feasible else f'Schedule exceeds horizon ({total_duration:.1f}h > {planning_horizon_hours}h)',
-            'total_duration_hours': round(total_duration, 1),
-            'sms_hours': round(total_sms_hours, 1),
-            'rm_hours': round(total_rm_hours, 1),
-            'load_factor': f'{(total_duration / planning_horizon_hours * 100):.0f}%',
+            "authoritative": False,
+            "solver_status": "ESTIMATE_ONLY",
+            "feasible": feasible,
+            "message": "Estimated load only. Use API simulate for authoritative finite schedule.",
+            "total_duration_hours": round(total_duration, 2),
+            "sms_hours": round(total_sms_hours, 2),
+            "rm_hours": round(total_rm_hours, 2),
+            "load_factor": f"{round((total_duration / horizon_hours) * 100, 1)}%",
         }

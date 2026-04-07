@@ -8,6 +8,34 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
+<style>
+/* Pipeline stages */
+.pipeline-stage{border:1px solid var(--border);border-radius:.4rem;background:var(--card-bg);overflow:hidden;flex-shrink:0}
+.ps-header{display:flex;align-items:center;gap:.75rem;padding:.65rem .9rem;cursor:pointer;user-select:none;transition:background .15s}
+.ps-header:hover{background:rgba(0,0,0,.025)}
+.ps-num{width:1.6rem;height:1.6rem;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;flex-shrink:0}
+.ps-info{flex:1;min-width:0}
+.ps-title{font-weight:600;font-size:.85rem;line-height:1.2}
+.ps-meta{font-size:.72rem;color:var(--text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ps-kpis{display:flex;gap:.75rem;font-size:.72rem;color:var(--text-soft)}
+.ps-kpis span{white-space:nowrap}
+.ps-badge{font-size:.65rem;font-weight:700;letter-spacing:.03em;padding:.2rem .5rem;border-radius:1rem;background:var(--border);color:var(--text-soft);white-space:nowrap;flex-shrink:0}
+.ps-badge.pending{background:#f1f5f9;color:#94a3b8}
+.ps-badge.running{background:#dbeafe;color:#2563eb}
+.ps-badge.done{background:#dcfce7;color:#16a34a}
+.ps-badge.warn{background:#fef3c7;color:#d97706}
+.ps-badge.error{background:#fee2e2;color:#dc2626}
+.ps-action{flex-shrink:0;padding:.3rem .7rem;font-size:.75rem;height:1.8rem}
+.ps-chevron{font-size:.7rem;color:var(--text-faint);flex-shrink:0;transition:transform .2s}
+.ps-chevron.collapsed{transform:rotate(-90deg)}
+.ps-body{overflow:hidden;transition:max-height .3s ease,opacity .2s;max-height:2000px;opacity:1}
+.ps-body.collapsed{max-height:0;opacity:0;pointer-events:none}
+.ps-body-inner{padding:.75rem .9rem .9rem;border-top:1px solid var(--border-soft)}
+/* num styling when done */
+.pipeline-stage.done .ps-num{background:var(--success)}
+.pipeline-stage.running .ps-num{background:var(--info)}
+.pipeline-stage.error .ps-num{background:var(--danger)}
+</style>
 </head>
 <body>
 <div id="loadingBar" class="loading-bar"></div>
@@ -15,39 +43,24 @@
   <div class="shell">
     <div class="navbar">
       <div class="tabs" id="topTabs">
-        <!-- Main Planning Workflow Tabs -->
+        <!-- Main Tabs -->
         <button class="tab active" data-page="dashboard">Dashboard</button>
-        <button class="tab" data-page="orders">Sales Orders</button>
-        <button class="tab" data-page="planning-pool">Order Pool</button>
-        <button class="tab" data-page="planning-board">Planning Board</button>
-        <button class="tab" data-page="heat-builder">Heat Builder</button>
-        <button class="tab" data-page="finite-scheduler">Scheduler</button>
-        <button class="tab" data-page="release-board">Release</button>
+        <button class="tab" data-page="planning">Planning</button>
+        <button class="tab" data-page="execution">Execution</button>
+        <button class="tab" data-page="material">Material</button>
+        <button class="tab" data-page="capacity">Capacity</button>
 
-        <!-- Spacer -->
-        <div style="flex:1"></div>
-
-        <!-- More Tools Menu -->
-        <div style="position:relative;display:inline-block">
-          <button class="tab" id="moreToolsBtn" style="min-width:0">⋮ More</button>
-          <div id="moreToolsMenu" style="display:none;position:absolute;top:100%;right:0;background:var(--card-bg);border:1px solid var(--border);border-radius:.25rem;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:100;min-width:150px">
-            <button class="tab" data-page="campaigns" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">Campaigns</button>
-            <button class="tab" data-page="schedule" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">Schedule</button>
-            <button class="tab" data-page="dispatch" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">Dispatch</button>
-            <button class="tab" data-page="material" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">Material</button>
-            <button class="tab" data-page="capacity" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">Capacity</button>
-            <button class="tab" data-page="ctp" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">CTP</button>
-            <button class="tab" data-page="scenarios" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">Scenarios</button>
-            <button class="tab" data-page="bom" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">BOM</button>
-            <button class="tab" data-page="master" style="display:block;width:100%;text-align:left;border:none;border-radius:0;padding:.5rem .75rem">Master Data</button>
-          </div>
-        </div>
+        <button class="tab" data-page="ctp">CTP</button>
+        <button class="tab" data-page="scenarios">Scenarios</button>
+        <button class="tab" data-page="bom">BOM</button>
+        <button class="tab" data-page="master">Master Data</button>
       </div>
     </div>
 
     <div class="top">
       <div class="top-controls">
-        <div class="control-group">
+        <!-- Default controls: schedule tabs -->
+        <div class="control-group" id="ctrl-default">
           <select class="sel" id="horizonSelect">
             <option value="7">7 Days Horizon</option>
             <option value="14" selected>14 Days Horizon</option>
@@ -62,11 +75,22 @@
           </select>
           <button class="btn primary" id="runBtn">Run Schedule</button>
         </div>
+        <!-- Planning tab controls -->
+        <div class="control-group" id="ctrl-planning" style="display:none">
+          <select class="sel" id="planningWindowDays">
+            <option value="3">3-Day Window</option>
+            <option value="7" selected>7-Day Window</option>
+            <option value="10">10-Day Window</option>
+            <option value="14">14-Day Window</option>
+          </select>
+          <button class="btn ghost" id="pipelineExpandAllBtn" title="Expand / collapse all stages">Expand All</button>
+          <button class="btn primary" id="pipelineRunBtn">&#9654; Run Pipeline</button>
+        </div>
       </div>
       <div class="top-summary">
         <div class="brand-row">
           <div class="summary-grid">
-            <div class="metric"><div class="metric-label">Campaigns</div><div class="metric-value" id="summaryCampaigns">—</div><div class="metric-sub" id="summaryCampaignsSub">Loading…</div></div>
+            <div class="metric"><div class="metric-label">Planning Orders</div><div class="metric-value" id="summaryCampaigns">—</div><div class="metric-sub" id="summaryCampaignsSub">Loading…</div></div>
             <div class="metric success"><div class="metric-label">Heats planned</div><div class="metric-value" id="summaryHeats">—</div><div class="metric-sub" id="summaryHeatsSub">—</div></div>
             <div class="metric"><div class="metric-label">MT planned</div><div class="metric-value" id="summaryMt">—</div><div class="metric-sub" id="summaryMtSub">14-day horizon</div></div>
             <div class="metric"><div class="metric-label">Throughput</div><div class="metric-value" id="summaryThroughput">—</div><div class="metric-sub">MT/day average</div></div>
@@ -78,15 +102,15 @@
     </div>
 
     <div class="body">
-      <section class="page active" id="page-dashboard">
+      <section class="page active" id="page-dashboard" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header">
           <div><div class="page-title">Dashboard</div><div class="card-sub">Campaign pipeline, material health, capacity forecast, and delivery performance.</div></div>
         </div>
 
-        <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:1rem;min-height:0;flex:1;padding:0">
+        <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:1rem;min-height:0;flex:1;padding:0;overflow:auto;align-content:start">
           <!-- CARD 1: Campaign Pipeline (LEFT - LARGE) -->
           <div style="background:var(--card-bg);border-radius:.5rem;display:flex;flex-direction:column;grid-row:1/3;min-height:0">
-            <div style="padding:.8rem;border-bottom:1px solid var(--border)"><div style="font-weight:600">Campaign Pipeline</div></div>
+            <div style="padding:.8rem;border-bottom:1px solid var(--border)"><div style="font-weight:600">Planning Pipeline</div></div>
             <div style="flex:1;overflow-y:auto;padding:.8rem;display:flex;flex-direction:column;gap:.4rem">
               <div id="dashboardPipelineBody" style="display:flex;flex-direction:column;gap:.4rem">
                 <div style="text-align:center;color:var(--text-soft);font-size:.8rem">Run Schedule</div>
@@ -145,304 +169,421 @@
         </div>
       </section>
 
-      <section class="page" id="page-planning-pool">
-        <div class="page-header">
-          <div><div class="page-title">Order Pool</div><div class="page-sub">Backlog of open sales orders ready for planning.</div></div>
-          <div class="page-actions"><button class="btn primary" id="poolSelectWindowBtn">Select Window</button></div>
-        </div>
-        <div class="page-content">
-          <div class="filters">
-            <input class="inp" id="poolSearch" placeholder="Search SO / Grade / Customer…" />
-            <select class="sel" id="poolGrade"><option value="">All grades</option></select>
-            <select class="sel" id="poolPriority"><option value="">All priorities</option><option>URGENT</option><option>HIGH</option><option>NORMAL</option></select>
+      <!-- ===== UNIFIED PLANNING PIPELINE PAGE ===== -->
+      <section class="page" id="page-planning" style="display:flex;flex-direction:column;min-height:0">
+        <div class="page-header" style="padding-bottom:.5rem;flex-shrink:0">
+          <div>
+            <div class="page-title">Planning Pipeline</div>
+            <div class="page-sub">Select window → Propose lots → Derive heats → Simulate → Release</div>
           </div>
-          <div class="card">
-            <div class="card-header"><div><div class="card-title">Open sales orders</div><div class="card-sub" id="poolCount">—</div></div></div>
-            <div class="card-body" style="padding:0;overflow:auto;max-height:70vh">
-              <table class="table">
-                <thead><tr><th>SO ID</th><th>Customer</th><th>Grade</th><th>Section</th><th>Qty MT</th><th>Due Date</th><th>Priority</th><th>Status</th></tr></thead>
-                <tbody id="poolBody"></tbody>
-              </table>
+          <div class="page-actions" style="gap:.5rem">
+            <div id="pipelineStatusBadge" style="font-size:.75rem;padding:.25rem .6rem;border-radius:1rem;background:var(--border);color:var(--text-soft);white-space:nowrap">Idle</div>
+          </div>
+        </div>
+        <div style="flex:1;overflow:auto;min-height:0;display:flex;flex-direction:column;gap:.6rem;padding:.25rem .6rem 2.5rem">
+
+          <!-- STAGE 1: ORDER POOL -->
+          <div class="pipeline-stage" id="ps-pool">
+            <div class="ps-header" onclick="toggleStage('ps-pool')">
+              <div class="ps-num">1</div>
+              <div class="ps-info">
+                <div class="ps-title">Order Pool</div>
+                <div class="ps-meta" id="ps-pool-meta">Load all open sales orders</div>
+              </div>
+              <div class="ps-kpis" id="ps-pool-kpis"></div>
+              <div class="ps-badge" id="ps-pool-badge">READY</div>
+              <div class="ps-chevron" id="ps-pool-chevron">&#9660;</div>
             </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="page" id="page-planning-board">
-        <div class="page-header">
-          <div><div class="page-title">Planning Board</div><div class="page-sub">Proposed planning orders with merge/split editing.</div></div>
-          <div class="page-actions">
-            <select class="sel" id="planningWindowDays" style="max-width:150px">
-              <option value="3">Next 3 days</option>
-              <option value="7" selected>Next 7 days</option>
-              <option value="10">Next 10 days</option>
-              <option value="14">Next 14 days</option>
-            </select>
-            <button class="btn primary" id="planningProposeBtn">Propose Orders</button>
-          </div>
-        </div>
-        <div class="page-content">
-          <div class="grid-4" style="margin-bottom:.75rem">
-            <div class="metric"><div class="metric-label">Planning window</div><div class="metric-value" id="planningWindowLabel">—</div></div>
-            <div class="metric"><div class="metric-label">Candidates</div><div class="metric-value" id="planningCandidates">—</div></div>
-            <div class="metric"><div class="metric-label">Proposed POs</div><div class="metric-value" id="planningProposedCount">—</div></div>
-            <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="planningTotalMT">—</div></div>
-          </div>
-          <div class="card">
-            <div class="card-header"><div><div class="card-title">Proposed Planning Orders</div><div class="card-sub" id="planningNote">—</div></div></div>
-            <div class="card-body" style="padding:0;overflow:auto;max-height:70vh">
-              <table class="table">
-                <thead><tr><th>PO ID</th><th>SOs</th><th>Qty MT</th><th>Grade</th><th>Due Window</th><th>Heats</th><th>Status</th></tr></thead>
-                <tbody id="planningBoard"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="page" id="page-heat-builder">
-        <div class="page-header">
-          <div><div class="page-title">Heat Builder</div><div class="page-sub">Derived heat requirements from planning orders.</div></div>
-          <div class="page-actions"><button class="btn primary" id="heatDeriveBtn">Derive Heats</button></div>
-        </div>
-        <div class="page-content">
-          <div class="grid-4" style="margin-bottom:.75rem">
-            <div class="metric"><div class="metric-label">Total heats</div><div class="metric-value" id="heatTotal">—</div></div>
-            <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="heatMT">—</div></div>
-            <div class="metric"><div class="metric-label">Avg per heat</div><div class="metric-value" id="heatAvg">—</div></div>
-            <div class="metric"><div class="metric-label">Duration</div><div class="metric-value" id="heatDuration">—</div></div>
-          </div>
-          <div class="card">
-            <div class="card-header"><div><div class="card-title">Heat Batches</div><div class="card-sub">SMS production heats derived from manufacturing lots.</div></div></div>
-            <div class="card-body" style="padding:0;overflow:auto;max-height:70vh">
-              <table class="table">
-                <thead><tr><th>Heat ID</th><th>PO ID</th><th>Grade</th><th>Qty MT</th><th>Seq</th><th>Route</th><th>Duration</th></tr></thead>
-                <tbody id="heatBody"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="page" id="page-finite-scheduler">
-        <div class="page-header">
-          <div><div class="page-title">Finite Scheduler</div><div class="page-sub">Resource-constrained schedule from heat batches.</div></div>
-          <div class="page-actions"><button class="btn primary" id="schedulerSimulateBtn">Simulate Schedule</button></div>
-        </div>
-        <div class="page-content">
-          <div class="grid-4" style="margin-bottom:.75rem">
-            <div class="metric"><div class="metric-label">Feasible</div><div class="metric-value" id="scheduleFeasible">—</div></div>
-            <div class="metric"><div class="metric-label">Total duration</div><div class="metric-value" id="scheduleDuration">—</div></div>
-            <div class="metric"><div class="metric-label">SMS hours</div><div class="metric-value" id="scheduleSmsHours">—</div></div>
-            <div class="metric"><div class="metric-label">RM hours</div><div class="metric-value" id="scheduleRmHours">—</div></div>
-          </div>
-          <div class="card">
-            <div class="card-header"><div><div class="card-title">Schedule Summary</div><div class="card-sub" id="scheduleNote">—</div></div></div>
-            <div class="card-body" style="padding:1rem">
-              <div id="schedulerContent" style="color:var(--text-soft);text-align:center;font-size:.9rem">Run simulation to see feasibility and timing.</div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="page" id="page-release-board">
-        <div class="page-header">
-          <div><div class="page-title">Release Board</div><div class="page-sub">Approve and release planning orders to execution.</div></div>
-          <div class="page-actions"><button class="btn success" id="releaseApproveBtn" disabled>Release Selected</button></div>
-        </div>
-        <div class="page-content">
-          <div class="grid-4" style="margin-bottom:.75rem">
-            <div class="metric"><div class="metric-label">Ready</div><div class="metric-value" id="releaseReady">—</div></div>
-            <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="releaseMT">—</div></div>
-            <div class="metric"><div class="metric-label">Total SOs</div><div class="metric-value" id="releaseSOs">—</div></div>
-            <div class="metric"><div class="metric-label">Status</div><div class="metric-value" id="releaseStatus">—</div></div>
-          </div>
-          <div class="card">
-            <div class="card-header"><div><div class="card-title">Planning Orders Ready for Release</div><div class="card-sub">Approved schedule, material confirmed.</div></div></div>
-            <div class="card-body" style="padding:0;overflow:auto;max-height:70vh">
-              <table class="table">
-                <thead><tr><th></th><th>PO ID</th><th>SOs</th><th>Qty MT</th><th>Grade</th><th>Heats</th><th>Material</th><th>Actions</th></tr></thead>
-                <tbody id="releaseBoard"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="page" id="page-campaigns">
-        <div class="page-header">
-          <div><div class="page-title">Campaigns</div><div class="page-sub">Status transitions, holds, due margins, SO assignment visibility.</div></div>
-          <div class="page-actions"><button class="btn primary" id="campaignRerunBtn">Re-run Schedule</button></div>
-        </div>
-        <div class="filters">
-          <button class="subtab active" data-camp-filter="all">All</button>
-          <button class="subtab" data-camp-filter="released">Released</button>
-          <button class="subtab" data-camp-filter="held">Held</button>
-          <button class="subtab" data-camp-filter="late">Late</button>
-        </div>
-        <div class="stack" id="campaignCards"></div>
-      </section>
-
-      <section class="page" id="page-schedule">
-        <div class="page-header">
-          <div><div class="page-title">Schedule</div></div>
-          <div class="page-actions"><button class="btn ghost" id="patchJobBtn">Patch Job</button></div>
-        </div>
-        <div class="card" style="display:flex;flex-direction:column;height:calc(100vh - 200px)"><div class="card-body" style="padding:0;overflow:auto;flex:1;min-height:0"><div class="gantt-wrap"><div id="scheduleTimeline"></div><div id="tt"></div></div></div></div>
-      </section>
-
-      <section class="page" id="page-orders">
-        <div class="page-header">
-          <div><div class="page-title">Sales Orders</div><div class="page-sub">List, create, update, delete, and assign through the application API.</div></div>
-          <div class="page-actions"><button class="btn success" id="newOrderBtn">New Order</button><button class="btn primary" id="assignOrdersBtn" disabled>Assign Selected</button></div>
-        </div>
-        <div class="page-content">
-          <div class="filters">
-            <input class="inp" id="orderSearch" placeholder="Search SO / Grade / Customer…" />
-            <select class="sel" id="orderPriority"><option value="">All priorities</option><option>URGENT</option><option>HIGH</option><option>NORMAL</option></select>
-            <select class="sel" id="orderGrade"><option value="">All grades</option></select>
-          </div>
-          <div class="orders-layout" style="flex:1;overflow:auto;min-height:0">
-            <div class="card">
-              <div class="card-header"><div><div class="card-title">Open sales orders</div><div class="card-sub" id="ordersCount">—</div></div></div>
-              <div class="card-body" style="padding:0;overflow:auto;max-height:65vh">
-                <table class="table">
-                  <thead><tr><th></th><th>SO ID</th><th>Customer</th><th>Grade</th><th>Qty MT</th><th>Due</th><th>Priority</th><th>Campaign</th><th>Status</th><th>Actions</th></tr></thead>
-                  <tbody id="ordersBody"></tbody>
-                </table>
+            <div class="ps-body" id="ps-pool-body">
+              <div class="ps-body-inner">
+                <div class="filters" style="margin-bottom:.6rem">
+                  <input class="inp" id="poolSearch" placeholder="Search SO / Grade / Customer…" />
+                  <select class="sel" id="poolGrade"><option value="">All grades</option></select>
+                  <select class="sel" id="poolPriority"><option value="">All priorities</option><option>URGENT</option><option>HIGH</option><option>NORMAL</option></select>
+                </div>
+                <div style="overflow:auto;max-height:300px;border:1px solid var(--border);border-radius:.3rem">
+                  <table class="table">
+                    <thead><tr><th>SO ID</th><th>Customer</th><th>Grade</th><th>Section</th><th>Qty MT</th><th>Due Date</th><th>Priority</th><th>Status</th></tr></thead>
+                    <tbody id="poolBody"></tbody>
+                  </table>
+                </div>
               </div>
             </div>
-            <div class="card">
-              <div class="card-header"><div><div class="card-title">Campaign drop zones</div><div class="card-sub">Drag or bulk-assign orders.</div></div></div>
-              <div class="card-body" id="dropZones"></div>
+          </div>
+
+          <!-- STAGE 2: PROPOSE ORDERS (window select → POs) -->
+          <div class="pipeline-stage" id="ps-propose">
+            <div class="ps-header" onclick="toggleStage('ps-propose')">
+              <div class="ps-num">2</div>
+              <div class="ps-info">
+                <div class="ps-title">Propose Orders</div>
+                <div class="ps-meta" id="ps-propose-meta">Group candidates into manufacturing lots</div>
+              </div>
+              <div class="ps-kpis" id="ps-propose-kpis"></div>
+              <div class="ps-badge pending" id="ps-propose-badge">PENDING</div>
+              <button class="btn primary ps-action" id="planningProposeBtn" onclick="event.stopPropagation();proposePlanningOrders()">Propose</button>
+              <div class="ps-chevron collapsed" id="ps-propose-chevron">&#9660;</div>
+            </div>
+            <div class="ps-body collapsed" id="ps-propose-body">
+              <div class="ps-body-inner">
+                <div class="grid-4" style="margin-bottom:.75rem">
+                  <div class="metric"><div class="metric-label">Window</div><div class="metric-value" id="planningWindowLabel">—</div></div>
+                  <div class="metric"><div class="metric-label">Candidates</div><div class="metric-value" id="planningCandidates">—</div></div>
+                  <div class="metric"><div class="metric-label">Proposed POs</div><div class="metric-value" id="planningProposedCount">—</div></div>
+                  <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="planningTotalMT">—</div></div>
+                </div>
+                <div style="overflow:auto;max-height:280px;border:1px solid var(--border);border-radius:.3rem">
+                  <table class="table">
+                    <thead><tr><th>PO ID</th><th>SOs</th><th>Qty MT</th><th>Grade</th><th>Due Window</th><th>Heats</th><th>Status</th></tr></thead>
+                    <tbody id="planningBoard"></tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
+
+          <!-- STAGE 3: HEAT BATCHES -->
+          <div class="pipeline-stage" id="ps-heats">
+            <div class="ps-header" onclick="toggleStage('ps-heats')">
+              <div class="ps-num">3</div>
+              <div class="ps-info">
+                <div class="ps-title">Heat Batches</div>
+                <div class="ps-meta" id="ps-heats-meta">Derive SMS production heats from planning lots</div>
+              </div>
+              <div class="ps-kpis" id="ps-heats-kpis"></div>
+              <div class="ps-badge pending" id="ps-heats-badge">PENDING</div>
+              <button class="btn primary ps-action" id="heatDeriveBtn" onclick="event.stopPropagation();deriveHeatBatches()">Derive</button>
+              <div class="ps-chevron collapsed" id="ps-heats-chevron">&#9660;</div>
+            </div>
+            <div class="ps-body collapsed" id="ps-heats-body">
+              <div class="ps-body-inner">
+                <div class="grid-4" style="margin-bottom:.75rem">
+                  <div class="metric"><div class="metric-label">Total heats</div><div class="metric-value" id="heatTotal">—</div></div>
+                  <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="heatMT">—</div></div>
+                  <div class="metric"><div class="metric-label">Avg / heat</div><div class="metric-value" id="heatAvg">—</div></div>
+                  <div class="metric"><div class="metric-label">Est. duration</div><div class="metric-value" id="heatDuration">—</div></div>
+                </div>
+                <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
+                  <table class="table">
+                    <thead><tr><th>Heat ID</th><th>PO ID</th><th>Grade</th><th>Qty MT</th><th>Seq</th><th>Route</th><th>Duration</th></tr></thead>
+                    <tbody id="heatBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- STAGE 4: SCHEDULE FEASIBILITY -->
+          <div class="pipeline-stage" id="ps-schedule">
+            <div class="ps-header" onclick="toggleStage('ps-schedule')">
+              <div class="ps-num">4</div>
+              <div class="ps-info">
+                <div class="ps-title">Feasibility Check</div>
+                <div class="ps-meta" id="ps-schedule-meta">Verify heats fit within planning horizon</div>
+              </div>
+              <div class="ps-kpis" id="ps-schedule-kpis"></div>
+              <div class="ps-badge pending" id="ps-schedule-badge">PENDING</div>
+              <button class="btn primary ps-action" id="schedulerSimulateBtn" onclick="event.stopPropagation();simulateSchedule()">Simulate</button>
+              <div class="ps-chevron collapsed" id="ps-schedule-chevron">&#9660;</div>
+            </div>
+            <div class="ps-body collapsed" id="ps-schedule-body">
+              <div class="ps-body-inner">
+                <div class="grid-4" style="margin-bottom:.75rem">
+                  <div class="metric"><div class="metric-label">Feasible</div><div class="metric-value" id="scheduleFeasible">—</div></div>
+                  <div class="metric"><div class="metric-label">Total duration</div><div class="metric-value" id="scheduleDuration">—</div></div>
+                  <div class="metric"><div class="metric-label">SMS hours</div><div class="metric-value" id="scheduleSmsHours">—</div></div>
+                  <div class="metric"><div class="metric-label">RM hours</div><div class="metric-value" id="scheduleRmHours">—</div></div>
+                </div>
+                <div id="schedulerContent" style="color:var(--text-soft);text-align:center;font-size:.9rem;padding:.75rem;border:1px solid var(--border);border-radius:.3rem">Run simulation to see feasibility and timing.</div>
+                <!-- Remediation panel - shown only when infeasible -->
+                <div id="remediationPanel" style="display:none;margin-top:.75rem;background:#fff7ed;border:1px solid #fed7aa;border-radius:.4rem;padding:.75rem">
+                  <div style="font-weight:600;font-size:.82rem;color:#92400e;margin-bottom:.6rem">&#9888; Schedule infeasible — planner options:</div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+                    <div style="background:#fff;border:1px solid var(--border);border-radius:.3rem;padding:.6rem">
+                      <div style="font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.4rem">NARROW WINDOW</div>
+                      <div style="font-size:.78rem;color:var(--text);margin-bottom:.5rem">Plan only the most urgent orders to reduce heat count.</div>
+                      <select class="sel" id="remPriorityFilter" style="font-size:.75rem;margin-bottom:.4rem;width:100%">
+                        <option value="">All priorities (current)</option>
+                        <option value="URGENT+HIGH">URGENT + HIGH only</option>
+                        <option value="URGENT">URGENT only</option>
+                      </select>
+                      <button class="btn warn" style="width:100%;font-size:.75rem;padding:.3rem" onclick="remSimulate()">Re-simulate with filter</button>
+                    </div>
+                    <div style="background:#fff;border:1px solid var(--border);border-radius:.3rem;padding:.6rem">
+                      <div style="font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.4rem">PARALLEL RESOURCES</div>
+                      <div style="font-size:.78rem;color:var(--text);margin-bottom:.5rem">Add SMS or RM lines to run heats in parallel.</div>
+                      <div style="display:flex;gap:.4rem;margin-bottom:.4rem">
+                        <select class="sel" id="remSmsLines" style="font-size:.75rem;flex:1">
+                          <option value="1">SMS × 1</option>
+                          <option value="2">SMS × 2</option>
+                        </select>
+                        <select class="sel" id="remRmLines" style="font-size:.75rem;flex:1">
+                          <option value="1">RM × 1</option>
+                          <option value="2">RM × 2</option>
+                        </select>
+                      </div>
+                      <button class="btn primary" style="width:100%;font-size:.75rem;padding:.3rem" onclick="remSimulate()">Re-simulate with resources</button>
+                    </div>
+                    <div style="background:#fff;border:1px solid var(--border);border-radius:.3rem;padding:.6rem">
+                      <div style="font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.4rem">EXTEND HORIZON</div>
+                      <div style="font-size:.78rem;color:var(--text);margin-bottom:.5rem">Give more time — spread same heats across a longer window.</div>
+                      <select class="sel" id="remHorizonHours" style="font-size:.75rem;margin-bottom:.4rem;width:100%">
+                        <option value="">Current horizon</option>
+                        <option value="336">14 days (336h)</option>
+                        <option value="504">21 days (504h)</option>
+                        <option value="720">30 days (720h)</option>
+                      </select>
+                      <button class="btn ghost" style="width:100%;font-size:.75rem;padding:.3rem" onclick="remSimulate()">Re-simulate with horizon</button>
+                    </div>
+                    <div style="background:#fff;border:1px solid var(--border);border-radius:.3rem;padding:.6rem">
+                      <div style="font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.4rem">WHAT'S TAKING TIME?</div>
+                      <div style="font-size:.78rem;color:var(--text);margin-bottom:.4rem">Heats by grade — identify which grade to defer:</div>
+                      <div id="remGradeBreakdown" style="font-size:.75rem;color:var(--text)">Run simulation first.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- STAGE 5: RELEASE -->
+          <div class="pipeline-stage" id="ps-release">
+            <div class="ps-header" onclick="toggleStage('ps-release')">
+              <div class="ps-num">5</div>
+              <div class="ps-info">
+                <div class="ps-title">Release to Execution</div>
+                <div class="ps-meta" id="ps-release-meta">Approve and send planning orders to operations</div>
+              </div>
+              <div class="ps-kpis" id="ps-release-kpis"></div>
+              <div class="ps-badge pending" id="ps-release-badge">PENDING</div>
+              <button class="btn success ps-action" id="releaseApproveBtn" onclick="event.stopPropagation();releaseSelectedPOs()" disabled>Release</button>
+              <div class="ps-chevron collapsed" id="ps-release-chevron">&#9660;</div>
+            </div>
+            <div class="ps-body collapsed" id="ps-release-body">
+              <div class="ps-body-inner">
+                <div class="grid-4" style="margin-bottom:.75rem">
+                  <div class="metric"><div class="metric-label">POs ready</div><div class="metric-value" id="releaseReady">—</div></div>
+                  <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="releaseMT">—</div></div>
+                  <div class="metric"><div class="metric-label">Total SOs</div><div class="metric-value" id="releaseSOs">—</div></div>
+                  <div class="metric"><div class="metric-label">Status</div><div class="metric-value" id="releaseStatus">—</div></div>
+                </div>
+                <div style="display:flex;gap:.5rem;margin-bottom:.75rem;flex-shrink:0">
+                  <button class="btn primary" id="releaseSelectAllBtn" onclick="releaseSelectAll()" style="font-size:.75rem;padding:.4rem .8rem">Select All</button>
+                  <button class="btn primary" id="releaseClearAllBtn" onclick="releaseClearAll()" style="font-size:.75rem;padding:.4rem .8rem">Clear All</button>
+                  <button class="btn success" id="releaseAllBtn" onclick="releaseAllSelected()" style="font-size:.75rem;padding:.4rem .8rem">Release All</button>
+                </div>
+                <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
+                  <table class="table">
+                    <thead><tr><th style="width:3rem"><input type="checkbox" id="releaseSelectAllCheckbox" onchange="releaseToggleSelectAll()" style="width:1.2rem;height:1.2rem;cursor:pointer" title="Select all"/></th><th>PO ID</th><th>SOs</th><th>Qty MT</th><th>Grade</th><th>Heats</th><th>Material</th><th>Actions</th></tr></thead>
+                    <tbody id="releaseBoard"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- end pipeline -->
+        <div style="flex-shrink:0;height:2.3rem;padding:0 .6rem;display:flex;align-items:center;gap:1rem;border-top:1px solid var(--border-soft);background:rgba(0,0,0,.02);font-size:.75rem;color:var(--text-soft);overflow-x:auto;overflow-y:hidden" id="pipelineStatusBar">
+          <div id="pipelineStatusText">Ready</div>
         </div>
       </section>
+      <!-- ===== END PLANNING PIPELINE ===== -->
 
-      <section class="page" id="page-dispatch">
-        <div class="page-header"><div><div class="page-title">Equipment Timeline</div><div class="card-sub" style="margin-top:0.3rem">What's running on each equipment, when. Click a campaign to see related sales orders.</div></div><div class="page-actions"><button class="btn ghost" id="clearCampaignBtn" style="display:none" onclick="clearCampaignSelection()">Clear Selection</button></div></div>
-        <div class="page-content" style="display:flex;flex-direction:column;min-height:0">
+      <!-- ===== EXECUTION PAGE (merged Campaigns + Dispatch + Gantt) ===== -->
+      <section class="page" id="page-execution" style="display:flex;flex-direction:column;min-height:0">
+        <div class="page-header" style="flex-shrink:0">
+          <div><div class="page-title">Execution</div><div class="page-sub">Released lots, equipment timeline, and live dispatch sequence.</div></div>
+          <div class="page-actions" style="gap:.5rem">
+            <button class="btn ghost" id="clearCampaignBtn" style="display:none" onclick="clearCampaignSelection()">Clear Filter</button>
+            <button class="btn primary" id="campaignRerunBtn">Re-run Schedule</button>
+          </div>
+        </div>
+
+        <!-- Sub-tabs -->
+        <div class="filters" style="padding:0 0 .5rem 0;border:none;margin-bottom:.5rem;flex-shrink:0">
+          <button class="subtab active" data-exec-view="timeline" onclick="switchExecView('timeline')">Equipment Timeline</button>
+          <button class="subtab" data-exec-view="campaigns" onclick="switchExecView('campaigns')">Released Lots</button>
+          <button class="subtab" data-exec-view="gantt" onclick="switchExecView('gantt')">Gantt</button>
+        </div>
+
+        <!-- KPI strip -->
+        <div class="grid-4" style="margin-bottom:.75rem;flex-shrink:0">
+          <div class="metric"><div class="metric-label">Equipment active</div><div class="metric-value" id="dispatchMachines">—</div></div>
+          <div class="metric"><div class="metric-label">Operations</div><div class="metric-value" id="dispatchJobs">—</div></div>
+          <div class="metric"><div class="metric-label">Total duration</div><div class="metric-value" id="dispatchDuration">—</div></div>
+          <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="dispatchMt">—</div></div>
+        </div>
+
+        <!-- TIMELINE VIEW -->
+        <div id="exec-view-timeline" class="exec-view active-view">
           <div style="display:flex;gap:0.75rem;margin-bottom:0.75rem;flex-shrink:0">
-            <select class="sel" id="dispatchFilterCampaign" onchange="filterDispatchByDropdown()" style="flex:1;max-width:250px">
+            <select class="sel" id="dispatchFilterCampaign" onchange="filterDispatchByDropdown()" style="max-width:220px">
               <option value="">All Campaigns</option>
             </select>
-            <select class="sel" id="dispatchFilterGrade" onchange="filterDispatchByDropdown()" style="flex:1;max-width:200px">
+            <select class="sel" id="dispatchFilterGrade" onchange="filterDispatchByDropdown()" style="max-width:160px">
               <option value="">All Grades</option>
             </select>
-            <select class="sel" id="dispatchFilterPlant" onchange="filterDispatchByDropdown()" style="flex:1;max-width:200px">
+            <select class="sel" id="dispatchFilterPlant" onchange="filterDispatchByDropdown()" style="max-width:160px">
               <option value="">All Plants</option>
             </select>
-            <div style="flex:1;max-width:300px;font-size:0.8rem;color:var(--text-soft);display:flex;align-items:center;gap:1rem">
-              <div style="display:flex;align-items:center;gap:0.4rem"><div style="width:8px;height:8px;border-radius:50%;background:var(--danger)"></div><span>Urgent</span></div>
-              <div style="display:flex;align-items:center;gap:0.4rem"><div style="width:8px;height:8px;border-radius:50%;background:var(--warning)"></div><span>High</span></div>
-            </div>
-          </div>
-          <div class="grid-4" style="margin-bottom:.75rem;flex-shrink:0">
-            <div class="metric"><div class="metric-label">Equipment active</div><div class="metric-value" id="dispatchMachines">—</div></div>
-            <div class="metric"><div class="metric-label">Operations</div><div class="metric-value" id="dispatchJobs">—</div></div>
-            <div class="metric"><div class="metric-label">Total duration</div><div class="metric-value" id="dispatchDuration">—</div></div>
-            <div class="metric"><div class="metric-label">Total material</div><div class="metric-value" id="dispatchMt">—</div></div>
           </div>
           <div style="display:flex;gap:1rem;flex:1;min-height:0;overflow:hidden">
-            <div class="dispatch-grid" id="dispatchGrid" style="flex:1;overflow:auto;min-height:0"><div class="notice">Run Schedule to populate the equipment schedule view.</div></div>
-            <div id="campaignDetailsPanel" class="campaign-details-panel" style="display:none;width:320px;border-left:1px solid var(--border);background:var(--panel);overflow:auto">
+            <div class="dispatch-grid" id="dispatchGrid" style="flex:1;overflow:auto"><div class="notice">Run Schedule first.</div></div>
+            <div id="campaignDetailsPanel" class="campaign-details-panel" style="display:none;width:300px;border-left:1px solid var(--border);background:var(--panel);overflow:auto">
               <div id="campaignDetailsContent"></div>
             </div>
           </div>
         </div>
+
+        <!-- RELEASED LOTS VIEW -->
+        <div id="exec-view-campaigns" class="exec-view">
+          <div class="filters" style="flex-shrink:0">
+            <button class="subtab active" data-camp-filter="all">All</button>
+            <button class="subtab" data-camp-filter="released">Released</button>
+            <button class="subtab" data-camp-filter="held">Held</button>
+            <button class="subtab" data-camp-filter="late">Late</button>
+          </div>
+          <div class="stack" id="campaignCards" style="flex:1;min-height:0;overflow:auto"></div>
+        </div>
+
+        <!-- GANTT VIEW -->
+        <div id="exec-view-gantt" class="exec-view">
+          <div class="card" style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+            <div class="card-header">
+              <div><div class="card-title">Resource Gantt</div></div>
+              <button class="btn ghost" id="patchJobBtn" style="font-size:.75rem">Patch Job</button>
+            </div>
+            <div class="card-body" style="padding:0;overflow:auto;flex:1;min-height:0"><div class="gantt-wrap"><div id="scheduleTimeline"></div><div id="tt"></div></div></div>
+          </div>
+        </div>
       </section>
 
-      <section class="page" id="page-material">
-        <div class="page-header"><div><div class="page-title">Material</div><div class="page-sub">Material plan and hold rows from the material endpoints.</div></div></div>
-        <div class="grid-4" style="margin-bottom:.75rem">
-          <div class="metric success"><div class="metric-label">OK</div><div class="metric-value" id="matOk">—</div></div>
-          <div class="metric warn"><div class="metric-label">Low / hold</div><div class="metric-value" id="matLow">—</div></div>
-          <div class="metric danger"><div class="metric-label">Critical</div><div class="metric-value" id="matCrit">—</div></div>
-          <div class="metric"><div class="metric-label">Held campaigns</div><div class="metric-value" id="matHeld">—</div></div>
+      <section class="page" id="page-material" style="display:flex;flex-direction:column;min-height:0">
+        <div class="page-header">
+          <div><div class="page-title">Material</div><div class="page-sub">Coverage status, BOM netting, holds, and shortage resolution.</div></div>
+          <div class="page-actions"><button class="btn primary" id="bomRunBtn">Run BOM Netting</button></div>
         </div>
-        <div class="material-split-container">
+        <!-- KPI strip -->
+        <div class="grid-4" style="margin-bottom:.75rem;flex-shrink:0">
+          <div class="metric success"><div class="metric-label">Covered</div><div class="metric-value" id="matOk">—</div><div class="metric-sub" id="bomKpiCoveredVal">—</div></div>
+          <div class="metric warn"><div class="metric-label">Partial / Low</div><div class="metric-value" id="matLow">—</div><div class="metric-sub" id="bomKpiPartialVal">—</div></div>
+          <div class="metric danger"><div class="metric-label">Short</div><div class="metric-value" id="matCrit">—</div><div class="metric-sub" id="bomKpiShortVal">—</div></div>
+          <div class="metric"><div class="metric-label">Held lots</div><div class="metric-value" id="matHeld">—</div><div class="metric-sub">Awaiting material</div></div>
+        </div>
+        <!-- BOM strip (hidden until run) -->
+        <div class="bom-summary-strip" id="bomSummaryStrip" style="display:none;flex-shrink:0">
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiLinesVal">—</span><span class="kpi-label">Items</span></div>
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiGrossVal">—</span><span class="kpi-label">Gross MT</span></div>
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiNetVal">—</span><span class="kpi-label">Net MT</span></div>
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiByproductVal">—</span><span class="kpi-label">Byproduct</span></div>
+        </div>
+        <!-- Split layout: tree left, detail right -->
+        <div class="material-split-container" style="flex:1;min-height:0;overflow:hidden">
           <div class="material-tree-panel">
-            <div class="material-tree-header">Campaigns & Plants</div>
+            <div class="material-tree-header">Material Groups</div>
             <div class="material-tree" id="materialTree"></div>
           </div>
           <div class="material-split-divider" id="materialDivider"></div>
           <div class="material-detail-panel">
+            <!-- BOM tree is also here when available -->
             <div id="materialDetailContent"></div>
+
           </div>
         </div>
+
       </section>
 
-      <section class="page" id="page-capacity">
-        <div class="page-header"><div><div class="page-title">Capacity</div><div class="page-sub">Utilisation map plus bottleneck list.</div></div></div>
-        <div class="grid-2" style="margin-bottom:.75rem">
-          <div class="metric"><div class="metric-label">Bottleneck resource</div><div class="metric-value" id="capBottleneck">—</div><div class="metric-sub" id="capBottleneckSub">—</div></div>
-          <div class="metric"><div class="metric-label">Average utilisation</div><div class="metric-value" id="capAvg">—</div><div class="metric-sub">Across visible resources</div></div>
+      <section class="page" id="page-capacity" style="display:flex;flex-direction:column;min-height:0">
+        <div class="page-header">
+          <div><div class="page-title">Capacity</div><div class="page-sub">Resource loading, bottlenecks, and utilisation by equipment.</div></div>
         </div>
-        <div class="card"><div class="card-header"><div><div class="card-title">Capacity map</div><div class="card-sub">Includes data from <code class="inline">/api/aps/capacity/map</code> and <code class="inline">/api/aps/capacity/bottlenecks</code>.</div></div></div>
-          <div class="card-body" style="padding:0;overflow:auto">
-            <table class="table">
-              <thead><tr><th>Resource</th><th>Operation</th><th>Demand Hrs</th><th>Avail Hrs</th><th>Util %</th><th>Status</th></tr></thead>
-              <tbody id="capacityBody"></tbody>
-            </table>
-          </div>
+        <!-- KPI strip -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:.75rem;flex-shrink:0">
+          <div class="metric danger"><div class="metric-label">Bottleneck</div><div class="metric-value" id="capBottleneck">—</div><div class="metric-sub" id="capBottleneckSub">Most constrained</div></div>
+          <div class="metric"><div class="metric-label">Avg utilisation</div><div class="metric-value" id="capAvg">—</div><div class="metric-sub">All resources</div></div>
+          <div class="metric warn"><div class="metric-label">Overloaded</div><div class="metric-value" id="capOverloaded">—</div><div class="metric-sub">Above 100%</div></div>
+          <div class="metric success"><div class="metric-label">Available slack</div><div class="metric-value" id="capSlack">—</div><div class="metric-sub">Below 60%</div></div>
         </div>
-      </section>
-
-      <section class="page" id="page-scenarios">
-        <div class="page-header"><div><div class="page-title">Scenarios</div><div class="page-sub">Preview, create, update, delete, and apply scenarios.</div></div></div>
-        <div class="grid-3" style="margin-bottom:.75rem" id="scenarioCards"></div>
-        <div class="card">
-          <div class="card-header"><div><div class="card-title">Scenario list</div><div class="card-sub">Workbook-backed scenario rows.</div></div><button class="btn success" id="newScenarioBtn">Add Scenario</button></div>
-          <div class="card-body" style="padding:0;overflow:auto">
-            <table class="table">
-              <thead><tr><th>Key</th><th>Value</th><th>Actions</th></tr></thead>
-              <tbody id="scenarioTableBody"></tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
-      <section class="page" id="page-ctp">
-        <div class="page-header"><div><div class="page-title">CTP</div><div class="page-sub">Capable-to-Promise check plus request/output history.</div></div></div>
-        <div class="grid-2">
+        <!-- Scrollable content area -->
+        <div style="flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:.75rem">
+          <!-- Resource bars -->
           <div class="card">
-            <div class="card-header"><div><div class="card-title">Run CTP check</div><div class="card-sub">Calls <code class="inline">/api/aps/ctp/check</code>.</div></div></div>
-            <div class="card-body">
-              <div class="stack">
-                <select class="sel" id="ctpSku"><option value="">Loading SKUs…</option></select>
-                <div class="grid-2">
-                  <input class="inp" id="ctpQty" value="120" />
-                  <input class="inp" id="ctpDate" type="date" />
-                </div>
-                <button class="btn primary" id="ctpRunBtn">Run CTP</button>
-                <div class="notice" id="ctpResult">No request yet.</div>
-              </div>
+            <div class="card-header"><div class="card-title">Resource loading</div></div>
+            <div class="card-body" style="padding:.75rem">
+              <div id="capacityBars" style="display:flex;flex-direction:column;gap:.5rem"></div>
             </div>
           </div>
-          <div class="card">
-            <div class="card-header"><div><div class="card-title">Recent CTP activity</div><div class="card-sub">Merged request and output history.</div></div></div>
-            <div class="card-body" style="padding:0">
+          <!-- Detail table -->
+          <div class="card" style="overflow:hidden;display:flex;flex-direction:column">
+            <div class="card-header"><div class="card-title">Full capacity map</div></div>
+            <div class="card-body" style="padding:0;overflow:auto;flex:1;min-height:0">
               <table class="table">
-                <thead><tr><th>SKU</th><th>Qty</th><th>Requested</th><th>Earliest</th><th>Margin</th><th>Feasible</th></tr></thead>
-                <tbody id="ctpHistoryBody"></tbody>
+                <thead><tr><th>Resource</th><th>Operation</th><th>Demand Hrs</th><th>Avail Hrs</th><th>Util %</th><th>Status</th></tr></thead>
+                <tbody id="capacityBody"></tbody>
               </table>
             </div>
           </div>
         </div>
       </section>
 
-      <section class="page" id="page-bom">
-        <div class="page-header"><div><div class="page-title">BOM Explosion</div><div class="page-sub">Material requirements breakdown by production stage and finished goods.</div></div>
-          <div class="page-actions"><button class="btn primary" id="bomRunBtn">Run BOM Explosion</button></div>
+      <section class="page" id="page-scenarios" style="display:flex;flex-direction:column;min-height:0">
+        <div class="page-header"><div><div class="page-title">Scenarios</div><div class="page-sub">Preview, create, update, delete, and apply scenarios.</div></div></div>
+        <div style="flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:.75rem">
+          <div class="grid-3" id="scenarioCards"></div>
+          <div class="card" style="overflow:hidden;display:flex;flex-direction:column">
+            <div class="card-header"><div><div class="card-title">Scenario list</div><div class="card-sub">Workbook-backed scenario rows.</div></div><button class="btn success" id="newScenarioBtn">Add Scenario</button></div>
+            <div class="card-body" style="padding:0;overflow:auto;flex:1;min-height:0">
+              <table class="table">
+                <thead><tr><th>Key</th><th>Value</th><th>Actions</th></tr></thead>
+                <tbody id="scenarioTableBody"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
-        <div class="bom-summary-strip" id="bomSummaryStrip" style="display:none">
-          <div class="bom-kpi"><span class="kpi-val" id="bomKpiLinesVal">—</span><span class="kpi-label">Items</span></div>
-          <div class="bom-kpi covered"><span class="kpi-val" id="bomKpiCoveredVal">—</span><span class="kpi-label">Covered</span></div>
-          <div class="bom-kpi short"><span class="kpi-val" id="bomKpiShortVal">—</span><span class="kpi-label">Short</span></div>
-          <div class="bom-kpi partial"><span class="kpi-val" id="bomKpiPartialVal">—</span><span class="kpi-label">Partial</span></div>
-          <div class="bom-kpi"><span class="kpi-val" id="bomKpiGrossVal">—</span><span class="kpi-label">Gross MT</span></div>
-          <div class="bom-kpi"><span class="kpi-val" id="bomKpiNetVal">—</span><span class="kpi-label">Net MT</span></div>
+      </section>
+
+      <section class="page" id="page-ctp" style="display:flex;flex-direction:column;min-height:0">
+        <div class="page-header"><div><div class="page-title">CTP</div><div class="page-sub">Capable-to-Promise check plus request/output history.</div></div></div>
+        <div style="flex:1;min-height:0;overflow:auto">
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Run CTP check</div><div class="card-sub">Calls <code class="inline">/api/aps/ctp/check</code>.</div></div></div>
+              <div class="card-body">
+                <div class="stack">
+                  <select class="sel" id="ctpSku"><option value="">Loading SKUs…</option></select>
+                  <div class="grid-2">
+                    <input class="inp" id="ctpQty" value="120" />
+                    <input class="inp" id="ctpDate" type="date" />
+                  </div>
+                  <button class="btn primary" id="ctpRunBtn">Run CTP</button>
+                  <div class="notice" id="ctpResult">No request yet.</div>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Recent CTP activity</div><div class="card-sub">Merged request and output history.</div></div></div>
+              <div class="card-body" style="padding:0">
+                <table class="table">
+                  <thead><tr><th>SKU</th><th>Qty</th><th>Requested</th><th>Earliest</th><th>Margin</th><th>Feasible</th></tr></thead>
+                  <tbody id="ctpHistoryBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-bom" style="display:flex;flex-direction:column;min-height:0">
+        <div class="page-header"><div><div class="page-title">BOM Explosion</div><div class="page-sub">Material requirements breakdown by production stage and finished goods.</div></div>
+          <div class="page-actions"><button class="btn primary" id="bomExplodeBtn">Run BOM Explosion</button></div>
+        </div>
+        <div class="bom-summary-strip" id="bomSummaryStrip2" style="display:none;flex-shrink:0">
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiLinesVal2">—</span><span class="kpi-label">Items</span></div>
+          <div class="bom-kpi covered"><span class="kpi-val" id="bomKpiCoveredVal2">—</span><span class="kpi-label">Covered</span></div>
+          <div class="bom-kpi short"><span class="kpi-val" id="bomKpiShortVal2">—</span><span class="kpi-label">Short</span></div>
+          <div class="bom-kpi partial"><span class="kpi-val" id="bomKpiPartialVal2">—</span><span class="kpi-label">Partial</span></div>
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiGrossVal2">—</span><span class="kpi-label">Gross MT</span></div>
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiNetVal2">—</span><span class="kpi-label">Net MT</span></div>
         </div>
         <div class="bom-split-container">
           <div class="bom-tree-panel">
@@ -456,7 +597,7 @@
         </div>
       </section>
 
-      <section class="page" id="page-master">
+      <section class="page" id="page-master" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header"><div><div class="page-title">Master Data</div><div class="page-sub">All workbook sections surfaced through the application API.</div></div></div>
         <div class="page-content">
           <div class="toolbar">
@@ -546,10 +687,11 @@ const state = {
 };
 
 function qs(id){ return document.getElementById(id); }
+function parseDate(v){ if(!v) return new Date(NaN); return new Date(String(v).replace(' ','T')); }
 function setText(id,v){ const el=qs(id); if(el) el.textContent = v; }
 function escapeHtml(v){ return String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-function fmtDate(v){ if(!v) return '—'; const d=new Date(v); if(Number.isNaN(d.getTime())) return String(v); return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}).replace(' ','-'); }
-function fmtDateTime(v){ if(!v) return '—'; const d=new Date(v); if(Number.isNaN(d.getTime())) return String(v); return d.toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}).replace(',',''); }
+function fmtDate(v){ if(!v) return '—'; const d=parseDate(v); if(Number.isNaN(d.getTime())) return String(v); return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}).replace(' ','-'); }
+function fmtDateTime(v){ if(!v) return '—'; const d=parseDate(v); if(Number.isNaN(d.getTime())) return String(v); return d.toLocaleString('en-GB',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}).replace(',',''); }
 function num(v, fallback=0){ const n = Number(v); return Number.isFinite(n) ? n : fallback; }
 function badgeForStatus(status){
   const s = String(status || '').toUpperCase();
@@ -569,73 +711,232 @@ async function apiFetch(url, opts={}){
   if(!res.ok) throw new Error(data.error || ('API error ' + res.status));
   return data;
 }
-function activatePage(page){
-  document.querySelectorAll('.page').forEach(el=>el.classList.toggle('active', el.id === 'page-' + page));
-  document.querySelectorAll('#topTabs .tab').forEach(el=>el.classList.toggle('active', el.dataset.page === page));
-  if(page === 'material') initMaterialResizable();
-  if(page === 'bom') initBomResizable();
+function activatePage(page) {
+  const remap = {
+    campaigns: 'execution',
+    schedule: 'execution',
+    dispatch: 'execution',
+    'planning-pool': 'planning',
+    'planning-board': 'planning',
+    'heat-builder': 'planning',
+    'finite-scheduler': 'planning',
+    'release-board': 'planning'
+  };
+
+  page = remap[page] || page;
+
+  document.querySelectorAll('.page').forEach((el) => {
+    el.classList.toggle('active', el.id === `page-${page}`);
+  });
+
+  document.querySelectorAll('#topTabs [data-page]').forEach((el) => {
+    el.classList.toggle('active', el.dataset.page === page);
+  });
+
+  const isPlanning = page === 'planning';
+  const ctrlDefault = qs('ctrl-default');
+  const ctrlPlanning = qs('ctrl-planning');
+
+  if (ctrlDefault) ctrlDefault.style.display = isPlanning ? 'none' : '';
+  if (ctrlPlanning) ctrlPlanning.style.display = isPlanning ? '' : 'none';
+
+  if (page === 'material') initSplitResizer('materialDivider');
+  if (page === 'bom') initSplitResizer('bomDivider');
+  if (page === 'capacity') renderCapacityBars();
 }
-function initMaterialResizable(){
-  const divider = qs('materialDivider');
-  if(!divider) return;
+
+function switchExecView(view){
+  document.querySelectorAll('.exec-view').forEach(el=>el.classList.remove('active-view'));
+  qs('exec-view-'+view).classList.add('active-view');
+  document.querySelectorAll('[data-exec-view]').forEach(b=>b.classList.toggle('active',b.dataset.execView===view));
+}
+
+function _ridToOp(rid){
+  const r = String(rid||'').toUpperCase();
+  if(r.startsWith('CCM')) return 'CCM';
+  if(r.startsWith('EAF')) return 'EAF';
+  if(r.startsWith('LRF')) return 'LRF';
+  if(r.startsWith('VD'))  return 'VD';
+  if(r.startsWith('RM'))  return 'RM';
+  if(r.startsWith('BF'))  return 'BF';
+  return r.split('-')[0] || '—';
+}
+function renderCapacityBars(){
+  const rows = state.capacity || [];
+  const barsEl = qs('capacityBars');
+  if(!barsEl) return;
+  if(!rows.length){ barsEl.innerHTML = '<div style="font-size:.8rem;color:var(--text-soft)">Run schedule to load capacity data.</div>'; return; }
+
+  let overloaded = 0, slack = 0, totalUtil = 0;
+  barsEl.innerHTML = rows.map(r=>{
+    const util = Math.round(num(r['Utilisation_%'] || r.utilisation || 0));
+    totalUtil += util;
+    if(util > 100) overloaded++;
+    if(util < 60) slack++;
+    const barColor = util > 100 ? 'var(--danger)' : util > 85 ? 'var(--warning)' : 'var(--success)';
+    const rid = escapeHtml(r.Resource_ID || r.resource_id || '—');
+    const op = escapeHtml(r.Operation_Group || r.Operation || _ridToOp(r.Resource_ID || r.resource_id));
+    const cappedUtil = Math.min(util, 100);
+    return `<div style="display:flex;align-items:center;gap:.5rem;font-size:.78rem;margin-bottom:.2rem">
+      <div style="width:70px;flex-shrink:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${rid}</div>
+      <div style="width:36px;flex-shrink:0;color:var(--text-faint);font-size:.7rem">${op}</div>
+      <div style="flex:1;background:var(--panel-muted);border-radius:3px;height:.85rem;overflow:hidden">
+        <div style="height:100%;width:${cappedUtil}%;background:${barColor};border-radius:3px;transition:width .3s"></div>
+      </div>
+      <div style="width:38px;flex-shrink:0;text-align:right;font-weight:700;color:${util>100?'var(--danger)':util>85?'var(--warning)':'var(--text-soft)'}">${util}%</div>
+    </div>`;
+  }).join('');
+
+  setText('capOverloaded', overloaded);
+  setText('capSlack', slack);
+  if(rows.length) setText('capAvg', Math.round(totalUtil/rows.length) + '%');
+}
+
+// ---- Pipeline stage accordion ----
+function toggleStage(id){
+  const body = qs(id + '-body');
+  const chevron = qs(id + '-chevron');
+  const isCollapsed = body.classList.contains('collapsed');
+  body.classList.toggle('collapsed', !isCollapsed);
+  chevron.classList.toggle('collapsed', !isCollapsed);
+}
+
+function setPipelineStageStatus(id, status, meta, kpis){
+  // status: pending | running | done | warn | error
+  const badge = qs(id + '-badge');
+  const metaEl = qs(id + '-meta');
+  const kpisEl = qs(id + '-kpis');
+  const stage = qs(id);
+  const labels = {pending:'PENDING',running:'RUNNING…',done:'DONE',warn:'CHECK',error:'ERROR'};
+  badge.className = 'ps-badge ' + status;
+  badge.textContent = labels[status] || status.toUpperCase();
+  stage.className = 'pipeline-stage ' + (status === 'pending' ? '' : status);
+  if(meta) metaEl.textContent = meta;
+  if(kpis){
+    kpisEl.innerHTML = kpis.map(k=>`<span><strong>${k.v}</strong> ${k.l}</span>`).join('');
+  }
+}
+
+function stageExpand(id){ const b=qs(id+'-body'),c=qs(id+'-chevron'); b.classList.remove('collapsed'); c.classList.remove('collapsed'); }
+function stageCollapse(id){ const b=qs(id+'-body'),c=qs(id+'-chevron'); b.classList.add('collapsed'); c.classList.add('collapsed'); }
+
+async function runFullPipeline(){
+  const btn = qs('pipelineRunBtn');
+  btn.textContent = '⏳ Running…';
+  btn.disabled = true;
+  qs('pipelineStatusBadge').style.background = '#dbeafe';
+  qs('pipelineStatusBadge').style.color = '#2563eb';
+  qs('pipelineStatusBadge').textContent = 'Running…';
+
+  try {
+    // Stage 1 - select window
+    setPipelineStageStatus('ps-propose', 'running');
+    stageExpand('ps-propose');
+    await selectPlanningWindow();
+
+    // Stage 2 - propose orders
+    await proposePlanningOrders();
+
+    // Stage 3 - derive heats
+    setPipelineStageStatus('ps-heats', 'running');
+    stageExpand('ps-heats');
+    await deriveHeatBatches();
+
+    // Stage 4 - simulate
+    setPipelineStageStatus('ps-schedule', 'running');
+    stageExpand('ps-schedule');
+    await simulateSchedule();
+
+    // Stage 5 - load release
+    setPipelineStageStatus('ps-release', 'running');
+    stageExpand('ps-release');
+    await loadReleaseBoard();
+
+    qs('pipelineStatusBadge').style.background = '#dcfce7';
+    qs('pipelineStatusBadge').style.color = '#16a34a';
+    qs('pipelineStatusBadge').textContent = 'Complete';
+  } catch(e) {
+    qs('pipelineStatusBadge').style.background = '#fee2e2';
+    qs('pipelineStatusBadge').style.color = '#dc2626';
+    qs('pipelineStatusBadge').textContent = 'Error';
+    console.error('Pipeline error:', e);
+  }
+
+  btn.textContent = '▶ Run Pipeline';
+  btn.disabled = false;
+}
+
+
+function initSplitResizer(dividerId) {
+  const divider = qs(dividerId);
+  if (!divider || divider.dataset.bound === 'true') return;
+
+  const container = divider.parentElement;
+  const leftPane = container?.children?.[0];
+  if (!container || !leftPane) return;
+
   let isResizing = false;
-  divider.addEventListener('mousedown', ()=>{ isResizing = true; });
-  document.addEventListener('mouseup', ()=>{ isResizing = false; });
-  document.addEventListener('mousemove', (e)=>{
-    if(!isResizing) return;
-    const container = divider.parentElement;
+
+  const onMouseMove = (e) => {
+    if (!isResizing) return;
+
     const rect = container.getBoundingClientRect();
-    const newWidth = e.clientX - rect.left;
-    const minWidth = 200, maxWidth = rect.width - 300;
-    if(newWidth >= minWidth && newWidth <= maxWidth){
-      container.children[0].style.flex = '0 0 '+newWidth+'px';
+    const nextWidth = e.clientX - rect.left;
+    const minWidth = 220;
+    const maxWidth = rect.width - 320;
+
+    if (nextWidth >= minWidth && nextWidth <= maxWidth) {
+      leftPane.style.flex = `0 0 ${nextWidth}px`;
     }
+  };
+
+  const onMouseUp = () => {
+    isResizing = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  };
+
+  divider.addEventListener('mousedown', () => {
+    isResizing = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
   });
+
+  document.addEventListener('mousemove', onMouseMove);
+  document.addEventListener('mouseup', onMouseUp);
+
+  divider.dataset.bound = 'true';
 }
-function initBomResizable(){
-  const divider = qs('bomDivider');
-  if(!divider) return;
-  let isResizing = false;
-  divider.addEventListener('mousedown', ()=>{ isResizing = true; });
-  document.addEventListener('mouseup', ()=>{ isResizing = false; });
-  document.addEventListener('mousemove', (e)=>{
-    if(!isResizing) return;
-    const container = divider.parentElement;
-    const rect = container.getBoundingClientRect();
-    const newWidth = e.clientX - rect.left;
-    const minWidth = 200, maxWidth = rect.width - 300;
-    if(newWidth >= minWidth && newWidth <= maxWidth){
-      container.children[0].style.flex = '0 0 '+newWidth+'px';
-    }
-  });
-}
 
-// Tab click handler
-document.querySelectorAll('#topTabs .tab').forEach(btn=>btn.addEventListener('click', ()=>{
-  if(btn.dataset.page) activatePage(btn.dataset.page);
-}));
+function initNavigation() {
+  const topTabs = qs('topTabs');
 
-// More Tools dropdown menu
-const moreToolsBtn = qs('moreToolsBtn');
-const moreToolsMenu = qs('moreToolsMenu');
-if(moreToolsBtn && moreToolsMenu){
-  moreToolsBtn.addEventListener('click', (e)=>{
-    e.stopPropagation();
-    moreToolsMenu.style.display = moreToolsMenu.style.display === 'none' ? 'block' : 'none';
-  });
+  if (topTabs && !topTabs.dataset.bound) {
+    topTabs.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-page]');
+      if (!btn) return;
 
-  moreToolsMenu.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click', ()=>{
-    activatePage(btn.dataset.page);
-    moreToolsMenu.style.display = 'none';
-  }));
+      activatePage(btn.dataset.page);
+    });
 
-  document.addEventListener('click', ()=>{
-    moreToolsMenu.style.display = 'none';
+    topTabs.dataset.bound = 'true';
+  }
+
+  document.querySelectorAll('[data-page-link]').forEach((btn) => {
+    if (btn.dataset.bound) return;
+    btn.addEventListener('click', () => activatePage(btn.dataset.pageLink));
+    btn.dataset.bound = 'true';
   });
 }
 
-document.querySelectorAll('[data-page-link]').forEach(btn=>btn.addEventListener('click', ()=>activatePage(btn.dataset.pageLink)));
 
+function initAppUi() {
+  initNavigation();
+  initSplitResizer('materialDivider');
+  initSplitResizer('bomDivider');
+}
+
+initAppUi();
 async function checkHealth(){
   try{
     const d = await apiFetch('/api/health');
@@ -698,8 +999,39 @@ function renderBottleneck(summary){
 
 // New Dashboard Card Renderers
 function renderDashboardPipeline(){
+  // Prefer planning orders if available (new pipeline), fall back to campaigns
+  const pos = state.planningOrders && state.planningOrders.length ? state.planningOrders : null;
+  if(pos){
+    const items = pos.slice(0, 6);
+    qs('dashboardPipelineBody').innerHTML = items.map(po=>{
+      const status = po.planner_status || 'PROPOSED';
+      const statusColor = status === 'FROZEN' || status === 'APPROVED' ? 'success' : status === 'PROPOSED' ? 'info' : 'warn';
+      const mt = num(po.total_qty_mt || 0).toFixed(0);
+      const grade = (po.grade_family || '—').substring(0, 10);
+      const heats = po.heats_required || 0;
+      const soCount = (po.selected_so_ids || []).length;
+      return `<div style="border:1px solid var(--border);border-radius:.3rem;padding:.4rem;font-size:.7rem">
+        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:.3rem">
+          <div>
+            <div style="font-weight:700;font-size:.85rem">${escapeHtml(po.po_id)}</div>
+            <div style="color:var(--text-soft);font-size:.65rem">${escapeHtml(grade)} · ${soCount} SOs</div>
+          </div>
+          <div style="background:var(--${statusColor}-soft);color:var(--${statusColor});padding:.2rem .4rem;border-radius:.2rem;font-weight:700;font-size:.6rem">${status.substring(0,4)}</div>
+        </div>
+        <div style="display:flex;gap:.6rem;padding-top:.3rem;border-top:1px solid var(--border)">
+          <div style="flex:1"><div style="color:var(--text-soft);font-size:.6rem">Volume</div><div style="font-weight:700">${mt} MT</div></div>
+          <div style="flex:1"><div style="color:var(--text-soft);font-size:.6rem">Heats</div><div style="font-weight:700">${heats}</div></div>
+        </div>
+      </div>`;
+    }).join('');
+    // Update summary metric
+    setText('summaryCampaigns', pos.length || '—');
+    const approved = pos.filter(p=>p.planner_status === 'APPROVED' || p.planner_status === 'FROZEN').length;
+    setText('summaryCampaignsSub', approved + ' approved · ' + (pos.length - approved) + ' proposed');
+    return;
+  }
   const camps = [...(state.campaigns||[])].slice(0, 6);
-  if(!camps.length){ qs('dashboardPipelineBody').innerHTML = '<div style="text-align:center;color:var(--text-soft);font-size:.8rem">Run Schedule to populate</div>'; return; }
+  if(!camps.length){ qs('dashboardPipelineBody').innerHTML = '<div style="text-align:center;color:var(--text-soft);font-size:.8rem">Run Planning Pipeline or Schedule to populate</div>'; return; }
 
   qs('dashboardPipelineBody').innerHTML = camps.map(c=>{
     const status = c.release_status || c.Release_Status || '—';
@@ -779,7 +1111,7 @@ function renderDashboardExecution(){
   weekEnd.setDate(weekEnd.getDate() + 7);
 
   const thisWeekCamps = (state.gantt || []).filter(j=>{
-    const s = new Date(j.Planned_Start);
+    const s = parseDate(j.Planned_Start);
     return s >= today && s <= weekEnd;
   });
   const uniqueCamps = new Set(thisWeekCamps.map(j=>j.Campaign || j.campaign_id));
@@ -790,47 +1122,70 @@ function renderDashboardExecution(){
   setText('execHolds', (state.overview?.campaigns_held || 0) + ' blocked');
 }
 
-function renderDashboardPerformance(){
-  const onTimeRate = state.overview?.on_time_pct || 71;
-  setText('perfOnTime', onTimeRate + '%');
-  setText('perfOnTimeTrend', onTimeRate > 70 ? '↗ Stable' : '↘ Declining');
-  setText('perfLate', state.overview?.campaigns_late || '0');
-  setText('perfAvgLate', state.overview?.avg_days_late || '—');
+function renderDashboardPerformance() {
+  const onTimeRate = num(state.overview?.on_time_pct, 0);
+  const late = num(state.overview?.campaigns_late, 0);
+  const avgLate = state.overview?.avg_days_late ?? '—';
+
+  setText('perfOnTime', `${onTimeRate}%`);
+  setText('perfLate', late);
+  setText('perfAvgLate', avgLate);
 }
 
 function renderCampaigns(){
   const box = qs('campaignCards');
   let items = [...(state.campaigns||[])];
-  if(state.campFilter === 'released') items = items.filter(x=>String(x.release_status || x.Release_Status || '').toUpperCase() === 'RELEASED');
-  if(state.campFilter === 'held') items = items.filter(x=>String(x.release_status || x.Release_Status || x.Status || '').toUpperCase().includes('HOLD'));
-  if(state.campFilter === 'late') items = items.filter(x=>String(x.Status || '').toUpperCase().includes('LATE'));
+  if(state.campFilter === 'released') items = items.filter(x=>String(x.release_status||x.Release_Status||'').toUpperCase()==='RELEASED');
+  if(state.campFilter === 'held') items = items.filter(x=>String(x.release_status||x.Release_Status||x.Status||'').toUpperCase().includes('HOLD'));
+  if(state.campFilter === 'late') items = items.filter(x=>String(x.Status||'').toUpperCase().includes('LATE'));
   if(!items.length){ box.innerHTML = '<div class="notice">No campaigns match the current filter.</div>'; return; }
-  box.innerHTML = items.map(c=>{
-    const cid = c.campaign_id || c.Campaign_ID || '';
-    const status = c.release_status || c.Release_Status || c.Status || '—';
-    return '<div class="card"><div class="card-body">'+
-      '<div class="grid-4" style="grid-template-columns:1.3fr repeat(3,.8fr) 1.2fr;align-items:center">'+
-        '<div><div class="page-title" style="font-size:1.02rem">'+escapeHtml(cid)+'</div><div class="page-sub">'+escapeHtml(c.grade || c.Grade || '—')+'</div></div>'+
-        '<div><div class="metric-label">Volume</div><div class="card-title">'+escapeHtml(c.total_mt || c.Total_MT || '—')+' MT</div><div class="page-sub">'+escapeHtml(c.heats || c.Heats || '—')+' heats</div></div>'+
-        '<div><div class="metric-label">Due</div><div class="card-title">'+escapeHtml(fmtDate(c.Due_Date))+'</div><div class="page-sub">'+escapeHtml(c.Margin_Hrs == null ? '—' : ((num(c.Margin_Hrs)>=0?'+':'') + Math.round(num(c.Margin_Hrs)) + 'h margin'))+'</div></div>'+
-        '<div><div class="metric-label">Status</div>'+badgeForStatus(status)+'</div>'+
-        '<div style="display:flex;gap:.45rem;justify-content:flex-end;flex-wrap:wrap">'+
-          '<button class="btn success" onclick="updateCampaignStatus(\''+escapeHtml(cid)+'\', \'Release_Status\', \'RELEASED\')">Release</button>'+
-          '<button class="btn warn" onclick="updateCampaignStatus(\''+escapeHtml(cid)+'\', \'Release_Status\', \'MATERIAL HOLD\')">Hold</button>'+
-          '<button class="btn ghost" onclick="activatePage(\'schedule\')">Schedule</button>'+
-        '</div>'+
-      '</div>'+
-    '</div></div>';
-  }).join('');
+
+  box.innerHTML = `<div style="overflow-x:auto">
+  <table class="table" style="min-width:700px">
+    <thead><tr>
+      <th>Campaign / Grade</th>
+      <th>Volume</th>
+      <th>Heats</th>
+      <th>Due</th>
+      <th>Margin</th>
+      <th>Status</th>
+      <th style="text-align:right">Actions</th>
+    </tr></thead>
+    <tbody>
+    ${items.map(c=>{
+      const cid = c.campaign_id || c.Campaign_ID || '';
+      const status = c.release_status || c.Release_Status || c.Status || '—';
+      const isReleased = String(status).toUpperCase() === 'RELEASED';
+      const margin = c.Margin_Hrs == null ? '—' : (num(c.Margin_Hrs)>=0?'+':'') + Math.round(num(c.Margin_Hrs)) + 'h';
+      const marginColor = c.Margin_Hrs == null ? '' : num(c.Margin_Hrs) < 0 ? 'color:var(--danger)' : 'color:var(--success)';
+      const rowStyle = isReleased ? 'background:rgba(34,197,94,.05);opacity:.75' : '';
+      return `<tr style="${rowStyle}">
+        <td><div style="font-weight:700;font-size:.82rem">${escapeHtml(cid)}${isReleased?' <span style="font-size:.65rem;background:#dcfce7;color:#16a34a;padding:.1rem .35rem;border-radius:.75rem;font-weight:700">✓ Released</span>':''}</div><div style="font-size:.72rem;color:var(--text-soft)">${escapeHtml(c.grade||c.Grade||'—')}</div></td>
+        <td style="font-weight:600">${escapeHtml(String(c.total_mt||c.Total_MT||'—'))} MT</td>
+        <td>${escapeHtml(String(c.heats||c.Heats||'—'))}</td>
+        <td>${escapeHtml(fmtDate(c.Due_Date))}</td>
+        <td style="${marginColor};font-weight:600">${escapeHtml(margin)}</td>
+        <td>${badgeForStatus(status)}</td>
+        <td style="text-align:right;white-space:nowrap">
+          <button class="btn success" style="font-size:.72rem;padding:.25rem .55rem;${isReleased?'opacity:.4;cursor:not-allowed':''}" ${isReleased?'disabled':''} onclick="updateCampaignStatus('${escapeHtml(cid)}','Release_Status','RELEASED')">Release</button>
+          <button class="btn warn" style="font-size:.72rem;padding:.25rem .55rem" onclick="updateCampaignStatus('${escapeHtml(cid)}','Release_Status','MATERIAL HOLD')">Hold</button>
+          <button class="btn ghost" style="font-size:.72rem;padding:.25rem .55rem" onclick="activatePage('execution');switchExecView('gantt')">Gantt</button>
+        </td>
+      </tr>`;
+    }).join('')}
+    </tbody>
+  </table></div>`;
 }
 function renderSchedule(){
   const wrap = qs('scheduleTimeline');
   const jobs = (state.gantt||[]);
   if(!jobs.length){ wrap.innerHTML = '<div class="notice">Run Schedule to populate the Gantt.</div>'; return; }
-  const days = 14;
-  const starts = jobs.map(j=>new Date(j.Planned_Start)).filter(d=>!isNaN(d));
+  const starts = jobs.map(j=>parseDate(j.Planned_Start)).filter(d=>!isNaN(d));
+  const ends = jobs.map(j=>parseDate(j.Planned_End)).filter(d=>!isNaN(d));
   const t0 = starts.length ? new Date(Math.min(...starts)) : new Date();
   t0.setHours(0,0,0,0);
+  const tEnd = ends.length ? new Date(Math.max(...ends)) : new Date(t0.getTime() + 14*86400000);
+  const days = Math.max(14, Math.ceil((tEnd - t0) / 86400000) + 1);
   const horizonMs = days*86400000;
 
   // Group by campaign
@@ -838,8 +1193,8 @@ function renderSchedule(){
   jobs.forEach(job=>{
     const cid = job.Campaign || 'Unknown';
     if(!campaigns[cid]) campaigns[cid] = {id:cid, grade:job.Grade, jobs:[], minStart:new Date(8640000000000000), maxEnd:new Date(0)};
-    const s = new Date(job.Planned_Start);
-    const e = new Date(job.Planned_End);
+    const s = parseDate(job.Planned_Start);
+    const e = parseDate(job.Planned_End);
     if(!isNaN(s) && !isNaN(e)){
       campaigns[cid].jobs.push(job);
       if(s < campaigns[cid].minStart) campaigns[cid].minStart = s;
@@ -870,112 +1225,27 @@ function renderSchedule(){
     wrap.appendChild(row);
   });
 }
-function renderOrderGradeOptions(){
-  const grades = [...new Set((state.orders||[]).map(o=>o.Grade).filter(Boolean))].sort();
-  const gradeSelect = qs('orderGrade');
-  gradeSelect.innerHTML = '<option value="">All grades</option>' + grades.map(g=>'<option>'+escapeHtml(g)+'</option>').join('');
-  gradeSelect.removeEventListener('change', renderOrders);
-  gradeSelect.addEventListener('change', renderOrders);
-}
-function renderOrders(){
-  renderOrderGradeOptions();
-  const search = (qs('orderSearch').value || '').toLowerCase();
-  const pr = qs('orderPriority').value;
-  const gr = qs('orderGrade').value;
-  let rows = [...(state.orders||[])].filter(o=>{
-    if(!o.SO_ID || !String(o.SO_ID).trim()) return false;
-    const text = [o.SO_ID,o.Customer,o.Grade,o.SKU_ID].join(' ').toLowerCase();
-    if(search && !text.includes(search)) return false;
-    if(pr && String(o.Priority || '').toUpperCase() !== pr.toUpperCase()) return false;
-    if(gr && String(o.Grade || '') !== gr) return false;
-    return true;
-  });
-  setText('ordersCount', rows.length + ' orders');
-  qs('ordersBody').innerHTML = rows.map(o=>{
-    const so = o.SO_ID || '';
-    const checked = state.selectedOrders.has(so) ? 'checked' : '';
-    const status = o.Status || 'Open';
-    return '<tr draggable="true" data-so="'+escapeHtml(so)+'" style="cursor:move;opacity:0.9">'+
-      '<td><input type="checkbox" '+checked+' onchange="toggleOrderSelection(\''+escapeHtml(so)+'\', this.checked)"></td>'+
-      '<td><strong>'+escapeHtml(so)+'</strong></td>'+
-      '<td>'+escapeHtml(o.Customer || '—')+'</td>'+
-      '<td>'+escapeHtml(o.Grade || '—')+'</td>'+
-      '<td>'+escapeHtml(o.Order_Order_Qty_MT || '—')+'</td>'+
-      '<td>'+escapeHtml(fmtDate(o.Delivery_Date))+'</td>'+
-      '<td>'+escapeHtml(o.Priority || '—')+'</td>'+
-      '<td>'+escapeHtml(o.Campaign_ID || '—')+'</td>'+
-      '<td>'+badgeForStatus(status)+'</td>'+
-      '<td><button class="btn" onclick="editOrder(\''+escapeHtml(so)+'\')">Edit</button> <button class="btn danger" onclick="deleteOrder(\''+escapeHtml(so)+'\')">Delete</button></td>'+
-    '</tr>';
-  }).join('') || '<tr><td colspan="10">No orders found.</td></tr>';
-  qs('assignOrdersBtn').disabled = state.selectedOrders.size === 0;
-  renderDropZones();
-
-  // Attach drag listeners to order rows
-  qs('ordersBody').querySelectorAll('tr[data-so]').forEach(tr=>{
-    tr.addEventListener('dragstart', ev=>{
-      ev.dataTransfer.effectAllowed = 'copy';
-      ev.dataTransfer.setData('so_id', tr.dataset.so);
-      tr.style.opacity = '0.5';
-    });
-    tr.addEventListener('dragend', ev=>{
-      tr.style.opacity = '0.9';
-    });
-  });
-}
-function renderDropZones(){
-  const zones = qs('dropZones');
-  const camps = [...(state.campaigns||[])].filter(c=>String(c.release_status || c.Release_Status || c.Status || '').toUpperCase().includes('RELEASED') || String(c.release_status || c.Release_Status || c.Status || '').toUpperCase().includes('HOLD'));
-  if(!camps.length){ zones.innerHTML = '<div class="notice">No campaigns available for assignment.</div>'; return; }
-  zones.innerHTML = camps.slice(0,8).map(c=>{
-    const cid = c.campaign_id || c.Campaign_ID || '';
-    return '<div class="drop-zone" data-campaign="'+escapeHtml(cid)+'">'+
-      '<div class="dropzone-title">'+escapeHtml(cid)+' · '+escapeHtml(c.grade || c.Grade || '—')+'</div>'+
-      '<div class="dropzone-sub">'+escapeHtml(c.total_mt || c.Total_MT || '—')+' MT · '+escapeHtml(c.heats || c.Heats || '—')+' heats</div>'+
-    '</div>';
-  }).join('');
-  zones.querySelectorAll('.drop-zone').forEach(z=>{
-    z.addEventListener('dragover', ev=>{
-      ev.preventDefault();
-      ev.dataTransfer.dropEffect = 'copy';
-      z.classList.add('drag-over');
-    });
-    z.addEventListener('dragleave', ev=>{
-      if(ev.target === z) z.classList.remove('drag-over');
-    });
-    z.addEventListener('drop', async ev=>{
-      ev.preventDefault();
-      ev.stopPropagation();
-      z.classList.remove('drag-over');
-      const so = ev.dataTransfer.getData('so_id');
-      const campaignId = z.dataset.campaign;
-      if(so && campaignId){
-        try{
-          await assignOrdersToCampaign([so], campaignId);
-          z.classList.add('dropped');
-          setTimeout(()=>z.classList.remove('dropped'), 1500);
-        }catch(e){
-          console.error('Assignment failed:', e);
-          alert('Failed to assign order. Check console for details.');
-        }
-      }
-    });
-  });
-}
-function selectCampaignFromGantt(campaignId){
+function selectCampaignFromGantt(campaignId) {
   state.selectedCampaign = campaignId;
-  const panel = document.getElementById('campaignDetailsPanel');
-  const content = document.getElementById('campaignDetailsContent');
-  if(panel) panel.style.display = 'block';
-  if(content) content.innerHTML = '<div style="padding:1rem"><strong>'+escapeHtml(campaignId)+'</strong><br><small>Campaign details loading...</small></div>';
-  document.getElementById('clearCampaignBtn').style.display = 'block';
+
+  const panel = qs('campaignDetailsPanel');
+  const content = qs('campaignDetailsContent');
+  const clearBtn = qs('clearCampaignBtn');
   const campSel = qs('dispatchFilterCampaign');
-  if(campSel) campSel.value = campaignId;
+
+  if (panel) panel.style.display = 'block';
+  if (content) {
+    content.innerHTML = `<div style="padding:1rem"><strong>${escapeHtml(campaignId)}</strong><br><small>Campaign details loading...</small></div>`;
+  }
+  if (clearBtn) clearBtn.style.display = 'block';
+  if (campSel) campSel.value = campaignId;
+
+  activatePage('execution');
+  switchExecView('timeline');
   renderDispatch();
   renderCampaignDetails();
-  const dispatchTab = document.querySelector('button[data-page="dispatch"]');
-  if(dispatchTab) dispatchTab.click();
 }
+
 function clearCampaignSelection(){
   state.selectedCampaign = null;
   document.getElementById('clearCampaignBtn').style.display = 'none';
@@ -1102,136 +1372,90 @@ function renderDispatch(){
   let jobs = state.gantt || [];
   const filters = state.dispatchFilters || {};
 
-  // Apply dropdown filters
-  if(filters.campaignFilter){
-    jobs = jobs.filter(j=>(j.Campaign || j.campaign_id) === filters.campaignFilter);
-  }
-  if(filters.gradeFilter){
-    jobs = jobs.filter(j=>(j.Grade || '') === filters.gradeFilter);
-  }
-  if(filters.plantFilter){
-    jobs = jobs.filter(j=>(j.Plant || 'Shared') === filters.plantFilter);
-  }
-
-  // Also apply selected campaign from schedule tab
-  if(state.selectedCampaign){
-    jobs = jobs.filter(j=>(j.Campaign || j.campaign_id) === state.selectedCampaign);
-  }
+  if(filters.campaignFilter) jobs = jobs.filter(j=>(j.Campaign||j.campaign_id)===filters.campaignFilter);
+  if(filters.gradeFilter) jobs = jobs.filter(j=>(j.Grade||'')===filters.gradeFilter);
+  if(filters.plantFilter) jobs = jobs.filter(j=>(j.Plant||'Shared')===filters.plantFilter);
+  if(state.selectedCampaign) jobs = jobs.filter(j=>(j.Campaign||j.campaign_id)===state.selectedCampaign);
 
   if(!jobs.length){
-    grid.innerHTML = '<div class="notice">No operations match the selected filters.</div>';
-    setText('dispatchMachines', '—');
-    setText('dispatchJobs', '—');
-    setText('dispatchDuration', '—');
-    setText('dispatchMt', '—');
+    grid.innerHTML = '<div class="notice">No schedule data. Run Schedule first.</div>';
+    setText('dispatchMachines','—'); setText('dispatchJobs','—'); setText('dispatchDuration','—'); setText('dispatchMt','—');
     return;
   }
 
-  // Group by resource (no accordion structure)
+  // Time range
+  const allStarts = jobs.map(j=>parseDate(j.Planned_Start)).filter(d=>isFinite(d));
+  const allEnds   = jobs.map(j=>parseDate(j.Planned_End)).filter(d=>isFinite(d));
+  const t0 = allStarts.length ? new Date(Math.min(...allStarts)) : new Date();
+  t0.setHours(0,0,0,0);
+  const tMax = allEnds.length ? new Date(Math.max(...allEnds)) : new Date(t0.getTime()+14*86400000);
+  const totalMs = Math.max(tMax - t0, 86400000);
+
+  // KPIs
   const byResource = {};
-  jobs.forEach(j=>{
-    const rid = j.Resource_ID || 'UNKNOWN';
-    if(!byResource[rid]) byResource[rid] = [];
-    byResource[rid].push(j);
-  });
+  jobs.forEach(j=>{ const r=j.Resource_ID||'?'; if(!byResource[r]) byResource[r]=[]; byResource[r].push(j); });
+  const totalMt = jobs.reduce((a,j)=>a+num(j.Qty_MT||j.Order_Qty_MT||j.qty_mt),0);
+  const durationH = Math.round((tMax-t0)/3600000);
+  setText('dispatchMachines', Object.keys(byResource).length);
+  setText('dispatchJobs', jobs.length);
+  setText('dispatchDuration', durationH+'h');
+  setText('dispatchMt', totalMt.toFixed(1)+' MT');
 
-  // Calculate metrics
-  const uniqueResources = Object.keys(byResource).length;
-  const starts = jobs.map(j=>new Date(j.Planned_Start)).filter(d=>!isNaN(d));
-  const ends = jobs.map(j=>new Date(j.Planned_End)).filter(d=>!isNaN(d));
-  const minStart = starts.length ? new Date(Math.min(...starts)) : new Date();
-  const maxEnd = ends.length ? new Date(Math.max(...ends)) : new Date();
-  const durationMs = maxEnd - minStart;
-  const durationHours = Math.round(durationMs / 3600000);
-  const totalMt = jobs.reduce((a,j)=>a + num(j.Order_Qty_MT || j.qty_mt), 0);
+  // Day axis labels
+  const days = Math.ceil(totalMs/86400000);
+  let axisHtml = '';
+  for(let i=0;i<days;i++){
+    const d = new Date(t0.getTime()+i*86400000);
+    const pct = (i/days*100).toFixed(2);
+    axisHtml += `<div style="position:absolute;left:${pct}%;top:0;height:100%;border-left:1px solid var(--border-soft);padding-left:3px;font-size:.62rem;color:var(--text-faint);white-space:nowrap">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>`;
+  }
 
-  setText('dispatchMachines', uniqueResources || '—');
-  setText('dispatchJobs', jobs.length || '—');
-  setText('dispatchDuration', durationHours + 'h');
-  setText('dispatchMt', totalMt.toFixed(1) + ' MT');
+  // Build rows — one flat row per resource, individual job bars
+  const LABEL_W = 80; // px
+  let html = `<div style="display:table;width:100%;border-collapse:collapse">`;
 
-  minStart.setHours(0,0,0,0);
-  const horizonMs = Math.max(durationMs, 86400000);
+  // Header axis row
+  html += `<div style="display:table-row">
+    <div style="display:table-cell;width:${LABEL_W}px;vertical-align:middle;padding-right:6px"></div>
+    <div style="display:table-cell;vertical-align:top;padding-bottom:4px">
+      <div style="position:relative;height:22px;background:var(--panel-muted);border-radius:3px;border:1px solid var(--border-soft)">${axisHtml}</div>
+    </div>
+  </div>`;
 
-  // Aggregate campaigns per resource
-  let resourceRows = Object.keys(byResource).sort().map(rid=>{
+  Object.keys(byResource).sort().forEach(rid=>{
     const list = byResource[rid];
-    const utilRow = (state.capacity || []).find(c=>(c.Resource_ID || c.resource_id) === rid);
-    const util = Math.round(num(utilRow && (utilRow['Utilisation_%'] || utilRow.utilisation)));
-    const op = list[0]?.Operation || utilRow?.Operation_Group || '—';
-    const opCls = ['EAF','LRF','VD','CCM','RM'].includes(String(op).toUpperCase()) ? String(op).toLowerCase() : 'rm';
-    const pillCls = util > 100 ? 'over' : util > 85 ? 'high' : 'ok';
+    const utilRow = (state.capacity||[]).find(c=>(c.Resource_ID||c.resource_id)===rid);
+    const util = Math.round(num(utilRow&&(utilRow['Utilisation_%']||utilRow.utilisation)));
+    const pillCls = util>100?'color:#ef4444;font-weight:700':util>85?'color:#f59e0b;font-weight:700':'color:#22c55e;font-weight:700';
 
-    // Group by campaign and aggregate
-    let campaignGroups = {};
-    list.forEach(j=>{
-      let cid = j.Campaign || j.campaign_id;
-      if(!campaignGroups[cid]) {
-        campaignGroups[cid] = {jobs: [], start: null, end: null, priority: 'NORMAL'};
-      }
-      campaignGroups[cid].jobs.push(j);
-      let s = new Date(j.Planned_Start);
-      let e = new Date(j.Planned_End);
-      if(!campaignGroups[cid].start || s < campaignGroups[cid].start) campaignGroups[cid].start = s;
-      if(!campaignGroups[cid].end || e > campaignGroups[cid].end) campaignGroups[cid].end = e;
-
-      // Get highest priority from related orders
-      let relOrders = (state.orders || []).filter(o=>String(o.Campaign_ID || o.campaign_id) === cid);
-      let highestPri = relOrders.map(o=>o.Priority || 'NORMAL').find(p=>p==='URGENT') ||
-                       relOrders.map(o=>o.Priority || 'NORMAL').find(p=>p==='HIGH') || 'NORMAL';
-      if(['URGENT','HIGH'].includes(highestPri)) campaignGroups[cid].priority = highestPri;
-    });
-
-    const bars = Object.entries(campaignGroups).map(([cid, group])=>{
-      const s = group.start;
-      const e = group.end;
-      if(!s || !e || isNaN(s) || isNaN(e)) return '';
-      const left = Math.max(0, (s - minStart) / horizonMs * 100);
-      const width = Math.max(1, (e - s) / horizonMs * 100);
-      const jCls = ['EAF','LRF','VD','CCM','RM'].includes(String(group.jobs[0]?.Operation || '').toUpperCase()) ? String(group.jobs[0]?.Operation).toLowerCase() : 'eaf';
-      const label = escapeHtml(cid) + ' (' + group.jobs.length + ')';
-
-      // Priority border indicator
-      let priorityBorder = '2px solid transparent';
-      if(group.priority === 'URGENT') priorityBorder = '3px solid var(--danger)';
-      else if(group.priority === 'HIGH') priorityBorder = '3px solid var(--warning)';
-
-      return '<div class="eq-gantt-bar '+jCls+'" style="left:'+left+'%;width:'+Math.min(width, 100-left)+'%;position:absolute;height:100%;top:0;display:flex;align-items:center;border-left:'+priorityBorder+';cursor:pointer" onclick="selectCampaignFromGantt(\''+escapeHtml(cid)+'\');" title="'+label+' ['+group.priority+'] - '+fmtDateTime(s)+' to '+fmtDateTime(e)+'">'+
-        '<span style="font-size:.65rem;padding:2px 4px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+label+'</span>'+
-      '</div>';
+    // Individual job bars
+    const bars = list.map(j=>{
+      const s = parseDate(j.Planned_Start);
+      const e = parseDate(j.Planned_End);
+      if(!isFinite(s)||!isFinite(e)) return '';
+      const left  = Math.max(0,(s-t0)/totalMs*100);
+      const width = Math.max(0.3,(e-s)/totalMs*100);
+      const op = (j.Operation||'').toUpperCase();
+      const cls = ['EAF','LRF','VD','CCM','RM'].includes(op)?op.toLowerCase():'eaf';
+      const camp = escapeHtml(j.Campaign||'');
+      return `<div class="eq-gantt-bar ${cls}" style="position:absolute;left:${left.toFixed(2)}%;width:${Math.min(width,100-left).toFixed(2)}%;top:1px;bottom:1px;border-radius:2px;cursor:pointer;min-width:2px" onclick="selectCampaignFromGantt('${camp}')" title="${camp} | ${escapeHtml(j.Job_ID||'')} | ${fmtDateTime(s)} → ${fmtDateTime(e)}"></div>`;
     }).join('');
 
-    return '<div class="card" style="margin-bottom:.9rem">'+
-      '<div class="card-header">'+
-        '<div><div class="card-title">'+escapeHtml(rid)+'</div><div class="card-sub">'+escapeHtml(op)+' • '+list.length+' heats</div></div>'+
-        '<div class="eq-util '+pillCls+'" style="margin-left:auto">'+(util || 0)+'% utilized</div>'+
-      '</div>'+
-      '<div class="eq-gantt" style="position:relative;background:var(--panel-soft);border-radius:.2rem;height:48px;border:1px solid var(--border-soft);margin:.75rem">'+bars+'</div>'+
-    '</div>';
-  }).join('');
+    html += `<div style="display:table-row">
+      <div style="display:table-cell;width:${LABEL_W}px;vertical-align:middle;padding:.25rem .4rem .25rem 0;border-top:1px solid var(--border-soft)">
+        <div style="font-size:.75rem;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(rid)}</div>
+        <div style="font-size:.62rem;${pillCls}">${util}%</div>
+      </div>
+      <div style="display:table-cell;vertical-align:middle;padding:.25rem 0;border-top:1px solid var(--border-soft)">
+        <div style="position:relative;height:34px;background:var(--panel-soft);border-radius:3px;border:1px solid var(--border-soft);overflow:hidden">${bars}</div>
+      </div>
+    </div>`;
+  });
 
-  // Generate timeline axis if there are jobs
-  let timelineAxis = '';
-  if(jobs.length > 0){
-    const dayCount = Math.ceil(horizonMs / 86400000);
-    const markers = [];
-    for(let i = 0; i <= dayCount && i <= 14; i++){
-      const d = new Date(minStart);
-      d.setDate(d.getDate() + i);
-      const pct = (d - minStart) / horizonMs * 100;
-      markers.push(`<div style="position:absolute;left:${pct}%;border-left:1px solid var(--border-soft);height:20px;font-size:.65rem;color:var(--text-faint);padding-left:4px">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>`);
-    }
-    timelineAxis = '<div style="position:relative;height:28px;background:var(--panel-muted);border-radius:.2rem;margin:0 .75rem .5rem;border:1px solid var(--border-soft)">'+markers.join('')+'</div>';
-  }
-
-  resourceRows = timelineAxis + resourceRows;
-
-  grid.innerHTML = resourceRows;
+  html += '</div>';
+  grid.innerHTML = html;
   populateDispatchFilters();
-
-  if(state.selectedCampaign){
-    renderCampaignDetails();
-  }
+  if(state.selectedCampaign) renderCampaignDetails();
 }
 function deriveMaterialRows(){
   return (state.campaigns || []).flatMap(c=>{
@@ -1249,45 +1473,62 @@ function deriveMaterialRows(){
   });
 }
 function renderMaterial(){
-  const rows = (state.material && state.material.length ? state.material : deriveMaterialRows());
-  if(!rows.length){ qs('materialDetailContent').innerHTML = '<div class="material-detail-empty">No material data loaded.</div>'; return; }
+  // state.material is {summary:{}, campaigns:[...]} — not an array
+  const matPlan = (state.material && typeof state.material === 'object') ? state.material : {};
+  let camps = matPlan.campaigns || [];
 
-  const critical = rows.filter(r=>['CRITICAL','BLOCKED'].includes(String(r.Status || '').toUpperCase())).length;
-  const held = rows.filter(r=>String(r.Status || '').toUpperCase().includes('HOLD')).length;
-  setText('matOk', Math.max(rows.length - held - critical, 0));
-  setText('matLow', held);
-  setText('matCrit', critical);
-  setText('matHeld', held);
+  // Fallback: derive from state.campaigns if material plan not populated
+  if(!camps.length){
+    camps = (state.campaigns||[]).map(c=>({
+      campaign_id: c.campaign_id || c.Campaign_ID || '',
+      grade: c.grade || c.Grade || '—',
+      release_status: c.release_status || c.Release_Status || '',
+      required_qty: num(c.total_mt || c.Total_MT),
+      shortage_qty: (c.shortages||[]).reduce((a,s)=>a+num(s.qty),0),
+      material_status: c.material_status || '',
+      shortages: c.shortages || []
+    }));
+  }
 
-  buildMaterialTree(rows);
+  if(!camps.length){
+    qs('materialDetailContent').innerHTML = '<div class="material-detail-empty">No material data. Run BOM Netting first.</div>';
+    qs('materialTree').innerHTML = '';
+    return;
+  }
+
+  const withShortage = camps.filter(c=>num(c.shortage_qty)>0).length;
+  const withHold     = camps.filter(c=>String(c.material_status||'').toUpperCase().includes('HOLD')).length;
+  const covered      = camps.filter(c=>num(c.shortage_qty)<=0 && !String(c.material_status||'').toUpperCase().includes('HOLD')).length;
+  setText('matOk', covered);
+  setText('matLow', withHold);
+  setText('matCrit', withShortage);
+  setText('matHeld', withHold);
+
+  buildMaterialTree(camps);
 }
 
-function buildMaterialTree(rows){
-  const campaigns = {};
-  rows.forEach(r=>{
-    const cid = r.Campaign_ID || 'Unknown';
-    if(!campaigns[cid]) campaigns[cid] = {id:cid, grade:r.Grade, rows:[], shortageCount:0};
-    campaigns[cid].rows.push(r);
-    if(String(r.Status||'').toUpperCase().includes('SHORT') || String(r.Status||'').toUpperCase().includes('HOLD')){
-      campaigns[cid].shortageCount++;
-    }
-  });
-
-  state.materialCampaigns = Object.values(campaigns).sort((a,b)=>b.shortageCount - a.shortageCount);
+function buildMaterialTree(camps){
+  state.materialCampaigns = [...camps].sort((a,b)=>num(b.shortage_qty)-num(a.shortage_qty));
   const tree = qs('materialTree');
   tree.innerHTML = state.materialCampaigns.map((camp, idx)=>{
-    const statusIcon = camp.shortageCount > 0 ? '⚠️' : '✓';
-    const statusLabel = camp.shortageCount > 0 ? camp.shortageCount + ' blocked' : 'Ready';
+    const shortQty = num(camp.shortage_qty);
+    const isHold   = String(camp.material_status||'').toUpperCase().includes('HOLD');
+    const icon     = shortQty > 0 ? '⚠' : isHold ? '⏸' : '✓';
+    const iconColor= shortQty > 0 ? 'var(--danger)' : isHold ? 'var(--warning)' : 'var(--success)';
+    const label    = shortQty > 0 ? shortQty.toFixed(1)+' MT short' : isHold ? 'On hold' : 'Ready';
+    const cid      = camp.campaign_id || camp.id || '';
     return '<div class="tree-item">'+
-      '<div class="tree-node campaign" onclick="selectMaterialCampaign(this,'+idx+')" data-campaign="'+escapeHtml(camp.id)+'">'+
+      '<div class="tree-node campaign" onclick="selectMaterialCampaign(this,'+idx+')" data-campaign="'+escapeHtml(cid)+'">'+
         '<div class="tree-toggle leaf"></div>'+
-        '<div class="tree-node-icon">'+statusIcon+'</div>'+
-        '<span>'+escapeHtml(camp.id)+' <span style="font-size:.75rem;color:var(--text-faint)">'+escapeHtml(camp.grade)+' — '+statusLabel+'</span></span>'+
+        '<div class="tree-node-icon" style="color:'+iconColor+'">'+icon+'</div>'+
+        '<span style="font-size:.8rem">'+escapeHtml(cid)+'<span style="font-size:.7rem;color:var(--text-faint);margin-left:.4rem">'+escapeHtml(camp.grade||'—')+' — '+label+'</span></span>'+
       '</div>'+
     '</div>';
   }).join('');
 
   if(state.materialCampaigns.length > 0){
+    const first = qs('materialTree')?.querySelector('.tree-node.campaign');
+    if(first) first.classList.add('selected');
     renderMaterialDetail(state.materialCampaigns[0]);
   }
 }
@@ -1299,66 +1540,52 @@ function selectMaterialCampaign(el, idx){
 }
 
 function renderMaterialDetail(campaign){
-  const rows = campaign.rows || [];
-  if(!rows.length){
-    qs('materialDetailContent').innerHTML = '<div class="material-detail-empty">No materials for this campaign.</div>';
-    return;
-  }
-  const campaignId = campaign.id || 'Unknown';
-  const grade = campaign.grade || '—';
-  const totalQty = rows.reduce((a,r)=>a+num(r.Required_Qty || r.Shortage_Qty || 0),0);
-  const shortageRows = rows.filter(r=>String(r.Status||'').toUpperCase().includes('SHORT'));
-  const holdRows = rows.filter(r=>String(r.Status||'').toUpperCase().includes('HOLD'));
-  const readyRows = rows.filter(r=>!String(r.Status||'').toUpperCase().includes('SHORT') && !String(r.Status||'').toUpperCase().includes('HOLD'));
-  const shortageQty = shortageRows.reduce((a,r)=>a+num(r.Required_Qty || r.Shortage_Qty || 0),0);
-  const holdQty = holdRows.reduce((a,r)=>a+num(r.Required_Qty || r.Shortage_Qty || 0),0);
+  const cid       = campaign.campaign_id || campaign.id || 'Unknown';
+  const grade     = campaign.grade || '—';
+  const reqQty    = num(campaign.required_qty);
+  const shortQty  = num(campaign.shortage_qty);
+  const matStatus = campaign.material_status || '';
+  const isHold    = matStatus.toUpperCase().includes('HOLD');
 
-  let html = '<div class="material-detail-header">'+
-    '<div class="material-detail-title">'+escapeHtml(campaignId)+'</div>'+
-    '<div class="material-detail-subtitle">'+escapeHtml(grade)+' – '+totalQty.toFixed(1)+' MT total</div>'+
-  '</div>'+
-  '<div class="material-detail-stats">'+
-    '<div class="material-detail-stat" style="background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.3)"><div class="material-detail-stat-label">Ready</div><div class="material-detail-stat-value" style="color:#16a34a">'+readyRows.length+'</div></div>'+
-    '<div class="material-detail-stat" style="background:rgba(220,38,38,.1);border-color:rgba(220,38,38,.3)"><div class="material-detail-stat-label">Shortage</div><div class="material-detail-stat-value" style="color:#dc2626">'+shortageQty.toFixed(0)+' MT</div></div>'+
-    '<div class="material-detail-stat" style="background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.3)"><div class="material-detail-stat-label">Hold</div><div class="material-detail-stat-value" style="color:#f59e0b">'+holdQty.toFixed(0)+' MT</div></div>'+
-  '</div>';
+  // Shortages can be in campaign.shortages (array) or campaign.material_shortages (object)
+  const shortages = campaign.shortages && campaign.shortages.length > 0
+    ? campaign.shortages
+    : Object.entries(campaign.material_shortages || {}).map(([sku_id, qty])=>({sku_id, qty}));
 
-  if(holdRows.length > 0){
-    html += '<div style="margin-top:1.5rem">'+
-      '<div style="font-weight:700;color:var(--text);font-size:.9rem;padding:.6rem .8rem;background:rgba(245,158,11,.1);border-left:3px solid #f59e0b">🚫 On Hold – Blocks Execution</div>'+
-      '<table class="material-detail-table" style="margin-top:.5rem"><thead><tr><th>Material</th><th style="text-align:right">Required</th><th style="text-align:right">Available</th></tr></thead><tbody>'+
-        holdRows.map(r=>'<tr style="background:rgba(245,158,11,.05)">'+
-          '<td><strong>'+escapeHtml(r.Material_SKU || r.Shortage_SKU || '—')+'</strong></td>'+
-          '<td style="text-align:right">'+num(r.Required_Qty || r.Shortage_Qty || 0).toFixed(1)+' MT</td>'+
-          '<td style="text-align:right;color:#dc2626">'+num(r.Available_Qty || 0).toFixed(1)+' MT</td>'+
-        '</tr>').join('')+
-      '</tbody></table></div>';
-  }
+  let html = `<div class="material-detail-header">
+    <div class="material-detail-title">${escapeHtml(cid)}</div>
+    <div class="material-detail-subtitle">${escapeHtml(grade)} — ${escapeHtml(campaign.release_status||'—')} — ${escapeHtml(matStatus||'OK')}</div>
+  </div>
+  <div class="material-detail-stats">
+    <div class="material-detail-stat" style="background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.3)">
+      <div class="material-detail-stat-label">Required</div>
+      <div class="material-detail-stat-value">${reqQty.toFixed(1)} MT</div>
+    </div>
+    <div class="material-detail-stat" style="background:rgba(220,38,38,.1);border-color:rgba(220,38,38,.3)">
+      <div class="material-detail-stat-label">Short</div>
+      <div class="material-detail-stat-value" style="color:${shortQty>0?'#dc2626':'#16a34a'}">${shortQty.toFixed(1)} MT</div>
+    </div>
+    <div class="material-detail-stat" style="background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.3)">
+      <div class="material-detail-stat-label">Status</div>
+      <div class="material-detail-stat-value" style="font-size:.8rem">${escapeHtml(matStatus||'OK')}</div>
+    </div>
+  </div>`;
 
-  if(shortageRows.length > 0){
-    html += '<div style="margin-top:1.5rem">'+
-      '<div style="font-weight:700;color:var(--text);font-size:.9rem;padding:.6rem .8rem;background:rgba(220,38,38,.1);border-left:3px solid #dc2626">⚠️ Shortage – Partial Coverage</div>'+
-      '<table class="material-detail-table" style="margin-top:.5rem"><thead><tr><th>Material</th><th style="text-align:right">Required</th><th style="text-align:right">Available</th><th style="text-align:right">Deficit</th></tr></thead><tbody>'+
-        shortageRows.map(r=>{
-          const req = num(r.Required_Qty || r.Shortage_Qty || 0);
-          const avail = num(r.Available_Qty || 0);
-          const deficit = Math.max(0, req - avail);
-          return '<tr style="background:rgba(220,38,38,.05)">'+
-            '<td><strong>'+escapeHtml(r.Material_SKU || r.Shortage_SKU || '—')+'</strong></td>'+
-            '<td style="text-align:right">'+req.toFixed(1)+' MT</td>'+
-            '<td style="text-align:right">'+avail.toFixed(1)+' MT</td>'+
-            '<td style="text-align:right;color:#dc2626;font-weight:600">-'+deficit.toFixed(1)+' MT</td>'+
-          '</tr>';
-        }).join('')+
-      '</tbody></table></div>';
-  }
-
-  if(readyRows.length > 0 && holdRows.length === 0 && shortageRows.length === 0){
-    html += '<div style="margin-top:2rem;padding:2rem;text-align:center;color:var(--text-faint)">'+
-      '<div style="font-size:2.5rem;margin-bottom:.5rem">✓</div>'+
-      '<div style="font-weight:600">All materials available</div>'+
-      '<div style="font-size:.85rem;margin-top:.5rem">This campaign has no material constraints</div>'+
-    '</div>';
+  if(shortages.length > 0){
+    html += `<div style="margin-top:1.25rem">
+      <div style="font-weight:700;font-size:.82rem;padding:.5rem .8rem;background:rgba(220,38,38,.08);border-left:3px solid #dc2626;margin-bottom:.5rem">Material Shortages</div>
+      <table class="table" style="font-size:.78rem">
+        <thead><tr><th>SKU</th><th style="text-align:right">Shortage MT</th></tr></thead>
+        <tbody>${shortages.map(s=>`<tr>
+          <td style="font-weight:600">${escapeHtml(s.sku_id||s.Material_SKU||'')}</td>
+          <td style="text-align:right;color:#dc2626;font-weight:700">${num(s.qty||s.Required_Qty||0).toFixed(1)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+  } else {
+    html += `<div style="margin-top:2rem;padding:1.5rem;text-align:center;color:var(--text-faint)">
+      <div style="font-size:2rem;margin-bottom:.4rem">✓</div>
+      <div style="font-weight:600">All materials available</div>
+    </div>`;
   }
 
   qs('materialDetailContent').innerHTML = html;
@@ -1375,7 +1602,7 @@ function renderCapacity(){
     const util = Math.round(num(r['Utilisation_%'] || r.utilisation));
     return '<tr>'+
       '<td><strong>'+escapeHtml(r.Resource_ID || r.resource_id || '—')+'</strong></td>'+
-      '<td>'+escapeHtml(r.Operation_Group || r.operation || '—')+'</td>'+
+      '<td>'+escapeHtml(r.Operation_Group || r.Operation || _ridToOp(r.Resource_ID || r.resource_id))+'</td>'+
       '<td>'+escapeHtml(r.Demand_Hrs || r.demand_hrs || '—')+'</td>'+
       '<td>'+escapeHtml(r.Avail_Hrs_14d || r.avail_hrs || '—')+'</td>'+
       '<td>'+util+'%</td>'+
@@ -1490,7 +1717,6 @@ async function loadApplicationState(){
   renderDashboardPerformance();
   renderCampaigns();
   renderSchedule();
-  renderOrders();
   renderDispatch();
   renderMaterial();
   renderCapacity();
@@ -1501,7 +1727,7 @@ async function loadApplicationState(){
 async function loadOrdersOnly(){
   const d = await apiFetch('/api/aps/orders/list').catch(()=>({items:[]}));
   state.orders = d.items || [];
-  renderOrders();
+  // Orders loaded for use by campaigns and other features
 }
 async function loadSkusForCtp(){
   const d = await apiFetch('/api/aps/masterdata/skus').catch(async ()=>await apiFetch('/api/data/skus').catch(()=>({items:[], skus:[]})));
@@ -1514,21 +1740,84 @@ async function loadSkusForCtp(){
 }
 async function runSchedule(){
   const btn = qs('runBtn');
+  const loadingBar = qs('loadingBar');
   const old = btn.innerHTML;
-  btn.innerHTML = '<span class="spinner"></span> Running…';
-  btn.disabled = true;
+  const oldDisabled = btn.disabled;
+
   try{
-    await apiFetch('/api/aps/schedule/run', {method:'POST', body: JSON.stringify({
-      time_limit: Number(qs('solverDepth').value || 60),
-      horizon_days: Number(state.horizon || 14)
-    })});
+    // Immediately show loading state
+    btn.textContent = '';
+    btn.innerHTML = '<span class="spinner"></span> Running Schedule...';
+    btn.disabled = true;
+    btn.style.opacity = '0.8';
+
+    // Show loading bar
+    if(loadingBar) {
+      loadingBar.style.opacity = '1';
+      loadingBar.style.width = '10%';
+      loadingBar.style.background = 'linear-gradient(90deg, #7c3aed, #0f9f8c)';
+    }
+
+    // Animate loading bar
+    const barInterval = setInterval(() => {
+      if(loadingBar && parseInt(loadingBar.style.width) < 90) {
+        loadingBar.style.width = (parseInt(loadingBar.style.width) + Math.random() * 20) + '%';
+      }
+    }, 300);
+
+    // Run the schedule
+    const result = await apiFetch('/api/aps/schedule/run', {
+      method:'POST',
+      body: JSON.stringify({
+        time_limit: Number(qs('solverDepth').value || 60),
+        horizon_days: Number(state.horizon || 14)
+      })
+    });
+
+    clearInterval(barInterval);
+
+    // Show near completion
+    if(loadingBar) loadingBar.style.width = '95%';
+
     await loadApplicationState();
     await loadOrdersOnly();
+
+    // Complete
+    if(loadingBar) {
+      loadingBar.style.width = '100%';
+      setTimeout(() => {
+        loadingBar.style.opacity = '0';
+        loadingBar.style.width = '0%';
+      }, 800);
+    }
+
+    // Show success and reset button
+    btn.innerHTML = '✓ Schedule Complete';
+    btn.style.opacity = '1';
+
+    // Force reset after delay
+    setTimeout(() => {
+      btn.textContent = 'Run Schedule';
+      btn.disabled = false;
+      btn.style.opacity = '1';
+      btn.classList.remove('loading');
+    }, 2500);
+
   }catch(e){
-    alert('Schedule error: ' + e.message);
-  }finally{
-    btn.innerHTML = old;
+    if(loadingBar) {
+      loadingBar.style.background = 'linear-gradient(90deg, #ef4444, #dc2626)';
+      loadingBar.style.width = '100%';
+    }
+    btn.innerHTML = '✗ Error: ' + e.message.substring(0, 30);
+    btn.style.opacity = '1';
     btn.disabled = false;
+
+    setTimeout(() => {
+      btn.textContent = 'Run Schedule';
+      btn.disabled = false;
+      btn.style.opacity = '1';
+      btn.classList.remove('loading');
+    }, 3500);
   }
 }
 async function updateCampaignStatus(campaignId, fieldName, value){
@@ -1537,89 +1826,6 @@ async function updateCampaignStatus(campaignId, fieldName, value){
     await apiFetch('/api/aps/campaigns/' + encodeURIComponent(campaignId) + '/status', {method:'PATCH', body: JSON.stringify({data: payload})});
     await loadApplicationState();
   }catch(e){ alert('Campaign update failed: ' + e.message); }
-}
-function toggleOrderSelection(so, checked){
-  if(checked) state.selectedOrders.add(so); else state.selectedOrders.delete(so);
-  qs('assignOrdersBtn').disabled = state.selectedOrders.size === 0;
-}
-async function assignOrdersToCampaign(orderIds, campaignId){
-  try{
-    // Convert all IDs to strings for safety
-    const assignments = [];
-    for(const so_id of orderIds){
-      assignments.push({so_id: String(so_id || '').trim(), campaign_id: String(campaignId || '').trim()});
-    }
-
-    // Call the API
-    const result = await apiFetch('/api/aps/orders/assign', {method:'POST', body: JSON.stringify({assignments})});
-    console.log('Assignment successful:', result);
-
-    // Clear selection
-    state.selectedOrders.clear();
-
-    // Reload and refresh
-    await loadOrdersOnly();
-    await loadApplicationState();
-
-    // Refresh UI
-    renderCampaigns();
-    renderOrders();
-    if(state.selectedCampaign === campaignId){
-      renderCampaignDetails();
-    }
-
-    alert('Assignment complete: ' + result.updated + ' orders assigned');
-  }catch(e){
-    console.error('Assignment error:', {error: e, stack: e.stack, message: e.message});
-    alert('Assignment failed: ' + (e.message || 'Unknown error. Check browser console.'));
-  }
-}
-async function assignSelectedOrders(){
-  const cid = prompt('Enter Campaign ID');
-  if(!cid) return;
-  await assignOrdersToCampaign([...state.selectedOrders], cid);
-}
-async function createOrder(){
-  const so = prompt('SO_ID');
-  if(!so) return;
-  const payload = {
-    SO_ID: so,
-    SKU_ID: prompt('SKU_ID','') || '',
-    Customer: prompt('Customer','') || '',
-    Grade: prompt('Grade','') || '',
-    Order_Order_Qty_MT: Number(prompt('Order Qty MT','0') || 0),
-    Delivery_Date: prompt('Delivery Date (YYYY-MM-DD)','') || '',
-    Status: prompt('Status','Open') || 'Open',
-    Priority: prompt('Priority','NORMAL') || 'NORMAL'
-  };
-  try{
-    await apiFetch('/api/aps/orders', {method:'POST', body: JSON.stringify(payload)});
-    await loadOrdersOnly();
-  }catch(e){ alert('Create order failed: ' + e.message); }
-}
-async function editOrder(so){
-  const row = (state.orders || []).find(x=>String(x.SO_ID || '') === String(so));
-  if(!row){ alert('Order not found.'); return; }
-  const payload = {
-    SKU_ID: prompt('SKU_ID', row.SKU_ID || '') || '',
-    Customer: prompt('Customer', row.Customer || '') || '',
-    Grade: prompt('Grade', row.Grade || '') || '',
-    Order_Order_Qty_MT: Number(prompt('Order Qty MT', row.Order_Order_Qty_MT || 0) || 0),
-    Delivery_Date: prompt('Delivery Date (YYYY-MM-DD)', row.Delivery_Date || '') || '',
-    Status: prompt('Status', row.Status || 'Open') || 'Open',
-    Priority: prompt('Priority', row.Priority || 'NORMAL') || 'NORMAL'
-  };
-  try{
-    await apiFetch('/api/aps/orders/' + encodeURIComponent(so), {method:'PUT', body: JSON.stringify(payload)});
-    await loadOrdersOnly();
-  }catch(e){ alert('Update order failed: ' + e.message); }
-}
-async function deleteOrder(so){
-  if(!confirm('Delete order ' + so + '?')) return;
-  try{
-    await apiFetch('/api/aps/orders/' + encodeURIComponent(so), {method:'DELETE'});
-    await loadOrdersOnly();
-  }catch(e){ alert('Delete order failed: ' + e.message); }
 }
 async function runCtp(){
   const sku = qs('ctpSku').value;
@@ -1644,25 +1850,36 @@ async function runCtp(){
   }catch(e){ qs('ctpResult').textContent = 'CTP failed: ' + e.message; }
   finally{ btn.innerHTML = old; btn.disabled = false; }
 }
-async function runBom(){
-  const btn = qs('bomRunBtn');
-  const old = btn.innerHTML;
-  btn.innerHTML = '<span class="spinner"></span> Exploding…';
-  btn.disabled = true;
-  try{
-    const d = await apiFetch('/api/run/bom', {method:'POST'});
+async function runBom() {
+  const btn = qs('bomRunBtn') || qs('bomExplodeBtn');
+  const old = btn ? btn.innerHTML : '';
+
+  if (btn) {
+    btn.innerHTML = '<span class="spinner"></span> Exploding…';
+    btn.disabled = true;
+  }
+
+  try {
+    const d = await apiFetch('/api/run/bom', { method: 'POST' });
+
     state.bomGrouped = d.grouped_bom || [];
     state.bomSummary = d.summary || {};
     state.bomFlat = d.net_bom || [];
-    setText('bomSub', (d.rows || 0) + ' SKU lines · ' + (d.structure_errors?.length || 0) + ' structure errors');
+
     renderBomSummary();
     renderBomGrouped();
-  }catch(e){
-    qs('bomGroupedContainer').innerHTML = '<div class="material-empty">BOM Explosion failed: ' + escapeHtml(e.message) + '</div>';
+  } catch (e) {
+    const detail = qs('bomDetailContent');
+    if (detail) {
+      detail.innerHTML = `<div class="bom-detail-empty">BOM Explosion failed: ${escapeHtml(e.message)}</div>`;
+    }
+  } finally {
+    if (btn) {
+      btn.innerHTML = old;
+      btn.disabled = false;
+    }
   }
-  finally{ btn.innerHTML = old; btn.disabled = false; }
 }
-
 function renderBomSummary(){
   if(!state.bomSummary) return;
   const s = state.bomSummary;
@@ -1895,27 +2112,35 @@ async function deleteMasterRow(){
     await loadApplicationState();
   }catch(e){ alert('Delete failed: ' + e.message); }
 }
-async function patchJob(){
+async function patchJob() {
   const jobId = prompt('Job_ID to patch');
-  if(!jobId) return;
-  const payloadText = prompt('JSON patch', '{"Planned_Start":"2026-04-04T08:00:00","Planned_End":"2026-04-04T12:00:00"}');
-  if(!payloadText) return;
-  try{
-    await apiFetch('/api/aps/schedule/jobs/' + encodeURIComponent(jobId) + '/reschedule', {method:'PATCH', body: JSON.stringify({data: JSON.parse(payloadText)})});
+  if (!jobId) return;
+
+  const payloadText = prompt(
+    'JSON patch',
+    '{"Planned_Start":"2026-04-04T08:00:00","Planned_End":"2026-04-04T12:00:00"}'
+  );
+  if (!payloadText) return;
+
+  try {
+    await apiFetch(
+      '/api/aps/schedule/jobs/' + encodeURIComponent(jobId) + '/reschedule',
+      { method: 'PATCH', body: JSON.stringify({ data: JSON.parse(payloadText) }) }
+    );
+
     await loadApplicationState();
-    activatePage('schedule');
-  }catch(e){ alert('Job patch failed: ' + e.message); }
+    activatePage('execution');
+    switchExecView('gantt');
+  } catch (e) {
+    alert('Job patch failed: ' + e.message);
+  }
 }
 
 qs('runBtn').addEventListener('click', runSchedule);
 qs('campaignRerunBtn').addEventListener('click', runSchedule);
-qs('assignOrdersBtn').addEventListener('click', assignSelectedOrders);
-qs('newOrderBtn').addEventListener('click', createOrder);
-qs('orderSearch').addEventListener('input', renderOrders);
-qs('orderPriority').addEventListener('change', renderOrders);
-qs('orderGrade').addEventListener('change', renderOrders);
 qs('ctpRunBtn').addEventListener('click', runCtp);
 qs('bomRunBtn').addEventListener('click', runBom);
+qs('bomExplodeBtn')?.addEventListener('click', runBom);
 hookBomFilters();
 qs('newScenarioBtn').addEventListener('click', createScenario);
 qs('masterSection').addEventListener('change', ()=>{ state.selectedMasterKey = null; renderMaster(); });
@@ -1946,103 +2171,158 @@ document.querySelectorAll('[data-camp-filter]').forEach(btn=>btn.addEventListene
 
 async function loadPlanningOrderPool(){
   try {
+    setPipelineStageStatus('ps-pool', 'running', 'Loading order pool…');
     const data = await apiFetch('/api/aps/planning/orders/pool');
     state.poolOrders = data.orders || [];
     renderPlanningOrderPool();
+    const urgentCount = state.poolOrders.filter(o=>o.priority==='URGENT').length;
+    setPipelineStageStatus('ps-pool', 'done',
+      state.poolOrders.length + ' open SOs loaded',
+      [{v: state.poolOrders.length, l:'orders'}, {v: urgentCount, l:'urgent'}]
+    );
   } catch(e) {
     console.error('Failed to load order pool:', e);
-    qs('poolBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-soft)">Error loading orders: ' + e.message + '</td></tr>';
+    setPipelineStageStatus('ps-pool', 'error', 'Load failed');
+    qs('poolBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-soft)">Error: ' + e.message + '</td></tr>';
   }
 }
 
-function renderPlanningOrderPool(){
+function renderPlanningOrderPool() {
   const orders = state.poolOrders || [];
-  let filtered = orders;
+  let filtered = [...orders];
 
-  const searchTerm = qs('poolSearch')?.value || '';
+  const searchTerm = (qs('poolSearch')?.value || '').trim().toLowerCase();
   const gradeFilt = qs('poolGrade')?.value || '';
   const priorityFilt = qs('poolPriority')?.value || '';
 
-  if(searchTerm){
-    const term = searchTerm.toLowerCase();
-    filtered = filtered.filter(so =>
-      String(so.so_id).toLowerCase().includes(term) ||
-      String(so.grade).toLowerCase().includes(term) ||
-      String(so.customer_id).toLowerCase().includes(term)
+  if (searchTerm) {
+    filtered = filtered.filter((so) =>
+      String(so.so_id || '').toLowerCase().includes(searchTerm) ||
+      String(so.grade || '').toLowerCase().includes(searchTerm) ||
+      String(so.customer_id || '').toLowerCase().includes(searchTerm)
     );
   }
-  if(gradeFilt){
-    filtered = filtered.filter(so => so.grade === gradeFilt);
-  }
-  if(priorityFilt){
-    filtered = filtered.filter(so => so.priority === priorityFilt);
-  }
 
-  setText('poolCount', filtered.length + ' orders');
+  if (gradeFilt) filtered = filtered.filter((so) => so.grade === gradeFilt);
+  if (priorityFilt) filtered = filtered.filter((so) => so.priority === priorityFilt);
 
-  qs('poolBody').innerHTML = filtered.map(so => `<tr>
-    <td>${escapeHtml(so.so_id)}</td>
-    <td>${escapeHtml(so.customer_id)}</td>
-    <td>${escapeHtml(so.grade)}</td>
-    <td>${so.section_mm ? so.section_mm + 'mm' : '—'}</td>
-    <td>${num(so.qty_mt).toFixed(0)}</td>
-    <td>${fmtDate(so.due_date)}</td>
-    <td><span class="badge ${so.priority === 'URGENT' ? 'red' : so.priority === 'HIGH' ? 'amber' : 'blue'}">${escapeHtml(so.priority)}</span></td>
-    <td>${escapeHtml(so.status)}</td>
-  </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-soft)">No orders match filters.</td></tr>';
+  const poolBody = qs('poolBody');
+  if (!poolBody) return;
 
-  // Populate grade filter
-  const grades = [...new Set(orders.map(so => so.grade))].sort();
+  poolBody.innerHTML = filtered.map((so) => `
+    <tr>
+      <td>${escapeHtml(so.so_id)}</td>
+      <td>${escapeHtml(so.customer_id)}</td>
+      <td>${escapeHtml(so.grade)}</td>
+      <td>${so.section_mm ? `${so.section_mm}mm` : '—'}</td>
+      <td>${num(so.qty_mt).toFixed(0)}</td>
+      <td>${fmtDate(so.due_date)}</td>
+      <td>
+        <span class="badge ${so.priority === 'URGENT' ? 'red' : so.priority === 'HIGH' ? 'amber' : 'blue'}">
+          ${escapeHtml(so.priority)}
+        </span>
+      </td>
+      <td>${escapeHtml(so.status)}</td>
+    </tr>
+  `).join('') || `
+    <tr>
+      <td colspan="8" style="text-align:center;color:var(--text-soft)">No orders match filters.</td>
+    </tr>
+  `;
+
   const gradeOpts = qs('poolGrade');
-  if(gradeOpts && !gradeOpts.dataset.populated){
-    gradeOpts.innerHTML = '<option value="">All grades</option>' + grades.map(g => `<option>${escapeHtml(g)}</option>`).join('');
+  if (gradeOpts && gradeOpts.dataset.populated !== 'true') {
+    const grades = [...new Set(orders.map((so) => so.grade).filter(Boolean))].sort();
+    gradeOpts.innerHTML =
+      '<option value="">All grades</option>' +
+      grades.map((g) => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
     gradeOpts.dataset.populated = 'true';
   }
 }
-
-async function selectPlanningWindow(){
+async function selectPlanningWindow() {
   const windowDays = Number(qs('planningWindowDays')?.value || 7);
+  const btn = qs('planningProposeBtn');
+
   try {
-    setText('planningWindowLabel', 'Selecting...');
-    setText('planningProposeBtn', 'Proposing...');
+    setPipelineStageStatus('ps-propose', 'running', 'Selecting window…');
+    if (btn) {
+      btn.textContent = 'Loading…';
+      btn.disabled = true;
+    }
 
     const data = await apiFetch('/api/aps/planning/window/select', {
       method: 'POST',
-      body: JSON.stringify({days: windowDays})
+      body: JSON.stringify({ days: windowDays })
     });
 
     state.planningWindow = windowDays;
     state.windowSOs = data.candidates || [];
-    setText('planningWindowLabel', windowDays + ' days');
-    setText('planningCandidates', data.candidate_count || 0);
 
-    // Auto-propose after selecting window
-    await proposePlanningOrders();
-  } catch(e) {
-    alert('Failed to select planning window: ' + e.message);
-    setText('planningProposeBtn', 'Propose Orders');
+    setText('planningWindowLabel', `${windowDays} days`);
+    setText('planningCandidates', data.candidate_count || state.windowSOs.length || 0);
+
+    return data;
+  } catch (e) {
+    setPipelineStageStatus('ps-propose', 'error', 'Window selection failed');
+    throw e;
+  } finally {
+    if (btn) {
+      btn.textContent = 'Propose';
+      btn.disabled = false;
+    }
   }
 }
+async function proposePlanningOrders() {
+  const btn = qs('planningProposeBtn');
 
-async function proposePlanningOrders(){
   try {
-    setText('planningProposeBtn', 'Proposing...');
+    if (!state.windowSOs || !state.windowSOs.length) {
+      await selectPlanningWindow();
+    }
+
+    setPipelineStageStatus('ps-propose', 'running', 'Proposing lots…');
+    if (btn) {
+      btn.textContent = 'Proposing…';
+      btn.disabled = true;
+    }
+
+    const windowDays = state.planningWindow || Number(qs('planningWindowDays')?.value || 7);
+
     const data = await apiFetch('/api/aps/planning/orders/propose', {
       method: 'POST',
-      body: JSON.stringify({days: state.planningWindow || 7})
+      body: JSON.stringify({ days: windowDays })
     });
 
     state.planningOrders = data.planning_orders || [];
-    setText('planningNote', data.po_count ? data.po_count + ' proposed lots' : 'No lots proposed');
     renderPlanningBoard();
+    renderDashboardPipeline();
 
-    setText('planningProposeBtn', 'Propose Orders');
-  } catch(e) {
-    alert('Failed to propose planning orders: ' + e.message);
-    setText('planningProposeBtn', 'Propose Orders');
+    const totalMT = state.planningOrders.reduce((sum, po) => sum + num(po.total_qty_mt), 0);
+
+    setText('planningProposedCount', state.planningOrders.length);
+    setText('planningTotalMT', totalMT.toFixed(0));
+
+    setPipelineStageStatus(
+      'ps-propose',
+      'done',
+      `${windowDays}-day window · ${(state.windowSOs || []).length} candidates`,
+      [
+        { v: state.planningOrders.length, l: 'POs' },
+        { v: `${totalMT.toFixed(0)}MT`, l: 'total' }
+      ]
+    );
+
+    stageExpand('ps-propose');
+  } catch (e) {
+    setPipelineStageStatus('ps-propose', 'error', 'Proposal failed');
+    throw e;
+  } finally {
+    if (btn) {
+      btn.textContent = 'Propose';
+      btn.disabled = false;
+    }
   }
 }
-
 function renderPlanningBoard(){
   const pos = state.planningOrders || [];
   const totalMT = pos.reduce((sum, po) => sum + num(po.total_qty_mt), 0);
@@ -2064,12 +2344,13 @@ function renderPlanningBoard(){
 
 async function deriveHeatBatches(){
   if(!state.planningOrders || !state.planningOrders.length){
-    alert('No planning orders to derive heats from. Propose orders first.');
-    return;
+    setPipelineStageStatus('ps-heats', 'error', 'No planning orders available');
+    throw new Error('Propose orders first (Stage 2).');
   }
 
   try {
-    setText('heatDeriveBtn', 'Deriving...');
+    setPipelineStageStatus('ps-heats', 'running', 'Deriving heats…');
+    setText('heatDeriveBtn', 'Deriving…');
     const data = await apiFetch('/api/aps/planning/heats/derive', {
       method: 'POST',
       body: JSON.stringify({planning_orders: state.planningOrders})
@@ -2077,16 +2358,23 @@ async function deriveHeatBatches(){
 
     state.heatBatches = data.heats || [];
     if(!state.heatBatches.length){
-      alert('No heats derived from planning orders.');
-      setText('heatDeriveBtn', 'Derive Heats');
+      setPipelineStageStatus('ps-heats', 'error', 'No heats derived');
+      setText('heatDeriveBtn', 'Derive');
       return;
     }
 
     renderHeatBuilder();
-    setText('heatDeriveBtn', 'Derive Heats');
+    const totalMT = state.heatBatches.reduce((s,h)=>s+num(h.qty_mt),0);
+    setPipelineStageStatus('ps-heats', 'done',
+      state.heatBatches.length + ' heats · ' + totalMT.toFixed(0) + ' MT',
+      [{v: state.heatBatches.length, l:'heats'}, {v: (state.heatBatches.length*2)+'h', l:'est.'}]
+    );
+    stageExpand('ps-heats');
+    setText('heatDeriveBtn', 'Derive');
   } catch(e) {
-    alert('Failed to derive heat batches: ' + e.message);
-    setText('heatDeriveBtn', 'Derive Heats');
+    setPipelineStageStatus('ps-heats', 'error', 'Derive failed');
+    setText('heatDeriveBtn', 'Derive');
+    throw e;
   }
 }
 
@@ -2113,59 +2401,212 @@ function renderHeatBuilder(){
 
 async function simulateSchedule(){
   if(!state.heatBatches || !state.heatBatches.length){
-    alert('No heat batches to schedule. Derive heats first.');
+    alert('Derive heats first (Stage 3).');
     return;
   }
 
   try {
-    setText('schedulerSimulateBtn', 'Simulating...');
+    setPipelineStageStatus('ps-schedule', 'running', 'Simulating…');
+    setText('schedulerSimulateBtn', 'Simulating…');
     const data = await apiFetch('/api/aps/planning/simulate', {
       method: 'POST',
       body: JSON.stringify({heat_batches: state.heatBatches})
     });
 
-    const feasible = data.feasible ? 'Yes' : 'No';
+    const feasible = data.feasible;
     const duration = data.total_duration_hours || 0;
     const smsHours = data.sms_hours || 0;
     const rmHours = data.rm_hours || 0;
     const loadFactor = data.load_factor || '—';
 
-    setText('scheduleFeasible', feasible);
+    setText('scheduleFeasible', feasible ? 'Yes' : 'No');
     setText('scheduleDuration', duration + 'h');
     setText('scheduleSmsHours', smsHours + 'h');
     setText('scheduleRmHours', rmHours + 'h');
-    setText('scheduleNote', data.message || 'Schedule simulation complete');
 
-    const statusColor = feasible === 'Yes' ? '#10b981' : '#ef4444';
-    qs('schedulerContent').innerHTML = `<div style="text-align:center;color:var(--text);padding:1.5rem">
-      <div style="font-size:2.5rem;font-weight:700;margin-bottom:1rem;color:${statusColor}">${feasible}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1.5rem;font-size:.9rem">
-        <div>
-          <div style="color:var(--text-soft)">Total Duration</div>
-          <div style="font-weight:700;font-size:1.3rem">${duration}h</div>
-        </div>
-        <div>
-          <div style="color:var(--text-soft)">Load Factor</div>
-          <div style="font-weight:700;font-size:1.3rem">${loadFactor}</div>
+    const statusColor = feasible ? '#10b981' : '#ef4444';
+    const bottleneck = data.bottleneck || '—';
+
+    // Build schedule table
+    const scheduleRows = data.schedule_rows || [];
+    const scheduleHtml = scheduleRows.length > 0 ? `
+      <div style="margin-top:1rem;border:1px solid var(--border);border-radius:.3rem;overflow:hidden">
+        <div style="overflow-x:auto;max-height:300px">
+          <table class="table" style="margin:0">
+            <thead>
+              <tr>
+                <th>Job</th><th>Campaign</th><th>Operation</th><th>Resource</th><th>Planned Start</th><th>Planned End</th><th>Duration</th><th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${scheduleRows.slice(0, 50).map(row => `
+                <tr>
+                  <td style="font-size:.75rem">${escapeHtml((row.Job_ID||'').substring(0,12))}</td>
+                  <td style="font-size:.75rem">${escapeHtml(row.Campaign||'—')}</td>
+                  <td style="font-size:.75rem"><strong>${escapeHtml(row.Operation||'—')}</strong></td>
+                  <td style="font-size:.75rem">${escapeHtml(row.Resource_ID||'—')}</td>
+                  <td style="font-size:.75rem">${escapeHtml(row.Planned_Start||'—')}</td>
+                  <td style="font-size:.75rem">${escapeHtml(row.Planned_End||'—')}</td>
+                  <td style="font-size:.75rem">${row.Duration_Hrs ? row.Duration_Hrs + 'h' : '—'}</td>
+                  <td style="font-size:.75rem"><span style="color:${row.Status==='LATE'?'#dc2626':'#16a34a'}">${escapeHtml(row.Status||'—')}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;font-size:.8rem;color:var(--text-soft)">
-        <div>SMS: ${smsHours}h</div>
-        <div>RM: ${rmHours}h</div>
-      </div>
-      <div style="font-size:.8rem;color:var(--text-soft);padding-top:1rem;border-top:1px solid var(--border)">${data.message}</div>
-    </div>`;
+    ` : '';
 
-    setText('schedulerSimulateBtn', 'Simulate Schedule');
+    qs('schedulerContent').innerHTML = `
+      <div style="display:flex;align-items:center;gap:2rem;padding:.5rem 0">
+        <div style="font-size:1.8rem;font-weight:800;color:${statusColor}">${feasible ? '✓ FEASIBLE' : '✗ INFEASIBLE'}</div>
+        <div style="display:flex;gap:2rem;font-size:.85rem">
+          <div><div style="color:var(--text-soft);font-size:.7rem">Duration</div><div style="font-weight:700">${duration}h</div></div>
+          <div><div style="color:var(--text-soft);font-size:.7rem">Load</div><div style="font-weight:700">${loadFactor}</div></div>
+          <div><div style="color:var(--text-soft);font-size:.7rem">SMS</div><div style="font-weight:700">${smsHours}h</div></div>
+          <div><div style="color:var(--text-soft);font-size:.7rem">RM</div><div style="font-weight:700">${rmHours}h</div></div>
+          <div><div style="color:var(--text-soft);font-size:.7rem">Bottleneck</div><div style="font-weight:700;color:${statusColor}">${escapeHtml(bottleneck)}</div></div>
+        </div>
+        <div style="font-size:.75rem;color:var(--text-soft);flex:1">${data.message}</div>
+      </div>
+      ${scheduleHtml}
+    `;
+
+    // Show/hide remediation panel
+    const remPanel = qs('remediationPanel');
+    if(remPanel){
+      remPanel.style.display = feasible ? 'none' : '';
+      if(!feasible && data.by_grade){
+        const breakdown = Object.entries(data.by_grade).sort((a,b)=>b[1]-a[1]);
+        qs('remGradeBreakdown').innerHTML = breakdown.map(([g,n])=>`
+          <div style="display:flex;justify-content:space-between;padding:.15rem 0;border-bottom:1px solid var(--border-soft)">
+            <span>${escapeHtml(g)}</span>
+            <span style="font-weight:600">${n} heats · ${(n*2)}h est.</span>
+          </div>`).join('');
+      }
+    }
+
+    setPipelineStageStatus('ps-schedule', feasible ? 'done' : 'warn',
+      data.message,
+      [{v: duration+'h', l:'duration'}, {v: loadFactor, l:'load'}]
+    );
+    stageExpand('ps-schedule');
+
+    // Enable release if feasible
+    if(feasible) await loadReleaseBoard();
+
+    setText('schedulerSimulateBtn', 'Simulate');
   } catch(e) {
-    alert('Schedule simulation failed: ' + e.message);
-    setText('schedulerSimulateBtn', 'Simulate Schedule');
+    setPipelineStageStatus('ps-schedule', 'error', 'Simulation failed');
+    setText('schedulerSimulateBtn', 'Simulate');
+    throw e;
+  }
+}
+
+async function remSimulate(){
+  // Re-simulate with remediation settings
+  if(!state.heatBatches || !state.heatBatches.length){
+    alert('Derive heats first.');
+    return;
+  }
+  const numSms = Number(qs('remSmsLines')?.value || 1);
+  const numRm = Number(qs('remRmLines')?.value || 1);
+  const priorityFilter = qs('remPriorityFilter')?.value || '';
+  const horizonHours = qs('remHorizonHours')?.value || '';
+
+  try {
+    setText('schedulerSimulateBtn', 'Simulating…');
+    const data = await apiFetch('/api/aps/planning/simulate', {
+      method: 'POST',
+      body: JSON.stringify({
+        heat_batches: state.heatBatches,
+        num_sms: numSms,
+        num_rm: numRm,
+        priority_filter: priorityFilter,
+        horizon_hours: horizonHours ? Number(horizonHours) : undefined
+      })
+    });
+
+    const feasible = data.feasible;
+    const duration = data.total_duration_hours || 0;
+    const loadFactor = data.load_factor || '—';
+
+    setText('scheduleFeasible', feasible ? 'Yes' : 'No');
+    setText('scheduleDuration', duration + 'h');
+    setText('scheduleSmsHours', (data.sms_hours||0) + 'h');
+    setText('scheduleRmHours', (data.rm_hours||0) + 'h');
+
+    const statusColor = feasible ? '#10b981' : '#ef4444';
+    const config = [];
+    if(numSms > 1) config.push('SMS×'+numSms);
+    if(numRm > 1) config.push('RM×'+numRm);
+    if(priorityFilter) config.push(priorityFilter + ' only');
+    if(horizonHours) config.push(Math.round(Number(horizonHours)/24)+'d horizon');
+    const configStr = config.length ? ' [' + config.join(', ') + ']' : '';
+
+    // Build schedule table
+    const scheduleRows = data.schedule_rows || [];
+    const scheduleHtml = scheduleRows.length > 0 ? `
+      <div style="margin-top:1rem;border:1px solid var(--border);border-radius:.3rem;overflow:hidden">
+        <div style="overflow-x:auto;max-height:300px">
+          <table class="table" style="margin:0">
+            <thead>
+              <tr>
+                <th>Job</th><th>Campaign</th><th>Operation</th><th>Resource</th><th>Planned Start</th><th>Planned End</th><th>Duration</th><th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${scheduleRows.slice(0, 50).map(row => `
+                <tr>
+                  <td style="font-size:.75rem">${escapeHtml((row.Job_ID||'').substring(0,12))}</td>
+                  <td style="font-size:.75rem">${escapeHtml(row.Campaign||'—')}</td>
+                  <td style="font-size:.75rem"><strong>${escapeHtml(row.Operation||'—')}</strong></td>
+                  <td style="font-size:.75rem">${escapeHtml(row.Resource_ID||'—')}</td>
+                  <td style="font-size:.75rem">${escapeHtml(row.Planned_Start||'—')}</td>
+                  <td style="font-size:.75rem">${escapeHtml(row.Planned_End||'—')}</td>
+                  <td style="font-size:.75rem">${row.Duration_Hrs ? row.Duration_Hrs + 'h' : '—'}</td>
+                  <td style="font-size:.75rem"><span style="color:${row.Status==='LATE'?'#dc2626':'#16a34a'}">${escapeHtml(row.Status||'—')}</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    ` : '';
+
+    qs('schedulerContent').innerHTML = `
+      <div style="display:flex;align-items:center;gap:2rem;padding:.5rem 0">
+        <div style="font-size:1.8rem;font-weight:800;color:${statusColor}">${feasible ? '✓ FEASIBLE' : '✗ INFEASIBLE'}</div>
+        <div style="display:flex;gap:2rem;font-size:.85rem">
+          <div><div style="color:var(--text-soft);font-size:.7rem">Duration</div><div style="font-weight:700">${duration}h</div></div>
+          <div><div style="color:var(--text-soft);font-size:.7rem">Load</div><div style="font-weight:700">${loadFactor}</div></div>
+          <div><div style="color:var(--text-soft);font-size:.7rem">Config</div><div style="font-weight:700;font-size:.7rem">${escapeHtml(configStr || 'baseline')}</div></div>
+        </div>
+        <div style="font-size:.75rem;color:var(--text-soft);flex:1">${data.message}</div>
+      </div>
+      ${scheduleHtml}
+    `;
+
+    setPipelineStageStatus('ps-schedule', feasible ? 'done' : 'warn',
+      data.message + configStr,
+      [{v: duration+'h', l:'duration'}, {v: loadFactor, l:'load'}]
+    );
+
+    if(feasible){
+      qs('remediationPanel').style.display = 'none';
+      await loadReleaseBoard();
+    }
+    setText('schedulerSimulateBtn', 'Simulate');
+  } catch(e) {
+    alert('Re-simulation failed: ' + e.message);
+    setText('schedulerSimulateBtn', 'Simulate');
   }
 }
 
 async function loadReleaseBoard(){
   if(!state.planningOrders || !state.planningOrders.length){
-    qs('releaseBoard').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-soft)">No planning orders ready. Complete planning workflow first.</td></tr>';
+    qs('releaseBoard').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-soft)">Complete pipeline first.</td></tr>';
+    setPipelineStageStatus('ps-release', 'pending', 'Complete stages 1-4 first');
     return;
   }
 
@@ -2178,18 +2619,26 @@ async function loadReleaseBoard(){
   setText('releaseSOs', totalSOs);
   setText('releaseStatus', 'Ready');
 
-  qs('releaseBoard').innerHTML = pos.map(po => `<tr>
-    <td><input type="checkbox" data-po="${escapeHtml(po.po_id)}" /></td>
-    <td><strong>${escapeHtml(po.po_id)}</strong></td>
-    <td>${escapeHtml(po.selected_so_ids?.join(', ') || '—')}</td>
+  qs('releaseBoard').innerHTML = pos.map(po => {
+    const isReleased = po.planner_status === 'RELEASED';
+    return `<tr style="${isReleased ? 'opacity:0.6;background:rgba(16,163,74,.05)' : ''}">
+    <td style="text-align:center"><input type="checkbox" class="release-po-checkbox" data-po="${escapeHtml(po.po_id)}" ${isReleased ? 'disabled' : ''} style="width:1.2rem;height:1.2rem;cursor:pointer" /></td>
+    <td><strong>${escapeHtml(po.po_id)}</strong>${isReleased ? '<span style="margin-left:.4rem;font-size:.7rem;color:#16a34a;font-weight:600">✓ Released</span>' : ''}</td>
+    <td style="font-size:.7rem">${escapeHtml(po.selected_so_ids?.slice(0,3).join(', ') || '—')}${(po.selected_so_ids?.length||0)>3?' +'+((po.selected_so_ids?.length||0)-3):''}</td>
     <td>${num(po.total_qty_mt).toFixed(0)}</td>
     <td>${escapeHtml(po.grade_family)}</td>
     <td>${po.heats_required || 0}</td>
     <td><span class="badge green">OK</span></td>
-    <td><button class="btn ghost" onclick="releaseSinglePO('${escapeHtml(po.po_id)}')">Release</button></td>
-  </tr>`).join('');
+    <td><button class="btn ghost" style="padding:.2rem .5rem;font-size:.75rem;${isReleased ? 'opacity:0.4;cursor:not-allowed' : ''}" ${isReleased ? 'disabled' : ''} onclick="releaseSinglePO('${escapeHtml(po.po_id)}')">Release</button></td>
+  </tr>`;
+  }).join('');
 
   qs('releaseApproveBtn').disabled = false;
+  setPipelineStageStatus('ps-release', 'done',
+    pos.length + ' POs ready to release',
+    [{v: pos.length, l:'POs'}, {v: totalSOs, l:'SOs'}, {v: totalMT.toFixed(0)+'MT', l:'total'}]
+  );
+  stageExpand('ps-release');
 }
 
 async function releaseSinglePO(poId){
@@ -2198,17 +2647,20 @@ async function releaseSinglePO(poId){
       method: 'POST',
       body: JSON.stringify({po_ids: [poId]})
     });
-    alert('Planning order ' + poId + ' released successfully.');
+    qs('pipelineStatusText').textContent = '✓ Planning order ' + poId + ' released successfully';
+    qs('pipelineStatusBar').style.color = '#16a34a';
     await loadReleaseBoard();
   } catch(e) {
-    alert('Release failed: ' + e.message);
+    qs('pipelineStatusText').textContent = '✗ Release failed: ' + e.message;
+    qs('pipelineStatusBar').style.color = '#dc2626';
   }
 }
 
 async function releaseSelectedPOs(){
   const checked = Array.from(qs('releaseBoard').querySelectorAll('input[type="checkbox"]:checked')).map(el => el.dataset.po);
   if(!checked.length){
-    alert('Select at least one planning order.');
+    qs('pipelineStatusText').textContent = '⚠ Select at least one planning order to release';
+    qs('pipelineStatusBar').style.color = '#f59e0b';
     return;
   }
 
@@ -2217,26 +2669,82 @@ async function releaseSelectedPOs(){
       method: 'POST',
       body: JSON.stringify({po_ids: checked})
     });
-    alert('Released ' + checked.length + ' planning orders.');
+    qs('pipelineStatusText').textContent = '✓ Released ' + checked.length + ' planning order' + (checked.length > 1 ? 's' : '') + ' successfully';
+    qs('pipelineStatusBar').style.color = '#16a34a';
     await loadReleaseBoard();
+    renderDashboardPipeline();
   } catch(e) {
-    alert('Release failed: ' + e.message);
+    qs('pipelineStatusText').textContent = '✗ Release failed: ' + e.message;
+    qs('pipelineStatusBar').style.color = '#dc2626';
+  }
+}
+
+function releaseSelectAll(){
+  qs('releaseSelectAllCheckbox').checked = true;
+  document.querySelectorAll('.release-po-checkbox').forEach(cb => cb.checked = true);
+}
+
+function releaseClearAll(){
+  qs('releaseSelectAllCheckbox').checked = false;
+  document.querySelectorAll('.release-po-checkbox').forEach(cb => cb.checked = false);
+}
+
+function releaseToggleSelectAll(){
+  const isChecked = qs('releaseSelectAllCheckbox').checked;
+  document.querySelectorAll('.release-po-checkbox').forEach(cb => cb.checked = isChecked);
+}
+
+async function releaseAllSelected(){
+  const checked = Array.from(document.querySelectorAll('.release-po-checkbox:checked')).map(el => el.dataset.po);
+  if(!checked.length){
+    qs('pipelineStatusText').textContent = '⚠ Select at least one planning order to release';
+    qs('pipelineStatusBar').style.color = '#f59e0b';
+    return;
+  }
+
+  if(!confirm(`Release ${checked.length} planning order${checked.length > 1 ? 's' : ''}?`)) return;
+
+  try {
+    qs('pipelineStatusText').textContent = '⏳ Releasing ' + checked.length + ' order' + (checked.length > 1 ? 's' : '') + '...';
+    qs('pipelineStatusBar').style.color = '#2563eb';
+
+    await apiFetch('/api/aps/planning/release', {
+      method: 'POST',
+      body: JSON.stringify({po_ids: checked})
+    });
+
+    qs('pipelineStatusText').textContent = '✓ Released ' + checked.length + ' planning order' + (checked.length > 1 ? 's' : '') + ' successfully';
+    qs('pipelineStatusBar').style.color = '#16a34a';
+    await loadReleaseBoard();
+    renderDashboardPipeline();
+  } catch(e) {
+    qs('pipelineStatusText').textContent = '✗ Release failed: ' + e.message;
+    qs('pipelineStatusBar').style.color = '#dc2626';
   }
 }
 
 // Event listeners for planning workflow
-qs('poolSelectWindowBtn')?.addEventListener('click', selectPlanningWindow);
+
 qs('poolSearch')?.addEventListener('input', renderPlanningOrderPool);
 qs('poolGrade')?.addEventListener('change', renderPlanningOrderPool);
 qs('poolPriority')?.addEventListener('change', renderPlanningOrderPool);
 
-qs('planningWindowDays')?.addEventListener('change', selectPlanningWindow);
-qs('planningProposeBtn')?.addEventListener('click', proposePlanningOrders);
+qs('pipelineRunBtn')?.addEventListener('click', runFullPipeline);
+
+qs('pipelineExpandAllBtn')?.addEventListener('click', () => {
+  const ids = ['ps-pool', 'ps-propose', 'ps-heats', 'ps-schedule', 'ps-release'];
+  const anyCollapsed = ids.some((id) => qs(id + '-body')?.classList.contains('collapsed'));
+
+  ids.forEach((id) => {
+    if (anyCollapsed) stageExpand(id);
+    else stageCollapse(id);
+  });
+
+  qs('pipelineExpandAllBtn').textContent = anyCollapsed ? 'Collapse All' : 'Expand All';
+});
 
 qs('heatDeriveBtn')?.addEventListener('click', deriveHeatBatches);
-
 qs('schedulerSimulateBtn')?.addEventListener('click', simulateSchedule);
-
 qs('releaseApproveBtn')?.addEventListener('click', releaseSelectedPOs);
 
 document.addEventListener('DOMContentLoaded', async ()=>{
