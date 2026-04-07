@@ -402,9 +402,12 @@
 
           <!-- MATERIAL PANEL (RIGHT) -->
           <div id="planningMaterialPanel" class="bom-split-container" style="display:none;width:45%;border-left:1px solid var(--border);background:var(--panel);flex-direction:column;min-height:0;overflow:hidden">
-            <div style="padding:.6rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+            <div style="padding:.6rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;gap:.5rem">
               <div style="font-weight:600;font-size:.85rem" id="materialCheckTitle">Material Requirements</div>
-              <button class="btn ghost" style="font-size:.75rem;padding:.2rem .4rem;height:1.5rem" onclick="closeMaterialPanel()">✕</button>
+              <div style="display:flex;gap:.3rem;align-items:center">
+                <button class="btn ghost" style="font-size:.7rem;padding:.2rem .5rem;height:1.5rem;white-space:nowrap" onclick="nav('bom')">Full BOM →</button>
+                <button class="btn ghost" style="font-size:.75rem;padding:.2rem .4rem;height:1.5rem" onclick="closeMaterialPanel()">✕</button>
+              </div>
             </div>
             <div class="bom-tree-panel" style="flex:1;min-height:0;overflow:auto;border:none;padding:.6rem">
               <div class="bom-tree-header">Materials Needed</div>
@@ -2248,7 +2251,7 @@ function renderPlanningOrderPool() {
     <tr>
       <td><input type="checkbox" class="pool-so-check" data-so="${escapeHtml(so.so_id)}" checked></td>
       <td>${escapeHtml(so.so_id)}</td>
-      <td style="font-size:.75rem;color:var(--text-soft)">${escapeHtml(so.sku_id || '—')}</td>
+      <td style="font-size:.8rem;font-weight:500;min-width:8rem">${escapeHtml(so.sku_id || '—')}</td>
       <td>${escapeHtml(so.customer_id)}</td>
       <td>${escapeHtml(so.grade)}</td>
       <td>${so.section_mm ? `${so.section_mm}mm` : '—'}</td>
@@ -2260,7 +2263,7 @@ function renderPlanningOrderPool() {
         </span>
       </td>
       <td>${escapeHtml(so.status)}</td>
-      <td><button class="btn ghost" style="font-size:.7rem;padding:.2rem .4rem;height:1.5rem" onclick="checkMaterialForSO('${escapeHtml(so.so_id)}')">Mat</button></td>
+      <td><button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.8rem;white-space:nowrap" onclick="checkMaterialForSO('${escapeHtml(so.so_id)}')">Material</button></td>
     </tr>
   `).join('') || `
     <tr>
@@ -3025,9 +3028,16 @@ function openMaterialPanel(title, skuIds) {
   setText('materialCheckTitle', title);
 
   if (!state.bom || state.bom.length === 0) {
-    qs('planningBomTree').innerHTML = '<div style="padding:.5rem;color:var(--text-soft);font-size:.75rem">Run BOM Explosion first in the BOM tab to view material requirements.</div>';
+    qs('planningBomTree').innerHTML = '<div style="padding:.5rem;color:var(--text-soft);font-size:.75rem">Loading BOM data...</div>';
     qs('planningBomDetail').innerHTML = '';
     panel.style.display = 'flex';
+
+    // Auto-run BOM Explosion
+    runBom().then(() => {
+      openMaterialPanel(title, skuIds);  // Recursively call after BOM is loaded
+    }).catch((err) => {
+      qs('planningBomTree').innerHTML = '<div style="padding:.5rem;color:var(--danger);font-size:.75rem">Failed to load BOM. <a href="#" onclick="nav(\'bom\'); return false" style="color:var(--primary);text-decoration:underline">Go to BOM tab</a> to run manually.</div>';
+    });
     return;
   }
 
@@ -3048,18 +3058,18 @@ function openMaterialPanel(title, skuIds) {
     grouped[item.Parent_SKU].push(item);
   });
 
-  // Render tree
+  // Render tree - EXPANDED BY DEFAULT
   let treeHtml = '';
   Object.keys(grouped).sort().forEach(parentSku => {
     const items = grouped[parentSku];
     treeHtml += `<div class="bom-tree-item">
       <div class="bom-tree-node" onclick="toggleBomNode(this); selectMaterialDetail('${escapeHtml(parentSku)}')" style="cursor:pointer">
-        <div class="bom-tree-toggle collapsed"></div>
+        <div class="bom-tree-toggle"></div>
         <div class="bom-tree-icon">📦</div>
         <span>${escapeHtml(parentSku)}</span>
         <span style="margin-left:auto;font-size:.7rem;color:var(--text-faint)">${items.length}</span>
       </div>
-      <div class="bom-tree-children">`;
+      <div class="bom-tree-children" style="display:block">`;
 
     items.forEach(item => {
       const statusColor = item.Produced_Qty >= item.Required_Qty ? 'var(--success)' :
