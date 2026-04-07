@@ -206,6 +206,7 @@
                 <div class="toolbar" style="margin-bottom:.5rem;gap:.4rem">
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="poolSelectAllBtn">Select All</button>
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="poolClearAllBtn">Clear All</button>
+                  <div style="font-size:.75rem;color:var(--text-soft);padding:.3rem .5rem;white-space:nowrap" id="poolSelectionCount">0 selected</div>
                   <div style="flex:1"></div>
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;background:rgba(107,114,207,.08);border:1px solid rgba(107,114,207,.2)" onclick="showPoolSOGantt()" title="View timeline for selected SOs (plant-based)">📅 Gantt</button>
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;background:rgba(107,114,207,.08);border:1px solid rgba(107,114,207,.2)" data-page-link="bom" title="View complete BOM explosion for all SOs">📊 Full BOM</button>
@@ -245,6 +246,7 @@
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="mergeSelectedBtn" disabled onclick="mergeSelectedPOs()">Merge Selected</button>
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="freezeSelectedBtn" disabled onclick="freezeSelectedPOs()">Freeze Selected</button>
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" onclick="proposePlanningOrders()">Re-propose</button>
+                  <div style="font-size:.75rem;color:var(--text-soft);padding:.3rem .5rem;white-space:nowrap" id="poSelectionCount">0 selected</div>
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;margin-left:auto" onclick="state.lastScheduleRows ? showGanttModal('Planning Orders - Production Timeline', state.lastScheduleRows, 'po') : alert('Run Feasibility Check first')" title="View timeline for proposed POs">📅 Gantt</button>
                 </div>
                 <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
@@ -285,7 +287,6 @@
                 </div>
                 <div class="toolbar" style="margin-bottom:.5rem;gap:.3rem">
                   <div style="flex:1"></div>
-                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem" onclick="state.lastScheduleRows ? showGanttModal('Equipment & Resource Timeline', state.lastScheduleRows, 'heat') : alert('Run Feasibility Check first')" title="View equipment utilization and timeline">📅 Gantt</button>
                 </div>
                 <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
@@ -2218,6 +2219,7 @@ async function loadPlanningOrderPool(){
     const data = await apiFetch('/api/aps/planning/orders/pool');
     state.poolOrders = data.orders || [];
     renderPlanningOrderPool();
+    updateSOPoolSelectionCount();
     const urgentCount = state.poolOrders.filter(o=>o.priority==='URGENT').length;
     setPipelineStageStatus('ps-pool', 'done',
       state.poolOrders.length + ' open SOs loaded',
@@ -2354,6 +2356,7 @@ async function proposePlanningOrders() {
 
     state.planningOrders = data.planning_orders || [];
     renderPlanningBoard();
+    updatePOToolbarButtons();
     renderDashboardPipeline();
     updatePlanningKPIs();
 
@@ -2387,9 +2390,13 @@ function renderPlanningBoard(){
   const pos = state.planningOrders || [];
   const totalMT = pos.reduce((sum, po) => sum + num(po.total_qty_mt), 0);
 
-  setText('planningProposedCount', pos.length);
+  // Separate into RELEASED and PROPOSED/FROZEN
+  const releasedPos = pos.filter(po => po.planner_status === 'RELEASED');
+  const proposedPos = pos.filter(po => po.planner_status !== 'RELEASED');
+
+  setText('planningProposedCount', proposedPos.length);
   setText('planningTotalMT', totalMT.toFixed(0));
-  setText('planningNote', pos.length + ' proposed lots');
+  setText('planningNote', `${proposedPos.length} proposed, ${releasedPos.length} released`);
 
   const statusBadgeClass = (status) => {
     if (status === 'FROZEN') return 'amber';
@@ -2397,7 +2404,7 @@ function renderPlanningBoard(){
     return 'blue';
   };
 
-  const rows = pos.map(po => {
+  const buildPORow = (po) => {
     const soIds = po.selected_so_ids || [];
     const skuIds = [...new Set(soIds.map(soId => {
       const so = state.poolOrders?.find(o => o.so_id === soId);
@@ -2407,7 +2414,7 @@ function renderPlanningBoard(){
     const soRows = soIds.map(soId => {
       const so = state.poolOrders?.find(o => o.so_id === soId) || {};
       return `<tr>
-        <td><input type="checkbox" class="po-so-split-check" data-po="${escapeHtml(po.po_id)}" data-so="${escapeHtml(soId)}" style="width:1.2rem;height:1.2rem;cursor:pointer"></td>
+        <td><input type="checkbox" class="po-so-split-check" data-po="${escapeHtml(po.po_id)}" data-so="${escapeHtml(soId)}" style="width:1.2rem;height:1.2rem;cursor:pointer" ${po.planner_status === 'RELEASED' ? 'disabled' : ''}></td>
         <td>${escapeHtml(soId)}</td>
         <td>${so.qty_mt ? num(so.qty_mt).toFixed(0) : '—'}</td>
         <td>${so.due_date ? fmtDate(so.due_date) : '—'}</td>
@@ -2415,9 +2422,12 @@ function renderPlanningBoard(){
       </tr>`;
     }).join('');
 
-    return `<tr class="po-row" id="po-row-${escapeHtml(po.po_id)}" onclick="togglePODetail('${escapeHtml(po.po_id)}')">
-      <td onclick="event.stopPropagation()"><input type="checkbox" class="po-check" data-po="${escapeHtml(po.po_id)}" style="width:1.2rem;height:1.2rem;cursor:pointer"></td>
-      <td><strong>${escapeHtml(po.po_id)}</strong></td>
+    const isReleased = po.planner_status === 'RELEASED';
+    const rowStyle = isReleased ? 'opacity:.6;background:rgba(107,114,207,.02)' : '';
+
+    return `<tr class="po-row" id="po-row-${escapeHtml(po.po_id)}" onclick="togglePODetail('${escapeHtml(po.po_id)}')" style="${rowStyle}">
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="po-check" data-po="${escapeHtml(po.po_id)}" style="width:1.2rem;height:1.2rem;cursor:pointer" ${isReleased ? 'disabled' : ''}></td>
+      <td><strong>${escapeHtml(po.po_id)}</strong>${isReleased ? ' ✓' : ''}</td>
       <td>${escapeHtml(soIds.join(', ') || '—')}</td>
       <td style="font-size:.75rem;color:var(--text-soft)">${escapeHtml(skuIds || '—')}</td>
       <td>${num(po.total_qty_mt).toFixed(0)}</td>
@@ -2425,27 +2435,40 @@ function renderPlanningBoard(){
       <td>${po.due_window ? po.due_window[0] + ' to ' + po.due_window[1] : '—'}</td>
       <td>${po.heats_required || 0}</td>
       <td><span class="badge ${statusBadgeClass(po.planner_status)}">${escapeHtml(po.planner_status)}</span></td>
-      <td onclick="event.stopPropagation()"><button class="btn ghost ps-action" style="margin-right:.2rem" onclick="freezePO('${escapeHtml(po.po_id)}')">Freeze</button><button class="btn ghost ps-action" onclick="checkMaterialForPO('${escapeHtml(po.po_id)}')">Mat</button></td>
+      <td onclick="event.stopPropagation()"><button class="btn ghost ps-action" style="margin-right:.2rem" onclick="freezePO('${escapeHtml(po.po_id)}')" ${isReleased ? 'disabled' : ''}>Freeze</button><button class="btn ghost ps-action" onclick="checkMaterialForPO('${escapeHtml(po.po_id)}')">Mat</button></td>
     </tr>
     <tr class="po-detail-row" id="po-detail-${escapeHtml(po.po_id)}" style="display:none">
       <td colspan="10">
         <div style="padding:.5rem 1rem;background:var(--panel-soft);border-top:1px solid var(--border-soft)">
           <table class="table" style="font-size:.75rem">
             <thead><tr>
-              <th style="width:2rem"><input type="checkbox" class="po-so-split-all" data-po="${escapeHtml(po.po_id)}" style="width:1.2rem;height:1.2rem;cursor:pointer"></th>
+              <th style="width:2rem"><input type="checkbox" class="po-so-split-all" data-po="${escapeHtml(po.po_id)}" style="width:1.2rem;height:1.2rem;cursor:pointer" ${isReleased ? 'disabled' : ''}></th>
               <th>SO ID</th><th>Qty MT</th><th>Due Date</th><th>Priority</th>
             </tr></thead>
             <tbody>
               ${soRows}
             </tbody>
           </table>
-          <button class="btn ghost" style="margin-top:.5rem;font-size:.75rem" onclick="splitPO('${escapeHtml(po.po_id)}')">Move checked to new lot</button>
+          ${!isReleased ? `<button class="btn ghost" style="margin-top:.5rem;font-size:.75rem" onclick="splitPO('${escapeHtml(po.po_id)}')">Move checked to new lot</button>` : '<div style="font-size:.75rem;color:var(--text-soft);padding:.5rem 0">This PO is released and cannot be modified.</div>'}
         </div>
       </td>
     </tr>`;
-  }).join('');
+  };
 
-  qs('planningBoard').innerHTML = rows || '<tr><td colspan="10" style="text-align:center;color:var(--text-soft)">No planning orders proposed yet. Select a window first.</td></tr>';
+  let html = '';
+
+  // PROPOSED/FROZEN section
+  if (proposedPos.length > 0) {
+    html += proposedPos.map(buildPORow).join('');
+  }
+
+  // RELEASED section (greyed out)
+  if (releasedPos.length > 0) {
+    html += '<tr style="border-top:2px solid var(--border);"><td colspan="10" style="padding:.6rem;background:rgba(16,185,129,.05);font-weight:600;font-size:.8rem;color:#059669">RELEASED ORDERS</td></tr>';
+    html += releasedPos.map(buildPORow).join('');
+  }
+
+  qs('planningBoard').innerHTML = html || '<tr><td colspan="10" style="text-align:center;color:var(--text-soft)">No planning orders proposed yet. Select a window first.</td></tr>';
 }
 
 async function deriveHeatBatches(){
@@ -2891,7 +2914,6 @@ async function simulateSchedule(){
         </div>
         <div style="font-size:.75rem;color:var(--text-soft);flex:1">${data.message}</div>
       </div>
-      ${scheduleRows.length > 0 ? `<button class="btn ghost" style="margin-top:.75rem;font-size:.75rem" onclick="showGanttModal('Feasibility Check - Timeline', state.lastScheduleRows)">📊 View Gantt</button>` : ''}
     `;
 
     // Show/hide remediation panel with resource utilization
@@ -3021,7 +3043,6 @@ async function remSimulate(){
         </div>
         <div style="font-size:.75rem;color:var(--text-soft);flex:1">${data.message}</div>
       </div>
-      ${scheduleRows.length > 0 ? `<button class="btn ghost" style="margin-top:.75rem;font-size:.75rem" onclick="showGanttModal('Feasibility Check - Timeline (Adjusted)', state.lastScheduleRows)">📊 View Gantt</button>` : ''}
     `;
 
     setPipelineStageStatus('ps-schedule', feasible ? 'done' : 'warn',
@@ -3211,23 +3232,28 @@ async function releaseAllSelected(){
 
 // Event listeners for planning workflow
 
-qs('poolSearch')?.addEventListener('input', renderPlanningOrderPool);
-qs('poolGrade')?.addEventListener('change', renderPlanningOrderPool);
-qs('poolPriority')?.addEventListener('change', renderPlanningOrderPool);
+qs('poolSearch')?.addEventListener('input', () => { renderPlanningOrderPool(); updateSOPoolSelectionCount(); });
+qs('poolGrade')?.addEventListener('change', () => { renderPlanningOrderPool(); updateSOPoolSelectionCount(); });
+qs('poolPriority')?.addEventListener('change', () => { renderPlanningOrderPool(); updateSOPoolSelectionCount(); });
 
 // Pool checkbox handlers
 qs('poolSelectAll')?.addEventListener('change', (e) => {
   const checked = e.target.checked;
   document.querySelectorAll('.pool-so-check').forEach(cb => cb.checked = checked);
+  updateSOPoolSelectionCount();
 });
 qs('poolSelectAllBtn')?.addEventListener('click', () => {
   document.querySelectorAll('.pool-so-check').forEach(cb => cb.checked = true);
+  qs('poolSelectAll').checked = true;
+  updateSOPoolSelectionCount();
 });
 qs('poolClearAllBtn')?.addEventListener('click', () => {
   document.querySelectorAll('.pool-so-check').forEach(cb => cb.checked = false);
+  qs('poolSelectAll').checked = false;
+  updateSOPoolSelectionCount();
 });
-document.querySelectorAll('.pool-so-check')?.forEach(cb => {
-  cb.addEventListener('change', () => {
+document.addEventListener('change', (e) => {
+  if (e.target.classList.contains('pool-so-check')) {
     const allChecked = [...document.querySelectorAll('.pool-so-check')].every(c => c.checked);
     const someChecked = [...document.querySelectorAll('.pool-so-check')].some(c => c.checked);
     const selectAllCb = qs('poolSelectAll');
@@ -3235,7 +3261,8 @@ document.querySelectorAll('.pool-so-check')?.forEach(cb => {
       selectAllCb.checked = allChecked;
       selectAllCb.indeterminate = someChecked && !allChecked;
     }
-  });
+    updateSOPoolSelectionCount();
+  }
 });
 
 // PO checkbox handlers and toolbar button state management
@@ -3264,10 +3291,23 @@ document.addEventListener('change', (e) => {
 
 function updatePOToolbarButtons() {
   const checkedCount = document.querySelectorAll('.po-check:checked').length;
+  const totalCount = document.querySelectorAll('.po-check').length;
   const mergeBtn = qs('mergeSelectedBtn');
   const freezeBtn = qs('freezeSelectedBtn');
-  if (mergeBtn) mergeBtn.disabled = checkedCount < 2;
+  const countBadge = qs('poSelectionCount');
+
+  if (mergeBtn) mergeBtn.disabled = checkedCount < 3;
   if (freezeBtn) freezeBtn.disabled = checkedCount === 0;
+  if (countBadge) countBadge.textContent = checkedCount === 0 ? '0 selected' : `${checkedCount} selected`;
+}
+
+function updateSOPoolSelectionCount() {
+  const checkedCount = document.querySelectorAll('.pool-so-check:checked').length;
+  const totalCount = document.querySelectorAll('.pool-so-check').length;
+  const countBadge = qs('poolSelectionCount');
+  if (countBadge) {
+    countBadge.textContent = checkedCount === 0 ? '0 selected' : `${checkedCount} of ${totalCount} selected`;
+  }
 }
 
 function togglePODetail(poId) {
@@ -3286,6 +3326,7 @@ async function freezePO(poId) {
     if (data && data.planning_orders) {
       state.planningOrders = data.planning_orders;
       renderPlanningBoard();
+      updatePOToolbarButtons();
     }
   } catch (e) {
     alert('Failed to freeze PO: ' + e.message);
@@ -3331,6 +3372,7 @@ async function splitPO(poId) {
     if (data && data.planning_orders) {
       state.planningOrders = data.planning_orders;
       renderPlanningBoard();
+      updatePOToolbarButtons();
     }
   } catch (e) {
     alert('Failed to split PO: ' + e.message);
