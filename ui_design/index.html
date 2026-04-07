@@ -3041,8 +3041,33 @@ function openMaterialPanel(title, skuIds) {
     return;
   }
 
-  // Filter BOM for these SKUs
-  const filteredBom = state.bom.filter(item => skuIds.includes(item.Parent_SKU));
+  // Recursively build COMPLETE BOM chain (all levels: FG → Components → Sub-components → RM)
+  const allBomItems = new Set();
+  const processedSkus = new Set();
+
+  function collectAllMaterials(parentSkuList) {
+    const newSkus = [];
+    parentSkuList.forEach(parentSku => {
+      if (processedSkus.has(parentSku)) return;
+      processedSkus.add(parentSku);
+
+      // Find all materials required by this parent SKU
+      const materials = state.bom.filter(item => item.Parent_SKU === parentSku);
+      materials.forEach(item => {
+        allBomItems.add(item);
+        newSkus.push(item.SKU_ID);  // Queue sub-materials for processing
+      });
+    });
+
+    // Recursively process sub-materials
+    if (newSkus.length > 0) {
+      collectAllMaterials(newSkus);
+    }
+  }
+
+  // Start with the selected SKUs
+  collectAllMaterials(skuIds);
+  const filteredBom = Array.from(allBomItems);
 
   if (filteredBom.length === 0) {
     qs('planningBomTree').innerHTML = '<div style="padding:.5rem;color:var(--text-soft);font-size:.75rem">No materials found for selected SKUs.</div>';
@@ -3051,7 +3076,7 @@ function openMaterialPanel(title, skuIds) {
     return;
   }
 
-  // Build simple tree by Parent_SKU
+  // Build tree by Parent_SKU (now includes ALL levels)
   const grouped = {};
   filteredBom.forEach(item => {
     if (!grouped[item.Parent_SKU]) grouped[item.Parent_SKU] = [];
