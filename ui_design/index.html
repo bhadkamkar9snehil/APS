@@ -207,7 +207,7 @@
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="poolSelectAllBtn">Select All</button>
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="poolClearAllBtn">Clear All</button>
                   <div style="flex:1"></div>
-                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;background:rgba(107,114,207,.08);border:1px solid rgba(107,114,207,.2)" onclick="state.lastScheduleRows ? showGanttModal('Order Pool - Timeline', state.lastScheduleRows) : alert('Run Feasibility Check first to see timeline')" title="View timeline for selected SOs (plant-based)">📅 Gantt</button>
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;background:rgba(107,114,207,.08);border:1px solid rgba(107,114,207,.2)" onclick="showPoolSOGantt()" title="View timeline for selected SOs (plant-based)">📅 Gantt</button>
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;background:rgba(107,114,207,.08);border:1px solid rgba(107,114,207,.2)" data-page-link="bom" title="View complete BOM explosion for all SOs">📊 Full BOM</button>
                 </div>
                 <div style="overflow:auto;max-height:280px;border:1px solid var(--border);border-radius:.3rem">
@@ -2530,13 +2530,42 @@ function renderHeatBuilder(){
   }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-soft)">No heats derived yet.</td></tr>';
 }
 
+// Show gantt for selected SOs in pool
+function showPoolSOGantt(){
+  if(!state.lastScheduleRows || !state.lastScheduleRows.length){
+    alert('Run Feasibility Check first (click Simulate button in Stage 4)');
+    return;
+  }
+
+  const selectedCheckboxes = Array.from(qs('poolBody').querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.dataset.so).filter(Boolean);
+
+  if(!selectedCheckboxes.length){
+    alert('Select at least one SO first');
+    return;
+  }
+
+  const soId = selectedCheckboxes[0]; // Show gantt for first selected SO
+  showGanttModal(`SO ${escapeHtml(soId)} - Timeline`, state.lastScheduleRows, soId);
+}
+
 // World-class SO gantt - consolidated plant flow view
 function renderSOGantt(scheduleRows, soId){
   if(!scheduleRows || !scheduleRows.length) return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No schedule data available.</div>';
 
-  // Filter to only this SO's operations
-  const soRows = scheduleRows.filter(r => r.Campaign && r.Campaign.includes(soId || ''));
-  if(!soRows.length) return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No operations for this SO.</div>';
+  // Get heats for this SO (trace: SO → PO → Heats)
+  let soRows = scheduleRows;
+  if(soId){
+    // Find PO containing this SO
+    const po = state.planningOrders?.find(p => p.selected_so_ids?.includes(soId));
+    if(po && state.heatBatches){
+      // Get heats for this PO
+      const heatIds = state.heatBatches.filter(h => h.planning_order_id === po.po_id).map(h => h.heat_id);
+      // Filter schedule rows to only these heats
+      soRows = scheduleRows.filter(r => heatIds.some(hid => r.Campaign && r.Campaign.includes(hid)));
+    }
+  }
+
+  if(!soRows.length) soRows = scheduleRows; // Fallback to all rows if filtering returns nothing
 
   // Get time bounds and operations per plant
   let minTime = Infinity, maxTime = -Infinity;
