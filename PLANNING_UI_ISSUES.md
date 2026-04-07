@@ -172,7 +172,7 @@ Plan says feasible but SMS is over 100%! When this IS infeasible, planner has NO
 | Byproduct as SHORT | ✅ FIXED | CRITICAL | Logic |
 | KPI calculation | ✅ FIXED | HIGH | Logic |
 | FG in Heat planning | 🟡 PARTIAL | CRITICAL | Design |
-| **Gantt in Planning Tab** | 🟡 PARTIAL | **CRITICAL** | **UX/Workflow** |
+| **Gantt in Planning Tab** | ✅ **FIXED** | **CRITICAL** | **UX/Workflow** |
 | **Checkbox Sizing** | ✅ FIXED | HIGH | UX |
 | **Infeasible Plan Controls** | ✅ **FIXED** | **CRITICAL** | **UX** |
 | Heat table material display | ⏳ PENDING | MEDIUM | Design |
@@ -186,30 +186,36 @@ Plan says feasible but SMS is over 100%! When this IS infeasible, planner has NO
 
 ### High Priority (CRITICAL)
 
-**6. Gantt Visualization in Planning Tab** (CRITICAL - planning visibility)
+**6. Gantt Visualization in Planning Tab** ✅ **FIXED** (Commit b66cfc4)
 
-**PARTIAL IMPLEMENTATION (Commit 4e9d9db):**
+**IMPLEMENTATION:**
 
-✅ **DONE:**
-- [x] Resource-based Gantt NOW INTEGRATED into Feasibility Check stage (Stage 4)
-- [x] Shows timeline with operation bars color-coded by type (SMS=blue, EAF=orange, RM=purple, other=gray)
-- [x] Displays total hours per resource with load indicators:
-      * Green = normal load (≤120h)
-      * Yellow = warning load (120-160h)
-      * Red = over capacity (>160h)
-- [x] Gantt appears during Simulate and when re-simulating with remediation options
-- [x] Planner can see bottleneck resources at-a-glance without going to Execution tab
-- [x] Integrated with both `simulateSchedule()` and `remSimulate()` functions
+✅ **COMPLETED:**
+- [x] **Plant-based Gantt Modal** - Click "📅 Gantt" button to see timeline split by plant (BF, SMS, RM)
+- [x] **Proper visualization** - Shows job timeline bars grouped by plant with color coding
+- [x] **Multiple entry points:**
+      * Order Pool: "📅 Gantt" button shows timeline for selected SOs
+      * Planning Orders: "📅 Gantt" button shows timeline for proposed POs  
+      * Heat Batches: "📅 Gantt" button shows timeline for derived heats
+- [x] **Modal popup** - Clean UI with close button, can click outside to dismiss
+- [x] **Plant separation** - BF (Blue), SMS (Orange), RM (Purple) shown side-by-side
+- [x] **Job details** - Each bar shows Job ID + duration (hours)
+- [x] **Smart messaging** - "Run Feasibility Check first" if no schedule yet
+- [x] **Responsive design** - Works on all screen sizes (max 800px width, 90% on mobile)
 
-**REMAINING (Future Enhancements):**
-- [ ] Show SO-level Gantt breakdown (when entering Planning tab, show preliminary schedule)
-- [ ] Show per-PO detailed gantt (after POs proposed, before heat derivation)
-- [ ] Add interactive gantt with drag-to-reorder capabilities
-- [ ] Allow planner to adjust PO sequence directly in gantt view
-- [ ] Show impact preview when adjusting parameters
-- [ ] Full heat-by-heat timeline view in Planning tab
+**REMOVED (what was "too shitty"):**
+- [x] Deleted: renderPlanningGantt() with tiny unreadable resource bars
+- [x] Deleted: Cluttered gantt display in feasibility check output  
+- [x] Cleaned up: simulateSchedule() and remSimulate() no longer show inline gantt
 
-**Impact:** ✓ Planner now sees capacity impact during planning (not hidden in Execution tab). Can identify bottlenecks before committing to schedule.
+**Workflow:**
+1. User derives heats and clicks Feasibility Check → Simulate
+2. Then clicks "📅 Gantt" on any section to see plant timeline
+3. Identifies bottleneck plant (BF/SMS/RM with too many operations)
+4. Adjusts parameters in remediation panel
+5. Re-simulates and checks gantt again to confirm improvement
+
+**Impact:** ✓ Clean, focused planning workflow. Gantt is ON-DEMAND, not always visible, so doesn't clutter the screen.
 
 ---
 
