@@ -174,7 +174,7 @@ Plan says feasible but SMS is over 100%! When this IS infeasible, planner has NO
 | FG in Heat planning | 🟡 PARTIAL | CRITICAL | Design |
 | **Gantt in Planning Tab** | 🟡 PARTIAL | **CRITICAL** | **UX/Workflow** |
 | **Checkbox Sizing** | ✅ FIXED | HIGH | UX |
-| Infeasible plan controls | ⏳ PENDING | **CRITICAL** | UX |
+| **Infeasible Plan Controls** | ✅ **FIXED** | **CRITICAL** | **UX** |
 | Heat table material display | ⏳ PENDING | MEDIUM | Design |
 | Ready band purpose | ⏳ PENDING | LOW | UX |
 
@@ -230,16 +230,46 @@ Plan says feasible but SMS is over 100%! When this IS infeasible, planner has NO
 
 ---
 
-**8. Infeasible Plan Controls** (CRITICAL - blocks planners)
-When SMS hours exceed 100%, planner has NO OPTIONS:
-- [ ] Show root cause (which resource is bottleneck?)
-- [ ] Suggest remediation options:
-  - Extend planning horizon
-  - Reduce heat size
-  - Adjust grouping tolerance
-  - Add parallel resources
-- [ ] Allow parameter adjustment and re-planning
-- [ ] Preview impact before applying changes
+**8. Infeasible Plan Controls** ✅ **FIXED** (Commit 2ddf9d2)
+
+**Problem:** When plan exceeds capacity (e.g., SMS hours > 100%), planner had NO IDEA:
+- Which resource was the bottleneck
+- By how much it was overloaded
+- How to fix it (no targeted guidance)
+
+Example: "SMS Hours: 342.02h (OVER CAPACITY!)" but plan still showed FEASIBLE
+
+**Solution Implemented:**
+- [x] **Bottleneck Detection in Gantt:**
+      * Resource utilization % calculated (hours / horizon_hours)
+      * Over-capacity resources highlighted in RED with 3px border
+      * Bottleneck resource name + % shown at top of gantt
+      * Color coding: green ≤80%, yellow >80%, red >100%
+
+- [x] **Resource Overload Alert:**
+      * Shows WHICH resources exceed capacity
+      * Lists hours/capacity ratio (e.g., "SMS: 342h / 168h = 204%")
+      * Appears at top of remediation panel when infeasible
+
+- [x] **Targeted Remediation Guidance:**
+      * "If resource overloaded → Add parallel resources"
+      * "If over time → Extend horizon"
+      * "If too many heats → Narrow priority window"
+      * Alert changes based on what's still over after re-simulation
+
+- [x] **Interactive Parameter Testing:**
+      * Planner adjusts SMS/RM lines, horizon, or priority filter
+      * Re-simulate shows updated gantt + resource utilization
+      * Can iterate until plan becomes FEASIBLE with visual feedback
+
+**Result:** Planner now has CLEAR PATH to feasible plan:
+1. See gantt → identify bottleneck (e.g., SMS at 204%)
+2. Read alert → get specific suggestion (add SMS line)
+3. Adjust parameters → re-simulate
+4. Check gantt again → see if still over
+5. Repeat until FEASIBLE ✓
+
+This UNBLOCKS planners who previously had no options.
 
 ---
 
