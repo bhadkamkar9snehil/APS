@@ -211,7 +211,7 @@
                 </div>
                 <div style="overflow:auto;max-height:280px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
-                    <thead><tr><th style="width:2rem"><input type="checkbox" id="poolSelectAll" title="Select all"></th><th>SO ID</th><th>SKU</th><th>Customer</th><th>Grade</th><th>Section</th><th>Qty MT</th><th>Due Date</th><th>Priority</th><th>Status</th><th style="width:3rem"></th></tr></thead>
+                    <thead><tr><th style="width:2rem"><input type="checkbox" id="poolSelectAll" title="Select all" style="width:1.2rem;height:1.2rem;cursor:pointer"></th><th>SO ID</th><th>SKU</th><th>Customer</th><th>Grade</th><th>Section</th><th>Qty MT</th><th>Due Date</th><th>Priority</th><th>Status</th><th style="width:3rem"></th></tr></thead>
                     <tbody id="poolBody"></tbody>
                   </table>
                 </div>
@@ -247,7 +247,7 @@
                 </div>
                 <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
-                    <thead><tr><th style="width:2rem"><input type="checkbox" id="poSelectAll"></th><th>PO ID</th><th>SOs</th><th>SKUs</th><th>Qty MT</th><th>Grade</th><th>Due Window</th><th>Heats</th><th>Status</th><th>Actions</th></tr></thead>
+                    <thead><tr><th style="width:2rem"><input type="checkbox" id="poSelectAll" style="width:1.2rem;height:1.2rem;cursor:pointer"></th><th>PO ID</th><th>SOs</th><th>SKUs</th><th>Qty MT</th><th>Grade</th><th>Due Window</th><th>Heats</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody id="planningBoard"></tbody>
                   </table>
                 </div>
@@ -2262,7 +2262,7 @@ function renderPlanningOrderPool() {
 
   poolBody.innerHTML = filtered.map((so) => `
     <tr>
-      <td><input type="checkbox" class="pool-so-check" data-so="${escapeHtml(so.so_id)}" checked></td>
+      <td><input type="checkbox" class="pool-so-check" data-so="${escapeHtml(so.so_id)}" checked style="width:1.2rem;height:1.2rem;cursor:pointer"></td>
       <td>${escapeHtml(so.so_id)}</td>
       <td style="font-size:.8rem;font-weight:500;min-width:8rem">${escapeHtml(so.sku_id || '—')}</td>
       <td>${escapeHtml(so.customer_id)}</td>
@@ -2401,7 +2401,7 @@ function renderPlanningBoard(){
     const soRows = soIds.map(soId => {
       const so = state.poolOrders?.find(o => o.so_id === soId) || {};
       return `<tr>
-        <td><input type="checkbox" class="po-so-split-check" data-po="${escapeHtml(po.po_id)}" data-so="${escapeHtml(soId)}"></td>
+        <td><input type="checkbox" class="po-so-split-check" data-po="${escapeHtml(po.po_id)}" data-so="${escapeHtml(soId)}" style="width:1.2rem;height:1.2rem;cursor:pointer"></td>
         <td>${escapeHtml(soId)}</td>
         <td>${so.qty_mt ? num(so.qty_mt).toFixed(0) : '—'}</td>
         <td>${so.due_date ? fmtDate(so.due_date) : '—'}</td>
@@ -2410,7 +2410,7 @@ function renderPlanningBoard(){
     }).join('');
 
     return `<tr class="po-row" id="po-row-${escapeHtml(po.po_id)}" onclick="togglePODetail('${escapeHtml(po.po_id)}')">
-      <td onclick="event.stopPropagation()"><input type="checkbox" class="po-check" data-po="${escapeHtml(po.po_id)}"></td>
+      <td onclick="event.stopPropagation()"><input type="checkbox" class="po-check" data-po="${escapeHtml(po.po_id)}" style="width:1.2rem;height:1.2rem;cursor:pointer"></td>
       <td><strong>${escapeHtml(po.po_id)}</strong></td>
       <td>${escapeHtml(soIds.join(', ') || '—')}</td>
       <td style="font-size:.75rem;color:var(--text-soft)">${escapeHtml(skuIds || '—')}</td>
@@ -2426,7 +2426,7 @@ function renderPlanningBoard(){
         <div style="padding:.5rem 1rem;background:var(--panel-soft);border-top:1px solid var(--border-soft)">
           <table class="table" style="font-size:.75rem">
             <thead><tr>
-              <th style="width:2rem"><input type="checkbox" class="po-so-split-all" data-po="${escapeHtml(po.po_id)}"></th>
+              <th style="width:2rem"><input type="checkbox" class="po-so-split-all" data-po="${escapeHtml(po.po_id)}" style="width:1.2rem;height:1.2rem;cursor:pointer"></th>
               <th>SO ID</th><th>Qty MT</th><th>Due Date</th><th>Priority</th>
             </tr></thead>
             <tbody>
@@ -2524,6 +2524,64 @@ function renderHeatBuilder(){
   }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-soft)">No heats derived yet.</td></tr>';
 }
 
+// Render mini resource gantt for Planning tab
+function renderPlanningGantt(scheduleRows){
+  if(!scheduleRows || !scheduleRows.length) return '';
+
+  // Group by resource and get time bounds
+  const byResource = {};
+  let minTime = Infinity, maxTime = -Infinity;
+
+  scheduleRows.forEach(row => {
+    const res = row.Resource_ID || 'UNKNOWN';
+    if(!byResource[res]) byResource[res] = [];
+    byResource[res].push(row);
+
+    const start = new Date(row.Planned_Start);
+    const end = new Date(row.Planned_End);
+    if(!isNaN(start)) minTime = Math.min(minTime, start.getTime());
+    if(!isNaN(end)) maxTime = Math.max(maxTime, end.getTime());
+  });
+
+  if(minTime === Infinity || maxTime === -Infinity) return '';
+
+  const span = maxTime - minTime;
+  const resources = Object.keys(byResource).sort();
+
+  // Build mini gantt HTML
+  let ganttHtml = `<div style="margin-top:1rem;border:1px solid var(--border);border-radius:.3rem;overflow:hidden;font-size:.75rem">
+    <div style="padding:.5rem .6rem;background:var(--panel-soft);font-weight:600;border-bottom:1px solid var(--border)">Resource Timeline</div>
+    <div style="max-height:250px;overflow-y:auto">`;
+
+  resources.forEach(res => {
+    const jobs = byResource[res];
+    const totalHours = jobs.reduce((sum, j) => sum + (num(j.Duration_Hrs) || 0), 0);
+    const load = totalHours > 160 ? '#dc2626' : totalHours > 120 ? '#f59e0b' : '#10b981';
+
+    ganttHtml += `<div style="display:flex;align-items:center;gap:.6rem;padding:.35rem .6rem;border-bottom:1px solid var(--border-soft)">
+      <div style="width:5rem;font-weight:600;white-space:nowrap">${escapeHtml(res)}</div>
+      <div style="flex:1;height:1.2rem;background:var(--border);border-radius:.2rem;position:relative;overflow:hidden">`;
+
+    jobs.forEach(j => {
+      const jStart = new Date(j.Planned_Start);
+      const jEnd = new Date(j.Planned_End);
+      if(!isNaN(jStart) && !isNaN(jEnd)){
+        const left = Math.max(0, (jStart.getTime() - minTime) / span * 100);
+        const width = Math.max(1, (jEnd.getTime() - jStart.getTime()) / span * 100);
+        const opColor = j.Operation === 'SMS' ? '#3b82f6' : j.Operation === 'EAF' ? '#f97316' : j.Operation === 'RM' ? '#8b5cf6' : '#6b7280';
+        ganttHtml += `<div style="position:absolute;left:${left.toFixed(1)}%;width:${Math.min(width, 100-left).toFixed(1)}%;top:0;bottom:0;background:${opColor};opacity:.8" title="${j.Operation} ${j.Duration_Hrs}h"></div>`;
+      }
+    });
+
+    ganttHtml += `</div>
+      <div style="width:3rem;text-align:right;color:${load};font-weight:600">${totalHours}h</div>
+    </div>`;
+  });
+
+  ganttHtml += `</div></div>`;
+  return ganttHtml;
+}
+
 async function simulateSchedule(){
   if(!state.heatBatches || !state.heatBatches.length){
     alert('Derive heats first (Stage 3).');
@@ -2552,28 +2610,30 @@ async function simulateSchedule(){
     const statusColor = feasible ? '#10b981' : '#ef4444';
     const bottleneck = data.bottleneck || '—';
 
-    // Build schedule table
+    // Build schedule gantt + table
     const scheduleRows = data.schedule_rows || [];
-    const scheduleHtml = scheduleRows.length > 0 ? `
-      <div style="margin-top:1rem;border:1px solid var(--border);border-radius:.3rem;overflow:hidden">
-        <div style="overflow-x:auto;max-height:300px">
-          <table class="table" style="margin:0">
+    const ganttHtml = renderPlanningGantt(scheduleRows);
+    const scheduleTableHtml = scheduleRows.length > 0 ? `
+      <div style="margin-top:.75rem;border:1px solid var(--border);border-radius:.3rem;overflow:hidden">
+        <div style="padding:.5rem .6rem;background:var(--panel-soft);font-weight:600;border-bottom:1px solid var(--border);font-size:.75rem">Job Details</div>
+        <div style="overflow-x:auto;max-height:200px">
+          <table class="table" style="margin:0;font-size:.7rem">
             <thead>
               <tr>
-                <th>Job</th><th>Campaign</th><th>Operation</th><th>Resource</th><th>Planned Start</th><th>Planned End</th><th>Duration</th><th>Status</th>
+                <th>Job</th><th>Campaign</th><th>Op</th><th>Resource</th><th>Start</th><th>End</th><th>Dur</th><th>Status</th>
               </tr>
             </thead>
             <tbody>
-              ${scheduleRows.slice(0, 50).map(row => `
+              ${scheduleRows.slice(0, 30).map(row => `
                 <tr>
-                  <td style="font-size:.75rem">${escapeHtml((row.Job_ID||'').substring(0,12))}</td>
-                  <td style="font-size:.75rem">${escapeHtml(row.Campaign||'—')}</td>
-                  <td style="font-size:.75rem"><strong>${escapeHtml(row.Operation||'—')}</strong></td>
-                  <td style="font-size:.75rem">${escapeHtml(row.Resource_ID||'—')}</td>
-                  <td style="font-size:.75rem">${escapeHtml(row.Planned_Start||'—')}</td>
-                  <td style="font-size:.75rem">${escapeHtml(row.Planned_End||'—')}</td>
-                  <td style="font-size:.75rem">${row.Duration_Hrs ? row.Duration_Hrs + 'h' : '—'}</td>
-                  <td style="font-size:.75rem"><span style="color:${row.Status==='LATE'?'#dc2626':'#16a34a'}">${escapeHtml(row.Status||'—')}</span></td>
+                  <td style="font-size:.7rem">${escapeHtml((row.Job_ID||'').substring(0,10))}</td>
+                  <td style="font-size:.7rem">${escapeHtml(row.Campaign||'—')}</td>
+                  <td style="font-size:.7rem"><strong>${escapeHtml((row.Operation||'—').substring(0,3))}</strong></td>
+                  <td style="font-size:.7rem">${escapeHtml(row.Resource_ID||'—')}</td>
+                  <td style="font-size:.7rem">${escapeHtml((row.Planned_Start||'—').substring(0,16))}</td>
+                  <td style="font-size:.7rem">${escapeHtml((row.Planned_End||'—').substring(0,16))}</td>
+                  <td style="font-size:.7rem">${row.Duration_Hrs ? num(row.Duration_Hrs).toFixed(1) + 'h' : '—'}</td>
+                  <td style="font-size:.7rem"><span style="color:${row.Status==='LATE'?'#dc2626':'#16a34a'}">${escapeHtml(row.Status||'—')}</span></td>
                 </tr>
               `).join('')}
             </tbody>
@@ -2581,6 +2641,7 @@ async function simulateSchedule(){
         </div>
       </div>
     ` : '';
+    const scheduleHtml = ganttHtml + scheduleTableHtml;
 
     qs('schedulerContent').innerHTML = `
       <div style="display:flex;align-items:center;gap:2rem;padding:.5rem 0">
@@ -2669,28 +2730,30 @@ async function remSimulate(){
     if(horizonHours) config.push(Math.round(Number(horizonHours)/24)+'d horizon');
     const configStr = config.length ? ' [' + config.join(', ') + ']' : '';
 
-    // Build schedule table
+    // Build schedule gantt + table
     const scheduleRows = data.schedule_rows || [];
-    const scheduleHtml = scheduleRows.length > 0 ? `
-      <div style="margin-top:1rem;border:1px solid var(--border);border-radius:.3rem;overflow:hidden">
-        <div style="overflow-x:auto;max-height:300px">
-          <table class="table" style="margin:0">
+    const ganttHtml = renderPlanningGantt(scheduleRows);
+    const scheduleTableHtml = scheduleRows.length > 0 ? `
+      <div style="margin-top:.75rem;border:1px solid var(--border);border-radius:.3rem;overflow:hidden">
+        <div style="padding:.5rem .6rem;background:var(--panel-soft);font-weight:600;border-bottom:1px solid var(--border);font-size:.75rem">Job Details</div>
+        <div style="overflow-x:auto;max-height:200px">
+          <table class="table" style="margin:0;font-size:.7rem">
             <thead>
               <tr>
-                <th>Job</th><th>Campaign</th><th>Operation</th><th>Resource</th><th>Planned Start</th><th>Planned End</th><th>Duration</th><th>Status</th>
+                <th>Job</th><th>Campaign</th><th>Op</th><th>Resource</th><th>Start</th><th>End</th><th>Dur</th><th>Status</th>
               </tr>
             </thead>
             <tbody>
-              ${scheduleRows.slice(0, 50).map(row => `
+              ${scheduleRows.slice(0, 30).map(row => `
                 <tr>
-                  <td style="font-size:.75rem">${escapeHtml((row.Job_ID||'').substring(0,12))}</td>
-                  <td style="font-size:.75rem">${escapeHtml(row.Campaign||'—')}</td>
-                  <td style="font-size:.75rem"><strong>${escapeHtml(row.Operation||'—')}</strong></td>
-                  <td style="font-size:.75rem">${escapeHtml(row.Resource_ID||'—')}</td>
-                  <td style="font-size:.75rem">${escapeHtml(row.Planned_Start||'—')}</td>
-                  <td style="font-size:.75rem">${escapeHtml(row.Planned_End||'—')}</td>
-                  <td style="font-size:.75rem">${row.Duration_Hrs ? row.Duration_Hrs + 'h' : '—'}</td>
-                  <td style="font-size:.75rem"><span style="color:${row.Status==='LATE'?'#dc2626':'#16a34a'}">${escapeHtml(row.Status||'—')}</span></td>
+                  <td style="font-size:.7rem">${escapeHtml((row.Job_ID||'').substring(0,10))}</td>
+                  <td style="font-size:.7rem">${escapeHtml(row.Campaign||'—')}</td>
+                  <td style="font-size:.7rem"><strong>${escapeHtml((row.Operation||'—').substring(0,3))}</strong></td>
+                  <td style="font-size:.7rem">${escapeHtml(row.Resource_ID||'—')}</td>
+                  <td style="font-size:.7rem">${escapeHtml((row.Planned_Start||'—').substring(0,16))}</td>
+                  <td style="font-size:.7rem">${escapeHtml((row.Planned_End||'—').substring(0,16))}</td>
+                  <td style="font-size:.7rem">${row.Duration_Hrs ? num(row.Duration_Hrs).toFixed(1) + 'h' : '—'}</td>
+                  <td style="font-size:.7rem"><span style="color:${row.Status==='LATE'?'#dc2626':'#16a34a'}">${escapeHtml(row.Status||'—')}</span></td>
                 </tr>
               `).join('')}
             </tbody>
@@ -2698,6 +2761,7 @@ async function remSimulate(){
         </div>
       </div>
     ` : '';
+    const scheduleHtml = ganttHtml + scheduleTableHtml;
 
     qs('schedulerContent').innerHTML = `
       <div style="display:flex;align-items:center;gap:2rem;padding:.5rem 0">

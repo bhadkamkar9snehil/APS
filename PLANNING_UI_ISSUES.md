@@ -1,16 +1,35 @@
 # Planning UI Issues & Fixes
 
-## ✅ Fixed
+## ✅ Fixed (Commit 33fc62d)
 
-### 1. Full BOM Button Not Working
-**Issue**: Clicking "Full BOM →" in Material panel did nothing  
-**Fix**: Changed from `onclick="nav('bom')"` to `data-page-link="bom"` to use existing tab switching logic  
-**Status**: FIXED - Button now navigates to BOM tab
+### 1. Full BOM Button Placement & Function
+**Issue**: Button was in Material panel (wrong location, redundant)  
+**Fix**: 
+- Moved to Order Pool toolbar header (right side)
+- Changed to `data-page-link="bom"` for tab navigation
+- Added 📊 icon to distinguish from action buttons
+**Status**: FIXED ✓ - Now accessible when browsing pool, not in material detail
 
 ### 2. Text Wrapping in Priority Column  
 **Issue**: "URGENT", "HIGH", "NORMAL" badges were wrapping to multiple lines  
 **Fix**: Added `white-space: nowrap` to badge styling in SO table  
-**Status**: FIXED - Badges now stay on single line
+**Status**: FIXED ✓ - Badges now stay on single line
+
+### 3. Byproduct Shown as SHORT
+**Issue**: BIL-130-1018 (byproduct/waste) showing "SHORT" - false shortage
+**Root Cause**: BOM treats all materials equally (INPUT vs OUTPUT not distinguished)  
+**Fix**: Added filter to exclude items with `Required_Qty <= 0` from BOM display
+**Logic**: Byproducts have 0 required qty (they're OUTPUT), so excluded from coverage checks
+**Status**: FIXED ✓ - False shortcuts eliminated
+
+### 4. KPI Cards Not Updating
+**Issue**: Top KPI cards (Heats, MT, Throughput) not recalculating after operations
+**Fix**: 
+- Added `updatePlanningKPIs()` function to recalculate all top KPIs
+- Called after "Propose Orders" operation
+- Called after "Derive Heats" operation
+- Updates: PLANNING ORDERS, HEATS PLANNED, MT PLANNED, THROUGHPUT
+**Status**: FIXED ✓ - KPIs now update after planning operations
 
 ---
 
@@ -38,31 +57,29 @@ This is wrong! **Byproducts are OUTPUT, not INPUT**. The planner doesn't NEED by
 
 ---
 
-### 4. FG (Finished Good) in Heat Planning - Design Error
+### 4. FG (Finished Good) in Heat Planning - Design Issue
 **Problem**:
 ```
 Heat table shows:
-SKU: FG-WR-SAE1045-80
+SKU: FG-WR-SAE1045-80 (column header said "SKU")
 QTY: 50
 ```
-This is wrong! Heat planning should show **WHAT WE'RE USING** (raw materials), not **WHAT WE'RE PRODUCING** (FG).
+Confusing! Column header said "SKU" but shows what's being PRODUCED (FG), not what's being USED (materials).
 
-**Expected**: Heat should list:
-- RM-OUT-SAE1045-80
-- RM-ENDCUT  
-- RM-SCALE
-- etc.
+**Current Status**: 🟡 PARTIAL FIX
+- Changed column header from "SKU" to "FG (Finished Good)" for clarity
+- Now explicitly shows production targets, not consumption
+- **Still pending**: Complete refactor to show actual materials consumed (would require BOM expansion per heat)
 
-NOT the FG itself.
+**Ideal Solution** (requires more work):
+- Heat table should show materials consumed, not FG produced
+- Would need to:
+  1. Get BOM for each FG in the heat
+  2. Aggregate all component/RM requirements
+  3. Display those instead of FG
+- **Impact**: Helps planners understand material flow, identify bottlenecks
 
-**Root Cause**:
-- Heat derivation logic is including parent SKU (FG) instead of just materials
-- Need to show bill-of-materials for the heat, not the finished good
-
-**What Needs to Happen**:
-1. Modify Heat table to fetch and display materials required for that heat
-2. Show RM/component SKUs, quantities, and routing
-3. Link heat execution to material consumption
+**Note**: Current approach (showing FG) is valid for tracking production targets. Showing consumed materials is a "nice-to-have" enhancement for material flow visualization.
 
 ---
 
@@ -148,23 +165,85 @@ Plan says feasible but SMS is over 100%! When this IS infeasible, planner has NO
 
 ## Summary Table
 
-| Issue | Priority | Type | Effort |
-|-------|----------|------|--------|
-| Full BOM button | FIXED | UX | ✅ |
-| Badge wrapping | FIXED | UX | ✅ |
-| Byproduct as SHORT | CRITICAL | Logic | High |
-| FG in Heat planning | CRITICAL | Design | High |
-| KPI calculation | HIGH | Logic | Medium |
-| Infeasible plan controls | HIGH | UX | High |
-| Ready band purpose | LOW | UX | Low |
+| Issue | Status | Priority | Type |
+|-------|--------|----------|------|
+| Full BOM button | ✅ FIXED | - | UX |
+| Badge wrapping | ✅ FIXED | - | UX |
+| Byproduct as SHORT | ✅ FIXED | CRITICAL | Logic |
+| KPI calculation | ✅ FIXED | HIGH | Logic |
+| FG in Heat planning | 🟡 PARTIAL | CRITICAL | Design |
+| **Gantt in Planning Tab** | ⏳ PENDING | **CRITICAL** | **UX/Workflow** |
+| **Checkbox Sizing** | ⏳ PENDING | HIGH | UX |
+| Infeasible plan controls | ⏳ PENDING | **CRITICAL** | UX |
+| Heat table material display | ⏳ PENDING | MEDIUM | Design |
+| Ready band purpose | ⏳ PENDING | LOW | UX |
+
+**Status Legend**: ✅ FIXED | 🟡 PARTIAL (header clarified) | ⏳ PENDING (documented, not yet fixed)
 
 ---
 
-## Next Steps
+## Remaining Issues to Address
 
-1. **Investigate BOM data structure** - Does it have INPUT/OUTPUT flag?
-2. **Check heat derivation** - Why is FG being included in heat SKU?
-3. **Review KPI calculation functions** - Add state update hooks
-4. **Design infeasibility controls** - Show bottleneck and adjustment options
-5. **Document Ready band** - Determine if removable
+### High Priority (CRITICAL)
+
+**6. Gantt Visualization in Planning Tab** (CRITICAL - planning blind spot)
+Currently gantt is hidden in Execution tab behind "Run Schedule" button. Planner cannot see capacity/scheduling impact DURING planning.
+
+**Problem:**
+```
+Current flow: SO → PO → Heat → [go to Execution tab] → [click Run Schedule] → [see Gantt]
+What planner sees: Nothing about scheduling during planning
+```
+
+**What Needs to Happen:**
+- [ ] Show SO-level Gantt in Planning tab (which resources each SO needs, when)
+- [ ] Show PO-level Gantt (consolidated, which resources grouped PO needs)
+- [ ] Show Heat-level Gantt (final view, exact heat sequence and resource allocation)
+- [ ] Integrate with feasibility check (if plan is INFEASIBLE, show why on gantt - which resource is bottleneck)
+- [ ] Allow planner to adjust PO/Heat sequence WITHOUT going to Execution
+- [ ] Show impact visually - red bars for overload, green for OK
+- [ ] Make gantt PART of Planning workflow, not separate from it
+
+**Impact:** Planner can make informed decisions about PO grouping/heat sizing based on ACTUAL capacity, not guesses.
+
+---
+
+**7. Checkbox Sizing** (UX - consistency)
+Checkboxes in Planning tab SO/PO tables are tiny; checkboxes in Release Grid are properly sized.
+
+**What Needs to Happen:**
+- [ ] Make Planning tab checkboxes match Release Grid size (larger, easier to click)
+- [ ] Ensure consistent checkbox styling across all tables
+
+---
+
+**8. Infeasible Plan Controls** (CRITICAL - blocks planners)
+When SMS hours exceed 100%, planner has NO OPTIONS:
+- [ ] Show root cause (which resource is bottleneck?)
+- [ ] Suggest remediation options:
+  - Extend planning horizon
+  - Reduce heat size
+  - Adjust grouping tolerance
+  - Add parallel resources
+- [ ] Allow parameter adjustment and re-planning
+- [ ] Preview impact before applying changes
+
+---
+
+### Medium Priority
+
+**9. Heat Table Material Display** (Enhancement)
+Option to show materials consumed by heat instead of FG produced:
+- [ ] Expand BOM for each heat's FG
+- [ ] Aggregate component/RM requirements
+- [ ] Show per-heat material consumption
+- [ ] Link to material shortages
+
+### Low Priority
+
+**10. Ready Band Purpose** (UX Cleanup)
+Bottom status bar showing "Ready" seems unused:
+- [ ] Determine if needed for workflow
+- [ ] If not used, can hide with CSS
+- [ ] Could be repurposed for error/warning messages
 
