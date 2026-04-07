@@ -215,6 +215,11 @@ api_server.log
 node_modules/
 .vscode/
 
+# Excel temp files
+~$*.xlsx
+~$*.xls
+.~lock.*.#
+
 
 .claude
 
