@@ -206,6 +206,8 @@
                 <div class="toolbar" style="margin-bottom:.5rem;gap:.4rem">
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="poolSelectAllBtn">Select All</button>
                   <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="poolClearAllBtn">Clear All</button>
+                  <div style="flex:1"></div>
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;background:rgba(107,114,207,.08);border:1px solid rgba(107,114,207,.2)" data-page-link="bom" title="View complete BOM explosion for all SOs">📊 Full BOM</button>
                 </div>
                 <div style="overflow:auto;max-height:280px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
@@ -281,7 +283,7 @@
                 </div>
                 <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
-                    <thead><tr><th>Heat ID</th><th>PO ID</th><th>SKU</th><th>Grade</th><th>Qty MT</th><th>Seq</th><th>Route</th><th>Duration</th></tr></thead>
+                    <thead><tr><th>Heat ID</th><th>PO ID</th><th>FG (Finished Good)</th><th>Grade</th><th>Qty MT</th><th>Seq</th><th>Route</th><th>Duration</th></tr></thead>
                     <tbody id="heatBody"></tbody>
                   </table>
                 </div>
@@ -402,12 +404,9 @@
 
           <!-- MATERIAL PANEL (RIGHT) -->
           <div id="planningMaterialPanel" class="bom-split-container" style="display:none;width:45%;border-left:1px solid var(--border);background:var(--panel);flex-direction:column;min-height:0;overflow:hidden">
-            <div style="padding:.6rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;gap:.5rem">
+            <div style="padding:.6rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
               <div style="font-weight:600;font-size:.85rem" id="materialCheckTitle">Material Requirements</div>
-              <div style="display:flex;gap:.3rem;align-items:center">
-                <button class="btn ghost" style="font-size:.7rem;padding:.2rem .5rem;height:1.5rem;white-space:nowrap" data-page-link="bom">Full BOM →</button>
-                <button class="btn ghost" style="font-size:.75rem;padding:.2rem .4rem;height:1.5rem" onclick="closeMaterialPanel()">✕</button>
-              </div>
+              <button class="btn ghost" style="font-size:.75rem;padding:.2rem .4rem;height:1.5rem" onclick="closeMaterialPanel()">✕</button>
             </div>
             <div class="bom-tree-panel" style="flex:1;min-height:0;overflow:auto;border:none;padding:.6rem">
               <div class="bom-tree-header">Materials Needed</div>
@@ -2225,6 +2224,20 @@ async function loadPlanningOrderPool(){
   }
 }
 
+// Update top KPI cards after planning operations
+function updatePlanningKPIs() {
+  const soCount = (state.poolOrders || []).length;
+  const poCount = (state.planningOrders || []).length;
+  const heatCount = (state.heatBatches || []).length;
+  const totalMT = (state.planningOrders || []).reduce((sum, po) => sum + num(po.total_qty_mt || 0), 0) ||
+                  (state.heatBatches || []).reduce((sum, h) => sum + num(h.qty_mt || 0), 0);
+
+  setText('kpiOrders', poCount > 0 ? poCount : soCount > 0 ? '0 proposed' : '—');
+  setText('kpiHeats', heatCount > 0 ? heatCount : '—');
+  setText('kpiMT', totalMT > 0 ? totalMT.toFixed(0) : '—');
+  setText('kpiThroughput', totalMT > 0 ? (totalMT / 14).toFixed(1) : '—'); // Estimate based on 14-day horizon
+}
+
 function renderPlanningOrderPool() {
   const orders = state.poolOrders || [];
   let filtered = [...orders];
@@ -2336,6 +2349,7 @@ async function proposePlanningOrders() {
     state.planningOrders = data.planning_orders || [];
     renderPlanningBoard();
     renderDashboardPipeline();
+    updatePlanningKPIs();
 
     const totalMT = state.planningOrders.reduce((sum, po) => sum + num(po.total_qty_mt), 0);
 
@@ -2451,6 +2465,7 @@ async function deriveHeatBatches(){
     }
 
     renderHeatBuilder();
+    updatePlanningKPIs();
     const totalMT = state.heatBatches.reduce((s,h)=>s+num(h.qty_mt),0);
     setPipelineStageStatus('ps-heats', 'done',
       state.heatBatches.length + ' heats · ' + totalMT.toFixed(0) + ' MT',
@@ -3063,16 +3078,19 @@ function openMaterialPanel(title, skuIds) {
 
   // Start with the selected SKUs
   collectAllMaterials(skuIds);
-  const filteredBom = Array.from(allBomItems);
+
+  // FILTER OUT BYPRODUCTS: Only include materials with Required_Qty > 0
+  // Byproducts (waste, scrap) have Required_Qty <= 0 and don't need inventory
+  const filteredBom = Array.from(allBomItems).filter(item => num(item.Required_Qty) > 0);
 
   if (filteredBom.length === 0) {
-    qs('planningBomTree').innerHTML = '<div style="padding:.5rem;color:var(--text-soft);font-size:.75rem">No materials found for selected SKUs.</div>';
+    qs('planningBomTree').innerHTML = '<div style="padding:.5rem;color:var(--text-soft);font-size:.75rem">No materials required for selected SKUs.</div>';
     qs('planningBomDetail').innerHTML = '';
     panel.style.display = 'flex';
     return;
   }
 
-  // Build tree by Parent_SKU (now includes ALL levels)
+  // Build tree by Parent_SKU (now includes ALL levels, byproducts filtered)
   const grouped = {};
   filteredBom.forEach(item => {
     if (!grouped[item.Parent_SKU]) grouped[item.Parent_SKU] = [];
