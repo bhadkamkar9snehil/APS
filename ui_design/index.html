@@ -153,8 +153,8 @@
     <div class="body">
       <section class="page active" id="page-dashboard" style="display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:.4rem .6rem .4rem">
 
-        <!-- ═══ KPI STRIP ═══ -->
-        <div id="dash-kpi-strip" style="display:grid;grid-template-columns:repeat(6,1fr);gap:.45rem;flex-shrink:0;margin-bottom:.45rem">
+        <!-- ═══ KPI STRIP (SINGLE ROW) ═══ -->
+        <div id="dash-kpi-strip" style="display:grid;grid-template-columns:repeat(5,1fr);gap:.45rem;flex-shrink:0;margin-bottom:.45rem">
 
           <div class="dash-kpi-card" id="dkpi-open-so">
             <div class="dkpi-label">Open SOs</div>
@@ -165,7 +165,7 @@
           <div class="dash-kpi-card dash-kpi-blue" id="dkpi-planned-mt">
             <div class="dkpi-label">Planned MT</div>
             <div class="dkpi-value" id="dkpi-planned-mt-val">—</div>
-            <div class="dkpi-sub" id="dkpi-planned-mt-sub">in active POs</div>
+            <div class="dkpi-sub" id="dkpi-planned-mt-sub">active heats</div>
           </div>
 
           <div class="dash-kpi-card dash-kpi-purple" id="dkpi-heats">
@@ -184,12 +184,6 @@
             <div class="dkpi-label">SMS Utilisation</div>
             <div class="dkpi-value" id="dkpi-capacity-val">—</div>
             <div class="dkpi-sub" id="dkpi-capacity-sub">peak resource</div>
-          </div>
-
-          <div class="dash-kpi-card" id="dkpi-shorts">
-            <div class="dkpi-label">Material Shorts</div>
-            <div class="dkpi-value" id="dkpi-shorts-val">—</div>
-            <div class="dkpi-sub" id="dkpi-shorts-sub">items below min</div>
           </div>
         </div>
 
@@ -1315,13 +1309,6 @@ function renderDashboardKPIs() {
   const capClass = maxUtil > 90 ? 'dash-kpi-red' : maxUtil > 75 ? 'dash-kpi-amber' : maxUtil > 0 ? 'dash-kpi-green' : '';
   setDKPI('capacity', maxUtil > 0 ? Math.round(maxUtil) + '%' : '—', capLabel, capClass);
 
-  // Material shorts
-  const matItems = (state.material?.campaigns || []);
-  const shorts = matItems.filter(m => String(m.material_status || '').toUpperCase() === 'SHORT' || String(m.coverage || '').toUpperCase() === 'SHORT').length;
-  const invItems = state.master?.inventory || [];
-  const invShorts = invItems.filter(r => num(r.Qty_On_Hand || r.qty_on_hand || 0) < num(r.Min_Stock || r.min_stock || 0)).length;
-  const totalShorts = shorts + invShorts;
-  setDKPI('shorts', totalShorts || '0', totalShorts ? 'items need replenishment' : 'all materials covered', totalShorts > 0 ? 'dash-kpi-red' : 'dash-kpi-green');
 }
 
 function setDKPI(id, val, sub, cls) {
@@ -1481,32 +1468,40 @@ function renderDashboardDelivery() {
 }
 
 function renderDashboardInventory() {
+  // Show only material CONSTRAINTS: items that are SHORT or LOW
+  // This tells planners which materials are blocking production
   const inv = state.master?.inventory || [];
   if (!inv.length) {
     qs('dashboardInventoryBody').innerHTML = '<div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">Load Master Data to see inventory</div>';
     return;
   }
 
-  const sorted = [...inv].map(r => {
+  const constrained = [...inv].map(r => {
     const qty = num(r.Qty_On_Hand || r.qty_on_hand || 0);
-    const min = num(r.Min_Stock || r.min_stock || 0);
-    const max = num(r.Max_Stock || r.max_stock || qty * 2 || 1);
-    const pct = max > 0 ? Math.min(100, Math.round(qty / max * 100)) : 0;
-    const status = qty < min ? 'SHORT' : qty < min * 1.5 ? 'LOW' : 'OK';
-    return { id: String(r.SKU_ID || r.sku_id || ''), qty, min, max, pct, status };
-  }).sort((a,b) => a.status === 'SHORT' ? -1 : b.status === 'SHORT' ? 1 : a.status === 'LOW' ? -1 : 1).slice(0, 8);
+    const min = num(r.Min_Stock || r.min_stock || 100); // Default min stock if unset
+    const status = qty < min ? 'SHORT' : qty < min * 1.2 ? 'LOW' : null; // Only show if constrained
+    if (!status) return null;
+    const shortfallMT = Math.max(0, min - qty);
+    return { id: String(r.SKU_ID || r.sku_id || ''), qty, min, status, shortfallMT };
+  }).filter(Boolean).sort((a,b) => a.status === 'SHORT' ? -1 : 1).slice(0, 8);
 
-  qs('dashboardInventoryBody').innerHTML = sorted.map(m => {
-    const barColor = m.status === 'OK' ? 'var(--success)' : m.status === 'LOW' ? 'var(--warning)' : 'var(--danger)';
-    const tagBg = m.status === 'OK' ? 'var(--success-soft)' : m.status === 'LOW' ? 'var(--warning-soft)' : 'var(--danger-soft)';
-    const tagColor = m.status === 'OK' ? 'var(--success)' : m.status === 'LOW' ? 'var(--warning)' : 'var(--danger)';
+  if (constrained.length === 0) {
+    qs('dashboardInventoryBody').innerHTML = '<div style="text-align:center;color:var(--success);font-size:.75rem;padding:.8rem .4rem"><div style="font-size:1.2rem;margin-bottom:.3rem">✓</div>All materials above safety stock</div>';
+    return;
+  }
+
+  qs('dashboardInventoryBody').innerHTML = constrained.map(m => {
+    const pct = Math.min(100, Math.round(m.qty / m.min * 100)); // % of minimum required
+    const barColor = m.status === 'SHORT' ? 'var(--danger)' : 'var(--warning)';
+    const tagBg = m.status === 'SHORT' ? 'var(--danger-soft)' : 'var(--warning-soft)';
+    const tagColor = m.status === 'SHORT' ? 'var(--danger)' : 'var(--warning)';
     return `<div class="dash-mat-row">
       <div class="dash-mat-name" title="${escapeHtml(m.id)}">${escapeHtml(m.id.substring(0,14))}</div>
       <div class="dash-mat-bar-wrap">
         <div class="dash-cap-bar-bg">
-          <div class="dash-cap-bar" style="width:${m.pct}%;background:${barColor}"></div>
+          <div class="dash-cap-bar" style="width:${pct}%;background:${barColor}"></div>
         </div>
-        <div style="font-size:.58rem;color:var(--text-faint);margin-top:.1rem">${m.qty} / ${m.max} MT</div>
+        <div style="font-size:.58rem;color:var(--text-faint);margin-top:.1rem">${m.qty} MT (need ${m.min} MT)</div>
       </div>
       <span class="dash-mat-tag" style="background:${tagBg};color:${tagColor}">${m.status}</span>
     </div>`;
