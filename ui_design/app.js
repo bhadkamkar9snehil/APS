@@ -2749,11 +2749,17 @@ async function remSimulate(){
       [{v: duration+'h', l:'duration'}, {v: loadFactor, l:'load'}]
     );
 
-    // Show/hide remediation panel with resource utilization
+    // Always show remediation panel for what-if scenario exploration
     const remPanel = qs('remediationPanel');
     if(remPanel){
+      remPanel.style.display = '';
       if(feasible){
-        remPanel.style.display = 'none';
+        remPanel.style.background = '#f0fdf4';
+        remPanel.style.borderColor = '#86efac';
+        const headerSpan = remPanel.querySelector('span');
+        if(headerSpan) headerSpan.textContent = ' Feasible — explore what-if scenarios:';
+        const headerDiv = remPanel.querySelector('div[style*="92400e"]');
+        if(headerDiv) headerDiv.style.color = '#166534';
       } else {
         // Calculate resource utilization for alert
         if(scheduleRows && scheduleRows.length){
