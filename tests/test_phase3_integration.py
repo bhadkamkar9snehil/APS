@@ -6,6 +6,7 @@ and work together without contradictions or data gaps.
 """
 import sys
 from pathlib import Path
+from datetime import datetime
 
 import pandas as pd
 import pytest
@@ -186,7 +187,7 @@ class TestMultiModuleDataFlow:
             pytest.skip("No sales orders to test")
 
         campaigns = build_campaigns(sales_orders)
-        schedule_result = schedule(campaigns, resources, routing=routing)
+        schedule_result = schedule(campaigns, resources, routing=routing, planning_start=datetime.now())
 
         assert schedule_result is not None
         # Schedule should have output structure
@@ -333,7 +334,7 @@ class TestEndToEndWorkflow:
         assert campaigns is not None and len(campaigns) > 0
 
         # Step 2: Schedule campaigns
-        schedule_result = schedule(campaigns, resources, routing=routing)
+        schedule_result = schedule(campaigns, resources, routing=routing, planning_start=datetime.now())
         assert schedule_result is not None
 
         # Step 3: Explode BOM
