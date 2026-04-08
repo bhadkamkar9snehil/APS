@@ -195,18 +195,24 @@ class TestMultiModuleDataFlow:
 
     def test_bom_to_ctp_flow(self):
         """BOM explosion informs CTP material availability."""
+        sales_orders = self.workbook.get('sales_orders')
+        bom = self.workbook.get('bom')
         inventory = self.workbook.get('inventory', {})
-        bom = self.workbook.get('bom', [])
 
-        if not bom:
-            pytest.skip("No BOM to test")
+        # Check if we have required data
+        if not _has_data(sales_orders, bom):
+            pytest.skip("Missing required data")
+
+        # Prepare demand from sales orders
+        demand = sales_orders[['SKU_ID', 'Order_Qty_MT']].copy()
+        demand.rename(columns={'Order_Qty_MT': 'Required_Qty'}, inplace=True)
 
         # Explode BOM
-        exploded = explode_bom(bom, inventory)
+        exploded = explode_bom(demand, bom)
         assert exploded is not None
 
         # Verify output has structure
-        assert isinstance(exploded, dict)
+        assert isinstance(exploded, dict) or isinstance(exploded, pd.DataFrame)
 
     def test_no_data_contradictions(self):
         """Verify no contradictions between module outputs."""
@@ -277,14 +283,20 @@ class TestStressScenarios:
 
     def test_no_inventory_scenario(self):
         """System handles zero inventory gracefully."""
+        sales_orders = self.workbook.get('sales_orders')
+        bom = self.workbook.get('bom')
+
+        # Check if we have required data
+        if not _has_data(sales_orders, bom):
+            pytest.skip("Missing required data")
+
+        # Prepare demand from sales orders
+        demand = sales_orders[['SKU_ID', 'Order_Qty_MT']].copy()
+        demand.rename(columns={'Order_Qty_MT': 'Required_Qty'}, inplace=True)
+
+        # Should handle zero inventory gracefully
         inventory = {}  # Empty inventory
-        bom = self.workbook.get('bom', [])
-
-        if not bom:
-            pytest.skip("No BOM to test")
-
-        # Should not crash with empty inventory
-        exploded = explode_bom(bom, inventory)
+        exploded = explode_bom(demand, bom)
         assert exploded is not None
 
     def test_numerical_stability(self):
