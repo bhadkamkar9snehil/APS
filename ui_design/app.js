@@ -3108,8 +3108,8 @@ async function splitPO(poId) {
 
 async function mergeSelectedPOs() {
   const poIds = [...document.querySelectorAll('.po-check:checked')].map(cb => cb.dataset.po);
-  if (poIds.length < 3) {
-    alert('Select at least 3 POs to merge (1 target + at least 2 sources).');
+  if (poIds.length < 2) {
+    alert('Select at least 2 POs to merge.');
     return;
   }
   try {
