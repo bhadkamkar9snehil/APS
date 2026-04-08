@@ -1776,12 +1776,14 @@ function renderPlanningOrderPool() {
       <td>${num(so.qty_mt).toFixed(0)}</td>
       <td>${fmtDate(so.due_date)}</td>
       <td><span class="badge ${so.priority === 'URGENT' ? 'red' : so.priority === 'HIGH' ? 'amber' : 'blue'}" style="white-space:nowrap">${escapeHtml(so.priority)}</span></td>
+      <td><span style="font-size:.8rem;padding:.2rem .4rem;background:rgba(107,114,207,.1);border-radius:.2rem">${escapeHtml(so.order_type || 'MTO')}</span></td>
+      <td><span style="font-size:.8rem;padding:.2rem .4rem;background:${so.rolling_mode === 'HOT' ? 'rgba(239,68,68,.1);color:#dc2626' : 'rgba(59,130,246,.1);color:#2563eb'};border-radius:.2rem;white-space:nowrap;font-weight:600">${escapeHtml(so.rolling_mode || 'HOT')}</span></td>
       <td>${escapeHtml(so.status)}</td>
       <td><button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.8rem;white-space:nowrap" onclick="event.stopPropagation();checkMaterialForSO('${escapeHtml(so.so_id)}')">Material</button></td>
     </tr>
   `).join('') || `
     <tr>
-      <td colspan="11" style="text-align:center;color:var(--text-soft)">No orders match filters.</td>
+      <td colspan="13" style="text-align:center;color:var(--text-soft)">No orders match filters.</td>
     </tr>
   `;
 
@@ -1934,11 +1936,12 @@ function renderPlanningBoard(){
       <td>${escapeHtml(po.grade_family)}</td>
       <td>${po.due_window ? po.due_window[0] + ' to ' + po.due_window[1] : '—'}</td>
       <td>${po.heats_required || 0}</td>
+      <td><span style="font-size:.8rem;padding:.2rem .4rem;background:${po.rolling_mode === 'HOT' ? 'rgba(239,68,68,.1);color:#dc2626' : 'rgba(59,130,246,.1);color:#2563eb'};border-radius:.2rem;white-space:nowrap;font-weight:600">${escapeHtml(po.rolling_mode || 'HOT')}</span></td>
       <td><span class="badge ${statusBadgeClass(po.planner_status)}">${escapeHtml(po.planner_status)}</span></td>
       <td onclick="event.stopPropagation()"><button class="btn ghost ps-action" style="margin-right:.2rem" onclick="freezePO('${escapeHtml(po.po_id)}')" ${isReleased ? 'disabled' : ''}>Freeze</button><button class="btn ghost ps-action" onclick="checkMaterialForPO('${escapeHtml(po.po_id)}')">Mat</button></td>
     </tr>
     <tr class="po-detail-row" id="po-detail-${escapeHtml(po.po_id)}" style="display:none">
-      <td colspan="10">
+      <td colspan="11">
         <div style="padding:.5rem 1rem;background:var(--panel-soft);border-top:1px solid var(--border-soft)">
           <table class="table" style="font-size:.75rem">
             <thead><tr>
@@ -1964,11 +1967,11 @@ function renderPlanningBoard(){
 
   // RELEASED section (greyed out)
   if (releasedPos.length > 0) {
-    html += '<tr style="border-top:2px solid var(--border);"><td colspan="10" style="padding:.6rem;background:rgba(16,185,129,.05);font-weight:600;font-size:.8rem;color:#059669">RELEASED ORDERS</td></tr>';
+    html += '<tr style="border-top:2px solid var(--border);"><td colspan="11" style="padding:.6rem;background:rgba(16,185,129,.05);font-weight:600;font-size:.8rem;color:#059669">RELEASED ORDERS</td></tr>';
     html += releasedPos.map(buildPORow).join('');
   }
 
-  qs('planningBoard').innerHTML = html || '<tr><td colspan="10" style="text-align:center;color:var(--text-soft)">No planning orders proposed yet. Select a window first.</td></tr>';
+  qs('planningBoard').innerHTML = html || '<tr><td colspan="11" style="text-align:center;color:var(--text-soft)">No planning orders proposed yet. Select a window first.</td></tr>';
 }
 
 async function deriveHeatBatches(){
