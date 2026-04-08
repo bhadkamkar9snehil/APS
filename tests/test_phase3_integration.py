@@ -13,7 +13,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from data.loader import load_all
-from engine.campaign import build_campaigns
+from engine.campaign import build_campaigns, _get_heat_size_mt, _get_ccm_yield
 from engine.scheduler import schedule
 from engine.bom_explosion import inventory_map, explode_bom
 from engine.capacity import compute_demand_hours, capacity_map
@@ -34,10 +34,8 @@ class TestConfigPropagation:
 
     def test_heat_size_affects_campaign_batching(self):
         """Changing HEAT_SIZE_MT changes campaign batch quantities."""
-        config = get_config()
-
-        # Get current heat size
-        default_heat_size = config.get_float('HEAT_SIZE_MT', 50.0)
+        # Use proper accessor function from campaign module
+        default_heat_size = _get_heat_size_mt()
         assert default_heat_size > 0
 
         # Run campaign builder
@@ -58,19 +56,30 @@ class TestConfigPropagation:
 
     def test_yield_affects_bom_explosion(self):
         """Changing YIELD_CCM_PCT affects BOM requirements."""
-        config = get_config()
-
-        ccm_yield = config.get_float('YIELD_CCM_PCT', 0.95)
+        # Use proper accessor function from campaign module
+        ccm_yield = _get_ccm_yield()
         assert 0.5 < ccm_yield <= 1.0
 
         # BOM explosion should use this yield
-        inventory = self.workbook.get('inventory', {})
-        bom = self.workbook.get('bom', [])
+        sales_orders = self.workbook.get('sales_orders')
+        bom = self.workbook.get('bom')
 
-        if bom:
-            exploded = explode_bom(bom, inventory)
+        # Check if both datasets have data
+        has_sales_orders = (not sales_orders.empty if isinstance(sales_orders, pd.DataFrame) else bool(sales_orders))
+        has_bom = (not bom.empty if isinstance(bom, pd.DataFrame) else bool(bom))
+
+        if has_sales_orders and has_bom:
+            # Prepare demand from sales orders
+            demand = sales_orders[['SKU_ID', 'Order_Qty_MT']].copy()
+            demand.rename(columns={'Order_Qty_MT': 'Required_Qty'}, inplace=True)
+
+            exploded = explode_bom(demand, bom)
             assert exploded is not None
-            assert 'summary' in exploded or 'rows' in exploded or isinstance(exploded, dict)
+            # explode_bom returns either a DataFrame or dict with 'exploded' key
+            if isinstance(exploded, pd.DataFrame):
+                assert len(exploded) > 0
+            else:
+                assert 'exploded' in exploded or 'summary' in exploded
 
     def test_capacity_horizon_affects_planning_window(self):
         """Changing CAPACITY_HORIZON_DAYS affects planning window."""
