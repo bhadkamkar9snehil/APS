@@ -31,7 +31,7 @@ PHASE1_HEADER_PREFIXES = {
     "Sales_Orders": [
         "SO_ID", "Customer", "Region", "SKU_ID", "Grade", "Section_mm",
         "Order_Qty_MT", "Coils_Count", "Order_Date", "Delivery_Date",
-        "Priority", "Campaign_Group", "Campaign_ID", "Status",
+        "Priority", "Order_Type", "Rolling_Mode", "Campaign_Group", "Campaign_ID", "Status",
     ],
     "Resource_Master": [
         "Resource_ID", "Resource_Name", "Plant", "Type",

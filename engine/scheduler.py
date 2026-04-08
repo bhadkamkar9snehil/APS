@@ -838,14 +838,22 @@ def _validate_resource_feasibility(
     """
     warnings = []
 
-    # Check: Each operation has at least one available resource
-    for operation, machines in machine_groups.items():
+    # Determine which operations are ACTUALLY NEEDED by campaigns
+    required_operations = {"EAF", "LRF", "CCM"}  # Always required
+    for camp in campaigns:
+        grade = camp.get("grade", "")
+        if needs_vd_for_grade(grade):
+            required_operations.add("VD")
+
+    # Check: Each REQUIRED operation has at least one available resource
+    for operation in required_operations:
+        machines = machine_groups.get(operation, [])
         if not machines:
             warnings.append(
                 f"WARNING: No resources available for operation {operation}. "
                 f"This will cause scheduling to fail."
             )
-        if len(machines) == 1:
+        elif len(machines) == 1:
             warnings.append(
                 f"NOTE: Single resource for {operation} ({machines[0]}). "
                 f"Any downtime will block entire operation."
@@ -919,7 +927,6 @@ def schedule(
         )
 
     model = cp_model.CpModel()
-    print("[Scheduler] ✓ Using OR-Tools CP-SAT solver")
 
     planning_horizon_days = max(int(planning_horizon_days or 14), 1)
     frozen_jobs = frozen_jobs or {}
@@ -1182,20 +1189,27 @@ def schedule(
                             objective_terms.append((cost, 10))  # Soft penalty: prefer preferred resource
 
             if previous_rm_end is None:
-                last_ccm_end = model.NewIntVar(0, max_time, f"last_ccm_end_{cid}")
-                model.AddMaxEquality(last_ccm_end, ccm_end_vars)
+                # Branch on hot_charging: HOT uses first CCM end, COLD uses last CCM end
+                hot_charging = bool(camp.get("hot_charging", True))  # Default True = HOT
+                if hot_charging:
+                    gate_var = model.NewIntVar(0, max_time, f"first_ccm_end_{cid}")
+                    model.AddMinEquality(gate_var, ccm_end_vars)
+                else:
+                    gate_var = model.NewIntVar(0, max_time, f"last_ccm_end_{cid}")
+                    model.AddMaxEquality(gate_var, ccm_end_vars)
+
                 transfer_gap = int(transfer_times.get(("CCM", "RM"), 0) or 0)
                 queue_rule = normalized_queue_times.get(("CCM", "RM"))
                 min_queue = int((queue_rule or {}).get("min", 0) or 0)
-                model.Add(last_ccm_end + transfer_gap + min_queue <= rm_task["start"])
+                model.Add(gate_var + transfer_gap + min_queue <= rm_task["start"])
                 max_queue = int((queue_rule or {}).get("max", 9999) or 9999)
                 enforcement = str((queue_rule or {}).get("enforcement", default_queue_enforcement) or default_queue_enforcement).strip().upper()
                 if max_queue < 9999:
                     if enforcement == "HARD":
-                        model.Add(rm_task["start"] <= last_ccm_end + transfer_gap + max_queue)
+                        model.Add(rm_task["start"] <= gate_var + transfer_gap + max_queue)
                     else:
                         q_viol = model.NewIntVar(0, max_time, f"qviol_{cid}_CCM_RM")
-                        model.Add(q_viol >= rm_task["start"] - (last_ccm_end + transfer_gap + max_queue))
+                        model.Add(q_viol >= rm_task["start"] - (gate_var + transfer_gap + max_queue))
                         objective_terms.append((q_viol, 100))  # Proportional per-minute penalty (was QUEUE_VIOLATION_WEIGHT=500)
             else:
                 model.Add(previous_rm_end <= rm_task["start"])
@@ -1293,7 +1307,10 @@ def schedule(
     }.get(status, "UNKNOWN")
 
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        print(f"[Scheduler] No solution: {status_str}. Falling back to greedy.")
+        print(f"[Scheduler] ✗ CP-SAT INFEASIBLE ({status_str})")
+        print(f"[Scheduler] → Constraint violation detected. Unable to schedule all heats within horizon.")
+        print(f"[Scheduler] → Consider: extend horizon, add resources, reduce order volume, or adjust due dates")
+        print(f"[Scheduler] → Falling back to greedy scheduling for approximate solution...")
         return _greedy_fallback(
             campaigns,
             resources=resources,
@@ -1309,6 +1326,9 @@ def schedule(
             config=config,
             solver_detail=f"CP_SAT_{status_str}",
         )
+
+    # CP-SAT succeeded
+    print(f"[Scheduler] ✓ CP-SAT {status_str} solution found")
 
     schedule_rows = []
     campaign_rows = []
@@ -1566,6 +1586,7 @@ def _greedy_fallback(
 
         first_eaf_start = None
         first_ccm_start = None
+        first_ccm_end = None  # Track first CCM completion for HOT rolling
         last_ccm_end = 0
         last_sms_end = 0
         previous_stage_end = {op: 0 for op in ops}
@@ -1650,6 +1671,8 @@ def _greedy_fallback(
                 if op == "CCM" and first_ccm_start is None:
                     first_ccm_start = start_dt
                 if op == "CCM":
+                    if first_ccm_end is None:
+                        first_ccm_end = end_min  # Track first CCM completion
                     last_ccm_end = max(last_ccm_end, end_min)
                 last_sms_end = max(last_sms_end, end_min)
 
@@ -1679,7 +1702,9 @@ def _greedy_fallback(
                 previous_op = op
 
         rm_orders = _production_orders_for_campaign(camp)
-        previous_rm_end = last_ccm_end
+        # Branch on hot_charging: HOT uses first CCM end, COLD uses last CCM end
+        hot_charging = bool(camp.get("hot_charging", True))  # Default True = HOT
+        previous_rm_end = first_ccm_end if hot_charging and first_ccm_end is not None else last_ccm_end
         previous_section = None
         rm_start_times = []
         rm_end_times = []

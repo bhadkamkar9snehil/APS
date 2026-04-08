@@ -267,32 +267,62 @@ button, input, select, textarea { font: inherit; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }
 .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; }
 
+/* Unified Grid & Table Styling (Balanced Density) */
 .table {
   width: 100%;
   border-collapse: collapse;
   table-layout: auto;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
 }
 
 .table th {
-  font-size: 0.65rem;
+  font-size: 0.68rem;
   text-transform: uppercase;
-  letter-spacing: .08em;
+  letter-spacing: .06em;
   color: var(--text-faint);
   text-align: left;
-  padding: .4rem .5rem;
+  padding: 0.55rem 0.7rem;
   background: #fbfcfe;
   border-bottom: 1px solid var(--border);
+  font-weight: 700;
   white-space: nowrap;
 }
 
 .table td {
-  padding: .4rem .5rem;
+  padding: 0.65rem 0.7rem;
   border-bottom: 1px solid var(--border-soft);
   vertical-align: middle;
+  height: 2.5rem;
 }
 
 .table tr:hover td { background: #fafcff; }
+
+/* Checkbox sizing (consistent across all tables) */
+.table input[type="checkbox"] {
+  width: 1.2rem;
+  height: 1.2rem;
+  cursor: pointer;
+  accent-color: var(--brand);
+}
+
+/* Column-specific styles */
+.table td.col-badge { white-space: nowrap; }
+.table td.col-status { white-space: nowrap; }
+.table td.col-grade { white-space: nowrap; }
+.table td.col-action { white-space: nowrap; text-align: right; }
+
+/* Action buttons in tables */
+.table .btn {
+  height: 2rem;
+  padding: 0 0.8rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.table .btn.ghost {
+  padding: 0 0.6rem;
+  margin: 0 0.15rem;
+}
 
 .badge {
   display: inline-flex;

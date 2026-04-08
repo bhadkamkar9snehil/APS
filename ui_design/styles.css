@@ -863,35 +863,61 @@ textarea {
   font-size: var(--font-sm)
 }
 
+/* Unified Grid & Table Styling (Balanced Density) */
 .table {
   width: 100%;
   border-collapse: collapse;
-  table-layout: auto
+  table-layout: auto;
+  font-size: 0.78rem;
 }
 
 .table th {
-  font-size: var(--font-sm);
+  font-size: 0.68rem;
   text-transform: uppercase;
-  letter-spacing: .08em;
+  letter-spacing: .06em;
   color: var(--text-faint);
   text-align: left;
-  padding: .4rem .5rem;
+  padding: 0.55rem 0.7rem;
   background: #fbfcfe;
   border-bottom: 1px solid var(--border);
-  white-space: nowrap
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .table td {
-  padding: .4rem .5rem;
+  padding: 0.65rem 0.7rem;
   border-bottom: 1px solid var(--border-soft);
-  font-size: .75rem;
   vertical-align: middle;
-  word-break: break-word;
-  overflow-wrap: break-word
+  height: 2.5rem;
 }
 
-.table tr:hover td {
-  background: #fafcff
+.table tr:hover td { background: #fafcff; }
+
+/* Checkbox sizing (consistent across all tables) */
+.table input[type="checkbox"] {
+  width: 1.2rem;
+  height: 1.2rem;
+  cursor: pointer;
+  accent-color: var(--brand);
+}
+
+/* Column-specific styles */
+.table td.col-badge { white-space: nowrap; }
+.table td.col-status { white-space: nowrap; }
+.table td.col-grade { white-space: nowrap; }
+.table td.col-action { white-space: nowrap; text-align: right; }
+
+/* Action buttons in tables */
+.table .btn {
+  height: 2rem;
+  padding: 0 0.8rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.table .btn.ghost {
+  padding: 0 0.6rem;
+  margin: 0 0.15rem;
 }
 
 .badge {
@@ -2471,39 +2497,8 @@ code.inline {
   border-bottom: 1px solid var(--border-soft);
   background: rgba(255, 255, 255, 0.88);
   backdrop-filter: blur(10px);
-  justify-content: flex-start;
 }
 
-.tabs {
-  width: 100%;
-  min-width: 0;
-  gap: 0.45rem;
-}
-
-.tab {
-  height: 2.3rem;
-  padding: 0 0.95rem;
-  border-radius: 0.65rem;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-soft);
-  font-size: 0.8rem;
-  font-weight: 700;
-  box-shadow: none;
-}
-
-.tab:hover {
-  background: var(--panel-muted);
-  color: var(--text);
-  border-color: var(--border-soft);
-}
-
-.tab.active {
-  background: #fff;
-  color: var(--text);
-  border-color: var(--border);
-  box-shadow: 0 0.25rem 0.8rem rgba(15, 23, 42, 0.06);
-}
 
 /* Top controls and summary */
 .top-controls {
@@ -2654,17 +2649,6 @@ code.inline {
   background: linear-gradient(180deg, transparent, rgba(148, 163, 184, 0.35), transparent);
 }
 
-/* Footer */
-.status-footer {
-  position: sticky;
-  bottom: 0;
-  left: auto;
-  right: auto;
-  margin: 0.35rem 0.5rem 0.5rem;
-  width: auto;
-  height: auto;
-  min-height: 2.6rem;
-}
 
 /* Gantt / table polish */
 .gantt-wrap {
@@ -2790,3 +2774,79 @@ code.inline {
     font-size: 0.74rem;
   }
 }
+
+/* ─── Dashboard ─── */
+.dash-kpi-card{background:var(--card-bg);border:1px solid var(--border);border-radius:.4rem;padding:.45rem .6rem;display:flex;flex-direction:column;gap:.1rem;transition:box-shadow .15s}
+.dash-kpi-card.dash-kpi-blue{border-left:3px solid var(--info)}
+.dash-kpi-card.dash-kpi-purple{border-left:3px solid var(--brand)}
+.dash-kpi-card.dash-kpi-green{border-left:3px solid var(--success)}
+.dash-kpi-card.dash-kpi-red{border-left:3px solid var(--danger)}
+.dash-kpi-card.dash-kpi-amber{border-left:3px solid var(--warning)}
+.dkpi-label{font-size:.6rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-soft)}
+.dkpi-value{font-size:1.4rem;font-weight:800;letter-spacing:-.02em;line-height:1.1;color:var(--text)}
+.dkpi-sub{font-size:.6rem;color:var(--text-faint)}
+.dash-card{background:var(--card-bg);border:1px solid var(--border);border-radius:.4rem;display:flex;flex-direction:column;overflow:hidden}
+.dash-card-hd{display:flex;align-items:center;justify-content:space-between;padding:.4rem .6rem;border-bottom:1px solid var(--border-soft);flex-shrink:0}
+.dash-card-title{font-size:.72rem;font-weight:700;letter-spacing:-.01em;color:var(--text)}
+/* Pipeline status rows on dashboard */
+.dash-pipe-row{display:flex;align-items:center;gap:.5rem;padding:.3rem .4rem;border:1px solid var(--border-soft);border-radius:.3rem;font-size:.7rem}
+.dash-pipe-dot{width:.55rem;height:.55rem;border-radius:50%;flex-shrink:0}
+.dash-pipe-dot.done{background:var(--success)}
+.dash-pipe-dot.running{background:var(--info)}
+.dash-pipe-dot.pending{background:var(--border)}
+.dash-pipe-dot.warn{background:var(--warning)}
+/* Alert rows */
+.dash-alert{display:flex;align-items:flex-start;gap:.4rem;padding:.3rem .4rem;border-radius:.3rem;font-size:.7rem}
+.dash-alert.critical{background:var(--danger-soft)}
+.dash-alert.warn{background:var(--warning-soft)}
+.dash-alert.info{background:var(--info-soft)}
+.dash-alert.ok{background:var(--success-soft)}
+.dash-alert-icon{font-size:.8rem;flex-shrink:0;margin-top:.05rem}
+.dash-alert-body{flex:1;min-width:0}
+.dash-alert-title{font-weight:600;line-height:1.2}
+.dash-alert-sub{font-size:.65rem;color:var(--text-soft);margin-top:.1rem}
+/* Mini stat cells */
+.dash-mini-stat{background:var(--panel-muted);border:1px solid var(--border-soft);border-radius:.3rem;padding:.3rem .4rem;text-align:center}
+.dms-label{font-size:.58rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint)}
+.dms-value{font-size:.95rem;font-weight:700;margin-top:.1rem}
+/* Capacity bar rows */
+.dash-cap-row{display:flex;flex-direction:column;gap:.2rem}
+.dash-cap-bar-bg{width:100%;height:6px;background:var(--border-soft);border-radius:3px;overflow:hidden}
+.dash-cap-bar{height:100%;border-radius:3px;transition:width .5s ease}
+/* Material health rows */
+.dash-mat-row{display:flex;align-items:center;gap:.5rem}
+.dash-mat-name{font-size:.68rem;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-mat-bar-wrap{flex:1;position:relative}
+.dash-mat-tag{font-size:.6rem;font-weight:700;padding:.1rem .35rem;border-radius:.2rem;white-space:nowrap}
+/* PO summary rows */
+.dash-po-row{display:flex;align-items:center;gap:.5rem;font-size:.68rem;padding:.25rem .3rem;border-radius:.25rem;border-left:3px solid transparent}
+.dash-po-row.proposed{border-left-color:var(--info)}
+.dash-po-row.frozen{border-left-color:var(--warning)}
+.dash-po-row.released{border-left-color:var(--success);opacity:.7}
+
+/* Pipeline stages */
+.pipeline-stage{border:1px solid var(--border);border-radius:.4rem;background:var(--card-bg);overflow:hidden;flex-shrink:0}
+.ps-header{display:flex;align-items:center;gap:.75rem;padding:.65rem .9rem;cursor:pointer;user-select:none;transition:background .15s}
+.ps-header:hover{background:rgba(0,0,0,.025)}
+.ps-num{width:1.6rem;height:1.6rem;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:700;flex-shrink:0}
+.ps-info{flex:1;min-width:0}
+.ps-title{font-weight:600;font-size:.85rem;line-height:1.2}
+.ps-meta{font-size:.72rem;color:var(--text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ps-kpis{display:flex;gap:.75rem;font-size:.72rem;color:var(--text-soft)}
+.ps-kpis span{white-space:nowrap}
+.ps-badge{font-size:.65rem;font-weight:700;letter-spacing:.03em;padding:.2rem .5rem;border-radius:1rem;background:var(--border);color:var(--text-soft);white-space:nowrap;flex-shrink:0}
+.ps-badge.pending{background:#f1f5f9;color:#94a3b8}
+.ps-badge.running{background:#dbeafe;color:#2563eb}
+.ps-badge.done{background:#dcfce7;color:#16a34a}
+.ps-badge.warn{background:#fef3c7;color:#d97706}
+.ps-badge.error{background:#fee2e2;color:#dc2626}
+.ps-action{flex-shrink:0;padding:.3rem .7rem;font-size:.75rem;height:1.8rem}
+.ps-chevron{font-size:.7rem;color:var(--text-faint);flex-shrink:0;transition:transform .2s}
+.ps-chevron.collapsed{transform:rotate(-90deg)}
+.ps-body{overflow:hidden;transition:max-height .3s ease,opacity .2s;max-height:2000px;opacity:1}
+.ps-body.collapsed{max-height:0;opacity:0;pointer-events:none}
+.ps-body-inner{padding:.75rem .9rem .9rem;border-top:1px solid var(--border-soft)}
+/* num styling when done */
+.pipeline-stage.done .ps-num{background:var(--success)}
+.pipeline-stage.running .ps-num{background:var(--info)}
+.pipeline-stage.error .ps-num{background:var(--danger)}

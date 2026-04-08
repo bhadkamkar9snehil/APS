@@ -38,6 +38,8 @@ class SalesOrder:
     route_family: str  # SMS/RM, for example
     status: str  # Open, Covered, Completed
     order_date: Optional[str] = None
+    order_type: str = "MTO"  # MTS | MTO — metadata only
+    rolling_mode: str = "HOT"  # HOT | COLD
 
     def due_date_obj(self) -> datetime:
         """Parse due date to datetime."""
@@ -65,6 +67,8 @@ class PlanningOrder:
     planner_status: str  # PROPOSED, APPROVED, MERGED, SPLIT, FROZEN
     frozen_flag: bool = False
     created_at: datetime = field(default_factory=datetime.now)
+    order_type: str = "MTO"  # MTS | MTO — metadata only
+    rolling_mode: str = "HOT"  # HOT | COLD
 
     def to_dict(self) -> dict:
         return {
@@ -79,6 +83,8 @@ class PlanningOrder:
             'planner_status': self.planner_status,
             'frozen_flag': self.frozen_flag,
             'created_at': self.created_at.isoformat(),
+            'order_type': self.order_type,
+            'rolling_mode': self.rolling_mode,
         }
 
 
@@ -250,6 +256,10 @@ class APSPlanner:
             dates = [x.due_date_obj() for x in lot] + [candidate.due_date_obj()]
             return (max(dates) - min(dates)).days <= rules["max_due_spread_days"]
 
+        def _rolling_mode_ok(seed: SalesOrder, candidate: SalesOrder) -> bool:
+            # Reject merging if rolling_mode differs
+            return str(seed.rolling_mode or "HOT").strip().upper() == str(candidate.rolling_mode or "HOT").strip().upper()
+
         # Sort strongest planning signal first
         ordered = sorted(
             window_sos,
@@ -285,6 +295,8 @@ class APSPlanner:
                     continue
                 if not _due_spread_ok(lot, candidate):
                     continue
+                if not _rolling_mode_ok(seed, candidate):
+                    continue
 
                 # urgent protection: do not bury urgent SOs in large pools
                 if _is_urgent(seed) and len(lot) >= 2:
@@ -319,6 +331,8 @@ class APSPlanner:
                 route_family=str(seed.route_family or "SMS→RM"),
                 heats_required=heats,
                 planner_status="PROPOSED",
+                order_type=str(seed.order_type or "MTO").strip().upper() or "MTO",
+                rolling_mode=str(seed.rolling_mode or "HOT").strip().upper() or "HOT",
             )
             planning_orders.append(po)
             po_counter += 1

@@ -259,7 +259,7 @@
 
           <!-- STAGE 1: ORDER POOL -->
           <div class="pipeline-stage" id="ps-pool">
-            <div class="ps-header" onclick="toggleStage('ps-pool')">
+            <div class="ps-header" onclick="toggleStage('ps-pool')" role="button" tabindex="0" aria-controls="ps-pool-body" aria-expanded="true">
               <div class="ps-num">1</div>
               <div class="ps-info">
                 <div class="ps-title">Order Pool</div>
@@ -267,7 +267,7 @@
               </div>
               <div class="ps-kpis" id="ps-pool-kpis"></div>
               <div class="ps-badge" id="ps-pool-badge">READY</div>
-              <div class="ps-chevron" id="ps-pool-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></div>
+              <div class="ps-chevron" id="ps-pool-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i><span class="ps-chevron-label">Toggle</span></div>
             </div>
             <div class="ps-body" id="ps-pool-body">
               <div class="ps-body-inner">
@@ -296,7 +296,7 @@
 
           <!-- STAGE 2: PROPOSE ORDERS (window select to POs) -->
           <div class="pipeline-stage" id="ps-propose">
-            <div class="ps-header" onclick="toggleStage('ps-propose')">
+            <div class="ps-header" onclick="toggleStage('ps-propose')" role="button" tabindex="0" aria-controls="ps-propose-body" aria-expanded="false">
               <div class="ps-num">2</div>
               <div class="ps-info">
                 <div class="ps-title">Propose Orders</div>
@@ -324,7 +324,7 @@
                 </div>
                 <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
-                    <thead><tr><th style="width:2rem"><input type="checkbox" id="poSelectAll" aria-label="Select all proposed planning orders" style="width:1.2rem;height:1.2rem;cursor:pointer"></th><th>PO ID</th><th>SOs</th><th>SKUs</th><th>Qty MT</th><th>Grade</th><th>Due Window</th><th>Heats</th><th>Status</th><th>Actions</th></tr></thead>
+                    <thead><tr><th style="width:2rem"><input type="checkbox" id="poSelectAll" title="Select all" aria-label="Select all proposed planning orders" style="width:1.2rem;height:1.2rem;cursor:pointer"></th><th>PO ID</th><th>SOs</th><th>SKUs</th><th>Qty MT</th><th>Grade</th><th>Due Window</th><th>Heats</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody id="planningBoard"></tbody>
                   </table>
                 </div>
@@ -334,7 +334,7 @@
 
           <!-- STAGE 3: HEAT BATCHES -->
           <div class="pipeline-stage" id="ps-heats">
-            <div class="ps-header" onclick="toggleStage('ps-heats')">
+            <div class="ps-header" onclick="toggleStage('ps-heats')" role="button" tabindex="0" aria-controls="ps-heats-body" aria-expanded="false">
               <div class="ps-num">3</div>
               <div class="ps-info">
                 <div class="ps-title">Heat Batches</div>
@@ -373,7 +373,7 @@
 
           <!-- STAGE 4: SCHEDULE FEASIBILITY -->
           <div class="pipeline-stage" id="ps-schedule">
-            <div class="ps-header" onclick="toggleStage('ps-schedule')">
+            <div class="ps-header" onclick="toggleStage('ps-schedule')" role="button" tabindex="0" aria-controls="ps-schedule-body" aria-expanded="false">
               <div class="ps-num">4</div>
               <div class="ps-info">
                 <div class="ps-title">Feasibility Check</div>
@@ -512,7 +512,7 @@
 
           <!-- STAGE 5: RELEASE -->
           <div class="pipeline-stage" id="ps-release">
-            <div class="ps-header" onclick="toggleStage('ps-release')">
+            <div class="ps-header" onclick="toggleStage('ps-release')" role="button" tabindex="0" aria-controls="ps-release-body" aria-expanded="false">
               <div class="ps-num">5</div>
               <div class="ps-info">
                 <div class="ps-title">Release to Execution</div>
@@ -617,11 +617,11 @@
 
         <!-- RELEASED LOTS VIEW -->
         <div id="exec-view-campaigns" aria-labelledby="exec-tab-campaigns" class="exec-view" role="tabpanel">
-          <div class="filters" style="flex-shrink:0">
-            <button type="button" class="subtab active" data-camp-filter="all">All</button>
-            <button type="button" class="subtab" data-camp-filter="released">Released</button>
-            <button type="button" class="subtab" data-camp-filter="held">Held</button>
-            <button type="button" class="subtab" data-camp-filter="late">Late</button>
+          <div class="filters" style="flex-shrink:0" aria-label="Released lots filters">
+            <button type="button" class="subtab active" data-camp-filter="all" aria-pressed="true">All</button>
+            <button type="button" class="subtab" data-camp-filter="released" aria-pressed="false">Released</button>
+            <button type="button" class="subtab" data-camp-filter="held" aria-pressed="false">Held</button>
+            <button type="button" class="subtab" data-camp-filter="late" aria-pressed="false">Late</button>
           </div>
           <div class="stack" id="campaignCards" style="flex:1;min-height:0;overflow:auto"></div>
         </div>

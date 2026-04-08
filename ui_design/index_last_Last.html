@@ -12,29 +12,19 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
 
 <style>
-/* Offline-safe icon/text rendering and structural fallbacks */
+/* Offline-safe icon/text rendering */
 .btn i[aria-hidden="true"],
 .ps-chevron i[aria-hidden="true"],
 .icon-inline i[aria-hidden="true"]{
   display:inline-block;
   width:1em;
-  min-width:1em;
   text-align:center;
-}
-.btn span,
-.ps-chevron-label{
-  display:inline-block;
-}
-.tabs [role="tab"][aria-selected="true"],
-.filters [role="tab"][aria-selected="true"]{
-  outline:none;
 }
 .ps-chevron{
   display:flex;
   align-items:center;
   gap:.28rem;
   transform:none;
-  white-space:nowrap;
 }
 .ps-chevron i{
   display:inline-block;
@@ -59,16 +49,16 @@
     <div class="navbar">
       <div class="tabs" id="topTabs" role="tablist" aria-label="Primary navigation">
         <!-- Main Tabs -->
-        <button type="button" class="tab active" id="tab-dashboard" data-page="dashboard" role="tab" aria-selected="true" aria-controls="page-dashboard" tabindex="0">Dashboard</button>
-        <button type="button" class="tab" id="tab-planning" data-page="planning" role="tab" aria-selected="false" aria-controls="page-planning" tabindex="-1">Planning</button>
-        <button type="button" class="tab" id="tab-bom" data-page="bom" role="tab" aria-selected="false" aria-controls="page-bom" tabindex="-1">BOM</button>
-        <button type="button" class="tab" id="tab-execution" data-page="execution" role="tab" aria-selected="false" aria-controls="page-execution" tabindex="-1">Execution</button>
-        <button type="button" class="tab" id="tab-material" data-page="material" role="tab" aria-selected="false" aria-controls="page-material" tabindex="-1">Material</button>
-        <button type="button" class="tab" id="tab-capacity" data-page="capacity" role="tab" aria-selected="false" aria-controls="page-capacity" tabindex="-1">Capacity</button>
+        <button type="button" class="tab active" data-page="dashboard" role="tab" aria-controls="page-dashboard">Dashboard</button>
+        <button type="button" class="tab" data-page="planning" role="tab" aria-controls="page-planning">Planning</button>
+        <button type="button" class="tab" data-page="bom" role="tab" aria-controls="page-bom">BOM</button>
+        <button type="button" class="tab" data-page="execution" role="tab" aria-controls="page-execution">Execution</button>
+        <button type="button" class="tab" data-page="material" role="tab" aria-controls="page-material">Material</button>
+        <button type="button" class="tab" data-page="capacity" role="tab" aria-controls="page-capacity">Capacity</button>
 
-        <button type="button" class="tab" id="tab-ctp" data-page="ctp" role="tab" aria-selected="false" aria-controls="page-ctp" tabindex="-1">CTP</button>
-        <button type="button" class="tab" id="tab-scenarios" data-page="scenarios" role="tab" aria-selected="false" aria-controls="page-scenarios" tabindex="-1">Scenarios</button>
-        <button type="button" class="tab" id="tab-master" data-page="master" role="tab" aria-selected="false" aria-controls="page-master" tabindex="-1">Master Data</button>
+        <button type="button" class="tab" data-page="ctp" role="tab" aria-controls="page-ctp">CTP</button>
+        <button type="button" class="tab" data-page="scenarios" role="tab" aria-controls="page-scenarios">Scenarios</button>
+        <button type="button" class="tab" data-page="master" role="tab" aria-controls="page-master">Master Data</button>
       </div>
     </div>
 
@@ -76,13 +66,13 @@
       <div class="top-controls">
         <!-- Default controls: schedule tabs -->
         <div class="control-group" id="ctrl-default">
-          <select class="sel" id="horizonSelect" aria-label="Schedule horizon">
+          <select class="sel" id="horizonSelect">
             <option value="7">7 Days Horizon</option>
             <option value="14" selected>14 Days Horizon</option>
             <option value="21">21 Days Horizon</option>
             <option value="30">30 Days Horizon</option>
           </select>
-          <select class="sel" id="solverDepth" aria-label="Solver depth">
+          <select class="sel" id="solverDepth">
             <option value="30">Fast 30s</option>
             <option value="60" selected>Standard 60s</option>
             <option value="120">Deep 120s</option>
@@ -92,7 +82,7 @@
         </div>
         <!-- Planning tab controls -->
         <div class="control-group" id="ctrl-planning" style="display:none">
-          <select class="sel" id="planningWindowDays" aria-label="Planning window days">
+          <select class="sel" id="planningWindowDays">
             <option value="3">3-Day Window</option>
             <option value="7" selected>7-Day Window</option>
             <option value="10">10-Day Window</option>
@@ -116,7 +106,7 @@
     </div>
 
     <div class="body">
-      <section class="page active" id="page-dashboard" role="tabpanel" aria-labelledby="tab-dashboard" style="display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:.4rem .6rem .4rem">
+      <section class="page active" id="page-dashboard" role="tabpanel" style="display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:.4rem .6rem .4rem">
 
         <!-- ═══ MAIN BODY: 3 columns ═══ -->
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.45rem;flex:1;min-height:0;overflow:hidden">
@@ -163,7 +153,7 @@
             </div>
 
             <!-- Delivery Performance -->
-            <div class="dash-card" style="flex:.42;min-height:12rem;overflow:hidden;display:flex;flex-direction:column">
+            <div class="dash-card" style="flex:none;height:42%">
               <div class="dash-card-hd"><span class="dash-card-title">Delivery Performance</span></div>
               <div style="padding:.5rem .6rem;display:flex;flex-direction:column;gap:.5rem">
                 <!-- On-time gauge row -->
@@ -228,7 +218,7 @@
             </div>
 
             <!-- Active POs summary -->
-            <div class="dash-card" style="flex:.34;min-height:10rem;overflow:hidden;display:flex;flex-direction:column">
+            <div class="dash-card" style="flex:none;height:34%">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Active Planning Orders</span>
                 <button type="button" class="btn ghost" style="font-size:.65rem;padding:.15rem .45rem;height:1.5rem" onclick="activatePage('planning')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> Plan</span></button>
@@ -243,7 +233,7 @@
       </section>
 
       <!-- ===== UNIFIED PLANNING PIPELINE PAGE ===== -->
-      <section class="page" id="page-planning" role="tabpanel" aria-labelledby="tab-planning" style="display:flex;flex-direction:column;min-height:0">
+      <section class="page" id="page-planning" role="tabpanel" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header" style="padding-bottom:.5rem;flex-shrink:0">
           <div>
             <div class="page-title">Planning Pipeline</div>
@@ -267,7 +257,7 @@
               </div>
               <div class="ps-kpis" id="ps-pool-kpis"></div>
               <div class="ps-badge" id="ps-pool-badge">READY</div>
-              <div class="ps-chevron" id="ps-pool-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></div>
+              <div class="ps-chevron" id="ps-pool-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i><span class="ps-chevron-label">Toggle</span></div>
             </div>
             <div class="ps-body" id="ps-pool-body">
               <div class="ps-body-inner">
@@ -466,7 +456,7 @@
                     <div style="background:#fff;border:1px solid var(--border);border-radius:.3rem;padding:.6rem">
                       <div style="font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.4rem">NARROW WINDOW</div>
                       <div style="font-size:.78rem;color:var(--text);margin-bottom:.5rem">Plan only the most urgent orders to reduce heat count.</div>
-                      <select class="sel" id="remPriorityFilter" aria-label="Remediation priority filter" style="font-size:.75rem;margin-bottom:.4rem;width:100%">
+                      <select class="sel" id="remPriorityFilter" style="font-size:.75rem;margin-bottom:.4rem;width:100%">
                         <option value="">All priorities (current)</option>
                         <option value="URGENT+HIGH">URGENT + HIGH only</option>
                         <option value="URGENT">URGENT only</option>
@@ -477,11 +467,11 @@
                       <div style="font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.4rem">PARALLEL RESOURCES</div>
                       <div style="font-size:.78rem;color:var(--text);margin-bottom:.5rem">Add SMS or RM lines to run heats in parallel.</div>
                       <div style="display:flex;gap:.4rem;margin-bottom:.4rem">
-                        <select class="sel" id="remSmsLines" aria-label="Remediation SMS lines" style="font-size:.75rem;flex:1">
+                        <select class="sel" id="remSmsLines" style="font-size:.75rem;flex:1">
                           <option value="1">SMS × 1</option>
                           <option value="2">SMS × 2</option>
                         </select>
-                        <select class="sel" id="remRmLines" aria-label="Remediation RM lines" style="font-size:.75rem;flex:1">
+                        <select class="sel" id="remRmLines" style="font-size:.75rem;flex:1">
                           <option value="1">RM × 1</option>
                           <option value="2">RM × 2</option>
                         </select>
@@ -491,7 +481,7 @@
                     <div style="background:#fff;border:1px solid var(--border);border-radius:.3rem;padding:.6rem">
                       <div style="font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.4rem">EXTEND HORIZON</div>
                       <div style="font-size:.78rem;color:var(--text);margin-bottom:.5rem">Give more time — spread same heats across a longer window.</div>
-                      <select class="sel" id="remHorizonHours" aria-label="Remediation planning horizon" style="font-size:.75rem;margin-bottom:.4rem;width:100%">
+                      <select class="sel" id="remHorizonHours" style="font-size:.75rem;margin-bottom:.4rem;width:100%">
                         <option value="">Current horizon</option>
                         <option value="336">14 days (336h)</option>
                         <option value="504">21 days (504h)</option>
@@ -570,7 +560,7 @@
       <!-- ===== END PLANNING PIPELINE ===== -->
 
       <!-- ===== EXECUTION PAGE (merged Campaigns + Dispatch + Gantt) ===== -->
-      <section class="page" id="page-execution" role="tabpanel" aria-labelledby="tab-execution" style="display:flex;flex-direction:column;min-height:0">
+      <section class="page" id="page-execution" role="tabpanel" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header" style="flex-shrink:0">
           <div><div class="page-title">Execution</div><div class="page-sub">Released lots, equipment timeline, and live dispatch sequence.</div></div>
           <div class="page-actions" style="gap:.5rem">
@@ -581,9 +571,9 @@
 
         <!-- Sub-tabs -->
         <div class="filters" style="padding:0 0 .5rem 0;border:none;margin-bottom:.5rem;flex-shrink:0" role="tablist" aria-label="Execution views">
-          <button type="button" class="subtab active" id="exec-tab-timeline" data-exec-view="timeline" onclick="switchExecView('timeline')" role="tab" aria-selected="true" aria-controls="exec-view-timeline" tabindex="0">Equipment Timeline</button>
-          <button type="button" class="subtab" id="exec-tab-campaigns" data-exec-view="campaigns" onclick="switchExecView('campaigns')" role="tab" aria-selected="false" aria-controls="exec-view-campaigns" tabindex="-1">Released Lots</button>
-          <button type="button" class="subtab" id="exec-tab-gantt" data-exec-view="gantt" onclick="switchExecView('gantt')" role="tab" aria-selected="false" aria-controls="exec-view-gantt" tabindex="-1">Gantt</button>
+          <button type="button" class="subtab active" data-exec-view="timeline" onclick="switchExecView('timeline')" role="tab" aria-controls="exec-view-timeline">Equipment Timeline</button>
+          <button type="button" class="subtab" data-exec-view="campaigns" onclick="switchExecView('campaigns')" role="tab" aria-controls="exec-view-campaigns">Released Lots</button>
+          <button type="button" class="subtab" data-exec-view="gantt" onclick="switchExecView('gantt')" role="tab" aria-controls="exec-view-gantt">Gantt</button>
         </div>
 
         <!-- KPI strip -->
@@ -595,7 +585,7 @@
         </div>
 
         <!-- TIMELINE VIEW -->
-        <div id="exec-view-timeline" aria-labelledby="exec-tab-timeline" class="exec-view active-view" role="tabpanel">
+        <div id="exec-view-timeline" class="exec-view active-view" role="tabpanel">
           <div style="display:flex;gap:0.75rem;margin-bottom:0.75rem;flex-shrink:0">
             <select class="sel" id="dispatchFilterCampaign" onchange="filterDispatchByDropdown()" style="max-width:220px" aria-label="Filter dispatch by campaign">
               <option value="">All Campaigns</option>
@@ -616,7 +606,7 @@
         </div>
 
         <!-- RELEASED LOTS VIEW -->
-        <div id="exec-view-campaigns" aria-labelledby="exec-tab-campaigns" class="exec-view" role="tabpanel">
+        <div id="exec-view-campaigns" class="exec-view" role="tabpanel">
           <div class="filters" style="flex-shrink:0">
             <button type="button" class="subtab active" data-camp-filter="all">All</button>
             <button type="button" class="subtab" data-camp-filter="released">Released</button>
@@ -627,7 +617,7 @@
         </div>
 
         <!-- GANTT VIEW -->
-        <div id="exec-view-gantt" aria-labelledby="exec-tab-gantt" class="exec-view" role="tabpanel">
+        <div id="exec-view-gantt" class="exec-view" role="tabpanel">
           <div class="card" style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
             <div class="card-header">
               <div><div class="card-title">Resource Gantt</div></div>
@@ -638,7 +628,7 @@
         </div>
       </section>
 
-      <section class="page" id="page-material" role="tabpanel" aria-labelledby="tab-material" style="display:flex;flex-direction:column;min-height:0">
+      <section class="page" id="page-material" role="tabpanel" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header">
           <div><div class="page-title">Material</div><div class="page-sub">Coverage status, BOM netting, holds, and shortage resolution.</div></div>
           <div class="page-actions"><button type="button" class="btn primary" id="bomRunBtn"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i><span> Run BOM Netting</span></button></div>
@@ -673,7 +663,7 @@
 
       </section>
 
-      <section class="page" id="page-capacity" role="tabpanel" aria-labelledby="tab-capacity" style="display:flex;flex-direction:column;min-height:0">
+      <section class="page" id="page-capacity" role="tabpanel" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header">
           <div><div class="page-title">Capacity</div><div class="page-sub">Resource loading, bottlenecks, and utilisation by equipment.</div></div>
         </div>
@@ -706,7 +696,7 @@
         </div>
       </section>
 
-      <section class="page" id="page-scenarios" role="tabpanel" aria-labelledby="tab-scenarios" style="display:flex;flex-direction:column;min-height:0">
+      <section class="page" id="page-scenarios" role="tabpanel" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header"><div><div class="page-title">Scenarios</div><div class="page-sub">Preview, create, update, delete, and apply scenarios.</div></div></div>
         <div style="flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:.75rem">
           <div class="grid-3" id="scenarioCards"></div>
@@ -722,7 +712,7 @@
         </div>
       </section>
 
-      <section class="page" id="page-ctp" role="tabpanel" aria-labelledby="tab-ctp" style="display:flex;flex-direction:column;min-height:0">
+      <section class="page" id="page-ctp" role="tabpanel" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header"><div><div class="page-title">CTP</div><div class="page-sub">Capable-to-Promise check plus request/output history.</div></div></div>
         <div style="flex:1;min-height:0;overflow:auto">
           <div class="grid-2">
@@ -730,10 +720,10 @@
               <div class="card-header"><div><div class="card-title">Run CTP check</div><div class="card-sub">Calls <code class="inline">/api/aps/ctp/check</code>.</div></div></div>
               <div class="card-body">
                 <div class="stack">
-                  <select class="sel" id="ctpSku" aria-label="CTP SKU"><option value="">Loading SKUs…</option></select>
+                  <select class="sel" id="ctpSku"><option value="">Loading SKUs…</option></select>
                   <div class="grid-2">
-                    <input class="inp" id="ctpQty" value="120" aria-label="CTP quantity" />
-                    <input class="inp" id="ctpDate" type="date" aria-label="CTP requested date" />
+                    <input class="inp" id="ctpQty" value="120" />
+                    <input class="inp" id="ctpDate" type="date" />
                   </div>
                   <button type="button" class="btn primary" id="ctpRunBtn"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i><span> Run CTP</span></button>
                   <div class="notice" id="ctpResult">No request yet.</div>
@@ -753,7 +743,7 @@
         </div>
       </section>
 
-      <section class="page" id="page-bom" role="tabpanel" aria-labelledby="tab-bom" style="display:flex;flex-direction:column;min-height:0">
+      <section class="page" id="page-bom" role="tabpanel" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header"><div><div class="page-title">BOM Explosion</div><div class="page-sub">Material requirements breakdown by production stage and finished goods.</div></div>
           <div class="page-actions"><button type="button" class="btn primary" id="bomExplodeBtn"><i class="fa-solid fa-sitemap" aria-hidden="true"></i><span> Run BOM Explosion</span></button></div>
         </div>
@@ -777,11 +767,11 @@
         </div>
       </section>
 
-      <section class="page" id="page-master" role="tabpanel" aria-labelledby="tab-master" style="display:flex;flex-direction:column;min-height:0">
+      <section class="page" id="page-master" role="tabpanel" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header"><div><div class="page-title">Master Data</div><div class="page-sub">All workbook sections surfaced through the application API.</div></div></div>
         <div class="page-content">
           <div class="toolbar">
-            <select class="sel" id="masterSection" aria-label="Master data section">
+            <select class="sel" id="masterSection">
               <option value="config">Config</option>
               <option value="resources">Resources</option>
               <option value="routing">Routing</option>

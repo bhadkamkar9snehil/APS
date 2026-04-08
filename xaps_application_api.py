@@ -2330,6 +2330,7 @@ def aps_planning_window_select():
 
         d = _load_all()
         all_sos = []
+        rolling_mode_default = str(d["config"].get("ROLLING_MODE_DEFAULT", "HOT") or "HOT").strip().upper() or "HOT"
         for _, so in d["sales_orders"].iterrows():
             all_sos.append(
                 SalesOrder(
@@ -2343,6 +2344,8 @@ def aps_planning_window_select():
                     route_family="SMS→RM",
                     status=so.get("Status", "Open"),
                     order_date=_safe(so.get("Order_Date")),
+                    order_type=str(so.get("Order_Type") or "MTO").strip().upper() or "MTO",
+                    rolling_mode=str(so.get("Rolling_Mode") or "").strip().upper() or rolling_mode_default,
                 )
             )
 
@@ -2390,6 +2393,7 @@ def aps_planning_orders_propose():
 
         d = _load_all()
         all_sos = []
+        rolling_mode_default = str(d["config"].get("ROLLING_MODE_DEFAULT", "HOT") or "HOT").strip().upper() or "HOT"
         for _, so in d["sales_orders"].iterrows():
             all_sos.append(
                 SalesOrder(
@@ -2403,6 +2407,8 @@ def aps_planning_orders_propose():
                     route_family="SMS→RM",
                     status=so.get("Status", "Open"),
                     order_date=_safe(so.get("Order_Date")),
+                    order_type=str(so.get("Order_Type") or "MTO").strip().upper() or "MTO",
+                    rolling_mode=str(so.get("Rolling_Mode") or "").strip().upper() or rolling_mode_default,
                 )
             )
 
@@ -3138,6 +3144,10 @@ def _planning_orders_to_scheduler_campaigns(
                 "priority": priority,
             })
 
+        order_type = str(po.get("order_type", "MTO")).strip().upper() or "MTO"
+        rolling_mode = str(po.get("rolling_mode", "HOT")).strip().upper() or "HOT"
+        hot_charging = rolling_mode == "HOT"
+
         campaigns.append({
             "campaign_id": po_id,
             "campaign_group": "APS",
@@ -3159,9 +3169,26 @@ def _planning_orders_to_scheduler_campaigns(
                 "route_family": route_family,
             },
             "production_orders": production_orders,
+            "order_type": order_type,
+            "rolling_mode": rolling_mode,
+            "hot_charging": hot_charging,
         })
 
     return campaigns
+
+
+def _mode_or_default(series, default: str) -> str:
+    """Extract modal non-null value from Series or return default."""
+    if series is None or series.empty:
+        return default
+    mode_vals = series.dropna().astype(str).str.strip()
+    if mode_vals.empty:
+        return default
+    mode_result = mode_vals.mode()
+    if mode_result.empty:
+        return default
+    return str(mode_result.iloc[0]).strip().upper() or default
+
 
 def _released_sales_orders_to_planning_orders(d: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
@@ -3193,6 +3220,7 @@ def _released_sales_orders_to_planning_orders(d: Dict[str, Any]) -> List[Dict[st
     aps_rows["Delivery_Date"] = pd.to_datetime(aps_rows.get("Delivery_Date"), errors="coerce")
 
     heat_size = float(pd.to_numeric(pd.Series([d["config"].get("HEAT_SIZE_MT", 50)]), errors="coerce").fillna(50).iloc[0])
+    rolling_mode_default = str(d["config"].get("ROLLING_MODE_DEFAULT", "HOT") or "HOT").strip().upper() or "HOT"
 
     planning_orders: List[Dict[str, Any]] = []
     for po_id, grp in aps_rows.groupby("Campaign_ID", dropna=False):
@@ -3208,6 +3236,10 @@ def _released_sales_orders_to_planning_orders(d: Dict[str, Any]) -> List[Dict[st
         total_qty = float(grp["Order_Qty_MT"].sum())
         heats_required = max(1, int(np.ceil(total_qty / heat_size))) if heat_size > 0 else 1
 
+        # Reconstruct order_type and rolling_mode
+        order_type = _mode_or_default(grp.get("Order_Type"), "MTO")
+        rolling_mode = _mode_or_default(grp.get("Rolling_Mode"), rolling_mode_default)
+
         planning_orders.append({
             "po_id": po_id,
             "selected_so_ids": [str(x).strip() for x in grp["SO_ID"].tolist() if str(x).strip()],
@@ -3222,6 +3254,8 @@ def _released_sales_orders_to_planning_orders(d: Dict[str, Any]) -> List[Dict[st
             "heats_required": heats_required,
             "planner_status": "RELEASED",
             "frozen_flag": False,
+            "order_type": order_type,
+            "rolling_mode": rolling_mode,
         })
 
     return planning_orders
