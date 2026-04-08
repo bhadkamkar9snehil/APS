@@ -113,8 +113,9 @@ class TestConfigPropagation:
         routing = self.workbook.get('routing')
 
         if sales_orders is not None and len(sales_orders) > 0:
-            campaigns = build_campaigns(sales_orders, routing=routing)
-            result = schedule(campaigns, resources, routing=routing)
+            campaigns = build_campaigns(sales_orders)
+            from datetime import datetime
+            result = schedule(campaigns, resources, routing=routing, planning_start=datetime.now())
 
             # Result should indicate solver status
             assert result is not None
