@@ -599,9 +599,7 @@
           </div>
         </div><!-- end main flex container -->
 
-        <div style="flex-shrink:0;height:2.3rem;padding:0 .6rem;display:flex;align-items:center;gap:1rem;border-top:1px solid var(--border-soft);background:rgba(0,0,0,.02);font-size:.75rem;color:var(--text-soft);overflow-x:auto;overflow-y:hidden" id="pipelineStatusBar">
-          <div id="pipelineStatusText">Ready</div>
-        </div>
+        <!-- Pipeline status bar removed - now shows in main status footer -->
       </section>
       <!-- ===== END PLANNING PIPELINE ===== -->
 
@@ -854,6 +852,7 @@
         <div class="status-group">
           <div class="chip" id="chipApi"><span class="dot"></span><span id="chipApiText">API unknown</span></div>
           <div class="chip success" id="chipSolver"><span class="dot"></span><span id="chipSolverText">Solver —</span></div>
+          <div class="chip" id="chipPipeline" style="display:none"><span class="dot"></span><span id="chipPipelineText">—</span></div>
           <div class="chip warn"><span class="dot"></span><span id="chipHeld">— on hold</span></div>
           <div class="chip danger"><span class="dot"></span><span id="chipLate">— late</span></div>
         </div>
@@ -1063,11 +1062,11 @@ async function runFullPipeline(){
   qs('pipelineStatusBadge').style.color = '#2563eb';
   qs('pipelineStatusBadge').textContent = 'Running…';
 
-  // Update bottom status bar
-  const statusBar = qs('pipelineStatusBar');
-  statusBar.style.background = '#dbeafe';
-  statusBar.style.color = '#2563eb';
-  setText('pipelineStatusText', '⏳ Pipeline running...');
+  // Update main status footer chip
+  const pipelineChip = qs('chipPipeline');
+  pipelineChip.style.display = '';
+  pipelineChip.className = 'chip info';
+  setText('chipPipelineText', '⏳ Pipeline running...');
 
   try {
     // Stage 1 - select window
@@ -1093,24 +1092,22 @@ async function runFullPipeline(){
     stageExpand('ps-release');
     await loadReleaseBoard();
 
-    // SUCCESS - Update both top badge and bottom status bar
+    // SUCCESS - Update top badge and main status footer
     qs('pipelineStatusBadge').style.background = '#dcfce7';
     qs('pipelineStatusBadge').style.color = '#16a34a';
     qs('pipelineStatusBadge').textContent = 'Complete';
 
-    statusBar.style.background = '#dcfce7';
-    statusBar.style.color = '#16a34a';
-    setText('pipelineStatusText', '✓ Pipeline complete - ready to release');
+    qs('chipPipeline').className = 'chip success';
+    setText('chipPipelineText', '✓ Pipeline ready to release');
 
   } catch(e) {
-    // ERROR - Update both top badge and bottom status bar
+    // ERROR - Update top badge and main status footer
     qs('pipelineStatusBadge').style.background = '#fee2e2';
     qs('pipelineStatusBadge').style.color = '#dc2626';
     qs('pipelineStatusBadge').textContent = 'Error';
 
-    statusBar.style.background = '#fee2e2';
-    statusBar.style.color = '#dc2626';
-    setText('pipelineStatusText', '✗ Pipeline error - ' + (e.message || 'unknown error'));
+    qs('chipPipeline').className = 'chip danger';
+    setText('chipPipelineText', '✗ Pipeline error');
 
     console.error('Pipeline error:', e);
   }
@@ -3633,20 +3630,20 @@ async function releaseSinglePO(poId){
       method: 'POST',
       body: JSON.stringify({po_ids: [poId]})
     });
-    qs('pipelineStatusText').textContent = '✓ Planning order ' + poId + ' released successfully';
-    qs('pipelineStatusBar').style.color = '#16a34a';
+    qs('chipPipelineText').textContent = '✓ Planning order ' + poId + ' released successfully';
+    qs('chipPipeline').className = 'chip success';
     await loadReleaseBoard();
   } catch(e) {
-    qs('pipelineStatusText').textContent = '✗ Release failed: ' + e.message;
-    qs('pipelineStatusBar').style.color = '#dc2626';
+    qs('chipPipelineText').textContent = '✗ Release failed: ' + e.message;
+    qs('chipPipeline').className = 'chip danger';
   }
 }
 
 async function releaseSelectedPOs(){
   const checked = Array.from(qs('releaseBoard').querySelectorAll('input[type="checkbox"]:checked')).map(el => el.dataset.po);
   if(!checked.length){
-    qs('pipelineStatusText').textContent = '⚠ Select at least one planning order to release';
-    qs('pipelineStatusBar').style.color = '#f59e0b';
+    qs('chipPipelineText').textContent = '⚠ Select at least one planning order to release';
+    qs('chipPipeline').className = 'chip warn';
     return;
   }
 
@@ -3655,13 +3652,13 @@ async function releaseSelectedPOs(){
       method: 'POST',
       body: JSON.stringify({po_ids: checked})
     });
-    qs('pipelineStatusText').textContent = '✓ Released ' + checked.length + ' planning order' + (checked.length > 1 ? 's' : '') + ' successfully';
-    qs('pipelineStatusBar').style.color = '#16a34a';
+    qs('chipPipelineText').textContent = '✓ Released ' + checked.length + ' planning order' + (checked.length > 1 ? 's' : '') + ' successfully';
+    qs('chipPipeline').className = 'chip success';
     await loadReleaseBoard();
     renderDashboard();
   } catch(e) {
-    qs('pipelineStatusText').textContent = '✗ Release failed: ' + e.message;
-    qs('pipelineStatusBar').style.color = '#dc2626';
+    qs('chipPipelineText').textContent = '✗ Release failed: ' + e.message;
+    qs('chipPipeline').className = 'chip danger';
   }
 }
 
@@ -3683,29 +3680,29 @@ function releaseToggleSelectAll(){
 async function releaseAllSelected(){
   const checked = Array.from(document.querySelectorAll('.release-po-checkbox:checked')).map(el => el.dataset.po);
   if(!checked.length){
-    qs('pipelineStatusText').textContent = '⚠ Select at least one planning order to release';
-    qs('pipelineStatusBar').style.color = '#f59e0b';
+    qs('chipPipelineText').textContent = '⚠ Select at least one planning order to release';
+    qs('chipPipeline').className = 'chip warn';
     return;
   }
 
   if(!confirm(`Release ${checked.length} planning order${checked.length > 1 ? 's' : ''}?`)) return;
 
   try {
-    qs('pipelineStatusText').textContent = '⏳ Releasing ' + checked.length + ' order' + (checked.length > 1 ? 's' : '') + '...';
-    qs('pipelineStatusBar').style.color = '#2563eb';
+    qs('chipPipelineText').textContent = '⏳ Releasing ' + checked.length + ' order' + (checked.length > 1 ? 's' : '') + '...';
+    qs('chipPipeline').className = 'chip info';
 
     await apiFetch('/api/aps/planning/release', {
       method: 'POST',
       body: JSON.stringify({po_ids: checked})
     });
 
-    qs('pipelineStatusText').textContent = '✓ Released ' + checked.length + ' planning order' + (checked.length > 1 ? 's' : '') + ' successfully';
-    qs('pipelineStatusBar').style.color = '#16a34a';
+    qs('chipPipelineText').textContent = '✓ Released ' + checked.length + ' planning order' + (checked.length > 1 ? 's' : '') + ' successfully';
+    qs('chipPipeline').className = 'chip success';
     await loadReleaseBoard();
     renderDashboard();
   } catch(e) {
-    qs('pipelineStatusText').textContent = '✗ Release failed: ' + e.message;
-    qs('pipelineStatusBar').style.color = '#dc2626';
+    qs('chipPipelineText').textContent = '✗ Release failed: ' + e.message;
+    qs('chipPipeline').className = 'chip danger';
   }
 }
 

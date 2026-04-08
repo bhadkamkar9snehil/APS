@@ -296,6 +296,16 @@ textarea {
   background: var(--danger)
 }
 
+.chip.info {
+  background: var(--info-soft);
+  border-color: rgba(37, 99, 235, 0.15);
+  color: var(--info)
+}
+
+.chip.info .dot {
+  background: var(--info)
+}
+
 .btn {
   font-family: inherit;
   height: 2.3rem;
