@@ -66,7 +66,7 @@ class TestCampaignSizing:
             assert isinstance(camp["sku_attributes"], dict)
 
     def test_release_status_without_bom(self):
-        """Without BOM, all campaigns should be released."""
+        """Without BOM, all campaigns should be held for material verification."""
         campaigns = build_campaigns(
             _make_sales_orders(qty=100.0),
             min_campaign_mt=50.0,
@@ -74,7 +74,7 @@ class TestCampaignSizing:
             bom=None,
         )
         for camp in campaigns:
-            assert camp["release_status"] == "RELEASED"
+            assert camp["release_status"] == "MATERIAL HOLD"
 
     def test_primary_batch_trace_failure_holds_campaign_by_default(self):
         bom = pd.DataFrame(

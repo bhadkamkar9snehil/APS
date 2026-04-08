@@ -858,10 +858,10 @@ def build_campaigns(
 
     campaigns = sorted(campaigns, key=_campaign_sort_key)
 
-    # Check for missing BOM - never auto-release, always hold with status
+    # Check for missing BOM - can't verify material constraints, must hold
     if bom is None or getattr(bom, "empty", True):
         for camp in campaigns:
-            # According to rule 4.1: missing BOM blocks release
+            # Without BOM, we can't verify material constraints, so hold campaigns
             camp["release_status"] = "MATERIAL HOLD"
             camp["material_status"] = "MASTER_DATA_MISSING"
             camp["material_shortages"] = {}
@@ -870,7 +870,7 @@ def build_campaigns(
             camp["material_structure_errors"] = [{"type": "MISSING_BOM", "message": "BOM master data is not configured"}]
             camp["inventory_before"] = {}
             camp["inventory_after"] = {}
-            camp["material_issue"] = "BOM missing for material simulation"
+            camp["material_issue"] = "BOM missing for material verification"
         return _renumber_campaigns(campaigns)
 
     committed_inventory = dict(release_inventory)
