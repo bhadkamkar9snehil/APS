@@ -275,6 +275,8 @@
                   <input class="inp" id="poolSearch" placeholder="Search SO / Grade / Customer…" aria-label="Search order pool" />
                   <select class="sel" id="poolGrade" aria-label="Filter order pool by grade"><option value="">All grades</option></select>
                   <select class="sel" id="poolPriority" aria-label="Filter order pool by priority"><option value="">All priorities</option><option>URGENT</option><option>HIGH</option><option>NORMAL</option></select>
+                  <select class="sel" id="poolOrderType" aria-label="Filter by order type"><option value="">All types</option><option>MTO</option><option>MTS</option></select>
+                  <select class="sel" id="poolRollingMode" aria-label="Filter by rolling mode"><option value="">All modes</option><option>HOT</option><option>COLD</option></select>
                 </div>
                 <div class="toolbar" style="margin-bottom:.5rem;gap:.4rem">
                   <button type="button" class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="poolSelectAllBtn"><i class="fa-solid fa-check-double" aria-hidden="true"></i><span> Select All</span></button>
@@ -320,6 +322,7 @@
                   <button type="button" class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="freezeSelectedBtn" disabled onclick="freezeSelectedPOs()"><i class="fa-regular fa-snowflake" aria-hidden="true"></i><span> Freeze Selected</span></button>
                   <button type="button" class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" onclick="proposePlanningOrders()"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span> Re-propose</span></button>
                   <div style="font-size:.75rem;color:var(--text-soft);padding:.3rem .5rem;white-space:nowrap" id="poSelectionCount">0 selected</div>
+                  <select class="sel" id="poRollingMode" aria-label="Filter planning orders by rolling mode" style="height:1.8rem;font-size:.78rem"><option value="">All modes</option><option>HOT</option><option>COLD</option></select>
                   <button type="button" class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;margin-left:auto" onclick="state.lastScheduleRows ? showGanttModal('Planning Orders - Production Timeline', state.lastScheduleRows, 'po') : alert('Run Feasibility Check first')" title="View timeline for proposed POs"><i class="fa-regular fa-calendar-days" aria-hidden="true"></i><span> Gantt</span></button>
                 </div>
                 <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">

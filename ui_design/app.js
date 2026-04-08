@@ -1750,6 +1750,8 @@ function renderPlanningOrderPool() {
   const searchTerm = (qs('poolSearch')?.value || '').trim().toLowerCase();
   const gradeFilt = qs('poolGrade')?.value || '';
   const priorityFilt = qs('poolPriority')?.value || '';
+  const orderTypeFilt = qs('poolOrderType')?.value || '';
+  const rollingModeFilt = qs('poolRollingMode')?.value || '';
 
   if (searchTerm) {
     filtered = filtered.filter((so) =>
@@ -1761,6 +1763,8 @@ function renderPlanningOrderPool() {
 
   if (gradeFilt) filtered = filtered.filter((so) => so.grade === gradeFilt);
   if (priorityFilt) filtered = filtered.filter((so) => so.priority === priorityFilt);
+  if (orderTypeFilt) filtered = filtered.filter((so) => (so.order_type || 'MTO') === orderTypeFilt);
+  if (rollingModeFilt) filtered = filtered.filter((so) => (so.rolling_mode || 'HOT') === rollingModeFilt);
 
   const poolBody = qs('poolBody');
   if (!poolBody) return;
@@ -1889,7 +1893,10 @@ async function proposePlanningOrders() {
   }
 }
 function renderPlanningBoard(){
-  const pos = state.planningOrders || [];
+  let pos = state.planningOrders || [];
+  const poRollingModeFilt = qs('poRollingMode')?.value || '';
+  if (poRollingModeFilt) pos = pos.filter(po => (po.rolling_mode || 'HOT') === poRollingModeFilt);
+
   const totalMT = pos.reduce((sum, po) => sum + num(po.total_qty_mt), 0);
 
   // Separate into RELEASED and PROPOSED/FROZEN
@@ -2893,6 +2900,9 @@ async function releaseAllSelected(){
 qs('poolSearch')?.addEventListener('input', () => { renderPlanningOrderPool(); updateSOPoolSelectionCount(); });
 qs('poolGrade')?.addEventListener('change', () => { renderPlanningOrderPool(); updateSOPoolSelectionCount(); });
 qs('poolPriority')?.addEventListener('change', () => { renderPlanningOrderPool(); updateSOPoolSelectionCount(); });
+qs('poolOrderType')?.addEventListener('change', () => { renderPlanningOrderPool(); updateSOPoolSelectionCount(); });
+qs('poolRollingMode')?.addEventListener('change', () => { renderPlanningOrderPool(); updateSOPoolSelectionCount(); });
+qs('poRollingMode')?.addEventListener('change', () => renderPlanningBoard());
 
 // Pool checkbox handlers
 qs('poolSelectAll')?.addEventListener('change', (e) => {
