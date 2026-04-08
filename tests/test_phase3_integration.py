@@ -350,7 +350,10 @@ class TestEndToEndWorkflow:
         assert schedule_result is not None
 
         # Step 3: Explode BOM
-        exploded_bom = explode_bom(bom, inventory)
+        # Prepare demand from sales orders
+        demand = sales_orders[['SKU_ID', 'Order_Qty_MT']].copy()
+        demand.rename(columns={'Order_Qty_MT': 'Required_Qty'}, inplace=True)
+        exploded_bom = explode_bom(demand, bom)
         assert exploded_bom is not None
 
         # Step 4: Capacity analysis
