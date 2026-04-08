@@ -2297,6 +2297,7 @@ def aps_planning_orders_pool():
     try:
         d = _load_all()
         so_df = d["sales_orders"].copy()
+        rolling_mode_default = str(d["config"].get("ROLLING_MODE_DEFAULT", "HOT") or "HOT").strip().upper() or "HOT"
 
         orders = []
         for _, so in so_df.iterrows():
@@ -2311,6 +2312,8 @@ def aps_planning_orders_pool():
                 "route_family": "SMS→RM",
                 "status": so.get("Status", "Open"),
                 "sku_id": so.get("SKU_ID"),
+                "order_type": str(so.get("Order_Type") or "MTO").strip().upper() or "MTO",
+                "rolling_mode": str(so.get("Rolling_Mode") or "").strip().upper() or rolling_mode_default,
             })
 
         return _jsonify({
@@ -2372,6 +2375,8 @@ def aps_planning_window_select():
                     "due_date": so.due_date,
                     "priority": so.priority,
                     "hours_until_due": round(max(0, so.hours_until_due()), 2),
+                    "order_type": so.order_type,
+                    "rolling_mode": so.rolling_mode,
                 }
                 for so in selected
             ],
@@ -2474,6 +2479,8 @@ def aps_planning_orders_update():
                 "heats_required": heats_required,
                 "planner_status": str(po.get("planner_status", "PROPOSED")).strip() or "PROPOSED",
                 "frozen_flag": bool(po.get("frozen_flag", False)),
+                "order_type": str(po.get("order_type", "MTO")).strip().upper() or "MTO",
+                "rolling_mode": str(po.get("rolling_mode", "HOT")).strip().upper() or "HOT",
             }
 
         def _validate_orders(orders: list[dict]) -> list[str]:
@@ -2814,6 +2821,10 @@ def aps_planning_simulate():
 
         feasible = solver_status not in {"INFEASIBLE", "MODEL_INVALID"}
 
+        # Count HOT vs COLD planning orders
+        hot_count = sum(1 for campaign in scheduler_inputs if campaign.get("hot_charging", True))
+        cold_count = len(scheduler_inputs) - hot_count
+
         aps_planning_simulate._last_result = {
             "authoritative": True,
             "feasible": feasible,
@@ -2831,6 +2842,8 @@ def aps_planning_simulate():
             "total_duration_hours": total_duration_hours,
             "sms_hours": sms_hours,
             "rm_hours": rm_hours,
+            "hot_planning_orders": hot_count,
+            "cold_planning_orders": cold_count,
             "schedule_rows": _df_to_records(heat_df),
             "message": "Finite schedule generated" if feasible else "Finite schedule is infeasible with current APS planning orders / master data",
         })
