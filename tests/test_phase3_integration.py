@@ -21,6 +21,16 @@ from engine.ctp import capable_to_promise
 from engine.config import get_config
 
 
+def _has_data(*items):
+    """Check if items are not None and not empty DataFrames."""
+    for item in items:
+        if item is None:
+            return False
+        if isinstance(item, pd.DataFrame) and item.empty:
+            return False
+    return True
+
+
 class TestConfigPropagation:
     """Verify config changes propagate through system correctly."""
 
@@ -155,7 +165,7 @@ class TestMultiModuleDataFlow:
             pytest.skip("No sales orders to test")
 
         # Build campaigns
-        campaigns = build_campaigns(sales_orders, routing=routing)
+        campaigns = build_campaigns(sales_orders)
         assert campaigns is not None
         assert len(campaigns) > 0
 
@@ -175,7 +185,7 @@ class TestMultiModuleDataFlow:
         if sales_orders is None or len(sales_orders) == 0:
             pytest.skip("No sales orders to test")
 
-        campaigns = build_campaigns(sales_orders, routing=routing)
+        campaigns = build_campaigns(sales_orders)
         schedule_result = schedule(campaigns, resources, routing=routing)
 
         assert schedule_result is not None
@@ -204,11 +214,13 @@ class TestMultiModuleDataFlow:
         routing = self.workbook.get('routing')
         inventory = self.workbook.get('inventory', {})
 
-        if not all([sales_orders, resources]):
+        # Check if DataFrames are missing or empty
+        if (sales_orders is None or (isinstance(sales_orders, pd.DataFrame) and sales_orders.empty) or
+            resources is None or (isinstance(resources, pd.DataFrame) and resources.empty)):
             pytest.skip("Missing required data")
 
         # Build full pipeline
-        campaigns = build_campaigns(sales_orders, routing=routing)
+        campaigns = build_campaigns(sales_orders)
         assert campaigns is not None
 
         # Verify each campaign has consistent data
@@ -238,14 +250,14 @@ class TestStressScenarios:
         sales_orders = self.workbook.get('sales_orders')
         routing = self.workbook.get('routing')
 
-        if not all([resources, sales_orders]):
+        if not _has_data(resources, sales_orders):
             pytest.skip("Missing required data")
 
         # Reduce available hours
         limited_resources = resources.copy()
         limited_resources['Avail_Hours_Day'] = 5.0  # Very tight
 
-        campaigns = build_campaigns(sales_orders, routing=routing)
+        campaigns = build_campaigns(sales_orders)
         # Should not crash with tight capacity
         assert campaigns is not None
 
@@ -257,7 +269,7 @@ class TestStressScenarios:
         if not sales_orders is not None or len(sales_orders) == 0:
             pytest.skip("No sales orders")
 
-        campaigns = build_campaigns(sales_orders, routing=routing)
+        campaigns = build_campaigns(sales_orders)
         # Should create reasonable number of campaigns
         assert len(campaigns) > 0
         assert len(campaigns) < 1000  # Sanity check
@@ -280,10 +292,10 @@ class TestStressScenarios:
         resources = self.workbook.get('resources')
         routing = self.workbook.get('routing')
 
-        if not all([sales_orders, resources]):
+        if not _has_data(sales_orders, resources):
             pytest.skip("Missing required data")
 
-        campaigns = build_campaigns(sales_orders, routing=routing)
+        campaigns = build_campaigns(sales_orders)
 
         # Check for numerical anomalies
         for camp in campaigns:
@@ -313,11 +325,11 @@ class TestEndToEndWorkflow:
         inventory = self.workbook.get('inventory', {})
         bom = self.workbook.get('bom', [])
 
-        if not all([sales_orders, resources, bom]):
+        if not _has_data(sales_orders, resources, bom):
             pytest.skip("Missing required data for full workflow")
 
         # Step 1: Build campaigns
-        campaigns = build_campaigns(sales_orders, routing=routing)
+        campaigns = build_campaigns(sales_orders)
         assert campaigns is not None and len(campaigns) > 0
 
         # Step 2: Schedule campaigns
@@ -346,10 +358,10 @@ class TestEndToEndWorkflow:
         resources = self.workbook.get('resources')
         routing = self.workbook.get('routing')
 
-        if not all([sales_orders, resources]):
+        if not _has_data(sales_orders, resources):
             pytest.skip("Missing required data")
 
-        campaigns = build_campaigns(sales_orders, routing=routing)
+        campaigns = build_campaigns(sales_orders)
 
         # All campaigns should have positive, non-null quantities
         for camp in campaigns:
