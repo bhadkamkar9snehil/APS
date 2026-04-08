@@ -250,7 +250,7 @@ textarea {
   padding: 0 0.7rem;
   font-size: var(--font-sm);
   font-weight: 650;
-  border-radius: 2rem;
+  border-radius: 0.4rem;
   border: 1px solid var(--border-soft);
   background: var(--panel-muted);
   color: var(--text-soft);
@@ -530,7 +530,7 @@ textarea {
   right: 0.5rem;
   background: var(--shell);
   border: 1px solid var(--border-soft);
-  border-radius: 0.4rem;
+  border-radius: var(--radius);
   padding: 0.6rem 1rem;
   display: flex;
   align-items: center;
@@ -2390,7 +2390,7 @@ code.inline {
   .table th,.table td{padding:.7rem .8rem;border-bottom:1px solid var(--border);text-align:left;vertical-align:top}
   .table thead th{position:sticky;top:0;background:var(--panel);z-index:2;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-soft)}
   .notice{padding:1rem;border:1px dashed var(--border);border-radius:.75rem;color:var(--text-soft);background:rgba(255,255,255,.02)}
-  .metric{background:var(--card-bg);border:1px solid var(--border);border-radius:.75rem;padding:.85rem 1rem;min-height:5rem}
+  .metric{background:var(--card-bg);border:1px solid var(--border);border-radius:var(--radius);padding:.85rem 1rem;min-height:5rem}
   .metric-label{font-size:.72rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-soft);margin-bottom:.35rem}
   .metric-value{font-size:1.55rem;line-height:1.1;font-weight:800}
   .metric-sub{font-size:.78rem;color:var(--text-soft);margin-top:.25rem}

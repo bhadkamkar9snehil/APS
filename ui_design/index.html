@@ -140,11 +140,10 @@
         <div class="brand-row">
           <div class="summary-grid">
             <div class="metric"><div class="metric-label">Planning Orders</div><div class="metric-value" id="summaryCampaigns">—</div><div class="metric-sub" id="summaryCampaignsSub">Loading…</div></div>
-            <div class="metric success"><div class="metric-label">Heats planned</div><div class="metric-value" id="summaryHeats">—</div><div class="metric-sub" id="summaryHeatsSub">—</div></div>
-            <div class="metric"><div class="metric-label">MT planned</div><div class="metric-value" id="summaryMt">—</div><div class="metric-sub" id="summaryMtSub">14-day horizon</div></div>
-            <div class="metric"><div class="metric-label">Throughput</div><div class="metric-value" id="summaryThroughput">—</div><div class="metric-sub">MT/day average</div></div>
-            <div class="metric warn"><div class="metric-label">On-time</div><div class="metric-value" id="summaryOt">—</div><div class="metric-sub" id="summaryOtSub">—</div></div>
-            <div class="metric danger"><div class="metric-label">Late</div><div class="metric-value" id="summaryLate">—</div><div class="metric-sub" id="summaryLateSub">—</div></div>
+            <div class="metric success"><div class="metric-label">Heats Planned</div><div class="metric-value" id="summaryHeats">—</div><div class="metric-sub" id="summaryHeatsSub">—</div></div>
+            <div class="metric"><div class="metric-label">MT Planned</div><div class="metric-value" id="summaryMt">—</div><div class="metric-sub" id="summaryMtSub">in heats</div></div>
+            <div class="metric warn"><div class="metric-label">On-Time</div><div class="metric-value" id="summaryOt">—</div><div class="metric-sub" id="summaryOtSub">delivery rate</div></div>
+            <div class="metric" style="border-left:3px solid var(--success)"><div class="metric-label">SMS Utilisation</div><div class="metric-value" id="summaryCapacity">—</div><div class="metric-sub" id="summaryCapacitySub">peak resource</div></div>
           </div>
         </div>
       </div>
@@ -152,40 +151,6 @@
 
     <div class="body">
       <section class="page active" id="page-dashboard" style="display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:.4rem .6rem .4rem">
-
-        <!-- ═══ KPI STRIP (SINGLE ROW) ═══ -->
-        <div id="dash-kpi-strip" style="display:grid;grid-template-columns:repeat(5,1fr);gap:.45rem;flex-shrink:0;margin-bottom:.45rem">
-
-          <div class="dash-kpi-card" id="dkpi-open-so">
-            <div class="dkpi-label">Open SOs</div>
-            <div class="dkpi-value" id="dkpi-open-so-val">—</div>
-            <div class="dkpi-sub" id="dkpi-open-so-sub">awaiting planning</div>
-          </div>
-
-          <div class="dash-kpi-card dash-kpi-blue" id="dkpi-planned-mt">
-            <div class="dkpi-label">Planned MT</div>
-            <div class="dkpi-value" id="dkpi-planned-mt-val">—</div>
-            <div class="dkpi-sub" id="dkpi-planned-mt-sub">active heats</div>
-          </div>
-
-          <div class="dash-kpi-card dash-kpi-purple" id="dkpi-heats">
-            <div class="dkpi-label">Heats Queued</div>
-            <div class="dkpi-value" id="dkpi-heats-val">—</div>
-            <div class="dkpi-sub" id="dkpi-heats-sub">SMS production</div>
-          </div>
-
-          <div class="dash-kpi-card" id="dkpi-ontime">
-            <div class="dkpi-label">On-Time</div>
-            <div class="dkpi-value" id="dkpi-ontime-val">—</div>
-            <div class="dkpi-sub" id="dkpi-ontime-sub">delivery rate</div>
-          </div>
-
-          <div class="dash-kpi-card" id="dkpi-capacity">
-            <div class="dkpi-label">SMS Utilisation</div>
-            <div class="dkpi-value" id="dkpi-capacity-val">—</div>
-            <div class="dkpi-sub" id="dkpi-capacity-sub">peak resource</div>
-          </div>
-        </div>
 
         <!-- ═══ MAIN BODY: 3 columns ═══ -->
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.45rem;flex:1;min-height:0;overflow:hidden">
@@ -1244,19 +1209,23 @@ function hydrateSummary(summary){
   const heats = num(summary.total_heats);
   const mt = num(summary.total_mt);
   const ot = summary.on_time_pct == null ? '—' : num(summary.on_time_pct).toFixed(1) + '%';
-  const throughput = summary.throughput_mt_day != null ? num(summary.throughput_mt_day).toFixed(1) : '—';
+
+  // SMS Utilisation from capacity data
+  const capItems = state.capacity || [];
+  const maxUtil = capItems.reduce((mx, r) => Math.max(mx, num(r['Utilisation_%'] || r.Utilisation_Percent || r.utilisation || 0)), 0);
+  const bottleneckResource = capItems.sort((a,b)=>num(b['Utilisation_%']||0)-num(a['Utilisation_%']||0))[0];
+  const capLabel = bottleneckResource ? String(bottleneckResource.Resource_ID||'').substring(0,8) : 'peak resource';
 
   setText('summaryCampaigns', total || '—');
   setText('summaryCampaignsSub', released + ' released · ' + held + ' held');
   setText('summaryHeats', heats || '—');
-  setText('summaryHeatsSub', mt ? (mt.toLocaleString() + ' MT') : '—');
+  setText('summaryHeatsSub', mt ? (mt.toLocaleString() + ' MT') : 'MT per heat');
   setText('summaryMt', mt ? mt.toLocaleString() : '—');
-  setText('summaryMtSub', '14-day horizon');
-  setText('summaryThroughput', throughput);
+  setText('summaryMtSub', 'in heats');
   setText('summaryOt', ot);
-  setText('summaryOtSub', summary.solver_status || '—');
-  setText('summaryLate', late || '—');
-  setText('summaryLateSub', summary.bottleneck ? ('Bottleneck ' + summary.bottleneck) : 'No bottleneck yet');
+  setText('summaryOtSub', summary.solver_status || 'delivery rate');
+  setText('summaryCapacity', maxUtil > 0 ? Math.round(maxUtil) + '%' : '—');
+  setText('summaryCapacitySub', capLabel);
 
   setText('chipSolverText', 'Solver ' + (summary.solver_status || '—'));
   setText('chipHeld', held + ' on hold');
@@ -1267,7 +1236,6 @@ function hydrateSummary(summary){
 // ──────────────────────────────────────────────
 
 function renderDashboard() {
-  renderDashboardKPIs();
   renderDashboardPipeline();
   renderDashboardAlerts();
   renderBottleneck(state.overview || {});
@@ -1277,51 +1245,6 @@ function renderDashboard() {
   renderDashboardExecution();
 }
 
-function renderDashboardKPIs() {
-  // Open SOs
-  const openSOs = state.poolOrders.length || (state.campaigns.length ? '—' : '—');
-  const urgentSOs = state.poolOrders.filter(o => o.priority === 'URGENT').length;
-  setDKPI('open-so', openSOs, urgentSOs ? urgentSOs + ' urgent' : 'awaiting planning', urgentSOs > 0 ? 'dash-kpi-red' : '');
-
-  // Planned MT
-  const pos = state.planningOrders || [];
-  const plannedMT = pos.reduce((s, po) => s + num(po.total_qty_mt), 0);
-  const poCount = pos.length;
-  setDKPI('planned-mt', plannedMT > 0 ? plannedMT.toFixed(0) + ' MT' : '—', poCount ? poCount + ' active POs' : 'no POs yet', 'dash-kpi-blue');
-
-  // Heats queued
-  const heats = state.heatBatches || [];
-  const totalHeats = heats.length;
-  const heatMT = heats.reduce((s, h) => s + num(h.qty_mt || h.Qty_MT || 0), 0);
-  setDKPI('heats', totalHeats || '—', totalHeats ? heatMT.toFixed(0) + ' MT queued' : 'derive heats first', 'dash-kpi-purple');
-
-  // On-time
-  const onTime = state.overview?.on_time_pct;
-  const onTimeVal = onTime != null ? Math.round(num(onTime)) + '%' : '—';
-  const onTimeClass = onTime == null ? '' : num(onTime) >= 90 ? 'dash-kpi-green' : num(onTime) >= 75 ? 'dash-kpi-amber' : 'dash-kpi-red';
-  setDKPI('ontime', onTimeVal, 'delivery rate', onTimeClass);
-
-  // SMS / peak utilisation
-  const capItems = state.capacity || [];
-  const maxUtil = capItems.reduce((mx, r) => Math.max(mx, num(r['Utilisation_%'] || r.Utilisation_Percent || r.utilisation || 0)), 0);
-  const bottleneckResource = capItems.sort((a,b)=>num(b['Utilisation_%']||0)-num(a['Utilisation_%']||0))[0];
-  const capLabel = bottleneckResource ? String(bottleneckResource.Resource_ID||'').substring(0,8) : 'peak resource';
-  const capClass = maxUtil > 90 ? 'dash-kpi-red' : maxUtil > 75 ? 'dash-kpi-amber' : maxUtil > 0 ? 'dash-kpi-green' : '';
-  setDKPI('capacity', maxUtil > 0 ? Math.round(maxUtil) + '%' : '—', capLabel, capClass);
-
-}
-
-function setDKPI(id, val, sub, cls) {
-  const card = qs('dkpi-' + id);
-  if (!card) return;
-  // Remove existing colour classes
-  card.classList.remove('dash-kpi-blue','dash-kpi-purple','dash-kpi-green','dash-kpi-red','dash-kpi-amber');
-  if (cls) cls.split(' ').forEach(c => c && card.classList.add(c));
-  const valEl = qs('dkpi-' + id + '-val');
-  const subEl = qs('dkpi-' + id + '-sub');
-  if (valEl) valEl.textContent = val;
-  if (subEl) subEl.textContent = sub;
-}
 
 function renderDashboardPipeline() {
   const pos = state.planningOrders || [];
@@ -2674,8 +2597,7 @@ function updatePlanningKPIs() {
   setText('kpiHeats', heatCount > 0 ? heatCount : '—');
   setText('kpiMT', totalMT > 0 ? totalMT.toFixed(0) : '—');
   setText('kpiThroughput', totalMT > 0 ? (totalMT / 14).toFixed(1) : '—'); // Estimate based on 14-day horizon
-  // Keep dashboard KPI strip in sync
-  renderDashboardKPIs();
+  // Keep dashboard alerts and PO summary in sync
   renderDashboardAlerts();
   renderDashActivePOs();
 }
