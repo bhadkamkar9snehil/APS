@@ -2388,7 +2388,7 @@ def aps_planning_orders_pool():
                 "status": so.get("Status", "Open"),
                 "sku_id": so.get("SKU_ID"),
                 "order_type": str(so.get("Order_Type") or "MTO").strip().upper() or "MTO",
-                "rolling_mode": str(so.get("Rolling_Mode") or "").strip().upper() or rolling_mode_default,
+                "rolling_mode": rolling_mode_default if pd.isna(so.get("Rolling_Mode")) or str(so.get("Rolling_Mode")).strip().upper() in ("", "NAN") else str(so.get("Rolling_Mode")).strip().upper() or rolling_mode_default,
             })
 
         return _jsonify({
@@ -2423,7 +2423,7 @@ def aps_planning_window_select():
                     status=so.get("Status", "Open"),
                     order_date=_safe(so.get("Order_Date")),
                     order_type=str(so.get("Order_Type") or "MTO").strip().upper() or "MTO",
-                    rolling_mode=str(so.get("Rolling_Mode") or "").strip().upper() or rolling_mode_default,
+                    rolling_mode=(rolling_mode_default if pd.isna(so.get("Rolling_Mode")) or str(so.get("Rolling_Mode")).strip().upper() in ("", "NAN") else str(so.get("Rolling_Mode")).strip().upper() or rolling_mode_default),
                 )
             )
 
@@ -2488,7 +2488,7 @@ def aps_planning_orders_propose():
                     status=so.get("Status", "Open"),
                     order_date=_safe(so.get("Order_Date")),
                     order_type=str(so.get("Order_Type") or "MTO").strip().upper() or "MTO",
-                    rolling_mode=str(so.get("Rolling_Mode") or "").strip().upper() or rolling_mode_default,
+                    rolling_mode=(rolling_mode_default if pd.isna(so.get("Rolling_Mode")) or str(so.get("Rolling_Mode")).strip().upper() in ("", "NAN") else str(so.get("Rolling_Mode")).strip().upper() or rolling_mode_default),
                 )
             )
 

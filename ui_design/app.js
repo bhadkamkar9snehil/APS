@@ -2599,10 +2599,18 @@ async function simulateSchedule(config = {}){
       </div>
     `;
 
-    // Show/hide remediation panel with resource utilization
+    // Show remediation panel always (for what-if scenarios) - style changes based on feasibility
     const remPanel = qs('remediationPanel');
     if(remPanel){
-      remPanel.style.display = feasible ? 'none' : '';
+      remPanel.style.display = '';
+      // Change styling based on feasibility
+      if(feasible){
+        remPanel.style.background = '#f0fdf4';  // light green
+        remPanel.style.borderColor = '#86efac';
+        remPanel.style.color = '#166534';
+        remPanel.querySelector('span').textContent = 'Feasible — explore what-if scenarios:';
+        remPanel.style.backgroundColor = 'rgba(134, 239, 172, 0.1)';
+      }
 
       // Calculate resource utilization
       if(!feasible && scheduleRows && scheduleRows.length){
