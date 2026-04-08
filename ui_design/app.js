@@ -2695,7 +2695,7 @@ async function remSimulate(){
     const data = await apiFetch('/api/aps/planning/simulate', {
       method: 'POST',
       body: JSON.stringify({
-        heat_batches: state.heatBatches,
+        planning_orders: state.planningOrders,
         num_sms: numSms,
         num_rm: numRm,
         priority_filter: priorityFilter,
