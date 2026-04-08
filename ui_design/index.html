@@ -7,7 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
+<!-- <link rel="stylesheet" href="styles.css"> -->
+<link rel="stylesheet" href="styles_final_corrected.css">
 <!-- Font Awesome is optional here; labels remain visible if CDN fails. -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
 
@@ -307,7 +308,7 @@
               <div class="ps-kpis" id="ps-propose-kpis"></div>
               <div class="ps-badge pending" id="ps-propose-badge">PENDING</div>
               <button type="button" class="btn primary ps-action" id="planningProposeBtn" onclick="event.stopPropagation();proposePlanningOrders()"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><span> Propose</span></button>
-              <div class="ps-chevron collapsed" id="ps-propose-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i><span class="ps-chevron-label">Toggle</span></div>
+              <div class="ps-chevron collapsed" id="ps-propose-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></div>
             </div>
             <div class="ps-body collapsed" id="ps-propose-body">
               <div class="ps-body-inner">
@@ -346,7 +347,7 @@
               <div class="ps-kpis" id="ps-heats-kpis"></div>
               <div class="ps-badge pending" id="ps-heats-badge">PENDING</div>
               <button type="button" class="btn primary ps-action" id="heatDeriveBtn" onclick="event.stopPropagation();deriveHeatBatches()"><i class="fa-solid fa-fire" aria-hidden="true"></i><span> Derive</span></button>
-              <div class="ps-chevron collapsed" id="ps-heats-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i><span class="ps-chevron-label">Toggle</span></div>
+              <div class="ps-chevron collapsed" id="ps-heats-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></div>
             </div>
             <div class="ps-body collapsed" id="ps-heats-body">
               <div class="ps-body-inner">
@@ -366,7 +367,7 @@
                 </div>
                 <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
-                    <thead><tr><th>Heat ID</th><th>PO ID</th><th>FG (Finished Good)</th><th>Grade</th><th>Qty MT</th><th>Seq</th><th>Route</th><th>Duration</th></tr></thead>
+                    <thead><tr><th>Heat ID</th><th>PO ID</th><th>FG (Finished Good)</th><th>Grade</th><th>Materials</th><th>Qty MT</th><th>Seq</th><th>Route</th><th>Duration</th></tr></thead>
                     <tbody id="heatBody"></tbody>
                   </table>
                 </div>
@@ -385,7 +386,7 @@
               <div class="ps-kpis" id="ps-schedule-kpis"></div>
               <div class="ps-badge pending" id="ps-schedule-badge">PENDING</div>
               <button type="button" class="btn primary ps-action" id="schedulerSimulateBtn" onclick="event.stopPropagation();simulateSchedule()"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span> Simulate</span></button>
-              <div class="ps-chevron collapsed" id="ps-schedule-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i><span class="ps-chevron-label">Toggle</span></div>
+              <div class="ps-chevron collapsed" id="ps-schedule-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></div>
             </div>
             <div class="ps-body collapsed" id="ps-schedule-body">
               <div class="ps-body-inner">
@@ -524,7 +525,7 @@
               <div class="ps-kpis" id="ps-release-kpis"></div>
               <div class="ps-badge pending" id="ps-release-badge">PENDING</div>
               <button type="button" class="btn success ps-action" id="releaseApproveBtn" onclick="event.stopPropagation();releaseSelectedPOs()" disabled><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span> Release</span></button>
-              <div class="ps-chevron collapsed" id="ps-release-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i><span class="ps-chevron-label">Toggle</span></div>
+              <div class="ps-chevron collapsed" id="ps-release-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></div>
             </div>
             <div class="ps-body collapsed" id="ps-release-body">
               <div class="ps-body-inner">

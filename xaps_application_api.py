@@ -2108,6 +2108,81 @@ def aps_bom_explosion():
     return _jsonify(payload)
 
 
+@app.route('/api/aps/bom/for-skus', methods=['POST'])
+def aps_bom_for_skus():
+    """Return raw materials consumed by each SKU at a given quantity.
+
+    Request: {items: [{sku_id, qty_mt}, ...]}
+    Response: {materials: {sku_id: [{sku_id, label, qty_mt}, ...]}}
+    """
+    try:
+        body = request.get_json() or {}
+        items = body.get('items') or []
+        if not isinstance(items, list) or len(items) == 0:
+            return _jsonify({'materials': {}})
+
+        # Load BOM data
+        d = _get_data()
+        bom_df = d.get('bom') if d else None
+        if bom_df is None or bom_df.empty:
+            return _jsonify({'materials': {}})
+
+        # Import the BOM explosion function
+        from engine.bom_explosion import explode_bom_details
+
+        result_materials = {}
+
+        for item in items:
+            sku_id = str(item.get('sku_id') or '').strip()
+            qty_mt = float(item.get('qty_mt') or 0)
+
+            if not sku_id or qty_mt <= 0:
+                result_materials[sku_id] = []
+                continue
+
+            try:
+                # Create single-row demand for this SKU
+                demand_df = pd.DataFrame([{'SKU_ID': sku_id, 'Required_Qty': qty_mt}])
+
+                # Explode BOM for this SKU
+                exploded = explode_bom_details(demand_df, bom_df, max_levels=10)
+
+                if not exploded or 'exploded' not in exploded:
+                    result_materials[sku_id] = []
+                    continue
+
+                exp_df = exploded['exploded']
+
+                # Filter to INPUT materials only (exclude byproducts)
+                input_materials = exp_df[exp_df.get('Flow_Type') == 'INPUT'].copy() if not exp_df.empty else pd.DataFrame()
+
+                # Format as list of dicts with label
+                materials = []
+                for _, row in input_materials.iterrows():
+                    child_sku = str(row.get('SKU_ID') or '')
+                    req_qty = float(row.get('Required_Qty') or 0)
+                    if child_sku and req_qty > 0:
+                        # Use SKU_ID as label if no description available
+                        label = child_sku
+                        materials.append({
+                            'sku_id': child_sku,
+                            'label': label,
+                            'qty_mt': round(req_qty, 2)
+                        })
+
+                result_materials[sku_id] = materials
+
+            except Exception as e:
+                print(f"Error expanding BOM for {sku_id}: {e}")
+                result_materials[sku_id] = []
+
+        return _jsonify({'materials': result_materials})
+
+    except Exception as e:
+        print(f"BOM for-skus error: {e}")
+        return _jsonify({'materials': {}})
+
+
 @app.route('/api/aps/clear-outputs', methods=['POST'])
 def aps_clear_outputs():
     try:
@@ -2769,6 +2844,14 @@ def aps_planning_simulate():
         solver_sec = float(payload.get("solver_sec", 30.0) or 30.0)
         horizon_days = int(payload.get("horizon_days", 7) or 7)
 
+        # Read remediation filters from payload
+        priority_filter = str(payload.get("priority_filter", "") or "").strip().upper()
+        num_sms = int(payload.get("num_sms", 1) or 1)
+        num_rm = int(payload.get("num_rm", 1) or 1)
+        horizon_hours = payload.get("horizon_hours")
+        if horizon_hours:
+            horizon_days = int(float(horizon_hours) / 24)
+
         if not planning_orders_data:
             return _jsonify({
                 "authoritative": True,
@@ -2781,24 +2864,64 @@ def aps_planning_simulate():
                 "schedule_rows": [],
             })
 
+        # Apply priority filter if specified
+        filtered_orders = planning_orders_data
+        if priority_filter:
+            # Filter to only include orders matching the priority filter
+            # Format: "" (all), "URGENT" (urgent only), or "URGENT+HIGH" (urgent and high)
+            if priority_filter == "URGENT":
+                filtered_orders = [po for po in planning_orders_data if str(po.get("priority", "")).upper() == "URGENT"]
+            elif priority_filter == "URGENT+HIGH":
+                filtered_orders = [po for po in planning_orders_data if str(po.get("priority", "")).upper() in ("URGENT", "HIGH")]
+            # If priority_filter is set but doesn't match above, use original (shouldn't happen)
+
         d = _load_all()
         scheduler_inputs = _planning_orders_to_scheduler_campaigns(
-            planning_orders=planning_orders_data,
+            planning_orders=filtered_orders,
             all_orders_df=d["all_orders"],
             config=d["config"],
         )
 
-        result = schedule(
-            scheduler_inputs,
-            d["resources"],
-            planning_start=datetime.now(),
-            planning_horizon_days=horizon_days,
-            routing=d["routing"],
-            queue_times=d["queue_times"],
-            changeover_matrix=d["changeover_matrix"],
-            config=d["config"],
-            solver_time_limit_sec=solver_sec,
-        )
+        # Apply resource line limits (SMS and RM) - only if not default (1,1)
+        resources_df = d.get("resources", pd.DataFrame()).copy() if d.get("resources") is not None else pd.DataFrame()
+
+        if not resources_df.empty and (num_sms != 1 or num_rm != 1):
+            import re
+            # Strategy: keep all resources, but adjust availability based on lines requested
+            # If num_sms=1, keep all SMS resources as-is
+            # If num_sms=2, keep all SMS resources but halve their capacity
+            # etc.
+
+            if num_sms > 1:
+                # Reduce SMS resource capacity
+                sms_mask = resources_df["Resource_ID"].astype(str).str.contains("SMS|EAF|LRF|VD|CCM", case=False, na=False)
+                if "Max_Capacity_MT_per_Shift" in resources_df.columns and sms_mask.any():
+                    resources_df.loc[sms_mask, "Max_Capacity_MT_per_Shift"] = resources_df.loc[sms_mask, "Max_Capacity_MT_per_Shift"] / num_sms
+
+            if num_rm > 1:
+                # Reduce RM resource capacity
+                rm_mask = resources_df["Resource_ID"].astype(str).str.contains("RM", case=False, na=False)
+                if "Max_Capacity_MT_per_Shift" in resources_df.columns and rm_mask.any():
+                    resources_df.loc[rm_mask, "Max_Capacity_MT_per_Shift"] = resources_df.loc[rm_mask, "Max_Capacity_MT_per_Shift"] / num_rm
+
+        # Suppress stdout during scheduling to avoid Unicode encoding errors on Windows
+        import io
+        old_stdout = sys.stdout
+        try:
+            sys.stdout = io.StringIO()
+            result = schedule(
+                scheduler_inputs,
+                resources_df,
+                planning_start=datetime.now(),
+                planning_horizon_days=horizon_days,
+                routing=d["routing"],
+                queue_times=d["queue_times"],
+                changeover_matrix=d["changeover_matrix"],
+                config=d["config"],
+                solver_time_limit_sec=solver_sec,
+            )
+        finally:
+            sys.stdout = old_stdout
 
         heat_df = result.get("heat_schedule", pd.DataFrame())
         solver_status = result.get("solver_status", "UNKNOWN")

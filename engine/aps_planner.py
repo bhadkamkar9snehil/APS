@@ -69,6 +69,7 @@ class PlanningOrder:
     created_at: datetime = field(default_factory=datetime.now)
     order_type: str = "MTO"  # MTS | MTO — metadata only
     rolling_mode: str = "HOT"  # HOT | COLD
+    priority: str = "NORMAL"  # URGENT, HIGH, NORMAL - inherited from source SOs
 
     def to_dict(self) -> dict:
         return {
@@ -85,6 +86,7 @@ class PlanningOrder:
             'created_at': self.created_at.isoformat(),
             'order_type': self.order_type,
             'rolling_mode': self.rolling_mode,
+            'priority': self.priority,
         }
 
 
@@ -321,6 +323,15 @@ class APSPlanner:
             due_dates = sorted(x.due_date_obj() for x in lot)
             section_values = sorted({float(x.section_mm or 0) for x in lot if x.section_mm is not None})
 
+            # Determine priority as highest (most urgent) priority in the lot
+            lot_priorities = [str(x.priority or "NORMAL").strip().upper() for x in lot]
+            if "URGENT" in lot_priorities:
+                lot_priority = "URGENT"
+            elif "HIGH" in lot_priorities:
+                lot_priority = "HIGH"
+            else:
+                lot_priority = "NORMAL"
+
             po = PlanningOrder(
                 po_id=f"PO-{po_counter:04d}",
                 selected_so_ids=[x.so_id for x in lot],
@@ -333,6 +344,7 @@ class APSPlanner:
                 planner_status="PROPOSED",
                 order_type=str(seed.order_type or "MTO").strip().upper() or "MTO",
                 rolling_mode=str(seed.rolling_mode or "HOT").strip().upper() or "HOT",
+                priority=lot_priority,
             )
             planning_orders.append(po)
             po_counter += 1

@@ -2003,7 +2003,41 @@ async function deriveHeatBatches(){
       return;
     }
 
-    renderHeatBuilder();
+    // Load materials consumed by each heat (async, doesn't block rendering)
+    state.heatBomMaterials = {};
+    const uniqueSkus = new Map(); // Map: sku_id -> total qty_mt
+    state.heatBatches.forEach(heat => {
+      const po = state.planningOrders.find(p => p.po_id === heat.planning_order_id);
+      if (po?.selected_so_ids?.length) {
+        po.selected_so_ids.forEach(soId => {
+          const so = state.poolOrders.find(s => s.so_id === soId);
+          if (so?.sku_id) {
+            const current = uniqueSkus.get(so.sku_id) || 0;
+            uniqueSkus.set(so.sku_id, current + (heat.qty_mt || 0));
+          }
+        });
+      }
+    });
+
+    if (uniqueSkus.size > 0) {
+      const items = Array.from(uniqueSkus).map(([skuId, qtyMt]) => ({sku_id: skuId, qty_mt: qtyMt}));
+      fetch(API + '/api/aps/bom/for-skus', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({items})
+      })
+      .then(r => r.json())
+      .then(data => {
+        state.heatBomMaterials = data.materials || {};
+        renderHeatBuilder();
+      })
+      .catch(e => {
+        console.warn('Failed to load heat materials:', e);
+        renderHeatBuilder();
+      });
+    } else {
+      renderHeatBuilder();
+    }
     updatePlanningKPIs();
     const totalMT = state.heatBatches.reduce((s,h)=>s+num(h.qty_mt),0);
     setPipelineStageStatus('ps-heats', 'done',
@@ -2050,17 +2084,28 @@ function renderHeatBuilder(){
            <div style="width:${fillPct.toFixed(0)}%;height:100%;background:${fillColor};border-radius:.2rem"></div>
          </div>`
       : '';
+    // Get materials for this heat's SKUs
+    const materialsHtml = (() => {
+      const materials = (state.heatBomMaterials || {})[skuIds.split(', ')[0]] || [];
+      if (!materials || materials.length === 0) return '—';
+      return materials
+        .slice(0, 3)
+        .map(m => `${m.label} ${num(m.qty_mt).toFixed(1)}t`)
+        .join(' • ');
+    })();
+
     return `<tr>
       <td><strong>${escapeHtml(h.heat_id)}</strong></td>
       <td>${escapeHtml(h.planning_order_id)}</td>
       <td style="font-size:.75rem;color:var(--text-soft)">${escapeHtml(skuIds)}</td>
       <td>${escapeHtml(h.grade)}</td>
+      <td style="font-size:.75rem;color:var(--text-soft)">${materialsHtml}</td>
       <td>${num(h.qty_mt).toFixed(0)}${fillBar}</td>
       <td>${h.heat_number_seq || '—'}</td>
       <td>${escapeHtml(h.upstream_route || '—')}</td>
       <td>${h.expected_duration_hours || 0}h</td>
     </tr>`;
-  }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--text-soft)">No heats derived yet.</td></tr>';
+  }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--text-soft)">No heats derived yet.</td></tr>';
 }
 
 // SO Due Date Gantt - based on due dates (no schedule simulation needed)
