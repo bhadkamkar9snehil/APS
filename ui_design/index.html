@@ -9,6 +9,55 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <style>
+/* ─── Dashboard ─── */
+.dash-kpi-card{background:var(--card-bg);border:1px solid var(--border);border-radius:.4rem;padding:.45rem .6rem;display:flex;flex-direction:column;gap:.1rem;transition:box-shadow .15s}
+.dash-kpi-card.dash-kpi-blue{border-left:3px solid var(--info)}
+.dash-kpi-card.dash-kpi-purple{border-left:3px solid var(--brand)}
+.dash-kpi-card.dash-kpi-green{border-left:3px solid var(--success)}
+.dash-kpi-card.dash-kpi-red{border-left:3px solid var(--danger)}
+.dash-kpi-card.dash-kpi-amber{border-left:3px solid var(--warning)}
+.dkpi-label{font-size:.6rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-soft)}
+.dkpi-value{font-size:1.4rem;font-weight:800;letter-spacing:-.02em;line-height:1.1;color:var(--text)}
+.dkpi-sub{font-size:.6rem;color:var(--text-faint)}
+.dash-card{background:var(--card-bg);border:1px solid var(--border);border-radius:.4rem;display:flex;flex-direction:column;overflow:hidden}
+.dash-card-hd{display:flex;align-items:center;justify-content:space-between;padding:.4rem .6rem;border-bottom:1px solid var(--border-soft);flex-shrink:0}
+.dash-card-title{font-size:.72rem;font-weight:700;letter-spacing:-.01em;color:var(--text)}
+/* Pipeline status rows on dashboard */
+.dash-pipe-row{display:flex;align-items:center;gap:.5rem;padding:.3rem .4rem;border:1px solid var(--border-soft);border-radius:.3rem;font-size:.7rem}
+.dash-pipe-dot{width:.55rem;height:.55rem;border-radius:50%;flex-shrink:0}
+.dash-pipe-dot.done{background:var(--success)}
+.dash-pipe-dot.running{background:var(--info)}
+.dash-pipe-dot.pending{background:var(--border)}
+.dash-pipe-dot.warn{background:var(--warning)}
+/* Alert rows */
+.dash-alert{display:flex;align-items:flex-start;gap:.4rem;padding:.3rem .4rem;border-radius:.3rem;font-size:.7rem}
+.dash-alert.critical{background:var(--danger-soft);border-left:3px solid var(--danger)}
+.dash-alert.warn{background:var(--warning-soft);border-left:3px solid var(--warning)}
+.dash-alert.info{background:var(--info-soft);border-left:3px solid var(--info)}
+.dash-alert.ok{background:var(--success-soft);border-left:3px solid var(--success)}
+.dash-alert-icon{font-size:.8rem;flex-shrink:0;margin-top:.05rem}
+.dash-alert-body{flex:1;min-width:0}
+.dash-alert-title{font-weight:600;line-height:1.2}
+.dash-alert-sub{font-size:.65rem;color:var(--text-soft);margin-top:.1rem}
+/* Mini stat cells */
+.dash-mini-stat{background:var(--panel-muted);border:1px solid var(--border-soft);border-radius:.3rem;padding:.3rem .4rem;text-align:center}
+.dms-label{font-size:.58rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-faint)}
+.dms-value{font-size:.95rem;font-weight:700;margin-top:.1rem}
+/* Capacity bar rows */
+.dash-cap-row{display:flex;flex-direction:column;gap:.2rem}
+.dash-cap-bar-bg{width:100%;height:6px;background:var(--border-soft);border-radius:3px;overflow:hidden}
+.dash-cap-bar{height:100%;border-radius:3px;transition:width .5s ease}
+/* Material health rows */
+.dash-mat-row{display:flex;align-items:center;gap:.5rem}
+.dash-mat-name{font-size:.68rem;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dash-mat-bar-wrap{flex:1;position:relative}
+.dash-mat-tag{font-size:.6rem;font-weight:700;padding:.1rem .35rem;border-radius:.2rem;white-space:nowrap}
+/* PO summary rows */
+.dash-po-row{display:flex;align-items:center;gap:.5rem;font-size:.68rem;padding:.25rem .3rem;border-radius:.25rem;border-left:3px solid transparent}
+.dash-po-row.proposed{border-left-color:var(--info)}
+.dash-po-row.frozen{border-left-color:var(--warning)}
+.dash-po-row.released{border-left-color:var(--success);opacity:.7}
+
 /* Pipeline stages */
 .pipeline-stage{border:1px solid var(--border);border-radius:.4rem;background:var(--card-bg);overflow:hidden;flex-shrink:0}
 .ps-header{display:flex;align-items:center;gap:.75rem;padding:.65rem .9rem;cursor:pointer;user-select:none;transition:background .15s}
@@ -102,69 +151,168 @@
     </div>
 
     <div class="body">
-      <section class="page active" id="page-dashboard" style="display:flex;flex-direction:column;min-height:0">
-        <div class="page-header">
-          <div><div class="page-title">Dashboard</div><div class="card-sub">Campaign pipeline, material health, capacity forecast, and delivery performance.</div></div>
+      <section class="page active" id="page-dashboard" style="display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:.4rem .6rem .4rem">
+
+        <!-- ═══ KPI STRIP ═══ -->
+        <div id="dash-kpi-strip" style="display:grid;grid-template-columns:repeat(6,1fr);gap:.45rem;flex-shrink:0;margin-bottom:.45rem">
+
+          <div class="dash-kpi-card" id="dkpi-open-so">
+            <div class="dkpi-label">Open SOs</div>
+            <div class="dkpi-value" id="dkpi-open-so-val">—</div>
+            <div class="dkpi-sub" id="dkpi-open-so-sub">awaiting planning</div>
+          </div>
+
+          <div class="dash-kpi-card dash-kpi-blue" id="dkpi-planned-mt">
+            <div class="dkpi-label">Planned MT</div>
+            <div class="dkpi-value" id="dkpi-planned-mt-val">—</div>
+            <div class="dkpi-sub" id="dkpi-planned-mt-sub">in active POs</div>
+          </div>
+
+          <div class="dash-kpi-card dash-kpi-purple" id="dkpi-heats">
+            <div class="dkpi-label">Heats Queued</div>
+            <div class="dkpi-value" id="dkpi-heats-val">—</div>
+            <div class="dkpi-sub" id="dkpi-heats-sub">SMS production</div>
+          </div>
+
+          <div class="dash-kpi-card" id="dkpi-ontime">
+            <div class="dkpi-label">On-Time</div>
+            <div class="dkpi-value" id="dkpi-ontime-val">—</div>
+            <div class="dkpi-sub" id="dkpi-ontime-sub">delivery rate</div>
+          </div>
+
+          <div class="dash-kpi-card" id="dkpi-capacity">
+            <div class="dkpi-label">SMS Utilisation</div>
+            <div class="dkpi-value" id="dkpi-capacity-val">—</div>
+            <div class="dkpi-sub" id="dkpi-capacity-sub">peak resource</div>
+          </div>
+
+          <div class="dash-kpi-card" id="dkpi-shorts">
+            <div class="dkpi-label">Material Shorts</div>
+            <div class="dkpi-value" id="dkpi-shorts-val">—</div>
+            <div class="dkpi-sub" id="dkpi-shorts-sub">items below min</div>
+          </div>
         </div>
 
-        <div style="display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:1rem;min-height:0;flex:1;padding:0;overflow:auto;align-content:start">
-          <!-- CARD 1: Campaign Pipeline (LEFT - LARGE) -->
-          <div style="background:var(--card-bg);border-radius:.5rem;display:flex;flex-direction:column;grid-row:1/3;min-height:0">
-            <div style="padding:.8rem;border-bottom:1px solid var(--border)"><div style="font-weight:600">Planning Pipeline</div></div>
-            <div style="flex:1;overflow-y:auto;padding:.8rem;display:flex;flex-direction:column;gap:.4rem">
-              <div id="dashboardPipelineBody" style="display:flex;flex-direction:column;gap:.4rem">
-                <div style="text-align:center;color:var(--text-soft);font-size:.8rem">Run Schedule</div>
+        <!-- ═══ MAIN BODY: 3 columns ═══ -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.45rem;flex:1;min-height:0;overflow:hidden">
+
+          <!-- ── COL 1: Planning Status + Alerts ── -->
+          <div style="display:flex;flex-direction:column;gap:.45rem;min-height:0;overflow:hidden">
+
+            <!-- Planning Status -->
+            <div class="dash-card" style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+              <div class="dash-card-hd">
+                <span class="dash-card-title">Planning Status</span>
+                <button class="btn ghost" style="font-size:.65rem;padding:.15rem .45rem;height:1.5rem" onclick="activatePage('planning')">Open →</button>
+              </div>
+              <div style="flex:1;overflow-y:auto;padding:.5rem .6rem;display:flex;flex-direction:column;gap:.35rem" id="dashboardPipelineBody">
+                <div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:1rem 0">Run the Planning Pipeline to see status here.</div>
               </div>
             </div>
-          </div>
 
-          <!-- CARD 2: Inventory Health -->
-          <div style="background:var(--card-bg);border-radius:.5rem;display:flex;flex-direction:column">
-            <div style="padding:.8rem;border-bottom:1px solid var(--border)"><div style="font-weight:600;font-size:.9rem">Inventory</div></div>
-            <div style="flex:1;overflow-y:auto;padding:.8rem">
-              <div id="dashboardInventoryBody" style="display:flex;flex-direction:column;gap:.4rem;font-size:.7rem"></div>
-            </div>
-          </div>
-
-          <!-- CARD 3: Material Holds -->
-          <div style="background:var(--card-bg);border-radius:.5rem;display:flex;flex-direction:column">
-            <div style="padding:.8rem;border-bottom:1px solid var(--border)"><div style="font-weight:600;font-size:.9rem">Holds</div></div>
-            <div style="flex:1;overflow-y:auto;padding:.8rem">
-              <div id="dashboardHoldsBody" style="display:flex;flex-direction:column;gap:.3rem;font-size:.7rem"></div>
-            </div>
-          </div>
-
-          <!-- CARD 4: Bottleneck -->
-          <div style="background:var(--card-bg);border-radius:.5rem;display:flex;flex-direction:column">
-            <div style="padding:.8rem;border-bottom:1px solid var(--border)"><div style="font-weight:600;font-size:.9rem">Bottleneck <span id="bottleneckPeak" style="font-size:.7rem;color:var(--text-soft)">—</span></div></div>
-            <div style="flex:1;padding:.8rem">
-              <div id="bottleneckList" style="display:flex;flex-direction:column;gap:.4rem;font-size:.7rem"></div>
-            </div>
-          </div>
-
-          <!-- CARD 5: This Week -->
-          <div style="background:var(--card-bg);border-radius:.5rem;display:flex;flex-direction:column">
-            <div style="padding:.8rem;border-bottom:1px solid var(--border)"><div style="font-weight:600;font-size:.9rem">This Week</div></div>
-            <div style="flex:1;padding:.8rem">
-              <div id="dashboardExecutionBody" style="display:grid;grid-template-columns:1fr 1fr;gap:.6rem;font-size:.65rem">
-                <div style="text-align:center"><div style="color:var(--text-soft);font-size:.7rem">Started</div><div style="font-size:1.3rem;font-weight:700;color:var(--primary)" id="execStarted">—</div></div>
-                <div style="text-align:center"><div style="color:var(--text-soft);font-size:.7rem">Heats</div><div style="font-size:1.3rem;font-weight:700;color:var(--success)" id="execHeats">—</div></div>
-                <div style="text-align:center"><div style="color:var(--text-soft);font-size:.7rem">Equipment</div><div style="font-size:1rem;font-weight:700" id="execEquip">—</div></div>
-                <div style="text-align:center"><div style="color:var(--text-soft);font-size:.7rem">Holds</div><div style="font-size:1.3rem;font-weight:700;color:var(--danger)" id="execHolds">—</div></div>
+            <!-- Alerts & Insights -->
+            <div class="dash-card" style="flex:none;max-height:42%">
+              <div class="dash-card-hd">
+                <span class="dash-card-title">Alerts &amp; Insights</span>
+                <span id="dashAlertCount" style="font-size:.65rem;font-weight:700;background:var(--danger-soft);color:var(--danger);padding:.15rem .4rem;border-radius:1rem;display:none">0</span>
+              </div>
+              <div style="overflow-y:auto;flex:1;padding:.4rem .6rem;display:flex;flex-direction:column;gap:.3rem" id="dashAlertsList">
+                <div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">No alerts. System nominal.</div>
               </div>
             </div>
+
           </div>
 
-          <!-- CARD 6: Delivery -->
-          <div style="background:var(--card-bg);border-radius:.5rem;display:flex;flex-direction:column">
-            <div style="padding:.8rem;border-bottom:1px solid var(--border)"><div style="font-weight:600;font-size:.9rem">Delivery</div></div>
-            <div style="flex:1;padding:.8rem;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:.6rem">
-              <div style="text-align:center"><div style="font-size:.7rem;color:var(--text-soft)">On-Time %</div><div style="font-size:2rem;font-weight:900;color:var(--success)" id="perfOnTime">—</div></div>
-              <div style="display:flex;gap:1.5rem;font-size:.7rem;justify-content:center">
-                <div style="text-align:center"><div style="color:var(--text-soft)">Late</div><div style="font-weight:700;color:var(--danger)" id="perfLate">—</div></div>
-                <div style="text-align:center"><div style="color:var(--text-soft)">Days</div><div style="font-weight:700" id="perfAvgLate">—</div></div>
+          <!-- ── COL 2: Capacity + Delivery ── -->
+          <div style="display:flex;flex-direction:column;gap:.45rem;min-height:0;overflow:hidden">
+
+            <!-- Capacity Utilisation -->
+            <div class="dash-card" style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+              <div class="dash-card-hd">
+                <span class="dash-card-title">Capacity Utilisation</span>
+                <span id="bottleneckPeak" style="font-size:.65rem;font-weight:700;color:var(--text-soft)">—</span>
+              </div>
+              <div style="flex:1;overflow-y:auto;padding:.5rem .6rem;display:flex;flex-direction:column;gap:.5rem" id="bottleneckList">
+                <div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">—</div>
               </div>
             </div>
+
+            <!-- Delivery Performance -->
+            <div class="dash-card" style="flex:none;height:42%">
+              <div class="dash-card-hd"><span class="dash-card-title">Delivery Performance</span></div>
+              <div style="padding:.5rem .6rem;display:flex;flex-direction:column;gap:.5rem">
+                <!-- On-time gauge row -->
+                <div style="display:flex;align-items:center;gap:.8rem">
+                  <div style="flex:none;text-align:center">
+                    <div style="font-size:1.9rem;font-weight:900;line-height:1;letter-spacing:-.03em" id="perfOnTime">—</div>
+                    <div style="font-size:.6rem;color:var(--text-soft);margin-top:.1rem">On-Time</div>
+                  </div>
+                  <div style="flex:1">
+                    <div style="width:100%;height:7px;background:var(--border-soft);border-radius:4px;overflow:hidden">
+                      <div id="perfOnTimeBar" style="height:100%;width:0%;background:var(--success);border-radius:4px;transition:width .6s ease"></div>
+                    </div>
+                  </div>
+                </div>
+                <!-- Late breakdown -->
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.3rem">
+                  <div class="dash-mini-stat">
+                    <div class="dms-label">Late Orders</div>
+                    <div class="dms-value" id="perfLate" style="color:var(--danger)">—</div>
+                  </div>
+                  <div class="dash-mini-stat">
+                    <div class="dms-label">Avg Delay</div>
+                    <div class="dms-value" id="perfAvgLate">—</div>
+                  </div>
+                  <div class="dash-mini-stat">
+                    <div class="dms-label">On Hold</div>
+                    <div class="dms-value" id="execHolds" style="color:var(--warning)">—</div>
+                  </div>
+                </div>
+                <!-- This week -->
+                <div style="border-top:1px solid var(--border-soft);padding-top:.4rem;display:flex;gap:.4rem">
+                  <div style="flex:1;text-align:center">
+                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Campaigns</div>
+                    <div style="font-size:1rem;font-weight:700;color:var(--info)" id="execStarted">—</div>
+                  </div>
+                  <div style="flex:1;text-align:center">
+                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Heats</div>
+                    <div style="font-size:1rem;font-weight:700;color:var(--success)" id="execHeats">—</div>
+                  </div>
+                  <div style="flex:1;text-align:center">
+                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Equip</div>
+                    <div style="font-size:1rem;font-weight:700" id="execEquip">—</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- ── COL 3: Material Health + PO Summary ── -->
+          <div style="display:flex;flex-direction:column;gap:.45rem;min-height:0;overflow:hidden">
+
+            <!-- Material Health -->
+            <div class="dash-card" style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+              <div class="dash-card-hd">
+                <span class="dash-card-title">Material Health</span>
+                <button class="btn ghost" style="font-size:.65rem;padding:.15rem .45rem;height:1.5rem" onclick="activatePage('material')">View →</button>
+              </div>
+              <div style="flex:1;overflow-y:auto;padding:.5rem .6rem;display:flex;flex-direction:column;gap:.45rem" id="dashboardInventoryBody">
+                <div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">—</div>
+              </div>
+            </div>
+
+            <!-- Active POs summary -->
+            <div class="dash-card" style="flex:none;height:34%">
+              <div class="dash-card-hd">
+                <span class="dash-card-title">Active Planning Orders</span>
+                <button class="btn ghost" style="font-size:.65rem;padding:.15rem .45rem;height:1.5rem" onclick="activatePage('planning')">Plan →</button>
+              </div>
+              <div style="padding:.4rem .6rem;display:flex;flex-direction:column;gap:.3rem" id="dashActivePOs">
+                <div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">No POs yet.</div>
+              </div>
+            </div>
+
           </div>
         </div>
       </section>
@@ -1120,162 +1268,298 @@ function hydrateSummary(summary){
   setText('chipHeld', held + ' on hold');
   setText('chipLate', late + ' late');
 }
-// Removed orphaned functions: renderReleaseQueue() and renderDashboardTimeline()
-// These functions referenced non-existent DOM elements after dashboard redesign
-function renderBottleneck(summary){
-  setText('bottleneckPeak', summary.max_utilisation != null ? (Math.round(num(summary.max_utilisation)) + '%') : '—');
-  const sorted = [...(state.capacity||[])].sort((a,b)=>num(b.Utilisation_Percent || b['Utilisation_%'] || b.utilisation) - num(a.Utilisation_Percent || a['Utilisation_%'] || a.utilisation)).slice(0,4);
-  qs('bottleneckList').innerHTML = sorted.map(r=>{
-    const util = Math.round(num(r['Utilisation_%'] || r.Utilisation_Percent || r.utilisation));
-    const rid = String(r.Resource_ID || r.resource_id || '—').substring(0, 8);
-    const barColor = util > 80 ? '#ef4444' : util > 60 ? '#f59e0b' : '#10b981';
-    return `<div style="font-size:.7rem">
-      <div style="display:flex;justify-content:space-between;margin-bottom:.2rem">
-        <div style="font-weight:600">${escapeHtml(rid)}</div>
-        <div style="font-weight:700;color:${barColor}">${util}%</div>
+// ──────────────────────────────────────────────
+//  DASHBOARD RENDERERS
+// ──────────────────────────────────────────────
+
+function renderDashboard() {
+  renderDashboardKPIs();
+  renderDashboardPipeline();
+  renderDashboardAlerts();
+  renderBottleneck(state.overview || {});
+  renderDashboardDelivery();
+  renderDashboardInventory();
+  renderDashActivePOs();
+  renderDashboardExecution();
+}
+
+function renderDashboardKPIs() {
+  // Open SOs
+  const openSOs = state.poolOrders.length || (state.campaigns.length ? '—' : '—');
+  const urgentSOs = state.poolOrders.filter(o => o.priority === 'URGENT').length;
+  setDKPI('open-so', openSOs, urgentSOs ? urgentSOs + ' urgent' : 'awaiting planning', urgentSOs > 0 ? 'dash-kpi-red' : '');
+
+  // Planned MT
+  const pos = state.planningOrders || [];
+  const plannedMT = pos.reduce((s, po) => s + num(po.total_qty_mt), 0);
+  const poCount = pos.length;
+  setDKPI('planned-mt', plannedMT > 0 ? plannedMT.toFixed(0) + ' MT' : '—', poCount ? poCount + ' active POs' : 'no POs yet', 'dash-kpi-blue');
+
+  // Heats queued
+  const heats = state.heatBatches || [];
+  const totalHeats = heats.length;
+  const heatMT = heats.reduce((s, h) => s + num(h.qty_mt || h.Qty_MT || 0), 0);
+  setDKPI('heats', totalHeats || '—', totalHeats ? heatMT.toFixed(0) + ' MT queued' : 'derive heats first', 'dash-kpi-purple');
+
+  // On-time
+  const onTime = state.overview?.on_time_pct;
+  const onTimeVal = onTime != null ? Math.round(num(onTime)) + '%' : '—';
+  const onTimeClass = onTime == null ? '' : num(onTime) >= 90 ? 'dash-kpi-green' : num(onTime) >= 75 ? 'dash-kpi-amber' : 'dash-kpi-red';
+  setDKPI('ontime', onTimeVal, 'delivery rate', onTimeClass);
+
+  // SMS / peak utilisation
+  const capItems = state.capacity || [];
+  const maxUtil = capItems.reduce((mx, r) => Math.max(mx, num(r['Utilisation_%'] || r.Utilisation_Percent || r.utilisation || 0)), 0);
+  const bottleneckResource = capItems.sort((a,b)=>num(b['Utilisation_%']||0)-num(a['Utilisation_%']||0))[0];
+  const capLabel = bottleneckResource ? String(bottleneckResource.Resource_ID||'').substring(0,8) : 'peak resource';
+  const capClass = maxUtil > 90 ? 'dash-kpi-red' : maxUtil > 75 ? 'dash-kpi-amber' : maxUtil > 0 ? 'dash-kpi-green' : '';
+  setDKPI('capacity', maxUtil > 0 ? Math.round(maxUtil) + '%' : '—', capLabel, capClass);
+
+  // Material shorts
+  const matItems = (state.material?.campaigns || []);
+  const shorts = matItems.filter(m => String(m.material_status || '').toUpperCase() === 'SHORT' || String(m.coverage || '').toUpperCase() === 'SHORT').length;
+  const invItems = state.master?.inventory || [];
+  const invShorts = invItems.filter(r => num(r.Qty_On_Hand || r.qty_on_hand || 0) < num(r.Min_Stock || r.min_stock || 0)).length;
+  const totalShorts = shorts + invShorts;
+  setDKPI('shorts', totalShorts || '0', totalShorts ? 'items need replenishment' : 'all materials covered', totalShorts > 0 ? 'dash-kpi-red' : 'dash-kpi-green');
+}
+
+function setDKPI(id, val, sub, cls) {
+  const card = qs('dkpi-' + id);
+  if (!card) return;
+  // Remove existing colour classes
+  card.classList.remove('dash-kpi-blue','dash-kpi-purple','dash-kpi-green','dash-kpi-red','dash-kpi-amber');
+  if (cls) cls.split(' ').forEach(c => c && card.classList.add(c));
+  const valEl = qs('dkpi-' + id + '-val');
+  const subEl = qs('dkpi-' + id + '-sub');
+  if (valEl) valEl.textContent = val;
+  if (subEl) subEl.textContent = sub;
+}
+
+function renderDashboardPipeline() {
+  const pos = state.planningOrders || [];
+  const pool = state.poolOrders || [];
+  const heats = state.heatBatches || [];
+  const sim = state.lastSimResult;
+
+  const stages = [
+    {
+      label: 'Order Pool',
+      dot: pool.length ? 'done' : 'pending',
+      detail: pool.length ? pool.length + ' SOs loaded · ' + pool.filter(o=>o.priority==='URGENT').length + ' urgent' : 'Not loaded'
+    },
+    {
+      label: 'Propose Orders',
+      dot: pos.length ? 'done' : 'pending',
+      detail: pos.length ? pos.length + ' POs · ' + pos.reduce((s,p)=>s+num(p.total_qty_mt),0).toFixed(0) + ' MT' : 'Pending'
+    },
+    {
+      label: 'Derive Heats',
+      dot: heats.length ? 'done' : 'pending',
+      detail: heats.length ? heats.length + ' heats derived' : 'Pending'
+    },
+    {
+      label: 'Feasibility Check',
+      dot: sim ? (sim.feasible ? 'done' : 'warn') : 'pending',
+      detail: sim ? (sim.feasible ? 'FEASIBLE · ' + (sim.horizon_hours||'') + 'h horizon' : 'INFEASIBLE — remediation needed') : 'Not run'
+    },
+    {
+      label: 'Release',
+      dot: pos.some(p=>p.planner_status==='RELEASED') ? 'done' : 'pending',
+      detail: pos.filter(p=>p.planner_status==='RELEASED').length + ' POs released'
+    }
+  ];
+
+  qs('dashboardPipelineBody').innerHTML = stages.map(s => `
+    <div class="dash-pipe-row">
+      <div class="dash-pipe-dot ${s.dot}"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:.7rem">${escapeHtml(s.label)}</div>
+        <div style="font-size:.62rem;color:var(--text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(s.detail)}</div>
       </div>
-      <div style="width:100%;height:5px;background:var(--border);border-radius:2px;overflow:hidden">
-        <div style="height:100%;width:${util}%;background:${barColor}"></div>
+    </div>`).join('');
+}
+
+function renderDashboardAlerts() {
+  const alerts = [];
+
+  // Check urgent SOs not yet in PO
+  const urgentUnplanned = (state.poolOrders||[]).filter(o=>o.priority==='URGENT' && !(state.planningOrders||[]).some(po=>(po.selected_so_ids||[]).includes(o.so_id)));
+  if (urgentUnplanned.length > 0)
+    alerts.push({type:'critical', icon:'⚠', title: urgentUnplanned.length + ' URGENT SOs not yet planned', sub: urgentUnplanned.slice(0,3).map(o=>o.so_id).join(', ') + (urgentUnplanned.length>3?'…':'')});
+
+  // Infeasible plan
+  if (state.lastSimResult && !state.lastSimResult.feasible)
+    alerts.push({type:'critical', icon:'✗', title:'Plan is INFEASIBLE', sub:'Resources over capacity — open Feasibility Check'});
+
+  // Over-capacity resources
+  const overCap = (state.capacity||[]).filter(r=>num(r['Utilisation_%']||r.Utilisation_Percent||0)>100);
+  if (overCap.length > 0)
+    alerts.push({type:'warn', icon:'◈', title: overCap.length + ' resource(s) over capacity', sub: overCap.slice(0,2).map(r=>String(r.Resource_ID||'').substring(0,8)).join(', ')});
+
+  // Material shorts from inventory master
+  const invItems = state.master?.inventory || [];
+  const invShorts = invItems.filter(r=>num(r.Qty_On_Hand||r.qty_on_hand||0) < num(r.Min_Stock||r.min_stock||0));
+  if (invShorts.length > 0)
+    alerts.push({type:'warn', icon:'↓', title: invShorts.length + ' material(s) below minimum stock', sub: invShorts.slice(0,3).map(r=>String(r.SKU_ID||r.sku_id||'').substring(0,12)).join(', ')});
+
+  // No POs proposed yet but SOs exist
+  if ((state.poolOrders||[]).length > 0 && (state.planningOrders||[]).length === 0)
+    alerts.push({type:'info', icon:'→', title:'Order Pool loaded — ready to propose POs', sub:'Go to Planning → Propose Orders'});
+
+  // Heats derived but not simulated
+  if ((state.heatBatches||[]).length > 0 && !state.lastSimResult)
+    alerts.push({type:'info', icon:'→', title:'Heats derived — run Feasibility Check', sub:'Verify resource fit before releasing'});
+
+  // All good
+  if (alerts.length === 0)
+    alerts.push({type:'ok', icon:'✓', title:'No active alerts', sub:'System nominal'});
+
+  const countEl = qs('dashAlertCount');
+  const critWarn = alerts.filter(a=>a.type==='critical'||a.type==='warn').length;
+  if (countEl) {
+    if (critWarn > 0) { countEl.textContent = critWarn; countEl.style.display = ''; }
+    else countEl.style.display = 'none';
+  }
+
+  qs('dashAlertsList').innerHTML = alerts.map(a => `
+    <div class="dash-alert ${a.type}">
+      <div class="dash-alert-icon">${a.icon}</div>
+      <div class="dash-alert-body">
+        <div class="dash-alert-title">${escapeHtml(a.title)}</div>
+        ${a.sub ? `<div class="dash-alert-sub">${escapeHtml(a.sub)}</div>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+function renderBottleneck(summary) {
+  const sorted = [...(state.capacity||[])].sort((a,b)=>
+    num(b['Utilisation_%']||b.Utilisation_Percent||b.utilisation||0) -
+    num(a['Utilisation_%']||a.Utilisation_Percent||a.utilisation||0)
+  ).slice(0, 6);
+
+  const maxUtil = sorted.length ? num(sorted[0]['Utilisation_%']||sorted[0].Utilisation_Percent||sorted[0].utilisation||0) : 0;
+  const peakPct = summary.max_utilisation != null ? Math.round(num(summary.max_utilisation)) : (maxUtil ? Math.round(maxUtil) : null);
+  const peakEl = qs('bottleneckPeak');
+  if (peakEl) {
+    peakEl.textContent = peakPct != null ? 'Peak ' + peakPct + '%' : '—';
+    peakEl.style.color = peakPct > 90 ? 'var(--danger)' : peakPct > 75 ? 'var(--warning)' : 'var(--text-soft)';
+  }
+
+  qs('bottleneckList').innerHTML = sorted.length ? sorted.map(r => {
+    const util = Math.round(num(r['Utilisation_%']||r.Utilisation_Percent||r.utilisation||0));
+    const rid = String(r.Resource_ID||r.resource_id||'—').substring(0, 10);
+    const plant = r.Plant || (rid.startsWith('SMS')||rid.startsWith('EAF')?'SMS':rid.startsWith('RM')||rid.startsWith('LRF')?'RM':'BF');
+    const plantColor = plant==='BF'?'#3b82f6':plant==='SMS'?'#f97316':'#8b5cf6';
+    const barColor = util > 100 ? 'var(--danger)' : util > 80 ? 'var(--warning)' : 'var(--success)';
+    return `<div class="dash-cap-row">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.2rem">
+        <div style="display:flex;align-items:center;gap:.35rem">
+          <div style="width:.35rem;height:.35rem;border-radius:50%;background:${plantColor};flex-shrink:0"></div>
+          <span style="font-size:.68rem;font-weight:600">${escapeHtml(rid)}</span>
+        </div>
+        <span style="font-size:.68rem;font-weight:700;color:${barColor}">${util}%</span>
+      </div>
+      <div class="dash-cap-bar-bg">
+        <div class="dash-cap-bar" style="width:${Math.min(util,100)}%;background:${barColor}"></div>
       </div>
     </div>`;
-  }).join('') || '<div style="color:var(--text-soft);font-size:.7rem">—</div>';
+  }).join('') : '<div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">Run Schedule to see utilisation</div>';
 }
-// Removed orphaned function: renderAlerts()
-// This function referenced non-existent DOM elements (alertsCount, alertsList) after dashboard redesign
 
-// New Dashboard Card Renderers
-function renderDashboardPipeline(){
-  // Prefer planning orders if available (new pipeline), fall back to campaigns
-  const pos = state.planningOrders && state.planningOrders.length ? state.planningOrders : null;
-  if(pos){
-    const items = pos.slice(0, 6);
-    qs('dashboardPipelineBody').innerHTML = items.map(po=>{
-      const status = po.planner_status || 'PROPOSED';
-      const statusColor = status === 'FROZEN' || status === 'APPROVED' ? 'success' : status === 'PROPOSED' ? 'info' : 'warn';
-      const mt = num(po.total_qty_mt || 0).toFixed(0);
-      const grade = (po.grade_family || '—').substring(0, 10);
-      const heats = po.heats_required || 0;
-      const soCount = (po.selected_so_ids || []).length;
-      return `<div style="border:1px solid var(--border);border-radius:.3rem;padding:.4rem;font-size:.7rem">
-        <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:.3rem">
-          <div>
-            <div style="font-weight:700;font-size:.85rem">${escapeHtml(po.po_id)}</div>
-            <div style="color:var(--text-soft);font-size:.65rem">${escapeHtml(grade)} · ${soCount} SOs</div>
-          </div>
-          <div style="background:var(--${statusColor}-soft);color:var(--${statusColor});padding:.2rem .4rem;border-radius:.2rem;font-weight:700;font-size:.6rem">${status.substring(0,4)}</div>
-        </div>
-        <div style="display:flex;gap:.6rem;padding-top:.3rem;border-top:1px solid var(--border)">
-          <div style="flex:1"><div style="color:var(--text-soft);font-size:.6rem">Volume</div><div style="font-weight:700">${mt} MT</div></div>
-          <div style="flex:1"><div style="color:var(--text-soft);font-size:.6rem">Heats</div><div style="font-weight:700">${heats}</div></div>
-        </div>
-      </div>`;
-    }).join('');
-    // Update summary metric
-    setText('summaryCampaigns', pos.length || '—');
-    const approved = pos.filter(p=>p.planner_status === 'APPROVED' || p.planner_status === 'FROZEN').length;
-    setText('summaryCampaignsSub', approved + ' approved · ' + (pos.length - approved) + ' proposed');
+function renderDashboardDelivery() {
+  const onTime = num(state.overview?.on_time_pct, 0);
+  const late = num(state.overview?.campaigns_late, 0);
+  const avgLate = state.overview?.avg_days_late ?? '—';
+  const color = onTime >= 90 ? 'var(--success)' : onTime >= 75 ? 'var(--warning)' : 'var(--danger)';
+  const el = qs('perfOnTime');
+  if (el) { el.textContent = state.overview ? onTime + '%' : '—'; el.style.color = color; }
+  const bar = qs('perfOnTimeBar');
+  if (bar) { bar.style.width = onTime + '%'; bar.style.background = color; }
+  setText('perfLate', late || '—');
+  setText('perfAvgLate', avgLate !== '—' ? avgLate + 'd' : '—');
+}
+
+function renderDashboardInventory() {
+  const inv = state.master?.inventory || [];
+  if (!inv.length) {
+    qs('dashboardInventoryBody').innerHTML = '<div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">Load Master Data to see inventory</div>';
     return;
   }
-  const camps = [...(state.campaigns||[])].slice(0, 6);
-  if(!camps.length){ qs('dashboardPipelineBody').innerHTML = '<div style="text-align:center;color:var(--text-soft);font-size:.8rem">Run Planning Pipeline or Schedule to populate</div>'; return; }
 
-  qs('dashboardPipelineBody').innerHTML = camps.map(c=>{
-    const status = c.release_status || c.Release_Status || '—';
-    const statusColor = String(status).toUpperCase().includes('RELEASED') ? 'success' : String(status).toUpperCase().includes('HOLD') ? 'warn' : 'danger';
-    const matStatus = c.material_status || 'OK';
-    const matColor = String(matStatus).toUpperCase() === 'OK' ? 'success' : 'warn';
-    const cid = (c.campaign_id || c.Campaign_ID || '').substring(4);
-    const grade = (c.grade || c.Grade || '—').substring(0, 10);
-    const mt = num(c.total_mt || c.Total_MT || 0).toFixed(0);
+  const sorted = [...inv].map(r => {
+    const qty = num(r.Qty_On_Hand || r.qty_on_hand || 0);
+    const min = num(r.Min_Stock || r.min_stock || 0);
+    const max = num(r.Max_Stock || r.max_stock || qty * 2 || 1);
+    const pct = max > 0 ? Math.min(100, Math.round(qty / max * 100)) : 0;
+    const status = qty < min ? 'SHORT' : qty < min * 1.5 ? 'LOW' : 'OK';
+    return { id: String(r.SKU_ID || r.sku_id || ''), qty, min, max, pct, status };
+  }).sort((a,b) => a.status === 'SHORT' ? -1 : b.status === 'SHORT' ? 1 : a.status === 'LOW' ? -1 : 1).slice(0, 8);
 
-    return `<div style="border:1px solid var(--border);border-radius:.3rem;padding:.4rem;font-size:.7rem">
-      <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:.3rem">
-        <div>
-          <div style="font-weight:700;font-size:.85rem">${escapeHtml(cid)}</div>
-          <div style="color:var(--text-soft);font-size:.65rem">${escapeHtml(grade)}</div>
+  qs('dashboardInventoryBody').innerHTML = sorted.map(m => {
+    const barColor = m.status === 'OK' ? 'var(--success)' : m.status === 'LOW' ? 'var(--warning)' : 'var(--danger)';
+    const tagBg = m.status === 'OK' ? 'var(--success-soft)' : m.status === 'LOW' ? 'var(--warning-soft)' : 'var(--danger-soft)';
+    const tagColor = m.status === 'OK' ? 'var(--success)' : m.status === 'LOW' ? 'var(--warning)' : 'var(--danger)';
+    return `<div class="dash-mat-row">
+      <div class="dash-mat-name" title="${escapeHtml(m.id)}">${escapeHtml(m.id.substring(0,14))}</div>
+      <div class="dash-mat-bar-wrap">
+        <div class="dash-cap-bar-bg">
+          <div class="dash-cap-bar" style="width:${m.pct}%;background:${barColor}"></div>
         </div>
-        <div style="background:var(--${statusColor}-soft);color:var(--${statusColor});padding:.2rem .4rem;border-radius:.2rem;font-weight:700;font-size:.6rem">${status.substring(0,3)}</div>
+        <div style="font-size:.58rem;color:var(--text-faint);margin-top:.1rem">${m.qty} / ${m.max} MT</div>
       </div>
-      <div style="display:flex;gap:.6rem;padding-top:.3rem;border-top:1px solid var(--border)">
-        <div style="flex:1"><div style="color:var(--text-soft);font-size:.6rem">Volume</div><div style="font-weight:700">${mt} MT</div></div>
-        <div style="flex:1"><div style="color:var(--text-soft);font-size:.6rem">Material</div><div style="color:var(--${matColor});font-weight:700;font-size:.75rem">${matStatus}</div></div>
-      </div>
+      <span class="dash-mat-tag" style="background:${tagBg};color:${tagColor}">${m.status}</span>
     </div>`;
   }).join('');
 }
 
-function renderDashboardInventory(){
-  const materials = [
-    {name: 'BIL-130-1008', current: 320, min: 200, max: 500},
-    {name: 'BIL-130-1018', current: 180, min: 150, max: 400},
-    {name: 'BIL-150-1080', current: 100, min: 50, max: 250},
-    {name: 'RM-FECR', current: 12, min: 15, max: 50}
-  ];
-
-  qs('dashboardInventoryBody').innerHTML = materials.map(m=>{
-    const pct = Math.round((m.current / m.max) * 100);
-    const status = m.current < m.min ? 'CRITICAL' : m.current < m.min * 1.5 ? 'LOW' : 'OK';
-    const statusColor = status === 'OK' ? 'success' : status === 'LOW' ? 'warning' : 'danger';
-    const barColor = status === 'OK' ? '#10b981' : status === 'LOW' ? '#f59e0b' : '#ef4444';
-
-    return `<div style="font-size:.7rem">
-      <div style="display:flex;justify-content:space-between;margin-bottom:.2rem">
-        <div style="font-weight:600">${escapeHtml(m.name.substring(0, 11))}</div>
-        <div style="color:var(--${statusColor});font-weight:700">${m.current}/${m.max} MT</div>
-      </div>
-      <div style="width:100%;height:6px;background:var(--border);border-radius:2px;overflow:hidden">
-        <div style="height:100%;width:${pct}%;background:${barColor};border-radius:2px"></div>
-      </div>
+function renderDashActivePOs() {
+  const pos = state.planningOrders || [];
+  if (!pos.length) {
+    qs('dashActivePOs').innerHTML = '<div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.4rem 0">No POs yet — run Propose Orders</div>';
+    return;
+  }
+  const active = pos.filter(p => p.planner_status !== 'RELEASED').slice(0, 5);
+  qs('dashActivePOs').innerHTML = active.map(po => {
+    const st = (po.planner_status || 'PROPOSED').toLowerCase();
+    const mt = num(po.total_qty_mt||0).toFixed(0);
+    const grade = (po.grade_family||'—').substring(0,10);
+    const soCount = (po.selected_so_ids||[]).length;
+    const badgeColor = st==='frozen' ? 'var(--warning)' : 'var(--info)';
+    return `<div class="dash-po-row ${st}">
+      <div style="font-weight:700;font-size:.68rem;white-space:nowrap">${escapeHtml(po.po_id)}</div>
+      <div style="font-size:.62rem;color:var(--text-soft);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(grade)} · ${soCount} SOs</div>
+      <div style="font-size:.62rem;font-weight:600;white-space:nowrap">${mt} MT</div>
+      <div style="font-size:.58rem;font-weight:700;color:${badgeColor};white-space:nowrap">${(po.planner_status||'PROP').substring(0,4)}</div>
     </div>`;
   }).join('');
 }
 
-function renderDashboardHolds(){
-  const holds = [
-    {material: 'BIL-150-1080', campaigns: 2, mtBlocked: 280, availIn: '1'},
-    {material: 'RM-FECR', campaigns: 1, mtBlocked: 150, availIn: '4'}
-  ];
-  const html = holds.length ? holds.map(h=>{
-    const daysNum = parseInt(h.availIn);
-    const color = daysNum === 1 ? '#ef4444' : daysNum <= 3 ? '#f59e0b' : '#10b981';
-    return `<div style="border-left:4px solid ${color};padding-left:.5rem;font-size:.7rem">
-      <div style="font-weight:700">${escapeHtml(h.material.substring(0, 11))}</div>
-      <div style="display:flex;gap:1rem;color:var(--text-soft);font-size:.65rem;margin-top:.2rem">
-        <div>${h.campaigns} camps</div>
-        <div>${h.mtBlocked} MT</div>
-        <div style="color:${color};font-weight:700">${h.availIn}d</div>
-      </div>
-    </div>`;
-  }).join('') : '<div style="text-align:center;color:var(--text-soft);font-size:.75rem">No material holds</div>';
-  qs('dashboardHoldsBody').innerHTML = html;
-}
-
-function renderDashboardExecution(){
+function renderDashboardExecution() {
   const today = new Date();
   today.setHours(0,0,0,0);
   const weekEnd = new Date(today);
   weekEnd.setDate(weekEnd.getDate() + 7);
 
-  const thisWeekCamps = (state.gantt || []).filter(j=>{
+  const thisWeekJobs = (state.gantt||[]).filter(j => {
     const s = parseDate(j.Planned_Start);
     return s >= today && s <= weekEnd;
   });
-  const uniqueCamps = new Set(thisWeekCamps.map(j=>j.Campaign || j.campaign_id));
+  const uniqueCamps = new Set(thisWeekJobs.map(j => j.Campaign || j.campaign_id));
+  const activeEquip = new Set(thisWeekJobs.map(j => j.Resource_ID || j.resource_id));
 
-  setText('execStarted', uniqueCamps.size + ' campaigns');
-  setText('execHeats', thisWeekCamps.length + ' heats');
-  setText('execEquip', Math.round(thisWeekCamps.length / 2) + '/' + (state.capacity ? Object.keys([...new Set(state.capacity.map(c=>c.Resource_ID || c.resource_id))]).length : '—'));
-  setText('execHolds', (state.overview?.campaigns_held || 0) + ' blocked');
+  setText('execStarted', uniqueCamps.size || '—');
+  setText('execHeats', thisWeekJobs.length || '—');
+  setText('execEquip', activeEquip.size || '—');
+  setText('execHolds', state.overview?.campaigns_held || '0');
+}
+
+function renderDashboardHolds(){
+  // Retained for compatibility — holds now shown via alerts
 }
 
 function renderDashboardPerformance() {
-  const onTimeRate = num(state.overview?.on_time_pct, 0);
-  const late = num(state.overview?.campaigns_late, 0);
-  const avgLate = state.overview?.avg_days_late ?? '—';
-
-  setText('perfOnTime', `${onTimeRate}%`);
-  setText('perfLate', late);
-  setText('perfAvgLate', avgLate);
+  renderDashboardDelivery();
 }
 
 function renderCampaigns(){
@@ -1852,15 +2136,8 @@ async function loadApplicationState(){
   state.ctpOutput = ctpOut.items || [];
   state.master = master || {};
 
-  if(state.overview){
-    hydrateSummary(state.overview);
-    renderBottleneck(state.overview);
-  }
-  renderDashboardPipeline();
-  renderDashboardInventory();
-  renderDashboardHolds();
-  renderDashboardExecution();
-  renderDashboardPerformance();
+  if(state.overview) hydrateSummary(state.overview);
+  renderDashboard();
   renderCampaigns();
   renderSchedule();
   renderDispatch();
@@ -2402,6 +2679,10 @@ function updatePlanningKPIs() {
   setText('kpiHeats', heatCount > 0 ? heatCount : '—');
   setText('kpiMT', totalMT > 0 ? totalMT.toFixed(0) : '—');
   setText('kpiThroughput', totalMT > 0 ? (totalMT / 14).toFixed(1) : '—'); // Estimate based on 14-day horizon
+  // Keep dashboard KPI strip in sync
+  renderDashboardKPIs();
+  renderDashboardAlerts();
+  renderDashActivePOs();
 }
 
 function renderPlanningOrderPool() {
@@ -2515,7 +2796,7 @@ async function proposePlanningOrders() {
     state.planningOrders = data.planning_orders || [];
     renderPlanningBoard();
     updatePOToolbarButtons();
-    renderDashboardPipeline();
+    renderDashboard();
     updatePlanningKPIs();
 
     const totalMT = state.planningOrders.reduce((sum, po) => sum + num(po.total_qty_mt), 0);
@@ -3460,7 +3741,7 @@ async function releaseSelectedPOs(){
     qs('pipelineStatusText').textContent = '✓ Released ' + checked.length + ' planning order' + (checked.length > 1 ? 's' : '') + ' successfully';
     qs('pipelineStatusBar').style.color = '#16a34a';
     await loadReleaseBoard();
-    renderDashboardPipeline();
+    renderDashboard();
   } catch(e) {
     qs('pipelineStatusText').textContent = '✗ Release failed: ' + e.message;
     qs('pipelineStatusBar').style.color = '#dc2626';
@@ -3504,7 +3785,7 @@ async function releaseAllSelected(){
     qs('pipelineStatusText').textContent = '✓ Released ' + checked.length + ' planning order' + (checked.length > 1 ? 's' : '') + ' successfully';
     qs('pipelineStatusBar').style.color = '#16a34a';
     await loadReleaseBoard();
-    renderDashboardPipeline();
+    renderDashboard();
   } catch(e) {
     qs('pipelineStatusText').textContent = '✗ Release failed: ' + e.message;
     qs('pipelineStatusBar').style.color = '#dc2626';
