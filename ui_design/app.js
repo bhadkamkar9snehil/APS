@@ -194,7 +194,7 @@ async function runFullPipeline(){
     // Stage 4 - simulate
     setPipelineStageStatus('ps-schedule', 'running');
     stageExpand('ps-schedule');
-    await simulateWithConfig();
+/*     await simulateWithConfig(); */
 
     // Stage 5 - load release
     setPipelineStageStatus('ps-release', 'running');
@@ -313,9 +313,9 @@ function hydrateSummary(summary){
   const held = num(summary.campaigns_held);
   const late = num(summary.campaigns_late);
   const heatTotal = num(summary.total_heats);
-  const releasedHeats = num(summary.released_heats || 0);  // Heats from released campaigns
+  const releasedHeats = num(summary.released_heats || summary.total_heats || 0);
   const mtTotal = num(summary.total_mt);
-  const releasedMt = num(summary.released_mt || 0);  // MT from released campaigns
+  const releasedMt = num(summary.released_mt || summary.total_mt || 0);
   const ot = summary.on_time_pct == null ? '—' : num(summary.on_time_pct).toFixed(1) + '%';
 
   // All plant utilization from capacity data
@@ -1160,7 +1160,7 @@ function renderMaster(){
   });
 }
 async function loadApplicationState(){
-  const [overview, campaigns, releaseQueue, gantt, capacity, material, dispatch, scenarios, ctpReqs, ctpOut, master] = await Promise.all([
+  const [overview, campaigns, releaseQueue, gantt, capacity, material, dispatch, scenarios, ctpReqs, ctpOut, master, planningOrders] = await Promise.all([
     apiFetch('/api/aps/dashboard/overview').catch(()=>null),
     apiFetch('/api/aps/campaigns/list').catch(()=>({items:[]})),
     apiFetch('/api/aps/campaigns/release-queue').catch(()=>({items:[]})),
@@ -1171,7 +1171,8 @@ async function loadApplicationState(){
     apiFetch('/api/aps/scenarios/list').catch(()=>({items:[]})),
     apiFetch('/api/aps/ctp/requests').catch(()=>({items:[]})),
     apiFetch('/api/aps/ctp/output').catch(()=>({items:[]})),
-    apiFetch('/api/aps/masterdata').catch(()=>({}))
+    apiFetch('/api/aps/masterdata').catch(()=>({})),
+    apiFetch('/api/aps/planning/orders').catch(()=>({planning_orders:[]}))
   ]);
 
   state.overview = overview ? overview.summary || overview : null;
@@ -1185,6 +1186,10 @@ async function loadApplicationState(){
   state.ctpRequests = ctpReqs.items || [];
   state.ctpOutput = ctpOut.items || [];
   state.master = master || {};
+  // Restore in-memory planning orders (persists across page refresh if server is running)
+  if ((planningOrders.planning_orders || []).length > 0) {
+    state.planningOrders = planningOrders.planning_orders;
+  }
 
   if(state.overview) hydrateSummary(state.overview);
   renderDashboard();
@@ -2521,7 +2526,7 @@ function showGanttModal(title, data, type = 'so'){
   });
 }
 
-function simulateWithConfig(){
+/* function simulateWithConfig(){
   // Read configuration panel values
   state.simConfig.horizon_days = Number(qs('simHorizonDays')?.value || state.config.horizon_days);
   state.simConfig.heat_size_mt = Number(qs('simHeatSizeMt')?.value || state.config.heat_size_mt);
@@ -2534,7 +2539,7 @@ function simulateWithConfig(){
   qs('schedulerContent').style.display = '';
 
   simulateSchedule(state.simConfig);
-}
+} */
 
 async function simulateSchedule(config = {}){
   if(!state.heatBatches || !state.heatBatches.length){
@@ -2547,11 +2552,13 @@ async function simulateSchedule(config = {}){
     setText('schedulerSimulateBtn', 'Simulating…');
 
     const simParams = {
-      heat_batches: state.heatBatches,
-      horizon_hours: (config.horizon_days || state.simConfig.horizon_days) * 24,
-      sms_lines: config.sms_lines || state.simConfig.sms_lines || 1,
-      rm_lines: config.rm_lines || state.simConfig.rm_lines || 1,
-      priority_filter: config.priority_filter || state.simConfig.priority_filter || ''
+      planning_orders: state.planningOrders,
+      horizon_hours: Number(qs('simHorizonDays')?.value || 14) * 24,
+      num_sms:        Number(qs('simSmsLines')?.value || 1),
+      num_rm:         Number(qs('simRmLines')?.value || 1),
+      priority_filter: qs('simPriorityFilter')?.value || '',
+      rolling_mode_filter: qs('simRollingMode')?.value || '',
+      grade_filter:   qs('simGradeFilter')?.value || '',
     };
 
     const data = await apiFetch('/api/aps/planning/simulate', {
@@ -2559,6 +2566,13 @@ async function simulateSchedule(config = {}){
       body: JSON.stringify(simParams)
     });
 
+    // Populate grade dropdown from planning orders
+    const gradeEl = qs('simGradeFilter');
+    if(gradeEl && state.planningOrders?.length){
+      const grades = [...new Set(state.planningOrders.map(po => po.grade).filter(Boolean))].sort();
+      gradeEl.innerHTML = '<option value="">All grades</option>' +
+        grades.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
+    }    
     const feasible = data.feasible;
     const duration = data.total_duration_hours || 0;
     const smsHours = data.sms_hours || 0;
@@ -2679,7 +2693,7 @@ async function simulateSchedule(config = {}){
   }
 }
 
-async function remSimulate(){
+/* async function remSimulate(){
   // Re-simulate with remediation settings
   if(!state.heatBatches || !state.heatBatches.length){
     alert('Derive heats first.');
@@ -2813,7 +2827,7 @@ async function remSimulate(){
     alert('Re-simulation failed: ' + e.message);
     setText('schedulerSimulateBtn', 'Simulate');
   }
-}
+} */
 
 async function loadReleaseBoard(){
   if(!state.planningOrders || !state.planningOrders.length){

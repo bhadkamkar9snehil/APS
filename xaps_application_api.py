@@ -835,6 +835,18 @@ def _dashboard_payload() -> Dict[str, Any]:
     released = sum(1 for x in campaigns if str(x.get("release_status") or "").upper() == "RELEASED")
     held = sum(1 for x in campaigns if "HOLD" in str(x.get("release_status") or "").upper())
     late = sum(1 for x in campaigns if str(x.get("Status") or "").upper() == "LATE")
+    released_campaigns = [c for c in campaigns if str(c.get("release_status") or "").upper() == "RELEASED"]
+    released_heats = sum(float(x.get("heats") or 0) for x in released_campaigns)
+    released_mt = round(sum(float(x.get("total_mt") or 0) for x in released_campaigns), 1)
+
+    # Fall back to in-memory planning orders when workbook campaigns are absent
+    _in_mem_pos = list(getattr(aps_planning_orders_propose, "_planning_orders", []) or [])
+    if not campaigns and _in_mem_pos:
+        total_mt = round(sum(float(po.get("total_qty_mt") or 0) for po in _in_mem_pos), 1)
+        total_heats = sum(int(po.get("heats_required") or 0) for po in _in_mem_pos)
+        released = sum(1 for po in _in_mem_pos if str(po.get("planner_status") or "").upper() == "RELEASED")
+        released_mt = round(sum(float(po.get("total_qty_mt") or 0) for po in _in_mem_pos if str(po.get("planner_status") or "").upper() == "RELEASED"), 1)
+        released_heats = sum(int(po.get("heats_required") or 0) for po in _in_mem_pos if str(po.get("planner_status") or "").upper() == "RELEASED")
 
     bottleneck = None
     if capacity:
@@ -872,6 +884,8 @@ def _dashboard_payload() -> Dict[str, Any]:
         "campaigns_late": late,
         "total_heats": total_heats,
         "total_mt": round(total_mt, 1),
+        "released_heats": released_heats,
+        "released_mt": released_mt,
         "on_time_pct": round(100 * max(0, len(campaigns) - late) / max(len(campaigns), 1), 1) if campaigns else 0.0,
         "throughput_mt_day": round(total_mt / 14, 1) if total_mt else 0.0,
         "bottleneck": bottleneck.get("Resource_ID") if bottleneck else None,
@@ -2399,6 +2413,13 @@ def aps_planning_orders_pool():
         return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
 
 
+@app.route('/api/aps/planning/orders', methods=['GET'])
+def aps_planning_orders_list():
+    """Return the current in-memory planning orders (proposed/frozen/released)."""
+    pos = list(getattr(aps_planning_orders_propose, "_planning_orders", []) or [])
+    return _jsonify({"planning_orders": pos, "count": len(pos)})
+
+
 @app.route('/api/aps/planning/window/select', methods=['POST'])
 def aps_planning_window_select():
     """Select planning window and return candidate SOs."""
@@ -2875,6 +2896,19 @@ def aps_planning_simulate():
                 filtered_orders = [po for po in planning_orders_data if str(po.get("priority", "")).upper() in ("URGENT", "HIGH")]
             # If priority_filter is set but doesn't match above, use original (shouldn't happen)
 
+            # Apply rolling mode filter
+            rolling_mode_filter = str(payload.get("rolling_mode_filter", "") or "").strip().upper()
+            if rolling_mode_filter in ("HOT", "COLD"):
+                filtered_orders = [po for po in filtered_orders
+                                if str(po.get("rolling_mode", "HOT")).strip().upper() == rolling_mode_filter]
+
+            # Apply grade filter
+            grade_filter = str(payload.get("grade_filter", "") or "").strip().upper()
+            if grade_filter:
+                filtered_orders = [po for po in filtered_orders
+                                if str(po.get("grade", "")).strip().upper() == grade_filter]
+
+
         d = _load_all()
         scheduler_inputs = _planning_orders_to_scheduler_campaigns(
             planning_orders=filtered_orders,
@@ -2893,16 +2927,14 @@ def aps_planning_simulate():
             # etc.
 
             if num_sms > 1:
-                # Reduce SMS resource capacity
                 sms_mask = resources_df["Resource_ID"].astype(str).str.contains("SMS|EAF|LRF|VD|CCM", case=False, na=False)
                 if "Max_Capacity_MT_per_Shift" in resources_df.columns and sms_mask.any():
-                    resources_df.loc[sms_mask, "Max_Capacity_MT_per_Shift"] = resources_df.loc[sms_mask, "Max_Capacity_MT_per_Shift"] / num_sms
+                    resources_df.loc[sms_mask, "Max_Capacity_MT_per_Shift"] *= num_sms
 
             if num_rm > 1:
-                # Reduce RM resource capacity
                 rm_mask = resources_df["Resource_ID"].astype(str).str.contains("RM", case=False, na=False)
                 if "Max_Capacity_MT_per_Shift" in resources_df.columns and rm_mask.any():
-                    resources_df.loc[rm_mask, "Max_Capacity_MT_per_Shift"] = resources_df.loc[rm_mask, "Max_Capacity_MT_per_Shift"] / num_rm
+                    resources_df.loc[rm_mask, "Max_Capacity_MT_per_Shift"] *= num_rm
 
         # Suppress stdout during scheduling to avoid Unicode encoding errors on Windows
         import io
