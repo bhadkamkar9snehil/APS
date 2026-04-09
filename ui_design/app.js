@@ -3037,7 +3037,10 @@ async function simulateSchedule(config = {}){
     const returnedHorizonHours = data.horizon_hours || horizonHours;
     const smsHours = data.sms_span_hours ?? data.sms_hours ?? 0;
     const rmHours = data.rm_span_hours ?? data.rm_hours ?? 0;
-    const loadFactor = data.load_factor || '—';
+    const horizonUse = data.load_factor || '—';
+    const overflowHours = num(data.overflow_hours || 0);
+    const smsWorkload = num(data.sms_hours || 0).toFixed(1);
+    const rmWorkload = num(data.rm_hours || 0).toFixed(1);
 
     setText('scheduleFeasible', feasible ? 'Yes' : 'No');
     setText('scheduleDuration', duration + 'h');
@@ -3069,12 +3072,33 @@ async function simulateSchedule(config = {}){
         <div style="display:flex;gap:2rem;font-size:.85rem">
           <div><div style="color:var(--text-soft);font-size:.7rem">Duration</div><div style="font-weight:700">${duration}h</div></div>
           <div><div style="color:var(--text-soft);font-size:.7rem">Horizon</div><div style="font-weight:700">${returnedHorizonHours}h</div></div>
-          <div><div style="color:var(--text-soft);font-size:.7rem">Load</div><div style="font-weight:700">${loadFactor}</div></div>
+          <div><div style="color:var(--text-soft);font-size:.7rem">Horizon use</div><div style="font-weight:700">${horizonUse}</div></div>
           <div><div style="color:var(--text-soft);font-size:.7rem">SMS span</div><div style="font-weight:700">${smsHours}h</div></div>
           <div><div style="color:var(--text-soft);font-size:.7rem">RM span</div><div style="font-weight:700">${rmHours}h</div></div>
           <div><div style="color:var(--text-soft);font-size:.7rem">Bottleneck</div><div style="font-weight:700;color:${statusColor}">${escapeHtml(bottleneck)}</div></div>
         </div>
-        <div style="font-size:.75rem;color:var(--text-soft);flex:1">${data.message}<br><span style="font-size:.68rem;color:var(--text-faint)">Workload: SMS ${num(data.sms_hours || 0).toFixed(1)}h · RM ${num(data.rm_hours || 0).toFixed(1)}h</span></div>
+        <div style="flex:1;text-align:left;display:flex;flex-direction:column;gap:.3rem">
+          <div style="font-size:.95rem;font-weight:800;color:${statusColor}">
+            ${feasible
+              ? `Finite schedule generated within selected horizon`
+              : (data.horizon_exceeded
+                ? `Not feasible for selected horizon: need ${duration.toFixed(1)}h, but only ${returnedHorizonHours.toFixed(1)}h selected`
+                : `No feasible finite schedule was produced`)}
+          </div>
+          <div style="font-size:.8rem;color:var(--text-soft)">
+            ${feasible
+              ? `The schedule fits within the selected horizon.`
+              : (data.horizon_exceeded
+                ? `The issue is horizon overflow, not missing rows: the schedule exceeds the selected horizon by ${overflowHours.toFixed(1)}h.`
+                : escapeHtml(data.message || 'Finite schedule is infeasible with current planning orders / master data.'))}
+          </div>
+          <div style="font-size:.8rem;font-weight:700;color:var(--text)">
+            Workload: SMS ${smsWorkload}h · RM ${rmWorkload}h
+          </div>
+          <div style="font-size:.72rem;color:var(--text-soft)">
+            Span = elapsed time from first start to last finish in that family. Workload = summed processing hours, so workload can be higher than span when lines run in parallel.
+          </div>
+        </div>
       </div>
     `;
     qs('schedulerContent').style.display = '';
@@ -3143,8 +3167,10 @@ async function simulateSchedule(config = {}){
     }
 
     setPipelineStageStatus('ps-schedule', feasible ? 'done' : 'warn',
-      data.message,
-      [{v: duration+'h', l:'duration'}, {v: loadFactor, l:'load'}]
+      data.horizon_exceeded
+        ? `Need ${duration.toFixed(1)}h vs ${returnedHorizonHours.toFixed(1)}h horizon`
+        : data.message,
+      [{v: duration+'h', l:'span'}, {v: horizonUse, l:'horizon use'}]
     );
     stageExpand('ps-schedule');
 
