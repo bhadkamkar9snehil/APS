@@ -575,8 +575,8 @@ function renderDashboardPipeline() {
     <div class="dash-pipe-row">
       <div class="dash-pipe-dot ${s.dot}"></div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:.7rem">${escapeHtml(s.label)}</div>
-        <div style="font-size:.62rem;color:var(--text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(s.detail)}</div>
+        <div style="font-weight:700;font-size:.76rem">${escapeHtml(s.label)}</div>
+        <div style="font-size:.68rem;color:var(--text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(s.detail)}</div>
       </div>
     </div>`).join('');
 }
@@ -742,7 +742,7 @@ function renderDashboardInventory() {
         <div class="dash-cap-bar-bg">
           <div class="dash-cap-bar" style="width:${pct}%;background:${barColor}"></div>
         </div>
-        <div style="font-size:.58rem;color:var(--text-faint);margin-top:.12rem">${m.qty} MT on hand · need ${m.min} MT</div>
+        <div style="font-size:.64rem;color:var(--text-soft);margin-top:.12rem">${m.qty} MT on hand · need ${m.min} MT</div>
       </div>
       <span class="dash-mat-tag" style="background:${tagBg};color:${tagColor}">${m.status}</span>
     </div>`;
@@ -769,12 +769,12 @@ function renderDashActivePOs() {
     const dueWindow = Array.isArray(po.due_window) ? po.due_window.filter(Boolean).join(' → ') : '';
     return `<div class="dash-po-row ${st}">
       <div class="dash-po-main">
-        <div style="font-weight:700;font-size:.7rem;white-space:nowrap">${escapeHtml(po.po_id)}</div>
+        <div style="font-weight:800;font-size:.76rem;white-space:nowrap">${escapeHtml(po.po_id)}</div>
         <div class="dash-po-meta">${escapeHtml(grade)} · ${soCount} SOs · ${heats} heats${dueWindow ? ` · ${escapeHtml(dueWindow)}` : ''}</div>
       </div>
       <div class="dash-po-side">
-        <div style="font-size:.68rem;font-weight:700;white-space:nowrap">${mt} MT</div>
-        <div style="font-size:.58rem;font-weight:700;color:${badgeColor};white-space:nowrap">${(po.planner_status||'PROP').substring(0,4)}</div>
+        <div style="font-size:.72rem;font-weight:800;white-space:nowrap">${mt} MT</div>
+        <div style="font-size:.62rem;font-weight:800;color:${badgeColor};white-space:nowrap">${(po.planner_status||'PROP').substring(0,4)}</div>
       </div>
     </div>`;
   }).join('');
@@ -1175,10 +1175,22 @@ function renderMaterial(){
   }
 
   const withShortage = camps.filter(c=>num(c.shortage_qty)>0).length;
-  const withHold     = camps.filter(c=>String(c.material_status||'').toUpperCase().includes('HOLD')).length;
-  const covered      = camps.filter(c=>num(c.shortage_qty)<=0 && !String(c.material_status||'').toUpperCase().includes('HOLD')).length;
+  const withHold = camps.filter(c=>{
+    const status = String(c.material_status || c.release_status || '').toUpperCase();
+    return status.includes('HOLD');
+  }).length;
+  const withConvert = camps.filter(c=>{
+    const status = String(c.material_status || '').toUpperCase();
+    return num(c.shortage_qty) <= 0 &&
+      !status.includes('HOLD') &&
+      (num(c.make_convert_qty) > 0 || status.includes('PARTIAL') || status.includes('LOW') || status.includes('CONVERT'));
+  }).length;
+  const covered = camps.filter(c=>{
+    const status = String(c.material_status || c.release_status || '').toUpperCase();
+    return num(c.shortage_qty) <= 0 && !status.includes('HOLD') && num(c.make_convert_qty) <= 0;
+  }).length;
   setText('matOk', covered);
-  setText('matLow', withHold);
+  setText('matLow', withConvert);
   setText('matCrit', withShortage);
   setText('matHeld', withHold);
 
@@ -1186,20 +1198,30 @@ function renderMaterial(){
 }
 
 function buildMaterialTree(camps){
-  state.materialCampaigns = [...camps].sort((a,b)=>num(b.shortage_qty)-num(a.shortage_qty));
+  state.materialCampaigns = [...camps].sort((a,b)=>
+    num(b.shortage_qty) - num(a.shortage_qty) ||
+    num(b.make_convert_qty) - num(a.make_convert_qty) ||
+    num(b.required_qty) - num(a.required_qty)
+  );
   const tree = qs('materialTree');
   tree.innerHTML = state.materialCampaigns.map((camp, idx)=>{
     const shortQty = num(camp.shortage_qty);
+    const convertQty = num(camp.make_convert_qty);
     const isHold   = String(camp.material_status||'').toUpperCase().includes('HOLD');
-    const icon     = shortQty > 0 ? '⚠' : isHold ? '⏸' : '✓';
-    const iconColor= shortQty > 0 ? 'var(--danger)' : isHold ? 'var(--warning)' : 'var(--success)';
-    const label    = shortQty > 0 ? shortQty.toFixed(1)+' MT short' : isHold ? 'On hold' : 'Ready';
+    const isConvert = !isHold && shortQty <= 0 && convertQty > 0;
+    const icon     = shortQty > 0 ? '!' : isHold ? 'H' : isConvert ? '~' : '✓';
+    const iconColor= shortQty > 0 ? 'var(--danger)' : (isHold || isConvert) ? 'var(--warning)' : 'var(--success)';
+    const label    = shortQty > 0 ? shortQty.toFixed(1)+' MT short' : isHold ? 'On hold' : isConvert ? convertQty.toFixed(1)+' MT convert' : 'Ready';
     const cid      = camp.campaign_id || camp.id || '';
+    const qty      = num(camp.required_qty).toFixed(0);
     return '<div class="tree-item">'+
       '<div class="tree-node campaign" onclick="selectMaterialCampaign(this,'+idx+')" data-campaign="'+escapeHtml(cid)+'">'+
         '<div class="tree-toggle leaf"></div>'+
         '<div class="tree-node-icon" style="color:'+iconColor+'">'+icon+'</div>'+
-        '<span style="font-size:.8rem">'+escapeHtml(cid)+'<span style="font-size:.7rem;color:var(--text-faint);margin-left:.4rem">'+escapeHtml(camp.grade||'—')+' — '+label+'</span></span>'+
+        '<div class="material-tree-copy">'+
+          '<div class="material-tree-title">'+escapeHtml(cid)+'</div>'+
+          '<div class="material-tree-meta">'+escapeHtml(camp.grade||'—')+' · '+qty+' MT · '+label+'</div>'+
+        '</div>'+
       '</div>'+
     '</div>';
   }).join('');
@@ -1222,49 +1244,175 @@ function renderMaterialDetail(campaign){
   const grade     = campaign.grade || '—';
   const reqQty    = num(campaign.required_qty);
   const shortQty  = num(campaign.shortage_qty);
+  const coveredQty= num(campaign.inventory_covered_qty);
+  const convertQty= num(campaign.make_convert_qty);
   const matStatus = campaign.material_status || '';
-  const isHold    = matStatus.toUpperCase().includes('HOLD');
+  const releaseStatus = campaign.release_status || 'OPEN';
+  const materials = [...(campaign.materials || campaign.detail_rows || [])].sort((a,b)=>
+    num(b.shortage_qty || b.required_qty || b.gross_required_qty) - num(a.shortage_qty || a.required_qty || a.gross_required_qty)
+  );
+  const plants = (campaign.plants && campaign.plants.length)
+    ? campaign.plants
+    : Object.values(materials.reduce((acc, row) => {
+        const plant = row.plant || 'Unassigned';
+        if (!acc[plant]) {
+          acc[plant] = {
+            plant,
+            required_qty: 0,
+            inventory_covered_qty: 0,
+            make_convert_qty: 0,
+            shortage_qty: 0,
+            rows: []
+          };
+        }
+        acc[plant].required_qty += num(row.required_qty || row.gross_required_qty);
+        acc[plant].inventory_covered_qty += num(row.inventory_covered_qty);
+        acc[plant].make_convert_qty += num(row.make_convert_qty);
+        acc[plant].shortage_qty += num(row.shortage_qty);
+        acc[plant].rows.push(row);
+        return acc;
+      }, {}));
+  const coveragePct = reqQty > 0 ? Math.max(0, Math.min(100, ((reqQty - shortQty) / reqQty) * 100)) : 100;
+  const plantCards = plants.sort((a,b)=>num(b.shortage_qty || 0) - num(a.shortage_qty || 0) || num(b.required_qty || 0) - num(a.required_qty || 0));
 
   // Shortages can be in campaign.shortages (array) or campaign.material_shortages (object)
   const shortages = campaign.shortages && campaign.shortages.length > 0
     ? campaign.shortages
     : Object.entries(campaign.material_shortages || {}).map(([sku_id, qty])=>({sku_id, qty}));
 
-  let html = `<div class="material-detail-header">
-    <div class="material-detail-title">${escapeHtml(cid)}</div>
-    <div class="material-detail-subtitle">${escapeHtml(grade)} — ${escapeHtml(campaign.release_status||'—')} — ${escapeHtml(matStatus||'OK')}</div>
-  </div>
-  <div class="material-detail-stats">
-    <div class="material-detail-stat" style="background:rgba(34,197,94,.1);border-color:rgba(34,197,94,.3)">
-      <div class="material-detail-stat-label">Required</div>
-      <div class="material-detail-stat-value">${reqQty.toFixed(1)} MT</div>
+  const topMaterials = [...materials]
+    .sort((a,b)=>num(b.required_qty || b.gross_required_qty) - num(a.required_qty || a.gross_required_qty))
+    .slice(0, 6);
+
+  const materialRows = materials.length ? materials.map(row => {
+    const required = num(row.required_qty || row.gross_required_qty);
+    const available = num(row.available_before);
+    const covered = num(row.inventory_covered_qty);
+    const convert = num(row.make_convert_qty);
+    const shortage = num(row.shortage_qty);
+    const status = String(row.status || row.type || 'COVERED').toUpperCase();
+    const tone = shortage > 0 ? 'short' : convert > 0 ? 'partial' : 'covered';
+    return `<tr>
+      <td style="font-weight:700">${escapeHtml(row.material_sku || row.sku_id || '')}</td>
+      <td>${escapeHtml(row.material_name || row.sku_id || '—')}</td>
+      <td>${escapeHtml(row.plant || '—')}</td>
+      <td>${escapeHtml(row.material_type || 'Material')}</td>
+      <td style="text-align:right">${required.toFixed(1)}</td>
+      <td style="text-align:right">${available.toFixed(1)}</td>
+      <td style="text-align:right;color:var(--success);font-weight:700">${covered.toFixed(1)}</td>
+      <td style="text-align:right;color:${convert > 0 ? 'var(--warning)' : 'var(--text-soft)'};font-weight:700">${convert.toFixed(1)}</td>
+      <td style="text-align:right;color:${shortage > 0 ? 'var(--danger)' : 'var(--text-soft)'};font-weight:700">${shortage.toFixed(1)}</td>
+      <td><span class="bom-item-badge ${tone}">${escapeHtml(status)}</span></td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="10">No material rows available for this campaign.</td></tr>';
+
+  let html = `<div class="material-detail-shell">
+    <div class="material-detail-hero">
+      <div class="material-detail-hero-copy">
+        <div class="material-detail-title">${escapeHtml(cid)}</div>
+        <div class="material-detail-subtitle">${escapeHtml(grade)} · ${escapeHtml(releaseStatus)} · ${escapeHtml(matStatus || 'OK')}</div>
+        <div class="material-detail-pills">
+          <span class="material-detail-pill">${materials.length} material SKU(s)</span>
+          <span class="material-detail-pill">${plantCards.length} plant bucket(s)</span>
+          <span class="material-detail-pill ${shortQty > 0 ? 'danger' : 'success'}">${shortQty > 0 ? `${shortQty.toFixed(1)} MT short` : 'Fully covered'}</span>
+        </div>
+      </div>
+      <div class="material-coverage-gauge">
+        <div class="material-coverage-value">${coveragePct.toFixed(0)}%</div>
+        <div class="material-coverage-label">coverage</div>
+      </div>
     </div>
-    <div class="material-detail-stat" style="background:rgba(220,38,38,.1);border-color:rgba(220,38,38,.3)">
-      <div class="material-detail-stat-label">Short</div>
-      <div class="material-detail-stat-value" style="color:${shortQty>0?'#dc2626':'#16a34a'}">${shortQty.toFixed(1)} MT</div>
+    <div class="material-summary-grid material-summary-grid--detail">
+      <div class="material-detail-stat tone-success">
+        <div class="material-detail-stat-label">Required</div>
+        <div class="material-detail-stat-value">${reqQty.toFixed(1)} MT</div>
+      </div>
+      <div class="material-detail-stat tone-info">
+        <div class="material-detail-stat-label">Stock Covered</div>
+        <div class="material-detail-stat-value">${coveredQty.toFixed(1)} MT</div>
+      </div>
+      <div class="material-detail-stat tone-warn">
+        <div class="material-detail-stat-label">Make / Convert</div>
+        <div class="material-detail-stat-value">${convertQty.toFixed(1)} MT</div>
+      </div>
+      <div class="material-detail-stat ${shortQty > 0 ? 'tone-danger' : 'tone-success'}">
+        <div class="material-detail-stat-label">Short</div>
+        <div class="material-detail-stat-value">${shortQty.toFixed(1)} MT</div>
+      </div>
+      <div class="material-detail-stat">
+        <div class="material-detail-stat-label">Status</div>
+        <div class="material-detail-stat-value material-detail-stat-text">${escapeHtml(matStatus || 'OK')}</div>
+      </div>
     </div>
-    <div class="material-detail-stat" style="background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.3)">
-      <div class="material-detail-stat-label">Status</div>
-      <div class="material-detail-stat-value" style="font-size:.8rem">${escapeHtml(matStatus||'OK')}</div>
+    <div class="material-detail-layout">
+      <div class="material-detail-main">
+        <div class="material-section">
+          <div class="material-section-head">
+            <div class="material-section-title">Material Breakdown</div>
+            <div class="material-section-sub">Required, stock draw, conversion, and shortage by SKU</div>
+          </div>
+          <div class="material-table-wrap">
+            <table class="table material-detail-table">
+              <thead>
+                <tr><th>SKU</th><th>Name</th><th>Plant</th><th>Type</th><th style="text-align:right">Req MT</th><th style="text-align:right">Avail</th><th style="text-align:right">Stock</th><th style="text-align:right">Convert</th><th style="text-align:right">Short</th><th>Status</th></tr>
+              </thead>
+              <tbody>${materialRows}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="material-detail-side">
+        <div class="material-section">
+          <div class="material-section-head">
+            <div class="material-section-title">Plant Coverage</div>
+            <div class="material-section-sub">How the load splits across plant buckets</div>
+          </div>
+          <div class="material-plant-list">${plantCards.map(plant => {
+            const required = num(plant.required_qty);
+            const short = num(plant.shortage_qty);
+            const covered = num(plant.inventory_covered_qty);
+            const convert = num(plant.make_convert_qty);
+            const pct = required > 0 ? Math.max(0, Math.min(100, ((required - short) / required) * 100)) : 100;
+            return `<div class="material-plant-card ${short > 0 ? 'risk' : 'good'}">
+              <div class="material-plant-card-top">
+                <div>
+                  <div class="material-plant-name">${escapeHtml(plant.plant || 'Unassigned')}</div>
+                  <div class="material-plant-meta">${required.toFixed(1)} MT required</div>
+                </div>
+                <div class="material-plant-pct">${pct.toFixed(0)}%</div>
+              </div>
+              <div class="dash-cap-bar-bg"><div class="dash-cap-bar" style="width:${pct}%;background:${short > 0 ? 'var(--danger)' : 'var(--success)'}"></div></div>
+              <div class="material-plant-breakdown">
+                <span>${covered.toFixed(1)} stock</span>
+                <span>${convert.toFixed(1)} convert</span>
+                <span>${short.toFixed(1)} short</span>
+              </div>
+            </div>`;
+          }).join('')}</div>
+        </div>
+        <div class="material-section">
+          <div class="material-section-head">
+            <div class="material-section-title">${shortages.length ? 'Shortage Actions' : 'Top Material Draw'}</div>
+            <div class="material-section-sub">${shortages.length ? 'Immediate gaps to resolve before release' : 'Largest requirements in this campaign'}</div>
+          </div>
+          <div class="material-side-list">${(shortages.length ? shortages : topMaterials).map(item => {
+            const sku = item.sku_id || item.material_sku || '';
+            const qty = num(item.qty || item.Required_Qty || item.required_qty || item.gross_required_qty);
+            const meta = shortages.length
+              ? `${qty.toFixed(1)} MT short`
+              : `${qty.toFixed(1)} MT required · ${escapeHtml(item.plant || '—')}`;
+            return `<div class="material-side-row ${shortages.length ? 'risk' : ''}">
+              <div>
+                <div class="material-side-name">${escapeHtml(sku)}</div>
+                <div class="material-side-meta">${meta}</div>
+              </div>
+              <div class="material-side-qty">${qty.toFixed(1)}</div>
+            </div>`;
+          }).join('') || `<div class="material-side-empty">No material actions needed.</div>`}</div>
+        </div>
+      </div>
     </div>
   </div>`;
-
-  if(shortages.length > 0){
-    html += `<div style="margin-top:1.25rem">
-      <div style="font-weight:700;font-size:.82rem;padding:.5rem .8rem;background:rgba(220,38,38,.08);border-left:3px solid #dc2626;margin-bottom:.5rem">Material Shortages</div>
-      <table class="table" style="font-size:.78rem">
-        <thead><tr><th>SKU</th><th style="text-align:right">Shortage MT</th></tr></thead>
-        <tbody>${shortages.map(s=>`<tr>
-          <td style="font-weight:600">${escapeHtml(s.sku_id||s.Material_SKU||'')}</td>
-          <td style="text-align:right;color:#dc2626;font-weight:700">${num(s.qty||s.Required_Qty||0).toFixed(1)}</td>
-        </tr>`).join('')}</tbody>
-      </table></div>`;
-  } else {
-    html += `<div style="margin-top:2rem;padding:1.5rem;text-align:center;color:var(--text-faint)">
-      <div style="font-size:2rem;margin-bottom:.4rem">✓</div>
-      <div style="font-weight:600">All materials available</div>
-    </div>`;
-  }
 
   qs('materialDetailContent').innerHTML = html;
 }

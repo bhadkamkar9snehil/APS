@@ -137,7 +137,7 @@
             </div>
 
             <!-- Alerts & Insights -->
-            <div class="dash-card" style="flex:0.4;min-height:11rem;overflow:hidden;display:flex;flex-direction:column">
+            <div class="dash-card" style="flex:0.44;min-height:13.5rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Alerts &amp; Insights</span>
                 <span id="dashAlertCount" style="font-size:.65rem;font-weight:700;background:var(--danger-soft);color:var(--danger);padding:.15rem .4rem;border-radius:1rem;display:none">0</span>
@@ -229,7 +229,7 @@
             </div>
 
             <!-- Active POs summary -->
-            <div class="dash-card" style="flex:0.38;min-height:12rem;overflow:hidden;display:flex;flex-direction:column">
+            <div class="dash-card" style="flex:0.44;min-height:13.5rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Active Planning Orders</span>
                 <button type="button" class="btn ghost" style="font-size:.65rem;padding:.15rem .45rem;height:1.5rem" onclick="activatePage('planning')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> Plan</span></button>
@@ -601,22 +601,18 @@
           <div><div class="page-title">Material</div><div class="page-sub">Coverage status, BOM netting, holds, and shortage resolution.</div></div>
           <div class="page-actions"><button type="button" class="btn primary" id="bomRunBtn"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i><span> Run BOM Netting</span></button></div>
         </div>
-        <!-- KPI strip -->
-        <div class="grid-4" style="margin-bottom:.75rem;flex-shrink:0">
-          <div class="metric success"><div class="metric-label">Covered</div><div class="metric-value" id="matOk">—</div><div class="metric-sub" id="bomKpiCoveredVal">—</div></div>
-          <div class="metric warn"><div class="metric-label">Partial / Low</div><div class="metric-value" id="matLow">—</div><div class="metric-sub" id="bomKpiPartialVal">—</div></div>
-          <div class="metric danger"><div class="metric-label">Short</div><div class="metric-value" id="matCrit">—</div><div class="metric-sub" id="bomKpiShortVal">—</div></div>
+        <div class="material-kpi-row" style="margin-bottom:.75rem;flex-shrink:0">
+          <div class="metric success"><div class="metric-label">Covered</div><div class="metric-value" id="matOk">—</div><div class="metric-sub">Campaigns ready</div></div>
+          <div class="metric warn"><div class="metric-label">Partial / Low</div><div class="metric-value" id="matLow">—</div><div class="metric-sub">Needs conversion / hold</div></div>
+          <div class="metric danger"><div class="metric-label">Short</div><div class="metric-value" id="matCrit">—</div><div class="metric-sub">Campaigns with shortages</div></div>
           <div class="metric"><div class="metric-label">Held lots</div><div class="metric-value" id="matHeld">—</div><div class="metric-sub">Awaiting material</div></div>
-        </div>
-        <!-- BOM strip (hidden until run) -->
-        <div class="bom-summary-strip" id="bomSummaryStrip" style="display:none;flex-shrink:0">
-          <div class="bom-kpi"><span class="kpi-val" id="bomKpiLinesVal">—</span><span class="kpi-label">Items</span></div>
-          <div class="bom-kpi"><span class="kpi-val" id="bomKpiGrossVal">—</span><span class="kpi-label">Gross MT</span></div>
-          <div class="bom-kpi"><span class="kpi-val" id="bomKpiNetVal">—</span><span class="kpi-label">Net MT</span></div>
-          <div class="bom-kpi"><span class="kpi-val" id="bomKpiByproductVal">—</span><span class="kpi-label">Byproduct</span></div>
+          <div class="metric info"><div class="metric-label">Material Items</div><div class="metric-value" id="bomKpiLinesVal">—</div><div class="metric-sub">SKU lines in BOM</div></div>
+          <div class="metric"><div class="metric-label">Gross MT</div><div class="metric-value" id="bomKpiGrossVal">—</div><div class="metric-sub">Before netting</div></div>
+          <div class="metric"><div class="metric-label">Net MT</div><div class="metric-value" id="bomKpiNetVal">—</div><div class="metric-sub">After netting</div></div>
+          <div class="metric info"><div class="metric-label">Byproduct</div><div class="metric-value" id="bomKpiByproductVal">—</div><div class="metric-sub">Recoverable lines</div></div>
         </div>
         <!-- Split layout: tree left, detail right -->
-        <div class="material-split-container" style="flex:1;min-height:0;overflow:hidden">
+        <div class="material-split-container material-page-layout" style="flex:1;min-height:0;overflow:hidden">
           <div class="material-tree-panel">
             <div class="material-tree-header">Material Groups</div>
             <div class="material-tree" id="materialTree"></div>
