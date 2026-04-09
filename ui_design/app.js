@@ -24,7 +24,9 @@ const state = {
     priority_filter: '',
     sms_lines: 1,
     rm_lines: 1
-  }
+  },
+  // Planner-set rolling mode overrides for individual SOs (so_id → 'HOT'|'COLD')
+  soRollingOverrides: {}
 };
 
 function qs(id){ return document.getElementById(id); }
@@ -1774,9 +1776,12 @@ function renderPlanningOrderPool() {
   const poolBody = qs('poolBody');
   if (!poolBody) return;
 
-  poolBody.innerHTML = filtered.map((so) => `
-    <tr style="cursor:pointer" onclick="if(event.target.type !== 'checkbox' && !event.target.closest('button')) checkMaterialForSO('${escapeHtml(so.so_id)}')">
-      <td><input type="checkbox" class="pool-so-check" data-so="${escapeHtml(so.so_id)}" checked style="width:1.2rem;height:1.2rem;cursor:pointer" onclick="event.stopPropagation()"></td>
+  poolBody.innerHTML = filtered.map((so) => {
+    const isHeld = so._held;
+    const rm = state.soRollingOverrides[so.so_id] || so.rolling_mode || 'HOT';
+    const rowStyle = isHeld ? 'opacity:.45;background:rgba(0,0,0,.03)' : '';
+    return `<tr style="cursor:pointer;${rowStyle}" onclick="if(event.target.type !== 'checkbox' && !event.target.closest('button') && !event.target.closest('select')) checkMaterialForSO('${escapeHtml(so.so_id)}')">
+      <td><input type="checkbox" class="pool-so-check" data-so="${escapeHtml(so.so_id)}" ${isHeld ? '' : 'checked'} ${isHeld ? 'disabled' : ''} style="width:1.2rem;height:1.2rem;cursor:pointer" onclick="event.stopPropagation()"></td>
       <td>${escapeHtml(so.so_id)}</td>
       <td style="font-size:.8rem;font-weight:500;min-width:8rem">${escapeHtml(so.sku_id || '—')}</td>
       <td>${escapeHtml(so.customer_id)}</td>
@@ -1786,11 +1791,19 @@ function renderPlanningOrderPool() {
       <td>${fmtDate(so.due_date)}</td>
       <td><span class="badge ${so.priority === 'URGENT' ? 'red' : so.priority === 'HIGH' ? 'amber' : 'blue'}" style="white-space:nowrap">${escapeHtml(so.priority)}</span></td>
       <td><span style="font-size:.8rem;padding:.2rem .4rem;background:rgba(107,114,207,.1);border-radius:.2rem">${escapeHtml(so.order_type || 'MTO')}</span></td>
-      <td><span style="font-size:.8rem;padding:.2rem .4rem;background:${so.rolling_mode === 'HOT' ? 'rgba(239,68,68,.1);color:#dc2626' : 'rgba(59,130,246,.1);color:#2563eb'};border-radius:.2rem;white-space:nowrap;font-weight:600">${escapeHtml(so.rolling_mode || 'HOT')}</span></td>
-      <td>${escapeHtml(so.status)}</td>
-      <td><button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.8rem;white-space:nowrap" onclick="event.stopPropagation();checkMaterialForSO('${escapeHtml(so.so_id)}')">Material</button></td>
-    </tr>
-  `).join('') || `
+      <td onclick="event.stopPropagation()">
+        <select class="sel" style="font-size:.75rem;padding:.15rem .3rem;height:1.6rem;border-radius:.2rem;font-weight:600;color:${rm==='HOT'?'#dc2626':'#2563eb'};background:${rm==='HOT'?'rgba(239,68,68,.08)':'rgba(59,130,246,.08)'}" onchange="setSORollingMode('${escapeHtml(so.so_id)}',this.value);this.style.color=this.value==='HOT'?'#dc2626':'#2563eb';this.style.background=this.value==='HOT'?'rgba(239,68,68,.08)':'rgba(59,130,246,.08)'">
+          <option value="HOT" ${rm==='HOT'?'selected':''}>HOT</option>
+          <option value="COLD" ${rm==='COLD'?'selected':''}>COLD</option>
+        </select>
+      </td>
+      <td>${isHeld ? '<span class="badge amber" style="white-space:nowrap">HELD</span>' : escapeHtml(so.status)}</td>
+      <td style="display:flex;gap:.3rem;flex-wrap:nowrap">
+        <button class="btn ghost" style="font-size:.72rem;padding:.2rem .5rem;height:1.7rem;white-space:nowrap" onclick="event.stopPropagation();checkMaterialForSO('${escapeHtml(so.so_id)}')">Mat</button>
+        <button class="btn ${isHeld ? 'primary' : 'warn'}" style="font-size:.72rem;padding:.2rem .5rem;height:1.7rem;white-space:nowrap" onclick="event.stopPropagation();toggleHoldSO('${escapeHtml(so.so_id)}')">${isHeld ? 'Unhold' : 'Hold'}</button>
+      </td>
+    </tr>`;
+  }).join('') || `
     <tr>
       <td colspan="13" style="text-align:center;color:var(--text-soft)">No orders match filters.</td>
     </tr>
@@ -3176,7 +3189,7 @@ function checkMaterialForPO(poId) {
   openMaterialPanel(title, skuIds);
 }
 
-function showFullBOMForSelectedSOs() {
+/* function showFullBOMForSelectedSOs() {
   const checkedSoIds = [...document.querySelectorAll('.pool-so-check:checked')].map(el => el.dataset.so);
 
   if (checkedSoIds.length === 0) {
@@ -3356,6 +3369,425 @@ function closeMaterialPanel() {
   if (panel) panel.style.display = 'none';
   qs('planningBomTree').innerHTML = '';
   qs('planningBomDetail').innerHTML = '';
+} */
+
+
+/* ============================================================================
+   PLANNING MATERIAL PANEL - FIXED ROOTED TREE RENDERING
+   Replace the old:
+   - openMaterialPanel(...)
+   - selectMaterialDetail(...)
+   and add these helpers.
+   ============================================================================ */
+
+function closeMaterialPanel() {
+  const panel = qs('planningMaterialPanel');
+  if (!panel) return;
+  panel.style.display = 'none';
+  qs('planningBomTree').innerHTML = '';
+  qs('planningBomDetail').innerHTML = '';
+  setText('materialCheckTitle', 'Material Requirements');
+  state.planningMaterialView = null;
+}
+
+function showPoolSOGantt() {
+  const selected = Array.from(state.selectedOrders || []);
+  if (!selected.length) {
+    alert('Select at least one sales order first.');
+    return;
+  }
+
+  const rows = (state.lastScheduleRows || []).filter(r => {
+    const soId = String(r.SO_ID || r.so_id || '').trim();
+    return selected.includes(soId);
+  });
+
+  if (!rows.length) {
+    alert('No schedule rows available for the selected sales orders. Run Feasibility Check first.');
+    return;
+  }
+
+  showGanttModal('Selected SO Timeline', rows, 'so');
+}
+
+/* function showFullBOMForSelectedSOs() {
+  const selected = Array.from(state.selectedOrders || []);
+  if (!selected.length) {
+    alert('Select at least one sales order first.');
+    return;
+  }
+
+  const skuIds = [...new Set(
+    (state.poolOrders || [])
+      .filter(o => selected.includes(String(o.so_id || o.SO_ID || '').trim()))
+      .map(o => String(o.sku_id || o.SKU_ID || '').trim())
+      .filter(Boolean)
+  )];
+
+  if (!skuIds.length) {
+    alert('No SKU IDs found for the selected sales orders.');
+    return;
+  }
+
+  openMaterialPanel('Materials for selected SO(s)', skuIds);
+} */
+
+function showFullBOMForSelectedSOs() {
+  const checkedSoIds = [...document.querySelectorAll('.pool-so-check:checked')]
+    .map(el => String(el.dataset.so || '').trim())
+    .filter(Boolean);
+
+  if (!checkedSoIds.length) {
+    alert('Select at least one sales order first.');
+    return;
+  }
+
+  const skuIds = [...new Set(
+    (state.poolOrders || [])
+      .filter(o => checkedSoIds.includes(String(o.so_id || o.SO_ID || '').trim()))
+      .map(o => String(o.sku_id || o.SKU_ID || '').trim())
+      .filter(Boolean)
+  )];
+
+  if (!skuIds.length) {
+    alert('No SKU IDs found for the selected sales orders.');
+    return;
+  }
+
+  openMaterialPanel(`Materials for ${checkedSoIds.length} selected SO(s)`, skuIds);
+}
+
+
+/* ---------- internal helpers ---------- */
+
+function _planningMaterialStatus(item) {
+  const req = num(item.Required_Qty || item.required_qty || 0);
+  const prod = num(item.Produced_Qty || item.produced_qty || 0);
+  const net = num(item.Net_Req || item.net_req || 0);
+  const avail = num(item.Available || item.Available_Before || item.available_before || 0);
+
+  if (req <= 0) return { label: 'BYPRODUCT', color: 'var(--text-faint)', tone: 'muted' };
+  if (net <= 1e-6) return { label: 'COVERED', color: 'var(--success)', tone: 'ok' };
+  if (avail > 1e-6 || prod > 1e-6) return { label: 'PARTIAL', color: 'var(--warning)', tone: 'warn' };
+  return { label: 'SHORT', color: 'var(--danger)', tone: 'bad' };
+}
+
+function _escapeJsString(v) {
+  return String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function _planningMaterialChildrenMap(rows) {
+  const byParent = {};
+  rows.forEach(row => {
+    const parent = String(row.Parent_SKU || '').trim();
+    if (!parent) return;
+    if (!byParent[parent]) byParent[parent] = [];
+    byParent[parent].push(row);
+  });
+
+  Object.keys(byParent).forEach(parent => {
+    byParent[parent].sort((a, b) => {
+      const aLevel = num(a.BOM_Level, 999);
+      const bLevel = num(b.BOM_Level, 999);
+      if (aLevel !== bLevel) return aLevel - bLevel;
+      return String(a.SKU_ID || '').localeCompare(String(b.SKU_ID || ''));
+    });
+  });
+
+  return byParent;
+}
+
+function _planningMaterialBuildTreeNode(parentSku, byParent, visitedPath = []) {
+  const pathKey = [...visitedPath, parentSku].join('>');
+  const childRows = (byParent[parentSku] || []).filter(r => num(r.Required_Qty || 0) > 0);
+
+  return {
+    key: pathKey,
+    sku_id: parentSku,
+    rows: childRows,
+    children: childRows.map(row => {
+      const childSku = String(row.SKU_ID || '').trim();
+      const nextPath = [...visitedPath, parentSku];
+
+      // Prevent cycle blow-up in UI even if bad BOM slips through
+      if (!childSku || nextPath.includes(childSku)) {
+        return {
+          key: [...nextPath, childSku || 'UNKNOWN'].join('>'),
+          sku_id: childSku || 'UNKNOWN',
+          incoming_row: row,
+          rows: [],
+          children: []
+        };
+      }
+
+      const childNode = _planningMaterialBuildTreeNode(childSku, byParent, nextPath);
+      childNode.incoming_row = row;
+      return childNode;
+    })
+  };
+}
+
+function _planningMaterialRenderTreeNode(node, level = 0) {
+  const incoming = node.incoming_row || null;
+  const status = incoming ? _planningMaterialStatus(incoming) : null;
+  const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+  const nodeKey = _escapeJsString(node.key);
+  const skuText = escapeHtml(node.sku_id);
+
+  const qtyText = incoming
+    ? `${num(incoming.Required_Qty || 0).toFixed(1)} MT`
+    : `${(node.rows || []).reduce((s, r) => s + num(r.Required_Qty || 0), 0).toFixed(1)} MT`;
+
+  const badgeHtml = status
+    ? `<span style="margin-left:auto;font-size:.65rem;color:${status.color};font-weight:700">${escapeHtml(status.label)}</span>`
+    : `<span style="margin-left:auto;font-size:.65rem;color:var(--text-faint);font-weight:700">ROOT</span>`;
+
+  const padLeft = 0.55 + (level * 0.9);
+
+  return `
+    <div class="bom-tree-item">
+      <div class="bom-tree-node ${level === 0 ? 'selected-root' : ''}"
+           data-node-key="${escapeHtml(node.key)}"
+           onclick="selectPlanningMaterialNode('${nodeKey}')"
+           style="cursor:pointer;padding-left:${padLeft}rem">
+        <div class="bom-tree-toggle ${hasChildren ? '' : 'leaf'}"
+             ${hasChildren ? `onclick="event.stopPropagation();togglePlanningMaterialNode(this)"` : ''}></div>
+        <div class="bom-tree-icon">${level === 0 ? '📦' : '⚙'}</div>
+        <span>${skuText}</span>
+        <span style="margin-left:.5rem;font-size:.65rem;color:var(--text-faint)">${escapeHtml(qtyText)}</span>
+        ${badgeHtml}
+      </div>
+      ${
+        hasChildren
+          ? `<div class="bom-tree-children" style="display:block">
+               ${node.children.map(child => _planningMaterialRenderTreeNode(child, level + 1)).join('')}
+             </div>`
+          : ''
+      }
+    </div>
+  `;
+}
+
+function togglePlanningMaterialNode(toggleEl) {
+  const children = toggleEl.closest('.bom-tree-item')?.querySelector(':scope > .bom-tree-children');
+  if (!children) return;
+
+  const isOpen = children.style.display !== 'none';
+  children.style.display = isOpen ? 'none' : 'block';
+  toggleEl.classList.toggle('collapsed', isOpen);
+  toggleEl.classList.toggle('expanded', !isOpen);
+}
+
+function _planningMaterialIndexTree(node, index = {}) {
+  index[node.key] = node;
+  (node.children || []).forEach(child => _planningMaterialIndexTree(child, index));
+  return index;
+}
+
+function _planningMaterialFlattenRows(node, includeDescendants = false) {
+  let rows = [];
+  if (node.incoming_row) rows.push(node.incoming_row);
+
+  if (includeDescendants) {
+    (node.children || []).forEach(child => {
+      rows = rows.concat(_planningMaterialFlattenRows(child, true));
+    });
+  }
+  return rows;
+}
+
+function selectPlanningMaterialNode(nodeKey) {
+  const view = state.planningMaterialView;
+  if (!view || !view.nodeIndex || !view.nodeIndex[nodeKey]) return;
+
+  view.selectedNodeKey = nodeKey;
+
+  document.querySelectorAll('#planningBomTree .bom-tree-node').forEach(n => {
+    n.classList.remove('selected');
+  });
+
+  const selectedEl = document.querySelector(`#planningBomTree .bom-tree-node[data-node-key="${CSS.escape(nodeKey)}"]`);
+  if (selectedEl) selectedEl.classList.add('selected');
+
+  const node = view.nodeIndex[nodeKey];
+  renderPlanningMaterialDetail(node);
+}
+
+function renderPlanningMaterialDetail(node) {
+  const detailEl = qs('planningBomDetail');
+  if (!detailEl || !node) return;
+
+  const incoming = node.incoming_row || null;
+  const selfRows = incoming ? [incoming] : [];
+  const childRows = (node.children || []).map(c => c.incoming_row).filter(Boolean);
+
+  const totalChildReq = childRows.reduce((s, r) => s + num(r.Required_Qty || 0), 0);
+
+  let html = `
+    <div class="bom-detail-header">
+      <div class="bom-detail-title">${escapeHtml(node.sku_id)}</div>
+      <div class="bom-detail-subtitle">${
+        incoming
+          ? `Required by ${escapeHtml(String(incoming.Parent_SKU || '—'))}`
+          : 'Selected root material / finished good'
+      }</div>
+    </div>
+  `;
+
+  if (incoming) {
+    const req = num(incoming.Required_Qty || 0);
+    const prod = num(incoming.Produced_Qty || 0);
+    const avail = num(incoming.Available || incoming.Available_Before || 0);
+    const net = num(incoming.Net_Req || 0);
+    const status = _planningMaterialStatus(incoming);
+
+    html += `
+      <div class="bom-detail-stats">
+        <div class="bom-detail-stat">
+          <div class="bom-detail-stat-label">Required</div>
+          <div class="bom-detail-stat-value">${req.toFixed(1)} MT</div>
+        </div>
+        <div class="bom-detail-stat">
+          <div class="bom-detail-stat-label">Available</div>
+          <div class="bom-detail-stat-value">${avail.toFixed(1)} MT</div>
+        </div>
+        <div class="bom-detail-stat">
+          <div class="bom-detail-stat-label">Net Req</div>
+          <div class="bom-detail-stat-value">${net.toFixed(1)} MT</div>
+        </div>
+        <div class="bom-detail-stat">
+          <div class="bom-detail-stat-label">Status</div>
+          <div class="bom-detail-stat-value" style="color:${status.color}">${escapeHtml(status.label)}</div>
+        </div>
+      </div>
+    `;
+  } else {
+    html += `
+      <div class="bom-detail-stats">
+        <div class="bom-detail-stat">
+          <div class="bom-detail-stat-label">Immediate children</div>
+          <div class="bom-detail-stat-value">${childRows.length}</div>
+        </div>
+        <div class="bom-detail-stat">
+          <div class="bom-detail-stat-label">Total child req</div>
+          <div class="bom-detail-stat-value">${totalChildReq.toFixed(1)} MT</div>
+        </div>
+      </div>
+    `;
+  }
+
+  if (childRows.length) {
+    html += `
+      <div style="margin-top:1rem">
+        <div class="bom-section-title">Immediate Child Materials</div>
+        <div style="overflow:auto;border:1px solid var(--border);border-radius:.3rem">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>SKU</th>
+                <th>Required</th>
+                <th>Available</th>
+                <th>Produced</th>
+                <th>Net Req</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${childRows.map(row => {
+                const st = _planningMaterialStatus(row);
+                return `
+                  <tr>
+                    <td><strong>${escapeHtml(String(row.SKU_ID || ''))}</strong></td>
+                    <td>${num(row.Required_Qty || 0).toFixed(1)} MT</td>
+                    <td>${num(row.Available || row.Available_Before || 0).toFixed(1)} MT</td>
+                    <td>${num(row.Produced_Qty || 0).toFixed(1)} MT</td>
+                    <td>${num(row.Net_Req || 0).toFixed(1)} MT</td>
+                    <td><span style="color:${st.color};font-weight:700">${escapeHtml(st.label)}</span></td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  } else {
+    html += `
+      <div style="margin-top:1rem;padding:.75rem;border:1px solid var(--border);border-radius:.3rem;color:var(--text-soft);font-size:.8rem">
+        No lower-level child materials under this node.
+      </div>
+    `;
+  }
+
+  detailEl.innerHTML = html;
+}
+
+function openMaterialPanel(title, skuIds) {
+  const panel = qs('planningMaterialPanel');
+  if (!panel) return;
+
+  setText('materialCheckTitle', title || 'Material Requirements');
+
+  // Ensure BOM exists
+  if (!state.bom || !state.bom.length) {
+    qs('planningBomTree').innerHTML =
+      '<div style="padding:.5rem;color:var(--text-soft);font-size:.75rem">Loading BOM explosion…</div>';
+    qs('planningBomDetail').innerHTML = '';
+    panel.style.display = 'flex';
+
+    runBom()
+      .then(() => openMaterialPanel(title, skuIds))
+      .catch(() => {
+        qs('planningBomTree').innerHTML =
+          '<div style="padding:.5rem;color:var(--danger);font-size:.75rem">Failed to load BOM. Run BOM tab manually first.</div>';
+      });
+    return;
+  }
+
+  const rootSkus = [...new Set((skuIds || []).map(x => String(x || '').trim()).filter(Boolean))];
+  if (!rootSkus.length) {
+    qs('planningBomTree').innerHTML =
+      '<div style="padding:.5rem;color:var(--text-soft);font-size:.75rem">No root SKUs selected.</div>';
+    qs('planningBomDetail').innerHTML = '';
+    panel.style.display = 'flex';
+    return;
+  }
+
+  // Keep only input/required rows with positive requirement
+  const bomRows = (state.bom || []).filter(item => {
+    const req = num(item.Required_Qty || 0);
+    const flow = String(item.Flow_Type || 'INPUT').trim().toUpperCase();
+    return req > 0 && flow !== 'BYPRODUCT';
+  });
+
+  const byParent = _planningMaterialChildrenMap(bomRows);
+
+  const roots = rootSkus.map(rootSku => _planningMaterialBuildTreeNode(rootSku, byParent, []));
+  const nodeIndex = {};
+  roots.forEach(root => _planningMaterialIndexTree(root, nodeIndex));
+
+  state.planningMaterialView = {
+    title: title || 'Material Requirements',
+    rootSkus,
+    roots,
+    nodeIndex,
+    selectedNodeKey: roots[0]?.key || null
+  };
+
+  if (!roots.length) {
+    qs('planningBomTree').innerHTML =
+      '<div style="padding:.5rem;color:var(--text-soft);font-size:.75rem">No materials required for selected SKUs.</div>';
+    qs('planningBomDetail').innerHTML = '';
+    panel.style.display = 'flex';
+    return;
+  }
+
+  qs('planningBomTree').innerHTML = roots.map(root => _planningMaterialRenderTreeNode(root, 0)).join('');
+  panel.style.display = 'flex';
+
+  if (roots[0]?.key) {
+    selectPlanningMaterialNode(roots[0].key);
+  }
 }
 
 qs('pipelineRunBtn')?.addEventListener('click', runFullPipeline);

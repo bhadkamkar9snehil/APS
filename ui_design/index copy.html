@@ -391,67 +391,68 @@
             <div class="ps-body collapsed" id="ps-schedule-body">
               <div class="ps-body-inner">
                 <!-- SIMULATION CONFIGURATION PANEL (before simulate) -->
-                <!-- SIMULATION PARAMETERS (always visible, used for first run and what-if) -->
-                <div id="simParamsPanel" style="background:#f8fafc;border:1px solid var(--border);border-radius:.4rem;padding:.9rem;margin-bottom:.9rem">
-                  <div style="font-weight:600;font-size:.82rem;color:var(--text-soft);margin-bottom:.7rem;letter-spacing:.03em">SIMULATION PARAMETERS</div>
-                  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem;margin-bottom:.6rem">
+                <div id="simConfigPanel" style="background:#f0f9ff;border:1px solid #bfdbfe;border-radius:.4rem;padding:1rem;margin-bottom:1rem">
+                  <div style="font-weight:600;font-size:.85rem;color:#1e40af;margin-bottom:.8rem"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span> Simulation Configuration</span></div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.8rem;margin-bottom:.8rem">
                     <!-- Planning Horizon -->
                     <div>
-                      <label for="simHorizonDays" style="display:block;font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.25rem">Horizon (days)</label>
+                      <label for="simHorizonDays" style="display:block;font-size:.75rem;font-weight:600;color:var(--text-soft);margin-bottom:.3rem">Planning Horizon (days)</label>
                       <select class="sel" id="simHorizonDays" style="width:100%;font-size:.8rem">
                         <option value="7">7 days</option>
-                        <option value="14" selected>14 days</option>
+                        <option value="14">14 days</option>
                         <option value="21">21 days</option>
                         <option value="30">30 days</option>
                       </select>
+                      <div style="font-size:.65rem;color:var(--text-faint);margin-top:.2rem">Default: <span id="configHorizonDefault">—</span> days</div>
+                    </div>
+                    <!-- Heat Size -->
+                    <div>
+                      <label for="simHeatSizeMt" style="display:block;font-size:.75rem;font-weight:600;color:var(--text-soft);margin-bottom:.3rem">Heat Size (MT)</label>
+                      <input type="number" class="inp" id="simHeatSizeMt" style="width:100%;font-size:.8rem" min="10" max="300" step="5">
+                      <div style="font-size:.65rem;color:var(--text-faint);margin-top:.2rem">Default: <span id="configHeatDefault">—</span> MT</div>
                     </div>
                     <!-- Priority Filter -->
                     <div>
-                      <label for="simPriorityFilter" style="display:block;font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.25rem">Priority</label>
+                      <label for="simPriorityFilter" style="display:block;font-size:.75rem;font-weight:600;color:var(--text-soft);margin-bottom:.3rem">Priority Filter</label>
                       <select class="sel" id="simPriorityFilter" style="width:100%;font-size:.8rem">
                         <option value="">All priorities</option>
-                        <option value="URGENT+HIGH">URGENT + HIGH</option>
+                        <option value="URGENT+HIGH">URGENT + HIGH only</option>
                         <option value="URGENT">URGENT only</option>
                       </select>
                     </div>
-                    <!-- Rolling Mode Filter -->
-                    <div>
-                      <label for="simRollingMode" style="display:block;font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.25rem">Rolling Mode</label>
-                      <select class="sel" id="simRollingMode" style="width:100%;font-size:.8rem">
-                        <option value="">HOT + COLD</option>
-                        <option value="HOT">HOT only</option>
-                        <option value="COLD">COLD only</option>
-                      </select>
-                    </div>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-bottom:.8rem">
                     <!-- SMS Lines -->
                     <div>
-                      <label for="simSmsLines" style="display:block;font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.25rem">SMS Lines</label>
+                      <label for="simSmsLines" style="display:block;font-size:.75rem;font-weight:600;color:var(--text-soft);margin-bottom:.3rem">SMS Lines Available</label>
                       <select class="sel" id="simSmsLines" style="width:100%;font-size:.8rem">
-                        <option value="1">×1 (baseline)</option>
-                        <option value="2">×2 (parallel)</option>
-                        <option value="3">×3 (parallel)</option>
+                        <option value="1">1 line (baseline)</option>
+                        <option value="2">2 lines (parallel)</option>
+                        <option value="3">3 lines (parallel)</option>
                       </select>
+                      <div style="font-size:.65rem;color:var(--text-faint);margin-top:.2rem">How many steelmaking furnaces available</div>
                     </div>
                     <!-- RM Lines -->
                     <div>
-                      <label for="simRmLines" style="display:block;font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.25rem">RM Lines</label>
+                      <label for="simRmLines" style="display:block;font-size:.75rem;font-weight:600;color:var(--text-soft);margin-bottom:.3rem">RM Lines Available</label>
                       <select class="sel" id="simRmLines" style="width:100%;font-size:.8rem">
-                        <option value="1">×1 (baseline)</option>
-                        <option value="2">×2 (parallel)</option>
-                        <option value="3">×3 (parallel)</option>
+                        <option value="1">1 line (baseline)</option>
+                        <option value="2">2 lines (parallel)</option>
+                        <option value="3">3 lines (parallel)</option>
                       </select>
-                    </div>
-                    <!-- Grade Filter (populated dynamically from planning orders) -->
-                    <div>
-                      <label for="simGradeFilter" style="display:block;font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.25rem">Grade</label>
-                      <select class="sel" id="simGradeFilter" style="width:100%;font-size:.8rem">
-                        <option value="">All grades</option>
-                      </select>
+                      <div style="font-size:.65rem;color:var(--text-faint);margin-top:.2rem">How many rolling mill lines available</div>
                     </div>
                   </div>
-                  <button type="button" class="btn primary" style="width:100%;font-size:.82rem;padding:.45rem" onclick="simulateSchedule()">
-                    <i class="fa-solid fa-play" aria-hidden="true"></i><span id="simBtnText"> Run Feasibility Check</span>
-                  </button>
+                  <div style="background:rgba(30,58,138,.05);border-left:3px solid #1e40af;padding:.6rem;border-radius:.2rem;margin-bottom:.8rem;font-size:.75rem">
+                    <div style="font-weight:600;color:#1e40af;margin-bottom:.3rem">What gets simulated:</div>
+                    <div style="color:var(--text);line-height:1.4">
+                      <div style="display:flex;align-items:flex-start;gap:.4rem"><i class="fa-solid fa-circle-check" aria-hidden="true" style="margin-top:.1rem"></i><span>All derived heats within the priority filter</span></div>
+                      <div style="display:flex;align-items:flex-start;gap:.4rem"><i class="fa-solid fa-circle-check" aria-hidden="true" style="margin-top:.1rem"></i><span>Scheduled across SMS and RM lines with changeovers</span></div>
+                      <div style="display:flex;align-items:flex-start;gap:.4rem"><i class="fa-solid fa-circle-check" aria-hidden="true" style="margin-top:.1rem"></i><span>Resource availability constraints checked</span></div>
+                      <div style="display:flex;align-items:flex-start;gap:.4rem"><i class="fa-solid fa-circle-check" aria-hidden="true" style="margin-top:.1rem"></i><span>Result: FEASIBLE (fits in horizon) or INFEASIBLE (over capacity)</span></div>
+                    </div>
+                  </div>
+                  <button type="button" class="btn primary" style="width:100%;font-size:.8rem;padding:.5rem" onclick="simulateWithConfig()"><i class="fa-solid fa-play" aria-hidden="true"></i><span> Run Simulation</span></button>
                 </div>
 
                 <!-- SIMULATION RESULTS (shown after simulate) -->
@@ -462,8 +463,53 @@
                   <div class="metric"><div class="metric-label">RM hours</div><div class="metric-value" id="scheduleRmHours">—</div></div>
                 </div>
                 <div id="schedulerContent" style="color:var(--text-soft);text-align:center;font-size:.9rem;padding:.75rem;border:1px solid var(--border);border-radius:.3rem;display:none"></div>
-
-
+                <!-- Remediation panel - shown only when infeasible -->
+                <div id="remediationPanel" style="display:none;margin-top:.75rem;background:#fff7ed;border:1px solid #fed7aa;border-radius:.4rem;padding:.75rem">
+                  <div style="font-weight:600;font-size:.82rem;color:#92400e;margin-bottom:.6rem"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span> Schedule infeasible — planner options:</span></div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+                    <div style="background:#fff;border:1px solid var(--border);border-radius:.3rem;padding:.6rem">
+                      <div style="font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.4rem">NARROW WINDOW</div>
+                      <div style="font-size:.78rem;color:var(--text);margin-bottom:.5rem">Plan only the most urgent orders to reduce heat count.</div>
+                      <select class="sel" id="remPriorityFilter" aria-label="Remediation priority filter" style="font-size:.75rem;margin-bottom:.4rem;width:100%">
+                        <option value="">All priorities (current)</option>
+                        <option value="URGENT+HIGH">URGENT + HIGH only</option>
+                        <option value="URGENT">URGENT only</option>
+                      </select>
+                      <button type="button" class="btn warn" style="width:100%;font-size:.75rem;padding:.3rem" onclick="remSimulate()">Re-simulate with filter</button>
+                    </div>
+                    <div style="background:#fff;border:1px solid var(--border);border-radius:.3rem;padding:.6rem">
+                      <div style="font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.4rem">PARALLEL RESOURCES</div>
+                      <div style="font-size:.78rem;color:var(--text);margin-bottom:.5rem">Add SMS or RM lines to run heats in parallel.</div>
+                      <div style="display:flex;gap:.4rem;margin-bottom:.4rem">
+                        <select class="sel" id="remSmsLines" aria-label="Remediation SMS lines" style="font-size:.75rem;flex:1">
+                          <option value="1">SMS × 1</option>
+                          <option value="2">SMS × 2</option>
+                        </select>
+                        <select class="sel" id="remRmLines" aria-label="Remediation RM lines" style="font-size:.75rem;flex:1">
+                          <option value="1">RM × 1</option>
+                          <option value="2">RM × 2</option>
+                        </select>
+                      </div>
+                      <button type="button" class="btn primary" style="width:100%;font-size:.75rem;padding:.3rem" onclick="remSimulate()">Re-simulate with resources</button>
+                    </div>
+                    <div style="background:#fff;border:1px solid var(--border);border-radius:.3rem;padding:.6rem">
+                      <div style="font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.4rem">EXTEND HORIZON</div>
+                      <div style="font-size:.78rem;color:var(--text);margin-bottom:.5rem">Give more time — spread same heats across a longer window.</div>
+                      <select class="sel" id="remHorizonHours" aria-label="Remediation planning horizon" style="font-size:.75rem;margin-bottom:.4rem;width:100%">
+                        <option value="">Current horizon</option>
+                        <option value="336">14 days (336h)</option>
+                        <option value="504">21 days (504h)</option>
+                        <option value="720">30 days (720h)</option>
+                      </select>
+                      <button type="button" class="btn ghost" style="width:100%;font-size:.75rem;padding:.3rem" onclick="remSimulate()">Re-simulate with horizon</button>
+                    </div>
+                    <div style="background:#fff;border:1px solid var(--border);border-radius:.3rem;padding:.6rem">
+                      <div style="font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.4rem">WHAT'S TAKING TIME?</div>
+                      <div style="font-size:.78rem;color:var(--text);margin-bottom:.4rem">Heats by grade — identify which grade to defer:</div>
+                      <div id="remGradeBreakdown" style="font-size:.75rem;color:var(--text)">Run simulation first.</div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

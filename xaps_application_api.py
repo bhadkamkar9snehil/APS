@@ -132,6 +132,19 @@ def _jsonify(data, status: int = 200):
     return app.response_class(json.dumps(data, cls=_Enc, ensure_ascii=False), status=status, mimetype="application/json")
 
 
+def _clean_mode(val, default: str) -> str:
+    """Safely convert a pandas cell to a clean uppercase string, returning default for NaN/None/blank."""
+    if val is None:
+        return default
+    try:
+        if pd.isna(val):
+            return default
+    except (TypeError, ValueError):
+        pass
+    s = str(val).strip().upper()
+    return default if s in ("", "NAN", "NONE", "NA", "NULL", "N/A") else s or default
+
+
 # Compatibility cache only. Authoritative reads must come from the active run artifact first.
 _state: dict = {
     "last_run": None,
@@ -1552,129 +1565,229 @@ def run_bom_api():
         )[0]
 
 
-def _calculate_material_plan(campaigns: List[Dict], detail_level: str = "campaign", run_id: str | None = None, skus: list | None = None) -> Dict[str, Any]:
+def _calculate_material_plan(
+    campaigns: List[Dict],
+    detail_level: str = "campaign",
+    run_id: str | None = None,
+    skus: list | None = None,
+) -> Dict[str, Any]:
+    """
+    Build a planner-friendly material summary per campaign.
+
+    Important design rules:
+    1. One material row per SKU per campaign.
+    2. Do not emit duplicate semantic rows for the same SKU.
+    3. Keep quantities explicit:
+       - gross_required_qty
+       - available_before
+       - inventory_covered_qty
+       - make_convert_qty
+       - consumed_qty
+       - shortage_qty
+       - remaining_after
+    4. Keep grouped plant buckets for UI summary.
+    5. Keep backward compatibility fields where practical, but make them
+       deterministic and non-duplicative.
+    """
     try:
-        campaigns_data = []
+        sku_name_lookup: Dict[str, str] = {}
+        sku_category_lookup: Dict[str, str] = {}
+
+        if skus:
+            try:
+                if isinstance(skus, pd.DataFrame):
+                    skus_iter = skus.iterrows()
+                else:
+                    skus_iter = enumerate(skus)
+
+                for _, row in skus_iter:
+                    if isinstance(row, pd.Series):
+                        sku_id = str(row.get("SKU_ID", "")).strip()
+                        sku_name = str(row.get("SKU_Name", sku_id)).strip()
+                        sku_cat = str(row.get("Category", "")).strip()
+                    else:
+                        sku_id = str(row.get("SKU_ID", "")).strip()
+                        sku_name = str(row.get("SKU_Name", sku_id)).strip()
+                        sku_cat = str(row.get("Category", "")).strip()
+
+                    if sku_id:
+                        sku_name_lookup[sku_id] = sku_name or sku_id
+                        sku_category_lookup[sku_id] = sku_cat
+            except Exception:
+                pass
+
+        campaigns_data: List[Dict[str, Any]] = []
+
         for camp in campaigns:
-            camp_id = str(camp.get('campaign_id') or camp.get('Campaign_ID') or '')
+            camp_id = str(camp.get("campaign_id") or camp.get("Campaign_ID") or "").strip()
             if not camp_id:
                 continue
 
-            grade = str(camp.get('grade') or camp.get('Grade') or '')
-            release_status = str(camp.get('release_status') or camp.get('Release_Status') or 'OPEN')
-            req_qty = float(camp.get('total_coil_mt') or camp.get('total_mt') or camp.get('Total_MT') or 0)
-            material_status = str(camp.get('material_status') or 'UNREVIEWED')
-            shortages = camp.get('material_shortages', {}) or {}
-            material_consumed = camp.get('material_consumed', {}) or {}
-            material_gross_requirements = camp.get('material_gross_requirements', {}) or {}
-            structure_errors = camp.get('material_structure_errors', []) or []
-            inventory_before = camp.get('inventory_before', {}) or {}
-            inventory_after = camp.get('inventory_after', {}) or {}
-            feasible = not structure_errors and not shortages
+            grade = str(camp.get("grade") or camp.get("Grade") or "").strip()
+            release_status = str(camp.get("release_status") or camp.get("Release_Status") or "OPEN").strip()
+            req_qty = float(camp.get("total_coil_mt") or camp.get("total_mt") or camp.get("Total_MT") or 0.0)
+            material_status = str(camp.get("material_status") or "UNREVIEWED").strip()
 
-            shortage_qty = sum(float(v or 0) for v in shortages.values())
+            shortages = dict(camp.get("material_shortages") or {})
+            material_consumed = dict(camp.get("material_consumed") or {})
+            material_gross_requirements = dict(camp.get("material_gross_requirements") or {})
+            structure_errors = list(camp.get("material_structure_errors") or [])
+            inventory_before = dict(camp.get("inventory_before") or {})
+            inventory_after = dict(camp.get("inventory_after") or {})
 
-            # Build detailed material rows grouped by plant
-            material_rows_by_plant = {}  # plant -> list of rows
-            make_convert_qty = 0.0
+            shortage_qty = round(sum(float(v or 0.0) for v in shortages.values()), 3)
+            feasible = not structure_errors and shortage_qty <= 1e-9
 
-            # Union of all SKUs mentioned in any of the material dicts
-            all_skus = set(material_gross_requirements.keys()) | set(material_consumed.keys()) | set(shortages.keys())
+            # One canonical row per SKU
+            all_skus = sorted(
+                set(material_gross_requirements.keys())
+                | set(material_consumed.keys())
+                | set(shortages.keys())
+                | set(inventory_before.keys())
+                | set(inventory_after.keys())
+            )
 
-            for sku_id in sorted(all_skus):
-                material_type = _mat_type_for_sku(sku_id)
-                plant = _plant_for_sku(sku_id, material_type=material_type)
+            canonical_rows: List[Dict[str, Any]] = []
+            material_rows_by_plant: Dict[str, List[Dict[str, Any]]] = {}
 
-                required = float(material_gross_requirements.get(sku_id, 0) or 0)
-                consumed = float(material_consumed.get(sku_id, 0) or 0)
-                shortage = float(shortages.get(sku_id, 0) or 0)
-                available_before = float(inventory_before.get(sku_id, 0) or 0)
-                remaining_after = float(inventory_after.get(sku_id, 0) or 0)
+            for sku_id in all_skus:
+                gross_required_qty = float(material_gross_requirements.get(sku_id, 0.0) or 0.0)
+                consumed_qty = float(material_consumed.get(sku_id, 0.0) or 0.0)
+                shortage_qty_sku = float(shortages.get(sku_id, 0.0) or 0.0)
+                available_before = float(inventory_before.get(sku_id, 0.0) or 0.0)
+                remaining_after = float(inventory_after.get(sku_id, 0.0) or 0.0)
 
-                # Derive status: SHORTAGE > PARTIAL COVER > DRAWN/MAKE
-                if shortage > 1e-6:
+                category = sku_category_lookup.get(sku_id, "")
+                material_type = _mat_type_for_sku(
+                    sku_id=sku_id,
+                    category=category,
+                    sku_name=sku_name_lookup.get(sku_id, sku_id),
+                )
+                plant = _plant_for_sku(
+                    sku_id=sku_id,
+                    category=category,
+                    material_type=material_type,
+                )
+                stage = _stage_for_sku(sku_id, material_type)
+
+                inventory_covered_qty = max(min(gross_required_qty, available_before), 0.0)
+                make_convert_qty = max(gross_required_qty - inventory_covered_qty - shortage_qty_sku, 0.0)
+
+                # Status precedence
+                if shortage_qty_sku > 1e-6:
                     status = "SHORTAGE"
-                elif consumed < required - 1e-6 and shortage < 1e-6:
+                elif make_convert_qty > 1e-6 and inventory_covered_qty > 1e-6:
                     status = "PARTIAL COVER"
-                elif available_before > 1e-6 and consumed <= available_before + 1e-6:
+                elif inventory_covered_qty > 1e-6 and make_convert_qty <= 1e-6:
                     status = "DRAWN FROM STOCK"
-                else:
+                elif make_convert_qty > 1e-6:
                     status = "MAKE / CONVERT"
-                    make_convert_qty += consumed
+                else:
+                    status = "COVERED"
 
                 row = {
-                    "material_type": material_type,
                     "material_sku": sku_id,
-                    "material_name": sku_id,  # Could enhance with SKU lookup if skus param provided
-                    "required_qty": round(required, 2),
-                    "available_before": round(available_before, 2),
-                    "consumed": round(consumed, 2),
-                    "remaining_after": round(remaining_after, 2),
+                    "material_name": sku_name_lookup.get(sku_id, sku_id),
+                    "material_category": category,
+                    "material_type": material_type,
+                    "plant": plant,
+                    "stage": stage,
+                    "gross_required_qty": round(gross_required_qty, 3),
+                    "required_qty": round(gross_required_qty, 3),  # backward-compatible alias
+                    "available_before": round(available_before, 3),
+                    "inventory_covered_qty": round(inventory_covered_qty, 3),
+                    "make_convert_qty": round(make_convert_qty, 3),
+                    "consumed_qty": round(consumed_qty, 3),
+                    "consumed": round(consumed_qty, 3),  # backward-compatible alias
+                    "shortage_qty": round(shortage_qty_sku, 3),
+                    "remaining_after": round(remaining_after, 3),
                     "status": status,
                 }
+                canonical_rows.append(row)
 
                 if plant not in material_rows_by_plant:
                     material_rows_by_plant[plant] = []
                 material_rows_by_plant[plant].append(row)
 
-            # Build plants array sorted by plant name
-            plants = []
-            for plant_name in sorted(material_rows_by_plant.keys()):
-                plant_rows = material_rows_by_plant[plant_name]
-                plant_required = sum(r.get('required_qty', 0) for r in plant_rows)
-                plant_inventory_covered = sum(min(r.get('required_qty', 0), r.get('available_before', 0)) for r in plant_rows)
+            # Sort plant buckets for stable UI
+            plants: List[Dict[str, Any]] = []
+            for plant_name in sorted(material_rows_by_plant.keys(), key=lambda p: _PLANT_SORT_ORDER.get(p, 99)):
+                plant_rows = sorted(
+                    material_rows_by_plant[plant_name],
+                    key=lambda r: (
+                        _MAT_TYPE_SORT_ORDER.get(r.get("material_type", "Material"), 99),
+                        str(r.get("material_sku", "")),
+                    ),
+                )
+
+                plant_required = sum(float(r.get("gross_required_qty", 0.0) or 0.0) for r in plant_rows)
+                plant_inventory_covered = sum(float(r.get("inventory_covered_qty", 0.0) or 0.0) for r in plant_rows)
+                plant_make_convert = sum(float(r.get("make_convert_qty", 0.0) or 0.0) for r in plant_rows)
+                plant_shortage = sum(float(r.get("shortage_qty", 0.0) or 0.0) for r in plant_rows)
 
                 plants.append({
                     "plant": plant_name,
-                    "required_qty": round(plant_required, 2),
-                    "inventory_covered_qty": round(plant_inventory_covered, 2),
+                    "required_qty": round(plant_required, 3),
+                    "inventory_covered_qty": round(plant_inventory_covered, 3),
+                    "make_convert_qty": round(plant_make_convert, 3),
+                    "shortage_qty": round(plant_shortage, 3),
                     "rows": plant_rows,
                 })
 
-            # Keep detail_rows for backward compat (simple shape)
-            detail_rows = []
-            for sku_id, shortage_amount in shortages.items():
-                if shortage_amount > 1e-6:
-                    detail_rows.append({
-                        "sku_id": sku_id,
-                        "shortage_qty": round(float(shortage_amount), 2),
-                        "type": "SHORTAGE",
-                    })
-            for sku_id, consumed_amount in material_consumed.items():
-                if consumed_amount > 1e-6:
-                    detail_rows.append({
-                        "sku_id": sku_id,
-                        "consumed_qty": round(float(consumed_amount), 2),
-                        "type": "CONSUMED",
-                    })
+            total_inventory_covered_qty = sum(float(r.get("inventory_covered_qty", 0.0) or 0.0) for r in canonical_rows)
+            total_make_convert_qty = sum(float(r.get("make_convert_qty", 0.0) or 0.0) for r in canonical_rows)
+
+            # Keep backward compatibility, but do not duplicate the same SKU into multiple semantic rows
+            detail_rows = [
+                {
+                    "sku_id": r["material_sku"],
+                    "material_name": r["material_name"],
+                    "material_type": r["material_type"],
+                    "plant": r["plant"],
+                    "required_qty": r["gross_required_qty"],
+                    "available_before": r["available_before"],
+                    "inventory_covered_qty": r["inventory_covered_qty"],
+                    "make_convert_qty": r["make_convert_qty"],
+                    "consumed_qty": r["consumed_qty"],
+                    "shortage_qty": r["shortage_qty"],
+                    "remaining_after": r["remaining_after"],
+                    "status": r["status"],
+                    "type": r["status"],  # backward-compatible loose field
+                }
+                for r in canonical_rows
+            ]
 
             camp_data = {
                 "campaign_id": camp_id,
                 "grade": grade,
                 "release_status": release_status,
-                "required_qty": round(req_qty, 2),
-                "shortage_qty": round(shortage_qty, 2),
+                "required_qty": round(req_qty, 3),
+                "shortage_qty": round(shortage_qty, 3),
+                "inventory_covered_qty": round(total_inventory_covered_qty, 3),
+                "make_convert_qty": round(total_make_convert_qty, 3),
                 "material_status": material_status,
                 "feasible": feasible,
                 "material_structure_errors": structure_errors,
-                "material_shortages": shortages,
-                "material_consumed": material_consumed,
-                "material_gross_requirements": material_gross_requirements,
-                "inventory_before": inventory_before,
-                "inventory_after": inventory_after,
+                "material_shortages": {k: round(float(v or 0.0), 3) for k, v in shortages.items()},
+                "material_consumed": {k: round(float(v or 0.0), 3) for k, v in material_consumed.items()},
+                "material_gross_requirements": {k: round(float(v or 0.0), 3) for k, v in material_gross_requirements.items()},
+                "inventory_before": {k: round(float(v or 0.0), 3) for k, v in inventory_before.items()},
+                "inventory_after": {k: round(float(v or 0.0), 3) for k, v in inventory_after.items()},
+                "materials": canonical_rows,
                 "plants": plants,
                 "detail_rows": detail_rows,
             }
             campaigns_data.append(camp_data)
 
-        total_required = sum(c.get('required_qty', 0) for c in campaigns_data)
-        total_shortages = sum(c.get('shortage_qty', 0) for c in campaigns_data)
-        total_covered = total_required - total_shortages
-        total_make_convert = float(sum(sum(r.get('consumed', 0) for r in plant.get('rows', []) if plant['rows'] and r.get('status') == 'MAKE / CONVERT') for c in campaigns_data for plant in c.get('plants', [])))
-        released_count = sum(1 for c in campaigns_data if 'RELEASED' in str(c.get('release_status', '')).upper())
-        held_count = sum(1 for c in campaigns_data if 'HOLD' in str(c.get('release_status', '')).upper())
-        shortage_count = sum(1 for c in campaigns_data if c.get('shortage_qty', 0) > 1e-6)
-        error_count = sum(1 for c in campaigns_data if not c.get('feasible', True))
+        total_required = sum(float(c.get("required_qty", 0.0) or 0.0) for c in campaigns_data)
+        total_shortages = sum(float(c.get("shortage_qty", 0.0) or 0.0) for c in campaigns_data)
+        total_inventory_covered = sum(float(c.get("inventory_covered_qty", 0.0) or 0.0) for c in campaigns_data)
+        total_make_convert = sum(float(c.get("make_convert_qty", 0.0) or 0.0) for c in campaigns_data)
+
+        released_count = sum(1 for c in campaigns_data if "RELEASED" in str(c.get("release_status", "")).upper())
+        held_count = sum(1 for c in campaigns_data if "HOLD" in str(c.get("release_status", "")).upper())
+        shortage_count = sum(1 for c in campaigns_data if float(c.get("shortage_qty", 0.0) or 0.0) > 1e-6)
+        error_count = sum(1 for c in campaigns_data if not bool(c.get("feasible", True)))
 
         summary = {
             "Campaigns": len(campaigns_data),
@@ -1682,10 +1795,10 @@ def _calculate_material_plan(campaigns: List[Dict], detail_level: str = "campaig
             "Held": held_count,
             "Shortage Lines": shortage_count,
             "BOM Structure Errors": error_count,
-            "Total Required Qty": round(total_required, 2),
-            "Inventory Covered Qty": round(total_covered, 2),
-            "Shortage Qty": round(total_shortages, 2),
-            "Make / Convert Qty": round(total_make_convert, 2),
+            "Total Required Qty": round(total_required, 3),
+            "Inventory Covered Qty": round(total_inventory_covered, 3),
+            "Shortage Qty": round(total_shortages, 3),
+            "Make / Convert Qty": round(total_make_convert, 3),
         }
 
         return {
@@ -1694,9 +1807,14 @@ def _calculate_material_plan(campaigns: List[Dict], detail_level: str = "campaig
             "summary": summary,
             "run_id": run_id,
         }
-    except Exception:
-        return {"campaigns": [], "detail_level": "campaign", "summary": {}, "run_id": run_id}
 
+    except Exception:
+        return {
+            "campaigns": [],
+            "detail_level": detail_level,
+            "summary": {},
+            "run_id": run_id,
+        }
 
 def _store_compatibility_cache(
     *,
@@ -1801,7 +1919,7 @@ def run_schedule_api():
             degraded_flags["capacity_unavailable"] = True
             warnings.append(f"Capacity map failed: {cap_err}")
 
-        material_payload = _calculate_material_plan(campaigns, detail_level="campaign", run_id=None)
+        material_payload = _calculate_material_plan(campaigns, detail_level="campaign", run_id=None,skus=d["skus"],)
         run_id = _create_run_artifact(
             config=config,
             campaigns=campaigns,
@@ -1816,7 +1934,7 @@ def run_schedule_api():
         )
         _set_active_run_artifact(run_id)
 
-        material_payload = _calculate_material_plan(campaigns, detail_level="campaign", run_id=run_id)
+        material_payload = _calculate_material_plan(campaigns, detail_level="campaign", run_id=run_id,skus=d["skus"],)
         _run_artifacts[run_id]["results"]["material_plan"] = material_payload
         _store_compatibility_cache(
             run_id=run_id,
@@ -2401,8 +2519,8 @@ def aps_planning_orders_pool():
                 "route_family": "SMS→RM",
                 "status": so.get("Status", "Open"),
                 "sku_id": so.get("SKU_ID"),
-                "order_type": str(so.get("Order_Type") or "MTO").strip().upper() or "MTO",
-                "rolling_mode": rolling_mode_default if pd.isna(so.get("Rolling_Mode")) or str(so.get("Rolling_Mode")).strip().upper() in ("", "NAN") else str(so.get("Rolling_Mode")).strip().upper() or rolling_mode_default,
+                "order_type": _clean_mode(so.get("Order_Type"), "MTO"),
+                "rolling_mode": _clean_mode(so.get("Rolling_Mode"), rolling_mode_default),
             })
 
         return _jsonify({
@@ -2443,8 +2561,8 @@ def aps_planning_window_select():
                     route_family="SMS→RM",
                     status=so.get("Status", "Open"),
                     order_date=_safe(so.get("Order_Date")),
-                    order_type=str(so.get("Order_Type") or "MTO").strip().upper() or "MTO",
-                    rolling_mode=(rolling_mode_default if pd.isna(so.get("Rolling_Mode")) or str(so.get("Rolling_Mode")).strip().upper() in ("", "NAN") else str(so.get("Rolling_Mode")).strip().upper() or rolling_mode_default),
+                    order_type=_clean_mode(so.get("Order_Type"), "MTO"),
+                    rolling_mode=_clean_mode(so.get("Rolling_Mode"), rolling_mode_default),
                 )
             )
 
@@ -2508,10 +2626,18 @@ def aps_planning_orders_propose():
                     route_family="SMS→RM",
                     status=so.get("Status", "Open"),
                     order_date=_safe(so.get("Order_Date")),
-                    order_type=str(so.get("Order_Type") or "MTO").strip().upper() or "MTO",
-                    rolling_mode=(rolling_mode_default if pd.isna(so.get("Rolling_Mode")) or str(so.get("Rolling_Mode")).strip().upper() in ("", "NAN") else str(so.get("Rolling_Mode")).strip().upper() or rolling_mode_default),
+                    order_type=_clean_mode(so.get("Order_Type"), "MTO"),
+                    rolling_mode=_clean_mode(so.get("Rolling_Mode"), rolling_mode_default),
                 )
             )
+
+        # Apply planner rolling_mode overrides (set in UI per SO)
+        rolling_overrides = {str(k).strip(): _clean_mode(v, rolling_mode_default)
+                             for k, v in (payload.get("rolling_mode_overrides") or {}).items()}
+        if rolling_overrides:
+            for so in all_sos:
+                if so.so_id in rolling_overrides:
+                    so.rolling_mode = rolling_overrides[so.so_id]
 
         planner = APSPlanner(d["config"])
         window_map = {
