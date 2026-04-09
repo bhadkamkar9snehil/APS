@@ -2,12 +2,13 @@ const API = 'http://localhost:5000';
 const MASTER_KEYS = {config:'Key',resources:'Resource_ID',routing:'SKU_ID',queue:'From_Operation',changeover:'From \\ To',skus:'SKU_ID',bom:'BOM_ID',inventory:'SKU_ID','campaign-config':'Grade',scenarios:'Parameter'};
 const MASTER_LABELS = {config:'Config',resources:'Resource Master',routing:'Routing',queue:'Queue Times',changeover:'Changeover Matrix',skus:'SKU Master',bom:'BOM',inventory:'Inventory','campaign-config':'Campaign Config',scenarios:'Scenarios'};
 const state = {
-  orders:[], campaigns:[], capacity:[], scenario_metrics:[], scenarios:[], bom:[],
-  routeManifest:null, selectedOrders:new Set(), selectedMasterKey:null, masterMode:'create',
+  orders:[], campaigns:[], capacity:[], scenario_metrics:[], scenarios:[], bomGross:[], bomNet:[],
+  routeManifest:null, selectedMasterKey:null, masterMode:'create',
   campFilter:'all', horizon: 14,
   // Planning workflow state
   poolOrders:[], windowSOs:[], planningOrders:[], heatBatches:[],
   planningWindow: 7,
+  planningMaterialRequestId: 0,
   // Configuration from Excel
   config: {
     horizon_days: 7,
@@ -19,11 +20,11 @@ const state = {
   },
   // Simulation parameters (user-configurable before simulate)
   simConfig: {
-    horizon_days: 7,
+    horizon_days: 14,
     heat_size_mt: 50,
     priority_filter: '',
-    sms_lines: 1,
-    rm_lines: 1
+    sms_lines: 2,
+    rm_lines: 2
   },
   // Planner-set rolling mode overrides for individual SOs (so_id → 'HOT'|'COLD')
   soRollingOverrides: {}
@@ -36,6 +37,7 @@ function escapeHtml(v){ return String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&
 function fmtDate(v){ if(!v) return '—'; const d=parseDate(v); if(Number.isNaN(d.getTime())) return String(v); return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}).replace(' ','-'); }
 function fmtDateTime(v){ if(!v) return '—'; const d=parseDate(v); if(Number.isNaN(d.getTime())) return String(v); const date = d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}); const time = d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false}); return `${date} ${time}`; }
 function num(v, fallback=0){ const n = Number(v); return Number.isFinite(n) ? n : fallback; }
+function upper(v){ return String(v || '').trim().toUpperCase(); }
 function badgeForStatus(status){
   const s = String(status || '').toUpperCase();
   if (s.includes('HOLD')) return '<span class="badge amber">'+escapeHtml(status || 'HOLD')+'</span>';
@@ -168,12 +170,10 @@ async function runFullPipeline(){
   btn.textContent = '⏳ Running…';
   btn.disabled = true;
 
-  // Update top badge
   qs('pipelineStatusBadge').style.background = '#dbeafe';
   qs('pipelineStatusBadge').style.color = '#2563eb';
   qs('pipelineStatusBadge').textContent = 'Running…';
 
-  // Update main status footer chip
   const pipelineChip = qs('chipPipeline');
   pipelineChip.style.display = '';
   pipelineChip.className = 'chip info';
@@ -193,32 +193,33 @@ async function runFullPipeline(){
     stageExpand('ps-heats');
     await deriveHeatBatches();
 
+    // PRE-RUN BOM so material panel is ready later
+    setText('chipPipelineText', '⏳ Running BOM explosion...');
+    await runBom();
+
     // Stage 4 - simulate
     setPipelineStageStatus('ps-schedule', 'running');
     stageExpand('ps-schedule');
-/*     await simulateWithConfig(); */
+    await simulateSchedule();
 
     // Stage 5 - load release
     setPipelineStageStatus('ps-release', 'running');
     stageExpand('ps-release');
     await loadReleaseBoard();
 
-    // SUCCESS - Update top badge and main status footer
     qs('pipelineStatusBadge').style.background = '#dcfce7';
     qs('pipelineStatusBadge').style.color = '#16a34a';
     qs('pipelineStatusBadge').textContent = 'Complete';
 
     qs('chipPipeline').className = 'chip success';
     setText('chipPipelineText', '✓ Pipeline ready to release');
-
   } catch(e) {
-    // ERROR - Update top badge and main status footer
     qs('pipelineStatusBadge').style.background = '#fee2e2';
     qs('pipelineStatusBadge').style.color = '#dc2626';
     qs('pipelineStatusBadge').textContent = 'Error';
 
     qs('chipPipeline').className = 'chip danger';
-    setText('chipPipelineText', '✗ Pipeline error');
+    setText('chipPipelineText', '✗ Pipeline error: ' + e.message);
 
     console.error('Pipeline error:', e);
   }
@@ -300,7 +301,7 @@ function initAppUi() {
 initAppUi();
 async function checkHealth(){
   try{
-    const d = await apiFetch('/api/health');
+    const d = await apiFetch('/api/health?quick=1');
     qs('chipApi').className = 'chip success';
     setText('chipApiText', d.workbook_ok ? 'API + workbook connected' : 'API up, workbook issue');
   }catch(e){
@@ -309,62 +310,210 @@ async function checkHealth(){
   }
 }
 
-function hydrateSummary(summary){
-  const total = num(summary.campaigns_total);
-  const released = num(summary.campaigns_released);
-  const held = num(summary.campaigns_held);
-  const late = num(summary.campaigns_late);
-  const heatTotal = num(summary.total_heats);
-  const releasedHeats = num(summary.released_heats || summary.total_heats || 0);
-  const mtTotal = num(summary.total_mt);
-  const releasedMt = num(summary.released_mt || summary.total_mt || 0);
-  const ot = summary.on_time_pct == null ? '—' : num(summary.on_time_pct).toFixed(1) + '%';
-
-  // All plant utilization from capacity data
-  const capItems = state.capacity || [];
-  const maxUtil = capItems.reduce((mx, r) => Math.max(mx, num(r['Utilisation_%'] || r.Utilisation_Percent || r.utilisation || 0)), 0);
-  const bottleneckResource = capItems.sort((a,b)=>num(b['Utilisation_%']||0)-num(a['Utilisation_%']||0))[0];
-  const capLabel = bottleneckResource ? String(bottleneckResource.Resource_ID||'').substring(0,8) : 'peak resource';
-
-  // KPI cards show only RELEASED campaigns (not total)
-  setText('summaryCampaigns', released || '—');
-  setText('summaryCampaignsSub', released + ' released · ' + held + ' held');
-  setText('summaryHeats', releasedHeats || '—');
-  setText('summaryHeatsSub', releasedMt ? (releasedMt.toLocaleString() + ' MT') : 'MT per heat');
-  setText('summaryMt', releasedMt ? releasedMt.toLocaleString() : '—');
-  setText('summaryMtSub', 'in heats');
-  setText('summaryOt', ot);
-  setText('summaryOtSub', summary.solver_status || 'delivery rate');
-  setText('summaryCapacity', maxUtil > 0 ? Math.round(maxUtil) + '%' : '—');
-  setText('summaryCapacitySub', capLabel);
-
-  setText('chipSolverText', 'Solver ' + (summary.solver_status || '—'));
-  setText('chipHeld', held + ' on hold');
-  setText('chipLate', late + ' late');
-
-  // Update status bar progress based on pipeline completion
-  updateStatusBarProgress();
+function latestSimResult() {
+  return state.lastSimResult && typeof state.lastSimResult === 'object' ? state.lastSimResult : null;
 }
 
-function updateStatusBarProgress() {
-  const pool = state.poolOrders || [];
-  const pos = state.planningOrders || [];
-  const heats = state.heatBatches || [];
-  const sim = state.lastSimResult;
+function simulationStatusLabel(sim = latestSimResult()) {
+  if (!sim) return null;
+  if (sim.horizon_exceeded) return 'HORIZON EXCEEDED';
+  if (sim.solver_status) return String(sim.solver_status);
+  return sim.feasible ? 'FEASIBLE' : 'INFEASIBLE';
+}
 
-  // Calculate progress: 5 stages, each worth 20%
-  let progress = 0;
-  if (pool.length > 0) progress += 20;      // Stage 1: Pool loaded
-  if (pos.length > 0) progress += 20;       // Stage 2: POs proposed
-  if (heats.length > 0) progress += 20;     // Stage 3: Heats derived
-  if (sim && sim.feasible) progress += 20;  // Stage 4: Feasible schedule
-  if (pos.some(p => p.planner_status === 'RELEASED')) progress += 20;  // Stage 5: Released
+function setMetricTone(id, tone = '') {
+  const el = qs(id);
+  if (!el) return;
+  el.className = ['metric', tone].filter(Boolean).join(' ');
+}
 
-  const progressBar = qs('.status-footer-content');
+function derivePlanStatus() {
+  const sim = latestSimResult();
+  if (sim) {
+    if (sim.feasible) {
+      return {
+        value: 'Feasible',
+        sub: sim.message || `${num(sim.horizon_hours || 0).toFixed(1)}h horizon`,
+        tone: 'success'
+      };
+    }
+    if (sim.horizon_exceeded) {
+      return {
+        value: `${num(sim.overflow_hours || 0).toFixed(1)}h over`,
+        sub: `${num(sim.total_duration_hours || 0).toFixed(1)}h vs ${num(sim.horizon_hours || 0).toFixed(1)}h horizon`,
+        tone: 'danger'
+      };
+    }
+    return {
+      value: 'At Risk',
+      sub: sim.message || simulationStatusLabel(sim),
+      tone: 'warn'
+    };
+  }
+
+  if ((state.planningOrders || []).length) {
+    return {
+      value: 'Pending',
+      sub: `${state.planningOrders.length} POs await feasibility`,
+      tone: 'warn'
+    };
+  }
+
+  return {
+    value: 'Not Run',
+    sub: 'Feasibility not run',
+    tone: 'info'
+  };
+}
+
+function dashboardCapacityRows(summary = state.overview || {}) {
+  const capacityRows = state.capacity || [];
+  if (capacityRows.length) return capacityRows;
+
+  const scheduleRows = state.lastScheduleRows && state.lastScheduleRows.length ? state.lastScheduleRows : (state.gantt || []);
+  if (!scheduleRows.length) return [];
+
+  const horizonHours = num(latestSimResult()?.horizon_hours || state.simConfig?.horizon_days * 24 || summary.horizon_hours || 24, 24);
+  const byResource = new Map();
+  scheduleRows.forEach(row => {
+    const resourceId = String(row.Resource_ID || row.resource_id || '').trim();
+    if (!resourceId) return;
+    const current = byResource.get(resourceId) || {
+      Resource_ID: resourceId,
+      Operation_Group: row.Operation || _ridToOp(resourceId),
+      Demand_Hrs: 0,
+      Avail_Hrs_14d: horizonHours,
+      source: 'simulation'
+    };
+    current.Demand_Hrs += num(row.Duration_Hrs || row.duration_hrs || 0);
+    current['Utilisation_%'] = Math.round((current.Demand_Hrs / Math.max(horizonHours, 1)) * 1000) / 10;
+    byResource.set(resourceId, current);
+  });
+
+  return [...byResource.values()].sort((a, b) =>
+    num(b['Utilisation_%'] || 0) - num(a['Utilisation_%'] || 0)
+  );
+}
+
+function deriveAppKpis(summary = state.overview || {}) {
+  const planningOrders = state.planningOrders || [];
+  const campaigns = state.campaigns || [];
+  const poolOrders = state.poolOrders || [];
+  const heatBatches = state.heatBatches || [];
+  const capacityItems = dashboardCapacityRows(summary);
+  const ganttJobs = state.gantt || [];
+  const sim = latestSimResult();
+
+  const releasedPlanningOrders = planningOrders.filter(po => upper(po.planner_status) === 'RELEASED');
+  const heldPlanningOrders = planningOrders.filter(po => upper(po.planner_status).includes('HOLD'));
+  const releasedCampaigns = campaigns.filter(c => upper(c.release_status || c.Release_Status || c.Status) === 'RELEASED');
+  const heldCampaigns = campaigns.filter(c => upper(c.release_status || c.Release_Status || c.Status).includes('HOLD'));
+  const lateCampaigns = campaigns.filter(c => upper(c.Status).includes('LATE'));
+
+  const planningOrderCount = planningOrders.length || num(summary.campaigns_total || campaigns.length);
+  const releasedCount = planningOrders.length ? releasedPlanningOrders.length : num(summary.campaigns_released || releasedCampaigns.length);
+  const heldCount = planningOrders.length ? heldPlanningOrders.length : num(summary.campaigns_held || heldCampaigns.length);
+  const lateCount = campaigns.length ? lateCampaigns.length : num(summary.campaigns_late);
+
+  const totalMt = planningOrders.length
+    ? planningOrders.reduce((sum, po) => sum + num(po.total_qty_mt || 0), 0)
+    : num(summary.total_mt);
+  const releasedMt = planningOrders.length
+    ? releasedPlanningOrders.reduce((sum, po) => sum + num(po.total_qty_mt || 0), 0)
+    : num(summary.released_mt ?? summary.total_mt);
+
+  const totalHeatsFromOrders = planningOrders.reduce((sum, po) => {
+    const heats = Array.isArray(po.heats) ? po.heats.length : 0;
+    return sum + (heats || num(po.heats_required || 0));
+  }, 0);
+  const releasedHeatsFromOrders = releasedPlanningOrders.reduce((sum, po) => {
+    const heats = Array.isArray(po.heats) ? po.heats.length : 0;
+    return sum + (heats || num(po.heats_required || 0));
+  }, 0);
+  const totalHeats = heatBatches.length || totalHeatsFromOrders || num(summary.total_heats);
+  const releasedHeats = heatBatches.length
+    ? heatBatches.filter(h => upper(h.released_status) === 'RELEASED' || (upper(h.scheduling_status) === 'SCHEDULED' && h.released)).length
+    : (releasedHeatsFromOrders || num(summary.released_heats ?? summary.total_heats));
+
+  const onTimePct = summary.on_time_pct != null
+    ? num(summary.on_time_pct)
+    : (campaigns.length ? (100 * Math.max(campaigns.length - lateCount, 0) / campaigns.length) : null);
+
+  const sortedCapacity = [...capacityItems].sort((a,b)=>
+    num(b['Utilisation_%'] || b.Utilisation_Percent || b.utilisation || 0) -
+    num(a['Utilisation_%'] || a.Utilisation_Percent || a.utilisation || 0)
+  );
+  const bottleneckResource = sortedCapacity[0] || null;
+  const maxUtil = bottleneckResource
+    ? Math.round(num(bottleneckResource['Utilisation_%'] || bottleneckResource.Utilisation_Percent || bottleneckResource.utilisation || summary.max_utilisation || 0))
+    : (summary.max_utilisation != null ? Math.round(num(summary.max_utilisation)) : null);
+
+  const stageState = {
+    pool: poolOrders.length > 0,
+    propose: planningOrderCount > 0,
+    heats: totalHeats > 0,
+    simulate: Boolean(state.lastSimResult) || ganttJobs.length > 0 || capacityItems.length > 0,
+    release: releasedCount > 0
+  };
+  const completedStages = Object.values(stageState).filter(Boolean).length;
+
+  return {
+    planningOrderCount,
+    releasedCount,
+    heldCount,
+    lateCount,
+    totalHeats,
+    releasedHeats,
+    totalMt,
+    releasedMt,
+    onTimePct,
+    solverStatus: simulationStatusLabel(sim) || summary.solver_status || '—',
+    maxUtil,
+    capacityLabel: bottleneckResource ? String(bottleneckResource.Resource_ID || bottleneckResource.resource_id || 'peak resource').substring(0, 12) : 'peak resource',
+    urgentPoolCount: poolOrders.filter(o => upper(o.priority) === 'URGENT').length,
+    progressPct: Math.round((completedStages / 5) * 100),
+    stageState,
+    sim
+  };
+}
+
+function hydrateSummary(summary){
+  const kpis = deriveAppKpis(summary);
+  const ot = kpis.onTimePct == null ? '—' : kpis.onTimePct.toFixed(1) + '%';
+  const simSub = kpis.sim
+    ? (kpis.sim.horizon_exceeded
+      ? `Needs ${num(kpis.sim.total_duration_hours || 0).toFixed(1)}h vs ${num(kpis.sim.horizon_hours || 0).toFixed(1)}h horizon`
+      : (kpis.sim.message || kpis.solverStatus))
+    : (kpis.solverStatus || 'delivery rate');
+  const planStatus = derivePlanStatus();
+
+  setText('summaryCampaigns', kpis.planningOrderCount || '—');
+  setText('summaryCampaignsSub', `${kpis.releasedCount} released · ${kpis.heldCount} held`);
+  setText('summaryHeats', kpis.totalHeats || '—');
+  setText('summaryHeatsSub', kpis.totalMt ? `${kpis.totalMt.toLocaleString()} MT total` : 'MT planned');
+  setText('summaryMt', kpis.totalMt ? kpis.totalMt.toLocaleString() : '—');
+  setText('summaryMtSub', kpis.totalHeats ? `${kpis.totalHeats} heats` : 'in heats');
+  setText('summaryOt', ot);
+  setText('summaryOtSub', kpis.lateCount ? `${kpis.lateCount} late` : simSub);
+  setText('summaryCapacity', planStatus.value);
+  setText('summaryCapacitySub', planStatus.sub);
+  setMetricTone('summaryPlanCard', planStatus.tone);
+
+  setText('chipSolverText', 'Solver ' + (kpis.solverStatus || '—'));
+  setText('chipHeld', `${kpis.heldCount} on hold`);
+  setText('chipLate', `${kpis.lateCount} late`);
+
+  updateStatusBarProgress(kpis.progressPct);
+}
+
+function updateStatusBarProgress(progressPct = null) {
+  const progress = progressPct == null ? deriveAppKpis().progressPct : Math.max(0, Math.min(100, num(progressPct)));
+  const progressBar = qs('statusFooterProgressFill');
   if (progressBar) {
     progressBar.style.width = progress + '%';
   }
 }
+
 // ──────────────────────────────────────────────
 //  DASHBOARD RENDERERS
 // ──────────────────────────────────────────────
@@ -383,34 +532,42 @@ function renderDashboard() {
 function renderDashboardPipeline() {
   const pos = state.planningOrders || [];
   const pool = state.poolOrders || [];
-  const heats = state.heatBatches || [];
-  const sim = state.lastSimResult;
+  const kpis = deriveAppKpis();
+  const simReady = kpis.stageState.simulate;
+  const sim = kpis.sim;
+  const simDetail = sim
+    ? (sim.feasible
+      ? 'FEASIBLE · ' + (sim.horizon_hours || '—') + 'h horizon'
+      : (sim.horizon_exceeded
+        ? 'HORIZON EXCEEDED · ' + num(sim.total_duration_hours || 0).toFixed(1) + 'h vs ' + num(sim.horizon_hours || 0).toFixed(1) + 'h'
+        : (simulationStatusLabel(sim) + ' — remediation needed')))
+    : (simReady ? 'Loaded from saved schedule' : 'Not run');
 
   const stages = [
     {
       label: 'Order Pool',
-      dot: pool.length ? 'done' : 'pending',
-      detail: pool.length ? pool.length + ' SOs loaded · ' + pool.filter(o=>o.priority==='URGENT').length + ' urgent' : 'Not loaded'
+      dot: kpis.stageState.pool ? 'done' : 'pending',
+      detail: pool.length ? pool.length + ' SOs loaded · ' + kpis.urgentPoolCount + ' urgent' : 'Not loaded'
     },
     {
       label: 'Propose Orders',
-      dot: pos.length ? 'done' : 'pending',
-      detail: pos.length ? pos.length + ' POs · ' + pos.reduce((s,p)=>s+num(p.total_qty_mt),0).toFixed(0) + ' MT' : 'Pending'
+      dot: kpis.stageState.propose ? 'done' : 'pending',
+      detail: kpis.stageState.propose ? kpis.planningOrderCount + ' POs · ' + kpis.totalMt.toFixed(0) + ' MT' : 'Pending'
     },
     {
       label: 'Derive Heats',
-      dot: heats.length ? 'done' : 'pending',
-      detail: heats.length ? heats.length + ' heats derived' : 'Pending'
+      dot: kpis.stageState.heats ? 'done' : 'pending',
+      detail: kpis.stageState.heats ? kpis.totalHeats + ' heats available' : 'Pending'
     },
     {
       label: 'Feasibility Check',
-      dot: sim ? (sim.feasible ? 'done' : 'warn') : 'pending',
-      detail: sim ? (sim.feasible ? 'FEASIBLE · ' + (sim.horizon_hours||'') + 'h horizon' : 'INFEASIBLE — remediation needed') : 'Not run'
+      dot: sim ? (sim.feasible ? 'done' : 'warn') : (simReady ? 'done' : 'pending'),
+      detail: simDetail
     },
     {
       label: 'Release',
-      dot: pos.some(p=>p.planner_status==='RELEASED') ? 'done' : 'pending',
-      detail: pos.filter(p=>p.planner_status==='RELEASED').length + ' POs released'
+      dot: kpis.stageState.release ? 'done' : 'pending',
+      detail: kpis.releasedCount + ' POs released'
     }
   ];
 
@@ -437,7 +594,7 @@ function renderDashboardAlerts() {
     alerts.push({type:'critical', icon:'✗', title:'Plan is INFEASIBLE', sub:'Resources over capacity — open Feasibility Check'});
 
   // Over-capacity resources
-  const overCap = (state.capacity||[]).filter(r=>num(r['Utilisation_%']||r.Utilisation_Percent||0)>100);
+  const overCap = dashboardCapacityRows().filter(r=>num(r['Utilisation_%']||r.Utilisation_Percent||0)>100);
   if (overCap.length > 0)
     alerts.push({type:'warn', icon:'◈', title: overCap.length + ' resource(s) over capacity', sub: overCap.slice(0,2).map(r=>String(r.Resource_ID||'').substring(0,8)).join(', ')});
 
@@ -477,16 +634,19 @@ function renderDashboardAlerts() {
 }
 
 function renderBottleneck(summary) {
-  const sorted = [...(state.capacity||[])].sort((a,b)=>
+  const sorted = [...dashboardCapacityRows(summary)].sort((a,b)=>
     num(b['Utilisation_%']||b.Utilisation_Percent||b.utilisation||0) -
     num(a['Utilisation_%']||a.Utilisation_Percent||a.utilisation||0)
-  ).slice(0, 6);
+  ).slice(0, 8);
 
   const maxUtil = sorted.length ? num(sorted[0]['Utilisation_%']||sorted[0].Utilisation_Percent||sorted[0].utilisation||0) : 0;
-  const peakPct = summary.max_utilisation != null ? Math.round(num(summary.max_utilisation)) : (maxUtil ? Math.round(maxUtil) : null);
+  const peakPct = state.capacity?.length && summary.max_utilisation != null
+    ? Math.round(num(summary.max_utilisation))
+    : (maxUtil ? Math.round(maxUtil) : null);
   const peakEl = qs('bottleneckPeak');
   if (peakEl) {
-    peakEl.textContent = peakPct != null ? 'Peak ' + peakPct + '%' : '—';
+    const srcLabel = state.capacity?.length ? '' : ' · simulated';
+    peakEl.textContent = peakPct != null ? 'Peak ' + peakPct + '%' + srcLabel : '—';
     peakEl.style.color = peakPct > 90 ? 'var(--danger)' : peakPct > 75 ? 'var(--warning)' : 'var(--text-soft)';
   }
 
@@ -496,6 +656,8 @@ function renderBottleneck(summary) {
     const plant = r.Plant || (rid.startsWith('SMS')||rid.startsWith('EAF')?'SMS':rid.startsWith('RM')||rid.startsWith('LRF')?'RM':'BF');
     const plantColor = plant==='BF'?'#3b82f6':plant==='SMS'?'#f97316':'#8b5cf6';
     const barColor = util > 100 ? 'var(--danger)' : util > 80 ? 'var(--warning)' : 'var(--success)';
+    const demand = num(r.Demand_Hrs || r.demand_hrs || 0);
+    const avail = num(r.Avail_Hrs_14d || r.avail_hrs || latestSimResult()?.horizon_hours || 0);
     return `<div class="dash-cap-row">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.2rem">
         <div style="display:flex;align-items:center;gap:.35rem">
@@ -507,21 +669,37 @@ function renderBottleneck(summary) {
       <div class="dash-cap-bar-bg">
         <div class="dash-cap-bar" style="width:${Math.min(util,100)}%;background:${barColor}"></div>
       </div>
+      <div style="display:flex;justify-content:space-between;gap:.5rem;font-size:.6rem;color:var(--text-faint)">
+        <span>${escapeHtml(String(r.Operation_Group || r.Operation || _ridToOp(rid)))}</span>
+        <span>${demand.toFixed(1)}h / ${avail.toFixed(1)}h</span>
+      </div>
     </div>`;
-  }).join('') : '<div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">Run Schedule to see utilisation</div>';
+  }).join('') : '<div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:1rem 0">Run Schedule or Feasibility Check to see utilisation</div>';
 }
 
 function renderDashboardDelivery() {
-  const onTime = num(state.overview?.on_time_pct, 0);
-  const late = num(state.overview?.campaigns_late, 0);
+  const kpis = deriveAppKpis();
+  const sim = latestSimResult();
+  const scheduleRows = state.lastScheduleRows && state.lastScheduleRows.length ? state.lastScheduleRows : (state.gantt || []);
+  const onTime = num(kpis.onTimePct, 0);
+  const late = num(kpis.lateCount, 0);
   const avgLate = state.overview?.avg_days_late ?? '—';
+  const planGap = avgLate !== '—'
+    ? avgLate + 'd'
+    : (sim?.horizon_exceeded
+      ? `${num(sim.overflow_hours || 0).toFixed(1)}h over`
+      : (sim?.feasible ? 'On horizon' : '—'));
   const color = onTime >= 90 ? 'var(--success)' : onTime >= 75 ? 'var(--warning)' : 'var(--danger)';
   const el = qs('perfOnTime');
-  if (el) { el.textContent = state.overview ? onTime + '%' : '—'; el.style.color = color; }
+  if (el) { el.textContent = kpis.onTimePct != null ? onTime + '%' : '—'; el.style.color = color; }
   const bar = qs('perfOnTimeBar');
   if (bar) { bar.style.width = onTime + '%'; bar.style.background = color; }
   setText('perfLate', late || '—');
-  setText('perfAvgLate', avgLate !== '—' ? avgLate + 'd' : '—');
+  setText('perfAvgLate', planGap);
+  const perfGap = qs('perfAvgLate');
+  if (perfGap) {
+    perfGap.style.color = sim?.horizon_exceeded ? 'var(--danger)' : sim?.feasible ? 'var(--success)' : 'var(--text)';
+  }
 }
 
 function renderDashboardInventory() {
@@ -540,7 +718,10 @@ function renderDashboardInventory() {
     if (!status) return null;
     const shortfallMT = Math.max(0, min - qty);
     return { id: String(r.SKU_ID || r.sku_id || ''), qty, min, status, shortfallMT };
-  }).filter(Boolean).sort((a,b) => a.status === 'SHORT' ? -1 : 1).slice(0, 8);
+  }).filter(Boolean).sort((a,b) => {
+    if (a.status !== b.status) return a.status === 'SHORT' ? -1 : 1;
+    return b.shortfallMT - a.shortfallMT;
+  }).slice(0, 10);
 
   if (constrained.length === 0) {
     qs('dashboardInventoryBody').innerHTML = '<div style="text-align:center;color:var(--success);font-size:.75rem;padding:.8rem .4rem"><div style="font-size:1.2rem;margin-bottom:.3rem">✓</div>All materials above safety stock</div>';
@@ -553,12 +734,15 @@ function renderDashboardInventory() {
     const tagBg = m.status === 'SHORT' ? 'var(--danger-soft)' : 'var(--warning-soft)';
     const tagColor = m.status === 'SHORT' ? 'var(--danger)' : 'var(--warning)';
     return `<div class="dash-mat-row">
-      <div class="dash-mat-name" title="${escapeHtml(m.id)}">${escapeHtml(m.id.substring(0,14))}</div>
+      <div class="dash-mat-primary">
+        <div class="dash-mat-name" title="${escapeHtml(m.id)}">${escapeHtml(m.id.substring(0,16))}</div>
+        <div class="dash-mat-shortfall">${m.shortfallMT.toFixed(0)} MT short</div>
+      </div>
       <div class="dash-mat-bar-wrap">
         <div class="dash-cap-bar-bg">
           <div class="dash-cap-bar" style="width:${pct}%;background:${barColor}"></div>
         </div>
-        <div style="font-size:.58rem;color:var(--text-faint);margin-top:.1rem">${m.qty} MT (need ${m.min} MT)</div>
+        <div style="font-size:.58rem;color:var(--text-faint);margin-top:.12rem">${m.qty} MT on hand · need ${m.min} MT</div>
       </div>
       <span class="dash-mat-tag" style="background:${tagBg};color:${tagColor}">${m.status}</span>
     </div>`;
@@ -571,39 +755,51 @@ function renderDashActivePOs() {
     qs('dashActivePOs').innerHTML = '<div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.4rem 0">No POs yet — run Propose Orders</div>';
     return;
   }
-  const active = pos.filter(p => p.planner_status !== 'RELEASED').slice(0, 5);
+  const active = pos
+    .filter(p => p.planner_status !== 'RELEASED')
+    .sort((a, b) => num(b.total_qty_mt || 0) - num(a.total_qty_mt || 0))
+    .slice(0, 7);
   qs('dashActivePOs').innerHTML = active.map(po => {
     const st = (po.planner_status || 'PROPOSED').toLowerCase();
     const mt = num(po.total_qty_mt||0).toFixed(0);
     const grade = (po.grade_family||'—').substring(0,10);
     const soCount = (po.selected_so_ids||[]).length;
     const badgeColor = st==='frozen' ? 'var(--warning)' : 'var(--info)';
+    const heats = num(po.heats_required || 0);
+    const dueWindow = Array.isArray(po.due_window) ? po.due_window.filter(Boolean).join(' → ') : '';
     return `<div class="dash-po-row ${st}">
-      <div style="font-weight:700;font-size:.68rem;white-space:nowrap">${escapeHtml(po.po_id)}</div>
-      <div style="font-size:.62rem;color:var(--text-soft);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(grade)} · ${soCount} SOs</div>
-      <div style="font-size:.62rem;font-weight:600;white-space:nowrap">${mt} MT</div>
-      <div style="font-size:.58rem;font-weight:700;color:${badgeColor};white-space:nowrap">${(po.planner_status||'PROP').substring(0,4)}</div>
+      <div class="dash-po-main">
+        <div style="font-weight:700;font-size:.7rem;white-space:nowrap">${escapeHtml(po.po_id)}</div>
+        <div class="dash-po-meta">${escapeHtml(grade)} · ${soCount} SOs · ${heats} heats${dueWindow ? ` · ${escapeHtml(dueWindow)}` : ''}</div>
+      </div>
+      <div class="dash-po-side">
+        <div style="font-size:.68rem;font-weight:700;white-space:nowrap">${mt} MT</div>
+        <div style="font-size:.58rem;font-weight:700;color:${badgeColor};white-space:nowrap">${(po.planner_status||'PROP').substring(0,4)}</div>
+      </div>
     </div>`;
   }).join('');
 }
 
 function renderDashboardExecution() {
+  const kpis = deriveAppKpis();
+  const jobs = state.lastScheduleRows && state.lastScheduleRows.length ? state.lastScheduleRows : (state.gantt || []);
+  const resourceRows = dashboardCapacityRows();
   const today = new Date();
   today.setHours(0,0,0,0);
   const weekEnd = new Date(today);
   weekEnd.setDate(weekEnd.getDate() + 7);
 
-  const thisWeekJobs = (state.gantt||[]).filter(j => {
+  const thisWeekJobs = jobs.filter(j => {
     const s = parseDate(j.Planned_Start);
     return s >= today && s <= weekEnd;
   });
-  const uniqueCamps = new Set(thisWeekJobs.map(j => j.Campaign || j.campaign_id));
-  const activeEquip = new Set(thisWeekJobs.map(j => j.Resource_ID || j.resource_id));
+  const uniqueHeats = new Set(jobs.map(j => j.Heat_ID || j.heat_id).filter(Boolean));
+  const activeEquip = new Set(jobs.map(j => j.Resource_ID || j.resource_id).filter(Boolean));
 
-  setText('execStarted', uniqueCamps.size || '—');
-  setText('execHeats', thisWeekJobs.length || '—');
-  setText('execEquip', activeEquip.size || '—');
-  setText('execHolds', state.overview?.campaigns_held || '0');
+  setText('execStarted', (state.planningOrders || []).length || '—');
+  setText('execHeats', uniqueHeats.size || thisWeekJobs.length || '—');
+  setText('execEquip', activeEquip.size || resourceRows.length || '—');
+  setText('execHolds', kpis.heldCount || '0');
 }
 
 function renderDashboardHolds(){
@@ -866,8 +1062,8 @@ function renderDispatch(){
   }
 
   // Time range
-  const allStarts = jobs.map(j=>parseDate(j.Planned_Start)).filter(d=>isFinite(d));
-  const allEnds   = jobs.map(j=>parseDate(j.Planned_End)).filter(d=>isFinite(d));
+  const allStarts = jobs.map(j => parseDate(j.Planned_Start)).filter(d => !Number.isNaN(d.getTime()));
+  const allEnds   = jobs.map(j => parseDate(j.Planned_End)).filter(d => !Number.isNaN(d.getTime()));
   const t0 = allStarts.length ? new Date(Math.min(...allStarts)) : new Date();
   t0.setHours(0,0,0,0);
   const tMax = allEnds.length ? new Date(Math.max(...allEnds)) : new Date(t0.getTime()+14*86400000);
@@ -914,7 +1110,7 @@ function renderDispatch(){
     const bars = list.map(j=>{
       const s = parseDate(j.Planned_Start);
       const e = parseDate(j.Planned_End);
-      if(!isFinite(s)||!isFinite(e)) return '';
+      if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return '';
       const left  = Math.max(0,(s-t0)/totalMs*100);
       const width = Math.max(0.3,(e-s)/totalMs*100);
       const op = (j.Operation||'').toUpperCase();
@@ -1161,8 +1357,9 @@ function renderMaster(){
     });
   });
 }
-async function loadApplicationState(){
-  const [overview, campaigns, releaseQueue, gantt, capacity, material, dispatch, scenarios, ctpReqs, ctpOut, master, planningOrders] = await Promise.all([
+async function loadApplicationState(options = {}){
+  const { deferHeavy = false } = options;
+  const [overview, campaigns, releaseQueue, gantt, capacity, material, dispatch, planningOrders] = await Promise.all([
     apiFetch('/api/aps/dashboard/overview').catch(()=>null),
     apiFetch('/api/aps/campaigns/list').catch(()=>({items:[]})),
     apiFetch('/api/aps/campaigns/release-queue').catch(()=>({items:[]})),
@@ -1170,39 +1367,54 @@ async function loadApplicationState(){
     apiFetch('/api/aps/capacity/map').catch(()=>({items:[]})),
     apiFetch('/api/aps/material/plan').catch(()=>({items:[]})),
     apiFetch('/api/aps/dispatch/board').catch(()=>({resources:[]})),
-    apiFetch('/api/aps/scenarios/list').catch(()=>({items:[]})),
-    apiFetch('/api/aps/ctp/requests').catch(()=>({items:[]})),
-    apiFetch('/api/aps/ctp/output').catch(()=>({items:[]})),
-    apiFetch('/api/aps/masterdata').catch(()=>({})),
     apiFetch('/api/aps/planning/orders').catch(()=>({planning_orders:[]}))
   ]);
 
   state.overview = overview ? overview.summary || overview : null;
+  state.lastSimResult = overview?.last_simulation || null;
   state.campaigns = campaigns.items || [];
   state.releaseQueue = releaseQueue.items || [];
   state.gantt = gantt.jobs || [];
+  state.lastScheduleRows = state.gantt;
   state.capacity = capacity.items || [];
   state.material = material || { summary: {}, campaigns: [] };
   state.dispatch = dispatch.resources || [];
-  state.scenarios = scenarios.items || [];
-  state.ctpRequests = ctpReqs.items || [];
-  state.ctpOutput = ctpOut.items || [];
-  state.master = master || {};
   // Restore in-memory planning orders (persists across page refresh if server is running)
-  if ((planningOrders.planning_orders || []).length > 0) {
-    state.planningOrders = planningOrders.planning_orders;
-  }
+  state.planningOrders = planningOrders.planning_orders || [];
+  refreshSimulationGradeOptions();
 
-  if(state.overview) hydrateSummary(state.overview);
+  hydrateSummary(state.overview || {});
   renderDashboard();
   renderCampaigns();
   renderSchedule();
   renderDispatch();
   renderMaterial();
   renderCapacity();
-  renderScenarios();
-  renderCTPHistory();
-  renderMaster();
+
+  const loadDeferredData = async () => {
+    const [scenarios, ctpReqs, ctpOut, master] = await Promise.all([
+      apiFetch('/api/aps/scenarios/list').catch(()=>({items:[]})),
+      apiFetch('/api/aps/ctp/requests').catch(()=>({items:[]})),
+      apiFetch('/api/aps/ctp/output').catch(()=>({items:[]})),
+      apiFetch('/api/aps/masterdata').catch(()=>({}))
+    ]);
+
+    state.scenarios = scenarios.items || [];
+    state.ctpRequests = ctpReqs.items || [];
+    state.ctpOutput = ctpOut.items || [];
+    state.master = master || {};
+
+    renderDashboard();
+    renderScenarios();
+    renderCTPHistory();
+    renderMaster();
+  };
+
+  if (deferHeavy) {
+    void loadDeferredData().catch(err => console.warn('Deferred app state load failed:', err));
+  } else {
+    await loadDeferredData();
+  }
 }
 async function loadOrdersOnly(){
   const d = await apiFetch('/api/aps/orders/list').catch(()=>({items:[]}));
@@ -1331,7 +1543,12 @@ async function runCtp(){
   finally{ btn.innerHTML = old; btn.disabled = false; }
 }
 async function runBom() {
-  const btn = qs('bomRunBtn') || qs('bomExplodeBtn');
+  const activeId = document.activeElement?.id;
+  const btn = activeId === 'bomExplodeBtn'
+    ? qs('bomExplodeBtn')
+    : activeId === 'bomRunBtn'
+      ? qs('bomRunBtn')
+      : null;
   const old = btn ? btn.innerHTML : '';
 
   if (btn) {
@@ -1345,7 +1562,8 @@ async function runBom() {
     state.bomGrouped = d.grouped_bom || [];
     state.bomSummary = d.summary || {};
     state.bomFlat = d.net_bom || [];
-    state.bom = d.gross_bom || [];  // Store raw BOM for planning material checks
+    state.bomGross = d.gross_bom || [];
+    state.bomNet = d.net_bom || [];
 
     renderBomSummary();
     renderBomGrouped();
@@ -1371,7 +1589,14 @@ function renderBomSummary(){
   setText('bomKpiByproductVal', String(s.byproduct_lines || 0));
   setText('bomKpiGrossVal', ((s.total_gross_req || 0) / 1000).toFixed(1) + 'k');
   setText('bomKpiNetVal', ((s.total_net_req || 0) / 1000).toFixed(1) + 'k');
-  qs('bomSummaryStrip').style.display = 'flex';
+  setText('bomKpiLinesVal2', String(s.total_sku_lines || 0));
+  setText('bomKpiCoveredVal2', String(s.covered_lines || 0));
+  setText('bomKpiShortVal2', String(s.short_lines || 0));
+  setText('bomKpiPartialVal2', String(s.partial_lines || 0));
+  setText('bomKpiGrossVal2', ((s.total_gross_req || 0) / 1000).toFixed(1) + 'k');
+  setText('bomKpiNetVal2', ((s.total_net_req || 0) / 1000).toFixed(1) + 'k');
+  if (qs('bomSummaryStrip')) qs('bomSummaryStrip').style.display = 'flex';
+  if (qs('bomSummaryStrip2')) qs('bomSummaryStrip2').style.display = 'flex';
 }
 
 function bomStatusBadgeClass(status){
@@ -1688,12 +1913,32 @@ function initializeSimulationPanel(){
   // Set simulation config panel with defaults from loaded config
   const horizonSelect = qs('simHorizonDays');
   if(horizonSelect) {
-    horizonSelect.value = state.config.horizon_days;
+    horizonSelect.value = state.simConfig?.horizon_days || state.config.horizon_days;
   }
 
   const heatSizeInput = qs('simHeatSizeMt');
   if(heatSizeInput) {
-    heatSizeInput.value = state.config.heat_size_mt;
+    heatSizeInput.value = state.simConfig?.heat_size_mt || state.config.heat_size_mt;
+  }
+
+  const smsLinesSelect = qs('simSmsLines');
+  if (smsLinesSelect) {
+    smsLinesSelect.value = String(state.simConfig?.sms_lines || 1);
+  }
+
+  const rmLinesSelect = qs('simRmLines');
+  if (rmLinesSelect) {
+    rmLinesSelect.value = String(state.simConfig?.rm_lines || 1);
+  }
+
+  const prioritySelect = qs('simPriorityFilter');
+  if (prioritySelect) {
+    prioritySelect.value = state.simConfig?.priority_filter || '';
+  }
+
+  const rollingModeSelect = qs('simRollingMode');
+  if (rollingModeSelect) {
+    rollingModeSelect.value = state.simConfig?.rolling_mode_filter || '';
   }
 
   // Show default values
@@ -1703,6 +1948,24 @@ function initializeSimulationPanel(){
   // Also update the heat size in Stage 3
   const heatStageinput = qs('heatSizeMt');
   if(heatStageinput) heatStageinput.value = state.config.heat_size_mt;
+
+  refreshSimulationGradeOptions();
+}
+
+function refreshSimulationGradeOptions(selectedGrade = null) {
+  const gradeEl = qs('simGradeFilter');
+  if (!gradeEl) return;
+
+  const currentValue = selectedGrade ?? gradeEl.value ?? '';
+  const grades = [...new Set(
+    (state.planningOrders || [])
+      .map(po => String(po.grade || po.grade_family || '').trim())
+      .filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b));
+
+  gradeEl.innerHTML = '<option value="">All grades</option>' +
+    grades.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
+  gradeEl.value = grades.includes(currentValue) ? currentValue : '';
 }
 
 async function loadPlanningOrderPool(){
@@ -1712,6 +1975,7 @@ async function loadPlanningOrderPool(){
     state.poolOrders = data.orders || [];
     renderPlanningOrderPool();
     updateSOPoolSelectionCount();
+    hydrateSummary(state.overview || {});
     const urgentCount = state.poolOrders.filter(o=>o.priority==='URGENT').length;
     setPipelineStageStatus('ps-pool', 'done',
       state.poolOrders.length + ' open SOs loaded',
@@ -1726,26 +1990,18 @@ async function loadPlanningOrderPool(){
 
 // Update top KPI cards after planning operations
 function updatePlanningKPIs() {
-  const soCount = (state.poolOrders || []).length;
-
-  // KPI should show only RELEASED orders, not proposed/frozen
-  const releasedPos = (state.planningOrders || []).filter(po => po.planner_status === 'RELEASED');
-  const releasedHeats = (state.heatBatches || []).filter(h => h.released_status === 'RELEASED' || h.scheduling_status === 'SCHEDULED' && h.released);
-
-  const poCount = releasedPos.length;
-  const heatCount = releasedHeats.length;
-  const totalMT = releasedPos.reduce((sum, po) => sum + num(po.total_qty_mt || 0), 0);
+  const kpis = deriveAppKpis();
 
   // Use actual planning horizon from sim config, default to 14 days
   const horizon = state.simConfig?.horizon_days || 14;
-  const throughput = totalMT > 0 ? (totalMT / horizon).toFixed(1) : '—';
+  const throughput = kpis.totalMt > 0 ? (kpis.totalMt / horizon).toFixed(1) : '—';
 
-  setText('kpiOrders', poCount > 0 ? poCount : '—');
-  setText('kpiHeats', heatCount > 0 ? heatCount : '—');
-  setText('kpiMT', totalMT > 0 ? totalMT.toFixed(0) : '—');
+  setText('kpiOrders', kpis.planningOrderCount > 0 ? kpis.planningOrderCount : '—');
+  setText('kpiHeats', kpis.totalHeats > 0 ? kpis.totalHeats : '—');
+  setText('kpiMT', kpis.totalMt > 0 ? kpis.totalMt.toFixed(0) : '—');
   setText('kpiThroughput', throughput);
 
-  // Keep dashboard alerts and PO summary in sync
+  hydrateSummary(state.overview || {});
   renderDashboardAlerts();
   renderDashActivePOs();
 }
@@ -1876,6 +2132,7 @@ async function proposePlanningOrders() {
     });
 
     state.planningOrders = data.planning_orders || [];
+    refreshSimulationGradeOptions();
     renderPlanningBoard();
     updatePOToolbarButtons();
     renderDashboard();
@@ -1999,8 +2256,9 @@ function renderPlanningBoard(){
   qs('planningBoard').innerHTML = html || '<tr><td colspan="11" style="text-align:center;color:var(--text-soft)">No planning orders proposed yet. Select a window first.</td></tr>';
 }
 
-async function deriveHeatBatches(){
-  if(!state.planningOrders || !state.planningOrders.length){
+
+async function deriveHeatBatches() {
+  if (!state.planningOrders || !state.planningOrders.length) {
     setPipelineStageStatus('ps-heats', 'error', 'No planning orders available');
     throw new Error('Propose orders first (Stage 2).');
   }
@@ -2008,63 +2266,87 @@ async function deriveHeatBatches(){
   try {
     setPipelineStageStatus('ps-heats', 'running', 'Deriving heats…');
     setText('heatDeriveBtn', 'Deriving…');
+
     const heatSizeMt = Number(qs('heatSizeMt')?.value || 50);
     const data = await apiFetch('/api/aps/planning/heats/derive', {
       method: 'POST',
-      body: JSON.stringify({planning_orders: state.planningOrders, heat_size_mt: heatSizeMt})
+      body: JSON.stringify({
+        planning_orders: state.planningOrders,
+        heat_size_mt: heatSizeMt
+      })
     });
 
     state.heatBatches = data.heats || [];
-    if(!state.heatBatches.length){
+    state.heatBomMaterials = {};
+
+    if (!state.heatBatches.length) {
+      renderHeatBuilder();
+      updatePlanningKPIs();
       setPipelineStageStatus('ps-heats', 'error', 'No heats derived');
       setText('heatDeriveBtn', 'Derive');
       return;
     }
 
-    // Load materials consumed by each heat (async, doesn't block rendering)
-    state.heatBomMaterials = {};
-    const uniqueSkus = new Map(); // Map: sku_id -> total qty_mt
-    state.heatBatches.forEach(heat => {
-      const po = state.planningOrders.find(p => p.po_id === heat.planning_order_id);
-      if (po?.selected_so_ids?.length) {
-        po.selected_so_ids.forEach(soId => {
-          const so = state.poolOrders.find(s => s.so_id === soId);
-          if (so?.sku_id) {
-            const current = uniqueSkus.get(so.sku_id) || 0;
-            uniqueSkus.set(so.sku_id, current + (heat.qty_mt || 0));
-          }
-        });
-      }
+    // Build FG demand from actual SO quantities, not from heat qty repeated per SO.
+    const uniqueSkus = new Map(); // sku_id -> total so qty_mt
+
+    (state.planningOrders || []).forEach(po => {
+      (po.selected_so_ids || []).forEach(soId => {
+        const so = (state.poolOrders || []).find(s => s.so_id === soId);
+        if (!so?.sku_id) return;
+
+        const skuId = String(so.sku_id).trim();
+        const soQtyMt = Number(so.qty_mt || 0);
+        if (!skuId || !Number.isFinite(soQtyMt) || soQtyMt <= 0) return;
+
+        const current = uniqueSkus.get(skuId) || 0;
+        uniqueSkus.set(skuId, current + soQtyMt);
+      });
     });
 
     if (uniqueSkus.size > 0) {
-      const items = Array.from(uniqueSkus).map(([skuId, qtyMt]) => ({sku_id: skuId, qty_mt: qtyMt}));
-      fetch(API + '/api/aps/bom/for-skus', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({items})
-      })
-      .then(r => r.json())
-      .then(data => {
-        state.heatBomMaterials = data.materials || {};
-        renderHeatBuilder();
-      })
-      .catch(e => {
+      const items = Array.from(uniqueSkus.entries()).map(([sku_id, qty_mt]) => ({
+        sku_id,
+        qty_mt
+      }));
+
+      try {
+        const resp = await fetch(API + '/api/aps/bom/for-skus', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items })
+        });
+
+        if (!resp.ok) {
+          throw new Error('BOM for-skus request failed with status ' + resp.status);
+        }
+
+        const bomData = await resp.json();
+        state.heatBomMaterials = bomData.materials || {};
+      } catch (e) {
         console.warn('Failed to load heat materials:', e);
-        renderHeatBuilder();
-      });
-    } else {
-      renderHeatBuilder();
+        state.heatBomMaterials = {};
+      }
     }
+
+    renderHeatBuilder();
     updatePlanningKPIs();
-    const totalMT = state.heatBatches.reduce((s,h)=>s+num(h.qty_mt),0);
-    setPipelineStageStatus('ps-heats', 'done',
+
+    const totalMT = state.heatBatches.reduce((sum, h) => sum + num(h.qty_mt), 0);
+
+    setPipelineStageStatus(
+      'ps-heats',
+      'done',
       state.heatBatches.length + ' heats · ' + totalMT.toFixed(0) + ' MT',
-      [{v: state.heatBatches.length, l:'heats'}, {v: (state.heatBatches.length*2)+'h', l:'est.'}]
+      [
+        { v: state.heatBatches.length, l: 'heats' },
+        { v: (state.heatBatches.length * 2) + 'h', l: 'est.' }
+      ]
     );
+
     stageExpand('ps-heats');
     setText('heatDeriveBtn', 'Derive');
-  } catch(e) {
+  } catch (e) {
     setPipelineStageStatus('ps-heats', 'error', 'Derive failed');
     setText('heatDeriveBtn', 'Derive');
     throw e;
@@ -2539,20 +2821,6 @@ function showGanttModal(title, data, type = 'so'){
   });
 }
 
-/* function simulateWithConfig(){
-  // Read configuration panel values
-  state.simConfig.horizon_days = Number(qs('simHorizonDays')?.value || state.config.horizon_days);
-  state.simConfig.heat_size_mt = Number(qs('simHeatSizeMt')?.value || state.config.heat_size_mt);
-  state.simConfig.priority_filter = qs('simPriorityFilter')?.value || '';
-  state.simConfig.sms_lines = Number(qs('simSmsLines')?.value || 1);
-  state.simConfig.rm_lines = Number(qs('simRmLines')?.value || 1);
-
-  // Hide config panel, show results
-  qs('simConfigPanel').style.display = 'none';
-  qs('schedulerContent').style.display = '';
-
-  simulateSchedule(state.simConfig);
-} */
 
 async function simulateSchedule(config = {}){
   if(!state.heatBatches || !state.heatBatches.length){
@@ -2563,6 +2831,7 @@ async function simulateSchedule(config = {}){
   try {
     setPipelineStageStatus('ps-schedule', 'running', 'Simulating…');
     setText('schedulerSimulateBtn', 'Simulating…');
+    const selectedGrade = qs('simGradeFilter')?.value || '';
 
     const simParams = {
       planning_orders: state.planningOrders,
@@ -2573,29 +2842,39 @@ async function simulateSchedule(config = {}){
       rolling_mode_filter: qs('simRollingMode')?.value || '',
       grade_filter:   qs('simGradeFilter')?.value || '',
     };
-
+    state.simConfig = {
+      ...state.simConfig,
+      horizon_days: Number(qs('simHorizonDays')?.value || state.simConfig?.horizon_days || 14),
+      sms_lines: simParams.num_sms,
+      rm_lines: simParams.num_rm,
+      priority_filter: simParams.priority_filter,
+      rolling_mode_filter: simParams.rolling_mode_filter
+    };
+    const horizonHours = simParams.horizon_hours || 24;
     const data = await apiFetch('/api/aps/planning/simulate', {
       method: 'POST',
       body: JSON.stringify(simParams)
     });
+    state.lastSimResult = data;
+    hydrateSummary(state.overview || {});
+    renderDashboard();
 
-    // Populate grade dropdown from planning orders
-    const gradeEl = qs('simGradeFilter');
-    if(gradeEl && state.planningOrders?.length){
-      const grades = [...new Set(state.planningOrders.map(po => po.grade).filter(Boolean))].sort();
-      gradeEl.innerHTML = '<option value="">All grades</option>' +
-        grades.map(g => `<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
-    }    
+    refreshSimulationGradeOptions(selectedGrade);
     const feasible = data.feasible;
     const duration = data.total_duration_hours || 0;
-    const smsHours = data.sms_hours || 0;
-    const rmHours = data.rm_hours || 0;
+    const returnedHorizonHours = data.horizon_hours || horizonHours;
+    const smsHours = data.sms_span_hours ?? data.sms_hours ?? 0;
+    const rmHours = data.rm_span_hours ?? data.rm_hours ?? 0;
     const loadFactor = data.load_factor || '—';
 
     setText('scheduleFeasible', feasible ? 'Yes' : 'No');
     setText('scheduleDuration', duration + 'h');
     setText('scheduleSmsHours', smsHours + 'h');
     setText('scheduleRmHours', rmHours + 'h');
+    setMetricTone('scheduleFeasibleCard', feasible ? 'success' : 'danger');
+    setMetricTone('scheduleDurationCard', feasible ? 'success' : (data.horizon_exceeded ? 'danger' : 'warn'));
+    setMetricTone('scheduleSmsCard', num(smsHours) > returnedHorizonHours ? 'warn' : 'info');
+    setMetricTone('scheduleRmCard', num(rmHours) > returnedHorizonHours ? 'warn' : 'info');
 
     const statusColor = feasible ? '#10b981' : '#ef4444';
     const bottleneck = data.bottleneck || '—';
@@ -2617,14 +2896,16 @@ async function simulateSchedule(config = {}){
         <div style="font-size:1.8rem;font-weight:800;color:${statusColor}">${feasible ? '✓ FEASIBLE' : '✗ INFEASIBLE'}</div>
         <div style="display:flex;gap:2rem;font-size:.85rem">
           <div><div style="color:var(--text-soft);font-size:.7rem">Duration</div><div style="font-weight:700">${duration}h</div></div>
+          <div><div style="color:var(--text-soft);font-size:.7rem">Horizon</div><div style="font-weight:700">${returnedHorizonHours}h</div></div>
           <div><div style="color:var(--text-soft);font-size:.7rem">Load</div><div style="font-weight:700">${loadFactor}</div></div>
-          <div><div style="color:var(--text-soft);font-size:.7rem">SMS</div><div style="font-weight:700">${smsHours}h</div></div>
-          <div><div style="color:var(--text-soft);font-size:.7rem">RM</div><div style="font-weight:700">${rmHours}h</div></div>
+          <div><div style="color:var(--text-soft);font-size:.7rem">SMS span</div><div style="font-weight:700">${smsHours}h</div></div>
+          <div><div style="color:var(--text-soft);font-size:.7rem">RM span</div><div style="font-weight:700">${rmHours}h</div></div>
           <div><div style="color:var(--text-soft);font-size:.7rem">Bottleneck</div><div style="font-weight:700;color:${statusColor}">${escapeHtml(bottleneck)}</div></div>
         </div>
-        <div style="font-size:.75rem;color:var(--text-soft);flex:1">${data.message}</div>
+        <div style="font-size:.75rem;color:var(--text-soft);flex:1">${data.message}<br><span style="font-size:.68rem;color:var(--text-faint)">Workload: SMS ${num(data.sms_hours || 0).toFixed(1)}h · RM ${num(data.rm_hours || 0).toFixed(1)}h</span></div>
       </div>
     `;
+    qs('schedulerContent').style.display = '';
 
     // Show remediation panel always (for what-if scenarios) - style changes based on feasibility
     const remPanel = qs('remediationPanel');
@@ -2706,141 +2987,6 @@ async function simulateSchedule(config = {}){
   }
 }
 
-/* async function remSimulate(){
-  // Re-simulate with remediation settings
-  if(!state.heatBatches || !state.heatBatches.length){
-    alert('Derive heats first.');
-    return;
-  }
-  const numSms = Number(qs('remSmsLines')?.value || 1);
-  const numRm = Number(qs('remRmLines')?.value || 1);
-  const priorityFilter = qs('remPriorityFilter')?.value || '';
-  const horizonHours = qs('remHorizonHours')?.value || '';
-
-  try {
-    setText('schedulerSimulateBtn', 'Simulating…');
-    const data = await apiFetch('/api/aps/planning/simulate', {
-      method: 'POST',
-      body: JSON.stringify({
-        planning_orders: state.planningOrders,
-        num_sms: numSms,
-        num_rm: numRm,
-        priority_filter: priorityFilter,
-        horizon_hours: horizonHours ? Number(horizonHours) : undefined
-      })
-    });
-
-    const feasible = data.feasible;
-    const duration = data.total_duration_hours || 0;
-    const loadFactor = data.load_factor || '—';
-
-    setText('scheduleFeasible', feasible ? 'Yes' : 'No');
-    setText('scheduleDuration', duration + 'h');
-    setText('scheduleSmsHours', (data.sms_hours||0) + 'h');
-    setText('scheduleRmHours', (data.rm_hours||0) + 'h');
-
-    const statusColor = feasible ? '#10b981' : '#ef4444';
-    const config = [];
-    if(numSms > 1) config.push('SMS×'+numSms);
-    if(numRm > 1) config.push('RM×'+numRm);
-    if(priorityFilter) config.push(priorityFilter + ' only');
-    if(horizonHours) config.push(Math.round(Number(horizonHours)/24)+'d horizon');
-    const configStr = config.length ? ' [' + config.join(', ') + ']' : '';
-
-    // Store schedule rows for gantt modal
-    const scheduleRows = data.schedule_rows || [];
-    state.lastScheduleRows = scheduleRows;
-
-    // Mark heats with their scheduling status (SCHEDULED vs NOT_SCHEDULED)
-    const scheduledHeatIds = new Set(scheduleRows.map(r => r.Heat_ID).filter(Boolean));
-    if (state.heatBatches) {
-      state.heatBatches.forEach(heat => {
-        heat.scheduling_status = scheduledHeatIds.has(heat.heat_id) ? 'SCHEDULED' : 'NOT_SCHEDULED';
-      });
-    }
-
-    qs('schedulerContent').innerHTML = `
-      <div style="display:flex;align-items:center;gap:2rem;padding:.5rem 0">
-        <div style="font-size:1.8rem;font-weight:800;color:${statusColor}">${feasible ? '✓ FEASIBLE' : '✗ INFEASIBLE'}</div>
-        <div style="display:flex;gap:2rem;font-size:.85rem">
-          <div><div style="color:var(--text-soft);font-size:.7rem">Duration</div><div style="font-weight:700">${duration}h</div></div>
-          <div><div style="color:var(--text-soft);font-size:.7rem">Load</div><div style="font-weight:700">${loadFactor}</div></div>
-          <div><div style="color:var(--text-soft);font-size:.7rem">Config</div><div style="font-weight:700;font-size:.7rem">${escapeHtml(configStr || 'baseline')}</div></div>
-        </div>
-        <div style="font-size:.75rem;color:var(--text-soft);flex:1">${data.message}</div>
-      </div>
-    `;
-
-    setPipelineStageStatus('ps-schedule', feasible ? 'done' : 'warn',
-      data.message + configStr,
-      [{v: duration+'h', l:'duration'}, {v: loadFactor, l:'load'}]
-    );
-
-    // Always show remediation panel for what-if scenario exploration
-    const remPanel = qs('remediationPanel');
-    if(remPanel){
-      remPanel.style.display = '';
-      if(feasible){
-        remPanel.style.background = '#f0fdf4';
-        remPanel.style.borderColor = '#86efac';
-        const headerSpan = remPanel.querySelector('span');
-        if(headerSpan) headerSpan.textContent = ' Feasible — explore what-if scenarios:';
-        const headerDiv = remPanel.querySelector('div[style*="92400e"]');
-        if(headerDiv) headerDiv.style.color = '#166534';
-      } else {
-        // Calculate resource utilization for alert
-        if(scheduleRows && scheduleRows.length){
-          const byRes = {};
-          scheduleRows.forEach(row => {
-            const res = row.Resource_ID || 'UNKNOWN';
-            if(!byRes[res]) byRes[res] = 0;
-            byRes[res] += num(row.Duration_Hrs) || 0;
-          });
-
-          const resBreakdown = Object.entries(byRes)
-            .map(([res, hours]) => ({
-              res,
-              hours,
-              util: (hours / horizonHours) * 100,
-              over: hours > horizonHours
-            }))
-            .sort((a,b) => b.util - a.util);
-
-          const overCap = resBreakdown.filter(r => r.over);
-          if(overCap.length > 0){
-            const alertHtml = `
-              <div style="margin-bottom:1rem;padding:.6rem;background:#fee2e2;border:1px solid #fecaca;border-radius:.3rem">
-                <div style="font-weight:600;color:#991b1b;font-size:.8rem;margin-bottom:.4rem">⚠ Still Overloaded After Adjustment</div>
-                <div style="font-size:.75rem;color:#7f1d1d">
-                  ${overCap.map(r => `
-                    <div style="display:flex;justify-content:space-between;margin-bottom:.2rem">
-                      <span><strong>${escapeHtml(r.res)}</strong></span>
-                      <span>${r.hours.toFixed(0)}h / ${horizonHours}h (${r.util.toFixed(0)}%)</span>
-                    </div>
-                  `).join('')}
-                </div>
-                <div style="font-size:.7rem;color:#991b1b;margin-top:.4rem">💡 Try: Further extend horizon or add more parallel resources</div>
-              </div>
-            `;
-            remPanel.style.display = '';
-            // Remove old alert if exists
-            const oldAlert = remPanel.querySelector('[style*="fee2e2"]');
-            if(oldAlert) oldAlert.remove();
-            remPanel.insertAdjacentHTML('afterbegin', alertHtml);
-          }
-        }
-      }
-    }
-
-    if(feasible){
-      await loadReleaseBoard();
-    }
-    setText('schedulerSimulateBtn', 'Simulate');
-  } catch(e) {
-    alert('Re-simulation failed: ' + e.message);
-    setText('schedulerSimulateBtn', 'Simulate');
-  }
-} */
 
 async function loadReleaseBoard(){
   if(!state.planningOrders || !state.planningOrders.length){
@@ -2899,15 +3045,31 @@ async function loadReleaseBoard(){
   stageExpand('ps-release');
 }
 
+async function refreshPlanningOrdersAfterRelease() {
+  const refreshed = await apiFetch('/api/aps/planning/orders').catch(() => ({ planning_orders: [] }));
+  state.planningOrders = refreshed.planning_orders || [];
+  refreshSimulationGradeOptions();
+
+  updatePlanningKPIs();
+  renderDashboard();
+}
+
 async function releaseSinglePO(poId){
   try {
+    qs('chipPipelineText').textContent = '⏳ Releasing planning order ' + poId + '...';
+    qs('chipPipeline').className = 'chip info';
+
     await apiFetch('/api/aps/planning/release', {
       method: 'POST',
       body: JSON.stringify({po_ids: [poId]})
     });
+
+    await refreshPlanningOrdersAfterRelease();
+    await loadReleaseBoard();
+/*     renderDashboard(); */
+
     qs('chipPipelineText').textContent = '✓ Planning order ' + poId + ' released successfully';
     qs('chipPipeline').className = 'chip success';
-    await loadReleaseBoard();
   } catch(e) {
     qs('chipPipelineText').textContent = '✗ Release failed: ' + e.message;
     qs('chipPipeline').className = 'chip danger';
@@ -2923,33 +3085,24 @@ async function releaseSelectedPOs(){
   }
 
   try {
+    qs('chipPipelineText').textContent = '⏳ Releasing ' + checked.length + ' planning order' + (checked.length > 1 ? 's' : '') + '...';
+    qs('chipPipeline').className = 'chip info';
+
     await apiFetch('/api/aps/planning/release', {
       method: 'POST',
       body: JSON.stringify({po_ids: checked})
     });
+
+    await refreshPlanningOrdersAfterRelease();
+    await loadReleaseBoard();
+/*     renderDashboard(); */
+
     qs('chipPipelineText').textContent = '✓ Released ' + checked.length + ' planning order' + (checked.length > 1 ? 's' : '') + ' successfully';
     qs('chipPipeline').className = 'chip success';
-    await loadReleaseBoard();
-    renderDashboard();
   } catch(e) {
     qs('chipPipelineText').textContent = '✗ Release failed: ' + e.message;
     qs('chipPipeline').className = 'chip danger';
   }
-}
-
-function releaseSelectAll(){
-  qs('releaseSelectAllCheckbox').checked = true;
-  document.querySelectorAll('.release-po-checkbox').forEach(cb => cb.checked = true);
-}
-
-function releaseClearAll(){
-  qs('releaseSelectAllCheckbox').checked = false;
-  document.querySelectorAll('.release-po-checkbox').forEach(cb => cb.checked = false);
-}
-
-function releaseToggleSelectAll(){
-  const isChecked = qs('releaseSelectAllCheckbox').checked;
-  document.querySelectorAll('.release-po-checkbox').forEach(cb => cb.checked = isChecked);
 }
 
 async function releaseAllSelected(){
@@ -2971,15 +3124,123 @@ async function releaseAllSelected(){
       body: JSON.stringify({po_ids: checked})
     });
 
+    await refreshPlanningOrdersAfterRelease();
+    await loadReleaseBoard();
+/*     renderDashboard(); */
+
     qs('chipPipelineText').textContent = '✓ Released ' + checked.length + ' planning order' + (checked.length > 1 ? 's' : '') + ' successfully';
     qs('chipPipeline').className = 'chip success';
-    await loadReleaseBoard();
-    renderDashboard();
   } catch(e) {
     qs('chipPipelineText').textContent = '✗ Release failed: ' + e.message;
     qs('chipPipeline').className = 'chip danger';
   }
 }
+
+function releaseSelectAll(){
+  qs('releaseSelectAllCheckbox').checked = true;
+  document.querySelectorAll('.release-po-checkbox').forEach(cb => cb.checked = true);
+}
+
+function releaseClearAll(){
+  qs('releaseSelectAllCheckbox').checked = false;
+  document.querySelectorAll('.release-po-checkbox').forEach(cb => cb.checked = false);
+}
+
+function releaseToggleSelectAll(){
+  const isChecked = qs('releaseSelectAllCheckbox').checked;
+  document.querySelectorAll('.release-po-checkbox').forEach(cb => cb.checked = isChecked);
+}
+
+
+function setSORollingMode(soId, mode) {
+  const cleanSoId = String(soId || '').trim();
+  const cleanMode = String(mode || '').trim().toUpperCase() === 'COLD' ? 'COLD' : 'HOT';
+
+  if (!cleanSoId) return;
+
+  if (!state.soRollingOverrides) {
+    state.soRollingOverrides = {};
+  }
+
+  state.soRollingOverrides[cleanSoId] = cleanMode;
+
+  const so = (state.poolOrders || []).find(o => String(o.so_id || '').trim() === cleanSoId);
+  if (so) {
+    so.rolling_mode = cleanMode;
+  }
+
+  const affectedPOs = (state.planningOrders || []).filter(po =>
+    (po.selected_so_ids || []).some(id => String(id || '').trim() === cleanSoId)
+  );
+
+  affectedPOs.forEach(po => {
+    const poModes = (po.selected_so_ids || []).map(id => {
+      const linkedSo = (state.poolOrders || []).find(o => String(o.so_id || '').trim() === String(id || '').trim());
+      return String(linkedSo?.rolling_mode || state.soRollingOverrides[String(id || '').trim()] || 'HOT').toUpperCase();
+    });
+
+    po.rolling_mode = poModes.includes('COLD') ? 'COLD' : 'HOT';
+  });
+
+  renderPlanningOrderPool();
+  renderPlanningBoard();
+  updatePlanningKPIs();
+}
+
+function toggleHoldSO(soId) {
+  const cleanSoId = String(soId || '').trim();
+  if (!cleanSoId) return;
+
+  const so = (state.poolOrders || []).find(o => String(o.so_id || '').trim() === cleanSoId);
+  if (!so) {
+    alert('Sales order not found.');
+    return;
+  }
+
+  if (so._originalStatus == null) {
+    so._originalStatus = so.status || 'OPEN';
+  }
+
+  const willHold = !so._held;
+  so._held = willHold;
+  so.status = willHold ? 'HELD' : so._originalStatus;
+
+  if (willHold) {
+    const cb = document.querySelector(`.pool-so-check[data-so="${CSS.escape(cleanSoId)}"]`);
+    if (cb) cb.checked = false;
+  }
+
+  const affectedPOs = (state.planningOrders || []).filter(po =>
+    (po.selected_so_ids || []).some(id => String(id || '').trim() === cleanSoId)
+  );
+
+  affectedPOs.forEach(po => {
+    const linkedSOs = (po.selected_so_ids || []).map(id =>
+      (state.poolOrders || []).find(o => String(o.so_id || '').trim() === String(id || '').trim())
+    ).filter(Boolean);
+
+    const activeSOs = linkedSOs.filter(x => !x._held);
+    const allHeld = linkedSOs.length > 0 && activeSOs.length === 0;
+
+    po.planner_status = allHeld ? 'HOLD' : (po.planner_status === 'HOLD' ? 'PROPOSED' : po.planner_status);
+    po.total_qty_mt = activeSOs.reduce((sum, x) => sum + num(x.qty_mt || 0), 0);
+
+    const activeModes = activeSOs.map(x =>
+      String(x.rolling_mode || state.soRollingOverrides[String(x.so_id || '').trim()] || 'HOT').toUpperCase()
+    );
+    po.rolling_mode = activeModes.includes('COLD') ? 'COLD' : 'HOT';
+
+    const heatSize = Number(qs('heatSizeMt')?.value || state.config?.heat_size_mt || 50);
+    po.heats_required = po.total_qty_mt > 0 ? Math.ceil(po.total_qty_mt / Math.max(heatSize, 1)) : 0;
+  });
+
+  renderPlanningOrderPool();
+  renderPlanningBoard();
+  updatePlanningKPIs();
+  updateSOPoolSelectionCount();
+  updatePOToolbarButtons();
+}
+
 
 // Event listeners for planning workflow
 
@@ -3079,6 +3340,7 @@ async function freezePO(poId) {
     });
     if (data && data.planning_orders) {
       state.planningOrders = data.planning_orders;
+      refreshSimulationGradeOptions();
       renderPlanningBoard();
       updatePOToolbarButtons();
     }
@@ -3125,6 +3387,7 @@ async function splitPO(poId) {
     });
     if (data && data.planning_orders) {
       state.planningOrders = data.planning_orders;
+      refreshSimulationGradeOptions();
       renderPlanningBoard();
       updatePOToolbarButtons();
     }
@@ -3149,6 +3412,7 @@ async function mergeSelectedPOs() {
     });
     if (data && data.planning_orders) {
       state.planningOrders = data.planning_orders;
+      refreshSimulationGradeOptions();
       renderPlanningBoard();
       updatePOToolbarButtons();
     }
@@ -3159,14 +3423,21 @@ async function mergeSelectedPOs() {
 
 // ===== MATERIAL CHECK FUNCTIONS =====
 function checkMaterialForSO(soId) {
-  const so = state.poolOrders?.find(o => o.so_id === soId);
-  if (!so || !so.sku_id) {
+  const so = state.poolOrders?.find(o => String(o.so_id || o.SO_ID || '').trim() === String(soId || '').trim());
+  const sku = String(so?.sku_id || so?.SKU_ID || '').trim();
+  if (!so || !sku) {
     alert('SO not found or missing SKU');
     return;
   }
-  const skuIds = [so.sku_id];
-  const title = `Material for SO-${soId} (${so.sku_id})`;
-  openMaterialPanel(title, skuIds);
+
+  const qty = num(so.qty_mt || so.Qty_MT || so.Order_Qty_MT || 0);
+  const items = _planningMaterialItemsFromSkuQtyMap({ [sku]: qty });
+  if (!items.length) {
+    alert('SO has no positive quantity to explode.');
+    return;
+  }
+
+  openMaterialPanel(`Material for SO-${soId} (${sku})`, items);
 }
 
 function checkMaterialForPO(poId) {
@@ -3175,262 +3446,50 @@ function checkMaterialForPO(poId) {
     alert('PO not found');
     return;
   }
-  const skuIds = [...new Set((po.selected_so_ids || []).map(soId => {
-    const so = state.poolOrders?.find(o => o.so_id === soId);
-    return so?.sku_id || null;
-  }).filter(Boolean))];
 
-  if (skuIds.length === 0) {
+  const skuQtyMap = {};
+  (po.selected_so_ids || []).forEach(soId => {
+    const so = state.poolOrders?.find(o => String(o.so_id || o.SO_ID || '').trim() === String(soId || '').trim());
+    const sku = String(so?.sku_id || so?.SKU_ID || '').trim();
+    if (!sku) return;
+    skuQtyMap[sku] = (skuQtyMap[sku] || 0) + num(so.qty_mt || so.Qty_MT || so.Order_Qty_MT || 0);
+  });
+
+  const items = _planningMaterialItemsFromSkuQtyMap(skuQtyMap);
+  if (!items.length) {
     alert('No SKUs found for this PO');
     return;
   }
 
-  const title = `Materials for PO-${poId} (${skuIds.join(', ')})`;
-  openMaterialPanel(title, skuIds);
+  const title = `Materials for PO-${poId} (${items.map(item => item.sku_id).join(', ')})`;
+  openMaterialPanel(title, items);
 }
 
-/* function showFullBOMForSelectedSOs() {
-  const checkedSoIds = [...document.querySelectorAll('.pool-so-check:checked')].map(el => el.dataset.so);
 
-  if (checkedSoIds.length === 0) {
-    alert('Please select one or more SOs to view materials');
-    return;
-  }
-
-  const skuIds = [...new Set(checkedSoIds.map(soId => {
-    const so = state.poolOrders?.find(o => o.so_id === soId);
-    return so?.sku_id || null;
-  }).filter(Boolean))];
-
-  if (skuIds.length === 0) {
-    alert('No SKUs found for selected SOs');
-    return;
-  }
-
-  const title = `Materials for ${checkedSoIds.length} selected SO(s)`;
-  openMaterialPanel(title, skuIds);
+function _planningMaterialItemsFromSkuQtyMap(skuQtyMap) {
+  return Object.entries(skuQtyMap || {})
+    .map(([skuId, qty]) => ({
+      sku_id: String(skuId || '').trim(),
+      qty_mt: Number(num(qty || 0).toFixed(3))
+    }))
+    .filter(item => item.sku_id && item.qty_mt > 0);
 }
-
-function openMaterialPanel(title, skuIds) {
-  const panel = qs('planningMaterialPanel');
-  if (!panel) return;
-
-  setText('materialCheckTitle', title);
-
-  if (!state.bom || state.bom.length === 0) {
-    qs('planningBomTree').innerHTML = '<div style="padding:.5rem;color:var(--text-soft);font-size:.75rem">Loading BOM data...</div>';
-    qs('planningBomDetail').innerHTML = '';
-    panel.style.display = 'flex';
-
-    // Auto-run BOM Explosion
-    runBom().then(() => {
-      openMaterialPanel(title, skuIds);  // Recursively call after BOM is loaded
-    }).catch((err) => {
-      qs('planningBomTree').innerHTML = '<div style="padding:.5rem;color:var(--danger);font-size:.75rem">Failed to load BOM. <a href="#" onclick="nav(\'bom\'); return false" style="color:var(--primary);text-decoration:underline">Go to BOM tab</a> to run manually.</div>';
-    });
-    return;
-  }
-
-  // Recursively build COMPLETE BOM chain (all levels: FG → Components → Sub-components → RM)
-  const allBomItems = new Set();
-  const processedSkus = new Set();
-
-  function collectAllMaterials(parentSkuList) {
-    const newSkus = [];
-    parentSkuList.forEach(parentSku => {
-      if (processedSkus.has(parentSku)) return;
-      processedSkus.add(parentSku);
-
-      // Find all materials required by this parent SKU
-      const materials = state.bom.filter(item => item.Parent_SKU === parentSku);
-      materials.forEach(item => {
-        allBomItems.add(item);
-        newSkus.push(item.SKU_ID);  // Queue sub-materials for processing
-      });
-    });
-
-    // Recursively process sub-materials
-    if (newSkus.length > 0) {
-      collectAllMaterials(newSkus);
-    }
-  }
-
-  // Start with the selected SKUs
-  collectAllMaterials(skuIds);
-
-  // FILTER OUT BYPRODUCTS: Only include materials with Required_Qty > 0
-  // Byproducts (waste, scrap) have Required_Qty <= 0 and don't need inventory
-  const filteredBom = Array.from(allBomItems).filter(item => num(item.Required_Qty) > 0);
-
-  if (filteredBom.length === 0) {
-    qs('planningBomTree').innerHTML = '<div style="padding:.5rem;color:var(--text-soft);font-size:.75rem">No materials required for selected SKUs.</div>';
-    qs('planningBomDetail').innerHTML = '';
-    panel.style.display = 'flex';
-    return;
-  }
-
-  // Build tree by Parent_SKU (now includes ALL levels, byproducts filtered)
-  const grouped = {};
-  filteredBom.forEach(item => {
-    if (!grouped[item.Parent_SKU]) grouped[item.Parent_SKU] = [];
-    grouped[item.Parent_SKU].push(item);
-  });
-
-  // Render tree - EXPANDED BY DEFAULT
-  let treeHtml = '';
-  Object.keys(grouped).sort().forEach(parentSku => {
-    const items = grouped[parentSku];
-    treeHtml += `<div class="bom-tree-item">
-      <div class="bom-tree-node" onclick="toggleBomNode(this); selectMaterialDetail('${escapeHtml(parentSku)}')" style="cursor:pointer">
-        <div class="bom-tree-toggle"></div>
-        <div class="bom-tree-icon">📦</div>
-        <span>${escapeHtml(parentSku)}</span>
-        <span style="margin-left:auto;font-size:.7rem;color:var(--text-faint)">${items.length}</span>
-      </div>
-      <div class="bom-tree-children" style="display:block">`;
-
-    items.forEach(item => {
-      const statusColor = item.Produced_Qty >= item.Required_Qty ? 'var(--success)' :
-                         item.Produced_Qty >= item.Required_Qty * 0.7 ? 'var(--warning)' : 'var(--danger)';
-      const statusLabel = item.Produced_Qty >= item.Required_Qty ? '✓ OK' :
-                         item.Produced_Qty >= item.Required_Qty * 0.7 ? '⚠ PARTIAL' : '✗ SHORT';
-
-      treeHtml += `<div class="bom-tree-item">
-        <div class="bom-tree-node" onclick="selectMaterialDetail('${escapeHtml(parentSku)}', '${escapeHtml(item.SKU_ID)}')" style="cursor:pointer;padding-left:1rem">
-          <div class="bom-tree-toggle leaf"></div>
-          <div class="bom-tree-icon">⚙</div>
-          <span>${escapeHtml(item.SKU_ID)}</span>
-          <span style="margin-left:auto;font-size:.65rem;color:${statusColor};font-weight:600">${statusLabel}</span>
-        </div>
-      </div>`;
-    });
-
-    treeHtml += `</div></div>`;
-  });
-
-  qs('planningBomTree').innerHTML = treeHtml;
-
-  // Show first parent's details
-  if (Object.keys(grouped).length > 0) {
-    selectMaterialDetail(Object.keys(grouped)[0]);
-  }
-
-  panel.style.display = 'flex';
-}
-
-function selectMaterialDetail(parentSku, skuId) {
-  const filteredBom = state.bom.filter(item => item.Parent_SKU === parentSku);
-  if (!filteredBom.length) {
-    qs('planningBomDetail').innerHTML = '<div style="padding:.5rem;color:var(--text-soft)">No details available.</div>';
-    return;
-  }
-
-  const items = skuId ? filteredBom.filter(i => i.SKU_ID === skuId) : filteredBom;
-
-  let html = `<div style="padding-bottom:.5rem;border-bottom:1px solid var(--border-soft);margin-bottom:.5rem">
-    <div style="font-weight:600;font-size:.8rem;margin-bottom:.3rem">Production: ${escapeHtml(parentSku)}</div>`;
-
-  let totalRequired = 0, totalProduced = 0;
-  items.forEach(item => {
-    totalRequired += num(item.Required_Qty);
-    totalProduced += num(item.Produced_Qty);
-  });
-
-  html += `<div style="font-size:.75rem;color:var(--text-soft);display:flex;gap:1rem">
-    <div>Required: <strong>${totalRequired.toFixed(0)}</strong> MT</div>
-    <div>Produced: <strong>${totalProduced.toFixed(0)}</strong> MT</div>
-  </div></div>`;
-
-  html += `<table class="table" style="font-size:.75rem;margin-bottom:0">
-    <thead><tr><th>SKU</th><th>Required</th><th>Produced</th><th>Status</th></tr></thead>
-    <tbody>`;
-
-  items.forEach(item => {
-    const req = num(item.Required_Qty);
-    const prod = num(item.Produced_Qty);
-    const fillPct = req > 0 ? (prod / req) * 100 : 0;
-    const statusClass = fillPct >= 100 ? 'green' : fillPct >= 70 ? 'amber' : 'red';
-    const statusLabel = fillPct >= 100 ? 'COVERED' : fillPct >= 70 ? 'PARTIAL' : 'SHORT';
-
-    html += `<tr>
-      <td style="font-weight:600">${escapeHtml(item.SKU_ID)}</td>
-      <td>${req.toFixed(0)} MT</td>
-      <td>${prod.toFixed(0)} MT</td>
-      <td><span class="badge ${statusClass}" style="font-size:.7rem">${statusLabel}</span></td>
-    </tr>`;
-  });
-
-  html += `</tbody></table>`;
-  qs('planningBomDetail').innerHTML = html;
-}
-
-function closeMaterialPanel() {
-  const panel = qs('planningMaterialPanel');
-  if (panel) panel.style.display = 'none';
-  qs('planningBomTree').innerHTML = '';
-  qs('planningBomDetail').innerHTML = '';
-} */
-
 
 /* ============================================================================
-   PLANNING MATERIAL PANEL - FIXED ROOTED TREE RENDERING
-   Replace the old:
-   - openMaterialPanel(...)
-   - selectMaterialDetail(...)
-   and add these helpers.
+   PLANNING MATERIAL PANEL
+   Selection-scoped netted BOM tree with lazy child rendering.
    ============================================================================ */
 
 function closeMaterialPanel() {
   const panel = qs('planningMaterialPanel');
   if (!panel) return;
+  state.planningMaterialRequestId += 1;
   panel.style.display = 'none';
   qs('planningBomTree').innerHTML = '';
   qs('planningBomDetail').innerHTML = '';
   setText('materialCheckTitle', 'Material Requirements');
   state.planningMaterialView = null;
 }
-
-function showPoolSOGantt() {
-  const selected = Array.from(state.selectedOrders || []);
-  if (!selected.length) {
-    alert('Select at least one sales order first.');
-    return;
-  }
-
-  const rows = (state.lastScheduleRows || []).filter(r => {
-    const soId = String(r.SO_ID || r.so_id || '').trim();
-    return selected.includes(soId);
-  });
-
-  if (!rows.length) {
-    alert('No schedule rows available for the selected sales orders. Run Feasibility Check first.');
-    return;
-  }
-
-  showGanttModal('Selected SO Timeline', rows, 'so');
-}
-
-/* function showFullBOMForSelectedSOs() {
-  const selected = Array.from(state.selectedOrders || []);
-  if (!selected.length) {
-    alert('Select at least one sales order first.');
-    return;
-  }
-
-  const skuIds = [...new Set(
-    (state.poolOrders || [])
-      .filter(o => selected.includes(String(o.so_id || o.SO_ID || '').trim()))
-      .map(o => String(o.sku_id || o.SKU_ID || '').trim())
-      .filter(Boolean)
-  )];
-
-  if (!skuIds.length) {
-    alert('No SKU IDs found for the selected sales orders.');
-    return;
-  }
-
-  openMaterialPanel('Materials for selected SO(s)', skuIds);
-} */
 
 function showFullBOMForSelectedSOs() {
   const checkedSoIds = [...document.querySelectorAll('.pool-so-check:checked')]
@@ -3442,140 +3501,121 @@ function showFullBOMForSelectedSOs() {
     return;
   }
 
-  const skuIds = [...new Set(
-    (state.poolOrders || [])
-      .filter(o => checkedSoIds.includes(String(o.so_id || o.SO_ID || '').trim()))
-      .map(o => String(o.sku_id || o.SKU_ID || '').trim())
-      .filter(Boolean)
-  )];
+  const selectedSOs = (state.poolOrders || []).filter(o =>
+    checkedSoIds.includes(String(o.so_id || o.SO_ID || '').trim())
+  );
 
-  if (!skuIds.length) {
+  const skuQtyMap = {};
+  selectedSOs.forEach(so => {
+    const sku = String(so.sku_id || so.SKU_ID || '').trim();
+    if (!sku) return;
+    skuQtyMap[sku] = (skuQtyMap[sku] || 0) + num(so.qty_mt || so.Qty_MT || so.Order_Qty_MT || 0);
+  });
+
+  const items = _planningMaterialItemsFromSkuQtyMap(skuQtyMap);
+  if (!items.length) {
     alert('No SKU IDs found for the selected sales orders.');
     return;
   }
 
-  openMaterialPanel(`Materials for ${checkedSoIds.length} selected SO(s)`, skuIds);
+  openMaterialPanel(`Materials for ${checkedSoIds.length} selected SO(s)`, items);
 }
+
 
 
 /* ---------- internal helpers ---------- */
 
-function _planningMaterialStatus(item) {
-  const req = num(item.Required_Qty || item.required_qty || 0);
-  const prod = num(item.Produced_Qty || item.produced_qty || 0);
-  const net = num(item.Net_Req || item.net_req || 0);
-  const avail = num(item.Available || item.Available_Before || item.available_before || 0);
+function _planningMaterialNormalizeRow(row) {
+  const flowType = String(row.Flow_Type || row.flow_type || 'INPUT').trim().toUpperCase();
+  return {
+    raw: row,
+    root_sku: String(row.Root_SKU || row.root_sku || '').trim(),
+    sku_id: String(row.SKU_ID || row.sku_id || '').trim(),
+    parent_sku: String(row.Parent_SKU || row.parent_sku || '').trim(),
+    required_qty: num(row.Gross_Req ?? row.Required_Qty ?? row.required_qty ?? 0),
+    available_qty: num(row.Available ?? row.Available_Before ?? row.available_before ?? 0),
+    net_req: num(row.Net_Req ?? row.net_req ?? 0),
+    produced_qty: num(row.Produced_Qty ?? row.produced_qty ?? 0),
+    bom_level: Math.max(0, Math.trunc(num(row.BOM_Level ?? row.bom_level ?? 0))),
+    flow_type: flowType
+  };
+}
 
-  if (req <= 0) return { label: 'BYPRODUCT', color: 'var(--text-faint)', tone: 'muted' };
+function _planningMaterialStatus(item) {
+  const req = num(item.required_qty || 0);
+  const prod = num(item.produced_qty || 0);
+  const net = num(item.net_req || 0);
+  const avail = num(item.available_qty || 0);
+
+  if (item.flow_type === 'BYPRODUCT') return { label: 'BYPRODUCT', color: 'var(--text-faint)', tone: 'muted' };
+  if (req <= 0) return { label: 'ZERO', color: 'var(--text-faint)', tone: 'muted' };
   if (net <= 1e-6) return { label: 'COVERED', color: 'var(--success)', tone: 'ok' };
   if (avail > 1e-6 || prod > 1e-6) return { label: 'PARTIAL', color: 'var(--warning)', tone: 'warn' };
   return { label: 'SHORT', color: 'var(--danger)', tone: 'bad' };
 }
 
-function _escapeJsString(v) {
-  return String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+function _planningMaterialRootStatus(node) {
+  const subtreeRows = _planningMaterialFlattenRows(node, true);
+  if (!subtreeRows.length) return { label: 'ROOT', color: 'var(--text-faint)', tone: 'muted' };
+
+  const totalReq = subtreeRows.reduce((sum, row) => sum + num(row.required_qty || 0), 0);
+  const totalNet = subtreeRows.reduce((sum, row) => sum + num(row.net_req || 0), 0);
+  if (totalNet <= 1e-6) return { label: 'COVERED', color: 'var(--success)', tone: 'ok' };
+  if (totalNet < totalReq) return { label: 'PARTIAL', color: 'var(--warning)', tone: 'warn' };
+  return { label: 'SHORT', color: 'var(--danger)', tone: 'bad' };
 }
 
 function _planningMaterialChildrenMap(rows) {
   const byParent = {};
   rows.forEach(row => {
-    const parent = String(row.Parent_SKU || '').trim();
-    if (!parent) return;
-    if (!byParent[parent]) byParent[parent] = [];
-    byParent[parent].push(row);
+    const parent = String(row.parent_sku || '').trim();
+    const root = String(row.root_sku || '').trim();
+    if (!parent || !root) return;
+    const key = `${root}::${parent}`;
+    if (!byParent[key]) byParent[key] = [];
+    byParent[key].push(row);
   });
 
   Object.keys(byParent).forEach(parent => {
     byParent[parent].sort((a, b) => {
-      const aLevel = num(a.BOM_Level, 999);
-      const bLevel = num(b.BOM_Level, 999);
+      const aLevel = num(a.bom_level, 999);
+      const bLevel = num(b.bom_level, 999);
       if (aLevel !== bLevel) return aLevel - bLevel;
-      return String(a.SKU_ID || '').localeCompare(String(b.SKU_ID || ''));
+      return String(a.sku_id || '').localeCompare(String(b.sku_id || ''));
     });
   });
 
   return byParent;
 }
 
-function _planningMaterialBuildTreeNode(parentSku, byParent, visitedPath = []) {
-  const pathKey = [...visitedPath, parentSku].join('>');
-  const childRows = (byParent[parentSku] || []).filter(r => num(r.Required_Qty || 0) > 0);
+function _planningMaterialBuildTreeNode(rootSku, parentSku, byParent, rootQtyMap, visitedPath = [], incomingRow = null) {
+  const cleanSku = String(parentSku || '').trim() || 'UNKNOWN';
+  const path = visitedPath.length ? [...visitedPath, cleanSku] : ['ROOT', cleanSku];
+  const cycleDetected = visitedPath.includes(cleanSku);
+  const parentKey = `${rootSku}::${cleanSku}`;
+  const childRows = cycleDetected ? [] : (byParent[parentKey] || []);
 
-  return {
-    key: pathKey,
-    sku_id: parentSku,
-    rows: childRows,
-    children: childRows.map(row => {
-      const childSku = String(row.SKU_ID || '').trim();
-      const nextPath = [...visitedPath, parentSku];
-
-      // Prevent cycle blow-up in UI even if bad BOM slips through
-      if (!childSku || nextPath.includes(childSku)) {
-        return {
-          key: [...nextPath, childSku || 'UNKNOWN'].join('>'),
-          sku_id: childSku || 'UNKNOWN',
-          incoming_row: row,
-          rows: [],
-          children: []
-        };
-      }
-
-      const childNode = _planningMaterialBuildTreeNode(childSku, byParent, nextPath);
-      childNode.incoming_row = row;
-      return childNode;
-    })
+  const node = {
+    key: path.join('>'),
+    root_sku: rootSku,
+    sku_id: cleanSku,
+    incoming_row: incomingRow,
+    required_qty: incomingRow ? null : num(rootQtyMap[cleanSku] || 0),
+    children: [],
+    childrenLoaded: false,
+    cycleDetected
   };
-}
 
-function _planningMaterialRenderTreeNode(node, level = 0) {
-  const incoming = node.incoming_row || null;
-  const status = incoming ? _planningMaterialStatus(incoming) : null;
-  const hasChildren = Array.isArray(node.children) && node.children.length > 0;
-  const nodeKey = _escapeJsString(node.key);
-  const skuText = escapeHtml(node.sku_id);
+  node.children = childRows.map(row => _planningMaterialBuildTreeNode(
+    rootSku,
+    row.sku_id,
+    byParent,
+    rootQtyMap,
+    [...visitedPath, cleanSku],
+    row
+  ));
 
-  const qtyText = incoming
-    ? `${num(incoming.Required_Qty || 0).toFixed(1)} MT`
-    : `${(node.rows || []).reduce((s, r) => s + num(r.Required_Qty || 0), 0).toFixed(1)} MT`;
-
-  const badgeHtml = status
-    ? `<span style="margin-left:auto;font-size:.65rem;color:${status.color};font-weight:700">${escapeHtml(status.label)}</span>`
-    : `<span style="margin-left:auto;font-size:.65rem;color:var(--text-faint);font-weight:700">ROOT</span>`;
-
-  const padLeft = 0.55 + (level * 0.9);
-
-  return `
-    <div class="bom-tree-item">
-      <div class="bom-tree-node ${level === 0 ? 'selected-root' : ''}"
-           data-node-key="${escapeHtml(node.key)}"
-           onclick="selectPlanningMaterialNode('${nodeKey}')"
-           style="cursor:pointer;padding-left:${padLeft}rem">
-        <div class="bom-tree-toggle ${hasChildren ? '' : 'leaf'}"
-             ${hasChildren ? `onclick="event.stopPropagation();togglePlanningMaterialNode(this)"` : ''}></div>
-        <div class="bom-tree-icon">${level === 0 ? '📦' : '⚙'}</div>
-        <span>${skuText}</span>
-        <span style="margin-left:.5rem;font-size:.65rem;color:var(--text-faint)">${escapeHtml(qtyText)}</span>
-        ${badgeHtml}
-      </div>
-      ${
-        hasChildren
-          ? `<div class="bom-tree-children" style="display:block">
-               ${node.children.map(child => _planningMaterialRenderTreeNode(child, level + 1)).join('')}
-             </div>`
-          : ''
-      }
-    </div>
-  `;
-}
-
-function togglePlanningMaterialNode(toggleEl) {
-  const children = toggleEl.closest('.bom-tree-item')?.querySelector(':scope > .bom-tree-children');
-  if (!children) return;
-
-  const isOpen = children.style.display !== 'none';
-  children.style.display = isOpen ? 'none' : 'block';
-  toggleEl.classList.toggle('collapsed', isOpen);
-  toggleEl.classList.toggle('expanded', !isOpen);
+  return node;
 }
 
 function _planningMaterialIndexTree(node, index = {}) {
@@ -3596,6 +3636,116 @@ function _planningMaterialFlattenRows(node, includeDescendants = false) {
   return rows;
 }
 
+function _planningMaterialNodeQty(node) {
+  if (node.incoming_row) return num(node.incoming_row.required_qty || 0);
+  return num(node.required_qty || 0);
+}
+
+function _planningMaterialCreateTreeElement(node, level = 0) {
+  const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+  const status = node.incoming_row ? _planningMaterialStatus(node.incoming_row) : _planningMaterialRootStatus(node);
+  const padLeft = 0.55 + (level * 0.9);
+
+  const itemEl = document.createElement('div');
+  itemEl.className = 'bom-tree-item';
+  itemEl.dataset.nodeKey = node.key;
+
+  const rowEl = document.createElement('div');
+  rowEl.className = 'bom-tree-node';
+  rowEl.dataset.nodeKey = node.key;
+  rowEl.style.paddingLeft = `${padLeft}rem`;
+  rowEl.addEventListener('click', () => selectPlanningMaterialNode(node.key));
+
+  const toggleEl = document.createElement('div');
+  toggleEl.className = `bom-tree-toggle ${hasChildren ? 'collapsed' : 'leaf'}`;
+  if (hasChildren) {
+    toggleEl.addEventListener('click', event => {
+      event.stopPropagation();
+      togglePlanningMaterialNode(toggleEl);
+    });
+  }
+
+  const iconEl = document.createElement('div');
+  iconEl.className = 'bom-tree-icon';
+  iconEl.textContent = level === 0 ? '📦' : '⚙';
+
+  const labelEl = document.createElement('span');
+  labelEl.textContent = node.sku_id;
+
+  const qtyEl = document.createElement('span');
+  qtyEl.style.marginLeft = '.5rem';
+  qtyEl.style.fontSize = '.65rem';
+  qtyEl.style.color = 'var(--text-faint)';
+  qtyEl.textContent = `${_planningMaterialNodeQty(node).toFixed(1)} MT`;
+
+  const badgeEl = document.createElement('span');
+  badgeEl.style.marginLeft = 'auto';
+  badgeEl.style.fontSize = '.65rem';
+  badgeEl.style.color = status.color;
+  badgeEl.style.fontWeight = '700';
+  badgeEl.textContent = status.label;
+
+  rowEl.append(toggleEl, iconEl, labelEl, qtyEl, badgeEl);
+  itemEl.appendChild(rowEl);
+
+  if (hasChildren) {
+    const childrenEl = document.createElement('div');
+    childrenEl.className = 'bom-tree-children';
+    childrenEl.dataset.level = String(level + 1);
+    itemEl.appendChild(childrenEl);
+  }
+
+  return itemEl;
+}
+
+function _planningMaterialPopulateChildren(container, node, level) {
+  if (!container || !node || node.childrenLoaded || !node.children.length) return;
+
+  const frag = document.createDocumentFragment();
+  node.children.forEach(child => {
+    frag.appendChild(_planningMaterialCreateTreeElement(child, level));
+  });
+  container.replaceChildren(frag);
+  node.childrenLoaded = true;
+}
+
+function renderPlanningMaterialTree(roots) {
+  const treeEl = qs('planningBomTree');
+  if (!treeEl) return;
+
+  treeEl.innerHTML = '';
+  if (!roots.length) {
+    treeEl.innerHTML = '<div style="padding:.5rem;color:var(--text-soft);font-size:.75rem">No material tree available for this selection.</div>';
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+  roots.forEach(root => {
+    frag.appendChild(_planningMaterialCreateTreeElement(root, 0));
+  });
+  treeEl.appendChild(frag);
+}
+
+function togglePlanningMaterialNode(toggleEl) {
+  const itemEl = toggleEl.closest('.bom-tree-item');
+  const view = state.planningMaterialView;
+  if (!itemEl || !view?.nodeIndex) return;
+
+  const nodeKey = itemEl.dataset.nodeKey;
+  const node = view.nodeIndex[nodeKey];
+  const children = Array.from(itemEl.children).find(child => child.classList?.contains('bom-tree-children'));
+  if (!node || !children || !node.children.length) return;
+
+  if (!node.childrenLoaded) {
+    _planningMaterialPopulateChildren(children, node, num(children.dataset.level || 1));
+  }
+
+  const isOpen = children.classList.contains('open');
+  children.classList.toggle('open', !isOpen);
+  toggleEl.classList.toggle('collapsed', isOpen);
+  toggleEl.classList.toggle('expanded', !isOpen);
+}
+
 function selectPlanningMaterialNode(nodeKey) {
   const view = state.planningMaterialView;
   if (!view || !view.nodeIndex || !view.nodeIndex[nodeKey]) return;
@@ -3603,11 +3753,8 @@ function selectPlanningMaterialNode(nodeKey) {
   view.selectedNodeKey = nodeKey;
 
   document.querySelectorAll('#planningBomTree .bom-tree-node').forEach(n => {
-    n.classList.remove('selected');
+    n.classList.toggle('selected', n.dataset.nodeKey === nodeKey);
   });
-
-  const selectedEl = document.querySelector(`#planningBomTree .bom-tree-node[data-node-key="${CSS.escape(nodeKey)}"]`);
-  if (selectedEl) selectedEl.classList.add('selected');
 
   const node = view.nodeIndex[nodeKey];
   renderPlanningMaterialDetail(node);
@@ -3618,27 +3765,27 @@ function renderPlanningMaterialDetail(node) {
   if (!detailEl || !node) return;
 
   const incoming = node.incoming_row || null;
-  const selfRows = incoming ? [incoming] : [];
   const childRows = (node.children || []).map(c => c.incoming_row).filter(Boolean);
-
-  const totalChildReq = childRows.reduce((s, r) => s + num(r.Required_Qty || 0), 0);
+  const subtreeRows = _planningMaterialFlattenRows(node, true);
+  const totalChildReq = childRows.reduce((sum, row) => sum + num(row.required_qty || 0), 0);
+  const totalSubtreeNet = subtreeRows.reduce((sum, row) => sum + num(row.net_req || 0), 0);
 
   let html = `
     <div class="bom-detail-header">
       <div class="bom-detail-title">${escapeHtml(node.sku_id)}</div>
       <div class="bom-detail-subtitle">${
         incoming
-          ? `Required by ${escapeHtml(String(incoming.Parent_SKU || '—'))}`
+          ? `Required by ${escapeHtml(String(incoming.parent_sku || '—'))}`
           : 'Selected root material / finished good'
       }</div>
     </div>
   `;
 
   if (incoming) {
-    const req = num(incoming.Required_Qty || 0);
-    const prod = num(incoming.Produced_Qty || 0);
-    const avail = num(incoming.Available || incoming.Available_Before || 0);
-    const net = num(incoming.Net_Req || 0);
+    const req = num(incoming.required_qty || 0);
+    const prod = num(incoming.produced_qty || 0);
+    const avail = num(incoming.available_qty || 0);
+    const net = num(incoming.net_req || 0);
     const status = _planningMaterialStatus(incoming);
 
     html += `
@@ -3665,12 +3812,20 @@ function renderPlanningMaterialDetail(node) {
     html += `
       <div class="bom-detail-stats">
         <div class="bom-detail-stat">
+          <div class="bom-detail-stat-label">Selected demand</div>
+          <div class="bom-detail-stat-value">${num(node.required_qty || 0).toFixed(1)} MT</div>
+        </div>
+        <div class="bom-detail-stat">
           <div class="bom-detail-stat-label">Immediate children</div>
           <div class="bom-detail-stat-value">${childRows.length}</div>
         </div>
         <div class="bom-detail-stat">
-          <div class="bom-detail-stat-label">Total child req</div>
+          <div class="bom-detail-stat-label">Immediate gross</div>
           <div class="bom-detail-stat-value">${totalChildReq.toFixed(1)} MT</div>
+        </div>
+        <div class="bom-detail-stat">
+          <div class="bom-detail-stat-label">Subtree net</div>
+          <div class="bom-detail-stat-value">${totalSubtreeNet.toFixed(1)} MT</div>
         </div>
       </div>
     `;
@@ -3697,11 +3852,11 @@ function renderPlanningMaterialDetail(node) {
                 const st = _planningMaterialStatus(row);
                 return `
                   <tr>
-                    <td><strong>${escapeHtml(String(row.SKU_ID || ''))}</strong></td>
-                    <td>${num(row.Required_Qty || 0).toFixed(1)} MT</td>
-                    <td>${num(row.Available || row.Available_Before || 0).toFixed(1)} MT</td>
-                    <td>${num(row.Produced_Qty || 0).toFixed(1)} MT</td>
-                    <td>${num(row.Net_Req || 0).toFixed(1)} MT</td>
+                    <td><strong>${escapeHtml(String(row.sku_id || ''))}</strong></td>
+                    <td>${num(row.required_qty || 0).toFixed(1)} MT</td>
+                    <td>${num(row.available_qty || 0).toFixed(1)} MT</td>
+                    <td>${num(row.produced_qty || 0).toFixed(1)} MT</td>
+                    <td>${num(row.net_req || 0).toFixed(1)} MT</td>
                     <td><span style="color:${st.color};font-weight:700">${escapeHtml(st.label)}</span></td>
                   </tr>
                 `;
@@ -3722,71 +3877,79 @@ function renderPlanningMaterialDetail(node) {
   detailEl.innerHTML = html;
 }
 
-function openMaterialPanel(title, skuIds) {
+async function openMaterialPanel(title, items) {
   const panel = qs('planningMaterialPanel');
   if (!panel) return;
 
   setText('materialCheckTitle', title || 'Material Requirements');
+  panel.style.display = 'flex';
 
-  // Ensure BOM exists
-  if (!state.bom || !state.bom.length) {
-    qs('planningBomTree').innerHTML =
-      '<div style="padding:.5rem;color:var(--text-soft);font-size:.75rem">Loading BOM explosion…</div>';
-    qs('planningBomDetail').innerHTML = '';
-    panel.style.display = 'flex';
+  const skuQtyMap = {};
+  (items || []).forEach(item => {
+    const sku = String(item?.sku_id || '').trim();
+    const qty = num(item?.qty_mt || item?.required_qty || 0);
+    if (!sku || qty <= 0) return;
+    skuQtyMap[sku] = (skuQtyMap[sku] || 0) + qty;
+  });
 
-    runBom()
-      .then(() => openMaterialPanel(title, skuIds))
-      .catch(() => {
-        qs('planningBomTree').innerHTML =
-          '<div style="padding:.5rem;color:var(--danger);font-size:.75rem">Failed to load BOM. Run BOM tab manually first.</div>';
-      });
-    return;
-  }
-
-  const rootSkus = [...new Set((skuIds || []).map(x => String(x || '').trim()).filter(Boolean))];
-  if (!rootSkus.length) {
+  const cleanItems = _planningMaterialItemsFromSkuQtyMap(skuQtyMap);
+  if (!cleanItems.length) {
     qs('planningBomTree').innerHTML =
       '<div style="padding:.5rem;color:var(--text-soft);font-size:.75rem">No root SKUs selected.</div>';
     qs('planningBomDetail').innerHTML = '';
-    panel.style.display = 'flex';
     return;
   }
 
-  // Keep only input/required rows with positive requirement
-  const bomRows = (state.bom || []).filter(item => {
-    const req = num(item.Required_Qty || 0);
-    const flow = String(item.Flow_Type || 'INPUT').trim().toUpperCase();
-    return req > 0 && flow !== 'BYPRODUCT';
-  });
+  const requestId = ++state.planningMaterialRequestId;
+  qs('planningBomTree').innerHTML =
+    '<div style="padding:.5rem;color:var(--text-soft);font-size:.75rem">Loading selection BOM…</div>';
+  qs('planningBomDetail').innerHTML = '';
 
-  const byParent = _planningMaterialChildrenMap(bomRows);
+  try {
+    const payload = await apiFetch('/api/aps/bom/tree', {
+      method: 'POST',
+      body: JSON.stringify({ items: cleanItems })
+    });
+    if (requestId !== state.planningMaterialRequestId) return;
 
-  const roots = rootSkus.map(rootSku => _planningMaterialBuildTreeNode(rootSku, byParent, []));
-  const nodeIndex = {};
-  roots.forEach(root => _planningMaterialIndexTree(root, nodeIndex));
+    const rootQtyMap = {};
+    (payload.roots || cleanItems).forEach(item => {
+      const sku = String(item?.sku_id || '').trim();
+      const qty = num(item?.required_qty ?? item?.qty_mt ?? 0);
+      if (!sku || qty <= 0) return;
+      rootQtyMap[sku] = (rootQtyMap[sku] || 0) + qty;
+    });
 
-  state.planningMaterialView = {
-    title: title || 'Material Requirements',
-    rootSkus,
-    roots,
-    nodeIndex,
-    selectedNodeKey: roots[0]?.key || null
-  };
+    const rows = (payload.net_bom || [])
+      .map(_planningMaterialNormalizeRow)
+      .filter(row => row.sku_id && row.required_qty > 1e-6 && row.flow_type !== 'BYPRODUCT');
 
-  if (!roots.length) {
+    const byParent = _planningMaterialChildrenMap(rows);
+    const roots = Object.keys(rootQtyMap).map(rootSku => _planningMaterialBuildTreeNode(rootSku, rootSku, byParent, rootQtyMap));
+    const nodeIndex = {};
+    roots.forEach(root => _planningMaterialIndexTree(root, nodeIndex));
+
+    state.planningMaterialView = {
+      title: title || 'Material Requirements',
+      roots,
+      nodeIndex,
+      selectedNodeKey: roots[0]?.key || null,
+      summary: payload.summary || {},
+      structureErrors: payload.structure_errors || []
+    };
+
+    renderPlanningMaterialTree(roots);
+    if (roots[0]?.key) {
+      selectPlanningMaterialNode(roots[0].key);
+      const firstToggle = qs('planningBomTree')?.querySelector('.bom-tree-toggle.collapsed');
+      if (firstToggle) togglePlanningMaterialNode(firstToggle);
+    }
+  } catch (e) {
+    if (requestId !== state.planningMaterialRequestId) return;
+    state.planningMaterialView = null;
     qs('planningBomTree').innerHTML =
-      '<div style="padding:.5rem;color:var(--text-soft);font-size:.75rem">No materials required for selected SKUs.</div>';
+      `<div style="padding:.5rem;color:var(--danger);font-size:.75rem">Failed to load selection BOM: ${escapeHtml(e.message)}</div>`;
     qs('planningBomDetail').innerHTML = '';
-    panel.style.display = 'flex';
-    return;
-  }
-
-  qs('planningBomTree').innerHTML = roots.map(root => _planningMaterialRenderTreeNode(root, 0)).join('');
-  panel.style.display = 'flex';
-
-  if (roots[0]?.key) {
-    selectPlanningMaterialNode(roots[0].key);
   }
 }
 
@@ -3818,19 +3981,22 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   bar.style.width = '10%';
   bar.style.opacity = '1';
 
-  await loadConfig();
-  await checkHealth();
-  bar.style.width = '30%';
-  await loadOrdersOnly();
-  bar.style.width = '40%';
-  await loadPlanningOrderPool();
-  bar.style.width = '50%';
-  await loadSkusForCtp();
-  bar.style.width = '75%';
-  await loadApplicationState();
+  const healthPromise = checkHealth();
+  const startupTasks = [
+    loadConfig(),
+    loadOrdersOnly(),
+    loadPlanningOrderPool(),
+    loadSkusForCtp(),
+    loadApplicationState({ deferHeavy: true })
+  ];
+
+  await Promise.allSettled(startupTasks);
   bar.style.width = '85%';
+
   await loadReleaseBoard();
   bar.style.width = '100%';
+
+  await healthPromise.catch(() => {});
 
   setTimeout(()=>{ bar.style.opacity = '0'; }, 300);
 });

@@ -110,7 +110,7 @@
             <div class="metric success"><div class="metric-label">Heats Planned</div><div class="metric-value" id="summaryHeats">—</div><div class="metric-sub" id="summaryHeatsSub">—</div></div>
             <div class="metric"><div class="metric-label">MT Planned</div><div class="metric-value" id="summaryMt">—</div><div class="metric-sub" id="summaryMtSub">in heats</div></div>
             <div class="metric warn"><div class="metric-label">On-Time</div><div class="metric-value" id="summaryOt">—</div><div class="metric-sub" id="summaryOtSub">delivery rate</div></div>
-            <div class="metric"><div class="metric-label">SMS Utilisation</div><div class="metric-value" id="summaryCapacity">—</div><div class="metric-sub" id="summaryCapacitySub">peak resource</div></div>
+            <div class="metric info" id="summaryPlanCard"><div class="metric-label">Plan Status</div><div class="metric-value" id="summaryCapacity">—</div><div class="metric-sub" id="summaryCapacitySub">Feasibility not run</div></div>
           </div>
         </div>
       </div>
@@ -120,13 +120,13 @@
       <section class="page active" id="page-dashboard" role="tabpanel" aria-labelledby="tab-dashboard" style="display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:.4rem .6rem .4rem">
 
         <!-- ═══ MAIN BODY: 3 columns ═══ -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.45rem;flex:1;min-height:0;overflow:hidden">
+        <div style="display:grid;grid-template-columns:1fr 1.05fr 1.05fr;gap:.45rem;flex:1;min-height:0;overflow:hidden">
 
           <!-- ── COL 1: Planning Status + Alerts ── -->
           <div style="display:flex;flex-direction:column;gap:.45rem;min-height:0;overflow:hidden">
 
             <!-- Planning Status -->
-            <div class="dash-card" style="flex:0.55;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+            <div class="dash-card" style="flex:0.6;min-height:18rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Planning Status</span>
                 <button type="button" class="btn ghost" style="font-size:.65rem;padding:.15rem .45rem;height:1.5rem" onclick="activatePage('planning')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> Open</span></button>
@@ -137,7 +137,7 @@
             </div>
 
             <!-- Alerts & Insights -->
-            <div class="dash-card" style="flex:0.45;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+            <div class="dash-card" style="flex:0.4;min-height:11rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Alerts &amp; Insights</span>
                 <span id="dashAlertCount" style="font-size:.65rem;font-weight:700;background:var(--danger-soft);color:var(--danger);padding:.15rem .4rem;border-radius:1rem;display:none">0</span>
@@ -153,7 +153,7 @@
           <div style="display:flex;flex-direction:column;gap:.45rem;min-height:0;overflow:hidden">
 
             <!-- Capacity Utilisation -->
-            <div class="dash-card" style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+            <div class="dash-card" style="flex:0.56;min-height:16rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Capacity Utilisation</span>
                 <span id="bottleneckPeak" style="font-size:.65rem;font-weight:700;color:var(--text-soft)">—</span>
@@ -164,7 +164,7 @@
             </div>
 
             <!-- Delivery Performance -->
-            <div class="dash-card" style="flex:.42;min-height:12rem;overflow:hidden;display:flex;flex-direction:column">
+            <div class="dash-card" style="flex:0.44;min-height:13.5rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd"><span class="dash-card-title">Delivery Performance</span></div>
               <div style="padding:.5rem .6rem;display:flex;flex-direction:column;gap:.5rem">
                 <!-- On-time gauge row -->
@@ -186,7 +186,7 @@
                     <div class="dms-value" id="perfLate" style="color:var(--danger)">—</div>
                   </div>
                   <div class="dash-mini-stat">
-                    <div class="dms-label">Avg Delay</div>
+                    <div class="dms-label">Plan Gap</div>
                     <div class="dms-value" id="perfAvgLate">—</div>
                   </div>
                   <div class="dash-mini-stat">
@@ -197,15 +197,15 @@
                 <!-- This week -->
                 <div style="border-top:1px solid var(--border-soft);padding-top:.4rem;display:flex;gap:.4rem">
                   <div style="flex:1;text-align:center">
-                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Campaigns</div>
+                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Planning POs</div>
                     <div style="font-size:1rem;font-weight:700;color:var(--info)" id="execStarted">—</div>
                   </div>
                   <div style="flex:1;text-align:center">
-                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Heats</div>
+                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Sched Heats</div>
                     <div style="font-size:1rem;font-weight:700;color:var(--success)" id="execHeats">—</div>
                   </div>
                   <div style="flex:1;text-align:center">
-                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Equip</div>
+                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Resources</div>
                     <div style="font-size:1rem;font-weight:700" id="execEquip">—</div>
                   </div>
                 </div>
@@ -218,7 +218,7 @@
           <div style="display:flex;flex-direction:column;gap:.45rem;min-height:0;overflow:hidden">
 
             <!-- Material Health -->
-            <div class="dash-card" style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+            <div class="dash-card" style="flex:0.62;min-height:18rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Material Health</span>
                 <button type="button" class="btn ghost" style="font-size:.65rem;padding:.15rem .45rem;height:1.5rem" onclick="activatePage('material')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> View</span></button>
@@ -229,12 +229,12 @@
             </div>
 
             <!-- Active POs summary -->
-            <div class="dash-card" style="flex:.34;min-height:10rem;overflow:hidden;display:flex;flex-direction:column">
+            <div class="dash-card" style="flex:0.38;min-height:12rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Active Planning Orders</span>
                 <button type="button" class="btn ghost" style="font-size:.65rem;padding:.15rem .45rem;height:1.5rem" onclick="activatePage('planning')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> Plan</span></button>
               </div>
-              <div style="padding:.4rem .6rem;display:flex;flex-direction:column;gap:.3rem" id="dashActivePOs">
+              <div style="padding:.4rem .6rem;display:flex;flex-direction:column;gap:.3rem;flex:1;overflow-y:auto" id="dashActivePOs">
                 <div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">No POs yet.</div>
               </div>
             </div>
@@ -456,10 +456,10 @@
 
                 <!-- SIMULATION RESULTS (shown after simulate) -->
                 <div class="grid-4" style="margin-bottom:.75rem">
-                  <div class="metric"><div class="metric-label">Feasible</div><div class="metric-value" id="scheduleFeasible">—</div></div>
-                  <div class="metric"><div class="metric-label">Total duration</div><div class="metric-value" id="scheduleDuration">—</div></div>
-                  <div class="metric"><div class="metric-label">SMS hours</div><div class="metric-value" id="scheduleSmsHours">—</div></div>
-                  <div class="metric"><div class="metric-label">RM hours</div><div class="metric-value" id="scheduleRmHours">—</div></div>
+                  <div class="metric" id="scheduleFeasibleCard"><div class="metric-label">Feasible</div><div class="metric-value" id="scheduleFeasible">—</div></div>
+                  <div class="metric" id="scheduleDurationCard"><div class="metric-label">Total duration</div><div class="metric-value" id="scheduleDuration">—</div></div>
+                  <div class="metric" id="scheduleSmsCard"><div class="metric-label">SMS span</div><div class="metric-value" id="scheduleSmsHours">—</div></div>
+                  <div class="metric" id="scheduleRmCard"><div class="metric-label">RM span</div><div class="metric-value" id="scheduleRmHours">—</div></div>
                 </div>
                 <div id="schedulerContent" style="color:var(--text-soft);text-align:center;font-size:.9rem;padding:.75rem;border:1px solid var(--border);border-radius:.3rem;display:none"></div>
 
@@ -772,6 +772,9 @@
     </div>
 
     <div class="status-footer">
+      <div class="status-footer-progress" aria-hidden="true">
+        <div id="statusFooterProgressFill"></div>
+      </div>
       <div class="status-footer-content">
         <div class="status-group">
           <div class="chip" id="chipApi"><span class="dot"></span><span id="chipApiText">API unknown</span></div>
