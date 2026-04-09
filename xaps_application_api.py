@@ -3477,6 +3477,145 @@ def aps_planning_release():
     except Exception as e:
         return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
 
+
+@app.route('/api/aps/planning/unrelease', methods=['POST'])
+def aps_planning_unrelease():
+    """Return released Planning Orders from execution back to planning and clear APS release markers."""
+    try:
+        payload = request.get_json(silent=True) or {}
+        po_ids = [str(x).strip() for x in (payload.get("po_ids") or []) if str(x).strip()]
+
+        if not po_ids:
+            return _jsonify({"error": "po_ids is required and cannot be empty"}, 400)
+
+        planning_orders = list(getattr(aps_planning_orders_propose, "_planning_orders", []) or [])
+        d = _load_all()
+        reconstructed = _released_sales_orders_to_planning_orders(d)
+        po_map = {}
+        for po in planning_orders + reconstructed:
+            po_id = str(po.get("po_id", "")).strip()
+            if po_id and po_id not in po_map:
+                po_map[po_id] = dict(po)
+
+        missing_po_ids = [po_id for po_id in po_ids if po_id not in po_map]
+        if missing_po_ids:
+            return _jsonify({
+                "error": "Some requested planning orders do not exist",
+                "missing_po_ids": missing_po_ids,
+            }, 404)
+
+        non_released_po_ids = [
+            po_id for po_id in po_ids
+            if str(po_map[po_id].get("planner_status", "")).strip().upper() != "RELEASED"
+        ]
+        if non_released_po_ids:
+            return _jsonify({
+                "error": "Only released planning orders can be unreleased",
+                "non_released_po_ids": non_released_po_ids,
+            }, 400)
+
+        result = store.list_rows("sales-orders", filters=[], limit=5000)
+        sos = result.get("items", []) or []
+        so_lookup = {
+            str(so.get("SO_ID", "")).strip(): so
+            for so in sos
+            if str(so.get("SO_ID", "")).strip()
+        }
+
+        so_to_po: Dict[str, str] = {}
+        for po_id in po_ids:
+            po = po_map[po_id]
+            for so_id in (po.get("selected_so_ids") or []):
+                clean_so = str(so_id).strip()
+                if clean_so:
+                    so_to_po[clean_so] = po_id
+
+        for so in sos:
+            so_id = str(so.get("SO_ID", "")).strip()
+            so_po_id = str(so.get("Campaign_ID", "")).strip()
+            so_group = str(so.get("Campaign_Group", "")).strip().upper()
+            if so_id and so_po_id in po_ids and so_group == "APS_RELEASED":
+                so_to_po[so_id] = so_po_id
+
+        if not so_to_po:
+            return _jsonify({"error": "Selected planning orders have no released sales orders to unrelease"}, 400)
+
+        missing_sos = sorted([so_id for so_id in so_to_po if so_id not in so_lookup])
+        if missing_sos:
+            return _jsonify({
+                "error": "Some Sales Orders linked to planning orders were not found in workbook",
+                "missing_so_ids": missing_sos,
+            }, 404)
+
+        updated_sales_orders = []
+        for so_id, po_id in so_to_po.items():
+            row = so_lookup.get(so_id, {})
+            row_po_id = str(row.get("Campaign_ID", "")).strip()
+            row_group = str(row.get("Campaign_Group", "")).strip().upper()
+            if row_po_id and row_po_id != po_id and row_group == "APS_RELEASED":
+                return _jsonify({
+                    "error": f"Sales order {so_id} is released under a different planning order",
+                    "existing_po": row_po_id,
+                    "requested_po": po_id,
+                }, 409)
+
+            update_data = {
+                "Status": "OPEN",
+                "Campaign_ID": "",
+                "Campaign_Group": "",
+            }
+            try:
+                item = store.update_row("sales-orders", so_id, update_data, partial=True)
+                updated_sales_orders.append(item)
+            except PermissionError as pe:
+                return _jsonify({"error": "Cannot write to Excel file - it may be open in another application. Please close the file and try again.", "details": str(pe)}, 409)
+            except Exception as e:
+                return _jsonify({"error": f"Failed to update sales order {so_id}: {str(e)}"}, 400)
+
+        refreshed_orders = []
+        seen_po_ids = set()
+        for po in planning_orders + reconstructed:
+            po_id = str(po.get("po_id", "")).strip()
+            if not po_id or po_id in seen_po_ids:
+                continue
+            seen_po_ids.add(po_id)
+            po = dict(po)
+            if po_id in po_ids:
+                po["planner_status"] = "PROPOSED"
+                po.pop("released_at", None)
+                po["unreleased_at"] = datetime.now().isoformat()
+            refreshed_orders.append(po)
+
+        aps_planning_orders_propose._planning_orders = refreshed_orders
+        aps_planning_release._released_po_ids = [
+            str(po.get("po_id", "")).strip()
+            for po in refreshed_orders
+            if str(po.get("planner_status", "")).strip().upper() == "RELEASED"
+        ]
+        aps_planning_release._released_sales_orders = [
+            so_id
+            for po in refreshed_orders
+            if str(po.get("planner_status", "")).strip().upper() == "RELEASED"
+            for so_id in (po.get("selected_so_ids") or [])
+            if str(so_id).strip()
+        ]
+
+        total_mt = round(sum(float(po_map[po_id].get("total_qty_mt", 0) or 0) for po_id in po_ids), 3)
+        total_heats = int(sum(int(po_map[po_id].get("heats_required", 0) or 0) for po_id in po_ids))
+
+        return _jsonify({
+            "unreleased": True,
+            "po_count": len(po_ids),
+            "unreleased_po_ids": po_ids,
+            "sales_order_count": len(so_to_po),
+            "unreleased_so_ids": sorted(so_to_po.keys()),
+            "total_mt": total_mt,
+            "total_heats": total_heats,
+            "message": "Planning orders returned from execution to planning",
+        })
+    except Exception as e:
+        return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
+
 @app.route('/api/meta/xaps/routes')
 def xaps_route_manifest():
     return _jsonify({

@@ -845,7 +845,8 @@ function renderCampaigns(){
         <td style="${marginColor};font-weight:600">${escapeHtml(margin)}</td>
         <td>${badgeForStatus(status)}</td>
         <td style="text-align:right;white-space:nowrap">
-          <button class="btn success" style="font-size:.72rem;padding:.25rem .55rem;${isReleased?'opacity:.4;cursor:not-allowed':''}" ${isReleased?'disabled':''} onclick="updateCampaignStatus('${escapeHtml(cid)}','Release_Status','RELEASED')">Release</button>
+          <button class="btn success" style="font-size:.72rem;padding:.25rem .55rem;${isReleased?'opacity:.4;cursor:not-allowed':''}" ${isReleased?'disabled':''} onclick="releaseSinglePO('${escapeHtml(cid)}')">Release</button>
+          <button class="btn danger" style="font-size:.72rem;padding:.25rem .55rem;${!isReleased?'opacity:.4;cursor:not-allowed':''}" ${!isReleased?'disabled':''} onclick="unreleasePlanningOrder('${escapeHtml(cid)}')">Unrelease</button>
           <button class="btn warn" style="font-size:.72rem;padding:.25rem .55rem" onclick="updateCampaignStatus('${escapeHtml(cid)}','Release_Status','MATERIAL HOLD')">Hold</button>
           <button class="btn ghost" style="font-size:.72rem;padding:.25rem .55rem" onclick="activatePage('execution');switchExecView('gantt')">Gantt</button>
         </td>
@@ -1150,10 +1151,25 @@ function deriveMaterialRows(){
     return [];
   });
 }
+
+function fmtMaterialKpiQty(value) {
+  if (value == null || Number.isNaN(Number(value))) return '—';
+  return `${num(value).toFixed(1)} MT`;
+}
+
+function materialDetailAvailable(campaign) {
+  return Boolean(
+    (campaign?.materials && campaign.materials.length) ||
+    (campaign?.detail_rows && campaign.detail_rows.length) ||
+    (campaign?.plants && campaign.plants.length)
+  );
+}
+
 function renderMaterial(){
   // state.material is {summary:{}, campaigns:[...]} — not an array
   const matPlan = (state.material && typeof state.material === 'object') ? state.material : {};
   let camps = matPlan.campaigns || [];
+  const summary = matPlan.summary || {};
 
   // Fallback: derive from state.campaigns if material plan not populated
   if(!camps.length){
@@ -1169,7 +1185,7 @@ function renderMaterial(){
   }
 
   if(!camps.length){
-    qs('materialDetailContent').innerHTML = '<div class="material-detail-empty">No material data. Run BOM Netting first.</div>';
+    qs('materialDetailContent').innerHTML = '<div class="material-detail-empty">No material status data available yet. Refresh material status after running planning or schedule.</div>';
     qs('materialTree').innerHTML = '';
     return;
   }
@@ -1189,10 +1205,21 @@ function renderMaterial(){
     const status = String(c.material_status || c.release_status || '').toUpperCase();
     return num(c.shortage_qty) <= 0 && !status.includes('HOLD') && num(c.make_convert_qty) <= 0;
   }).length;
+  const totalRequiredQty = summary['Total Required Qty'];
+  const totalCoveredQty = summary['Inventory Covered Qty'];
+  const totalConvertQty = summary['Make / Convert Qty'];
+  const totalShortQty = summary['Shortage Qty'];
+  const hasMaterialSummary = Object.keys(summary).length > 0;
+
+  setText('matCampaigns', camps.length);
   setText('matOk', covered);
   setText('matLow', withConvert);
   setText('matCrit', withShortage);
   setText('matHeld', withHold);
+  setText('matReqQty', hasMaterialSummary ? fmtMaterialKpiQty(totalRequiredQty) : '—');
+  setText('matCoveredQty', hasMaterialSummary ? fmtMaterialKpiQty(totalCoveredQty) : '—');
+  setText('matConvertQty', hasMaterialSummary ? fmtMaterialKpiQty(totalConvertQty) : '—');
+  setText('matShortQtySub', hasMaterialSummary ? `Shortage: ${fmtMaterialKpiQty(totalShortQty)}` : 'Shortage: —');
 
   buildMaterialTree(camps);
 }
@@ -1274,6 +1301,7 @@ function renderMaterialDetail(campaign){
       }, {}));
   const coveragePct = reqQty > 0 ? Math.max(0, Math.min(100, ((reqQty - shortQty) / reqQty) * 100)) : 100;
   const plantCards = plants.sort((a,b)=>num(b.shortage_qty || 0) - num(a.shortage_qty || 0) || num(b.required_qty || 0) - num(a.required_qty || 0));
+  const hasDetail = materialDetailAvailable(campaign);
 
   // Shortages can be in campaign.shortages (array) or campaign.material_shortages (object)
   const shortages = campaign.shortages && campaign.shortages.length > 0
@@ -1304,7 +1332,7 @@ function renderMaterialDetail(campaign){
       <td style="text-align:right;color:${shortage > 0 ? 'var(--danger)' : 'var(--text-soft)'};font-weight:700">${shortage.toFixed(1)}</td>
       <td><span class="bom-item-badge ${tone}">${escapeHtml(status)}</span></td>
     </tr>`;
-  }).join('') : '<tr><td colspan="10">No material rows available for this campaign.</td></tr>';
+  }).join('') : `<tr><td colspan="10">${hasDetail ? 'No material rows available for this campaign.' : 'Detailed material line netting is not loaded for this campaign yet.'}</td></tr>`;
 
   let html = `<div class="material-detail-shell">
     <div class="material-detail-hero">
@@ -1367,7 +1395,7 @@ function renderMaterialDetail(campaign){
             <div class="material-section-title">Plant Coverage</div>
             <div class="material-section-sub">How the load splits across plant buckets</div>
           </div>
-          <div class="material-plant-list">${plantCards.map(plant => {
+          <div class="material-plant-list">${plantCards.length ? plantCards.map(plant => {
             const required = num(plant.required_qty);
             const short = num(plant.shortage_qty);
             const covered = num(plant.inventory_covered_qty);
@@ -1388,7 +1416,7 @@ function renderMaterialDetail(campaign){
                 <span>${short.toFixed(1)} short</span>
               </div>
             </div>`;
-          }).join('')}</div>
+          }).join('') : `<div class="material-side-empty">${hasDetail ? 'No plant buckets for this campaign.' : 'Plant coverage becomes available when detailed material rows are loaded.'}</div>`}</div>
         </div>
         <div class="material-section">
           <div class="material-section-head">
@@ -1408,7 +1436,7 @@ function renderMaterialDetail(campaign){
               </div>
               <div class="material-side-qty">${qty.toFixed(1)}</div>
             </div>`;
-          }).join('') || `<div class="material-side-empty">No material actions needed.</div>`}</div>
+          }).join('') || `<div class="material-side-empty">${hasDetail ? 'No material actions needed.' : 'Top material draw becomes available when detailed material rows are loaded.'}</div>`}</div>
         </div>
       </div>
     </div>
@@ -1692,11 +1720,7 @@ async function runCtp(){
 }
 async function runBom() {
   const activeId = document.activeElement?.id;
-  const btn = activeId === 'bomExplodeBtn'
-    ? qs('bomExplodeBtn')
-    : activeId === 'bomRunBtn'
-      ? qs('bomRunBtn')
-      : null;
+  const btn = activeId === 'bomExplodeBtn' ? qs('bomExplodeBtn') : null;
   const old = btn ? btn.innerHTML : '';
 
   if (btn) {
@@ -1993,7 +2017,7 @@ async function patchJob() {
 qs('runBtn').addEventListener('click', runSchedule);
 qs('campaignRerunBtn').addEventListener('click', runSchedule);
 qs('ctpRunBtn').addEventListener('click', runCtp);
-qs('bomRunBtn').addEventListener('click', runBom);
+qs('materialRefreshBtn')?.addEventListener('click', refreshMaterialPlan);
 qs('bomExplodeBtn')?.addEventListener('click', runBom);
 hookBomFilters();
 qs('newScenarioBtn').addEventListener('click', createScenario);
@@ -3181,7 +3205,10 @@ async function loadReleaseBoard(){
     <td>${escapeHtml(po.grade_family)}</td>
     <td>${po.heats_required || 0}</td>
     <td><span class="badge green">OK</span></td>
-    <td><button class="btn ghost" style="padding:.2rem .5rem;font-size:.75rem;${isReleased ? 'opacity:0.4;cursor:not-allowed' : ''}" ${isReleased ? 'disabled' : ''} onclick="releaseSinglePO('${escapeHtml(po.po_id)}')">Release</button></td>
+    <td style="white-space:nowrap">
+      <button class="btn ghost" style="padding:.2rem .5rem;font-size:.75rem;${isReleased ? 'opacity:0.4;cursor:not-allowed' : ''}" ${isReleased ? 'disabled' : ''} onclick="releaseSinglePO('${escapeHtml(po.po_id)}')">Release</button>
+      <button class="btn danger" style="padding:.2rem .5rem;font-size:.75rem;margin-left:.35rem;${!isReleased ? 'opacity:0.4;cursor:not-allowed' : ''}" ${!isReleased ? 'disabled' : ''} onclick="unreleasePlanningOrder('${escapeHtml(po.po_id)}')">Unrelease</button>
+    </td>
   </tr>`;
   }).join('');
 
@@ -3191,15 +3218,6 @@ async function loadReleaseBoard(){
     [{v: feasiblePos.length, l:'POs'}, {v: totalSOs, l:'SOs'}, {v: totalMT.toFixed(0)+'MT', l:'total'}]
   );
   stageExpand('ps-release');
-}
-
-async function refreshPlanningOrdersAfterRelease() {
-  const refreshed = await apiFetch('/api/aps/planning/orders').catch(() => ({ planning_orders: [] }));
-  state.planningOrders = refreshed.planning_orders || [];
-  refreshSimulationGradeOptions();
-
-  updatePlanningKPIs();
-  renderDashboard();
 }
 
 async function releaseSinglePO(poId){
@@ -3212,8 +3230,7 @@ async function releaseSinglePO(poId){
       body: JSON.stringify({po_ids: [poId]})
     });
 
-    await refreshPlanningOrdersAfterRelease();
-    await loadReleaseBoard();
+    await refreshReleaseCycleState();
 /*     renderDashboard(); */
 
     qs('chipPipelineText').textContent = '✓ Planning order ' + poId + ' released successfully';
@@ -3241,8 +3258,7 @@ async function releaseSelectedPOs(){
       body: JSON.stringify({po_ids: checked})
     });
 
-    await refreshPlanningOrdersAfterRelease();
-    await loadReleaseBoard();
+    await refreshReleaseCycleState();
 /*     renderDashboard(); */
 
     qs('chipPipelineText').textContent = '✓ Released ' + checked.length + ' planning order' + (checked.length > 1 ? 's' : '') + ' successfully';
@@ -3272,8 +3288,7 @@ async function releaseAllSelected(){
       body: JSON.stringify({po_ids: checked})
     });
 
-    await refreshPlanningOrdersAfterRelease();
-    await loadReleaseBoard();
+    await refreshReleaseCycleState();
 /*     renderDashboard(); */
 
     qs('chipPipelineText').textContent = '✓ Released ' + checked.length + ' planning order' + (checked.length > 1 ? 's' : '') + ' successfully';
@@ -4148,3 +4163,74 @@ document.addEventListener('DOMContentLoaded', async ()=>{
 
   setTimeout(()=>{ bar.style.opacity = '0'; }, 300);
 });
+
+async function refreshMaterialPlan(){
+  const btn = qs('materialRefreshBtn');
+  const old = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.innerHTML = '<span class="spinner"></span> Refreshing…';
+    btn.disabled = true;
+  }
+
+  try {
+    const material = await apiFetch('/api/aps/material/plan');
+    state.material = material || { summary: {}, campaigns: [] };
+    renderMaterial();
+    qs('chipPipelineText').textContent = '✓ Material status refreshed';
+    qs('chipPipeline').className = 'chip success';
+  } catch (e) {
+    qs('chipPipelineText').textContent = '✗ Material refresh failed: ' + e.message;
+    qs('chipPipeline').className = 'chip danger';
+  } finally {
+    if (btn) {
+      btn.innerHTML = old;
+      btn.disabled = false;
+    }
+  }
+}
+
+async function unreleasePlanningOrder(poId){
+  if(!poId) return;
+  if(!confirm(`Return ${poId} from execution back to planning?`)) return;
+
+  try {
+    qs('chipPipelineText').textContent = '⏳ Unreleasing planning order ' + poId + '...';
+    qs('chipPipeline').className = 'chip info';
+
+    await apiFetch('/api/aps/planning/unrelease', {
+      method: 'POST',
+      body: JSON.stringify({po_ids: [poId]})
+    });
+
+    await refreshReleaseCycleState();
+
+    qs('chipPipelineText').textContent = '✓ Planning order ' + poId + ' returned to planning';
+    qs('chipPipeline').className = 'chip success';
+  } catch(e) {
+    qs('chipPipelineText').textContent = '✗ Unrelease failed: ' + e.message;
+    qs('chipPipeline').className = 'chip danger';
+  }
+}
+
+async function refreshReleaseCycleState() {
+  const [overview, campaigns, material, planningOrders] = await Promise.all([
+    apiFetch('/api/aps/dashboard/overview').catch(()=>null),
+    apiFetch('/api/aps/campaigns/list').catch(()=>({items:[]})),
+    apiFetch('/api/aps/material/plan').catch(()=>({summary:{}, campaigns:[]})),
+    apiFetch('/api/aps/planning/orders').catch(()=>({planning_orders:[]}))
+  ]);
+
+  state.overview = overview ? overview.summary || overview : null;
+  state.lastSimResult = overview?.last_simulation || null;
+  state.campaigns = campaigns.items || [];
+  state.material = material || { summary: {}, campaigns: [] };
+  state.planningOrders = planningOrders.planning_orders || [];
+  refreshSimulationGradeOptions();
+
+  hydrateSummary(state.overview || {});
+  renderDashboard();
+  renderPlanningBoard();
+  renderCampaigns();
+  renderMaterial();
+  await loadReleaseBoard();
+}

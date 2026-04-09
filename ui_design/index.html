@@ -598,18 +598,18 @@
 
       <section class="page" id="page-material" role="tabpanel" aria-labelledby="tab-material" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header">
-          <div><div class="page-title">Material</div><div class="page-sub">Coverage status, BOM netting, holds, and shortage resolution.</div></div>
-          <div class="page-actions"><button type="button" class="btn primary" id="bomRunBtn"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i><span> Run BOM Netting</span></button></div>
+          <div><div class="page-title">Material</div><div class="page-sub">Campaign material readiness, holds, conversion needs, and shortage resolution.</div></div>
+          <div class="page-actions"><button type="button" class="btn primary" id="materialRefreshBtn"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i><span> Refresh Material Status</span></button></div>
         </div>
         <div class="material-kpi-row" style="margin-bottom:.75rem;flex-shrink:0">
-          <div class="metric success"><div class="metric-label">Covered</div><div class="metric-value" id="matOk">—</div><div class="metric-sub">Campaigns ready</div></div>
-          <div class="metric warn"><div class="metric-label">Partial / Low</div><div class="metric-value" id="matLow">—</div><div class="metric-sub">Needs conversion / hold</div></div>
-          <div class="metric danger"><div class="metric-label">Short</div><div class="metric-value" id="matCrit">—</div><div class="metric-sub">Campaigns with shortages</div></div>
+          <div class="metric info"><div class="metric-label">Campaigns</div><div class="metric-value" id="matCampaigns">—</div><div class="metric-sub">In material review</div></div>
+          <div class="metric success"><div class="metric-label">Ready</div><div class="metric-value" id="matOk">—</div><div class="metric-sub">Campaigns ready</div></div>
+          <div class="metric warn"><div class="metric-label">Needs Convert</div><div class="metric-value" id="matLow">—</div><div class="metric-sub">Coverage via make / convert</div></div>
           <div class="metric"><div class="metric-label">Held lots</div><div class="metric-value" id="matHeld">—</div><div class="metric-sub">Awaiting material</div></div>
-          <div class="metric info"><div class="metric-label">Material Items</div><div class="metric-value" id="bomKpiLinesVal">—</div><div class="metric-sub">SKU lines in BOM</div></div>
-          <div class="metric"><div class="metric-label">Gross MT</div><div class="metric-value" id="bomKpiGrossVal">—</div><div class="metric-sub">Before netting</div></div>
-          <div class="metric"><div class="metric-label">Net MT</div><div class="metric-value" id="bomKpiNetVal">—</div><div class="metric-sub">After netting</div></div>
-          <div class="metric info"><div class="metric-label">Byproduct</div><div class="metric-value" id="bomKpiByproductVal">—</div><div class="metric-sub">Recoverable lines</div></div>
+          <div class="metric danger"><div class="metric-label">Short</div><div class="metric-value" id="matCrit">—</div><div class="metric-sub">Campaigns with shortages</div></div>
+          <div class="metric"><div class="metric-label">Required Qty</div><div class="metric-value" id="matReqQty">—</div><div class="metric-sub">Across all campaigns</div></div>
+          <div class="metric info"><div class="metric-label">Stock Covered</div><div class="metric-value" id="matCoveredQty">—</div><div class="metric-sub">Met from inventory</div></div>
+          <div class="metric warn"><div class="metric-label">Make / Convert</div><div class="metric-value" id="matConvertQty">—</div><div class="metric-sub" id="matShortQtySub">Shortage: —</div></div>
         </div>
         <!-- Split layout: tree left, detail right -->
         <div class="material-split-container material-page-layout" style="flex:1;min-height:0;overflow:hidden">
