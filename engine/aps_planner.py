@@ -16,6 +16,9 @@ from typing import List, Dict, Any, Optional, Tuple
 from enum import Enum
 import math
 
+from engine.campaign import priority_rank
+from engine.config import resolve_config_float, resolve_config_int
+
 class PlanningHorizon(Enum):
     """Planning window options."""
     NEXT_3_DAYS = 3
@@ -174,10 +177,6 @@ class APSPlanner:
         """
         now = datetime.now()
 
-        def _priority_rank(priority: str) -> int:
-            p = str(priority or "").strip().upper()
-            return {"URGENT": 0, "HIGH": 1, "NORMAL": 2, "LOW": 3}.get(p, 9)
-
         valid = []
         for so in all_sos:
             if not so:
@@ -205,7 +204,7 @@ class APSPlanner:
         selected.sort(
             key=lambda so: (
                 so.due_date_obj(),
-                _priority_rank(so.priority),
+                priority_rank(so.priority, config=self.config),
                 -float(so.qty_mt or 0),
                 str(so.so_id),
             )
@@ -233,17 +232,17 @@ class APSPlanner:
             return []
 
         rules = rules or {
-            "heat_size_mt": float(self.config.get("HEAT_SIZE_MT", 50) or 50),
-            "max_lot_mt": float(self.config.get("APS_MAX_LOT_MT", 300) or 300),
-            "max_heats_per_lot": int(self.config.get("APS_MAX_HEATS_PER_LOT", 8) or 8),
-            "urgent_window_hours": int(self.config.get("APS_URGENT_WINDOW_HOURS", 48) or 48),
-            "max_due_spread_days": int(self.config.get("APS_MAX_DUE_SPREAD_DAYS", 3) or 3),
-            "section_tolerance_mm": float(self.config.get("APS_SECTION_TOLERANCE_MM", 0.6) or 0.6),
+            "heat_size_mt": resolve_config_float(self.config, "HEAT_SIZE_MT", 50.0),
+            "max_lot_mt": resolve_config_float(
+                self.config,
+                "APS_MAX_LOT_MT",
+                resolve_config_float(self.config, "CAMPAIGN_MAX_SIZE_MT", 300.0),
+            ),
+            "max_heats_per_lot": resolve_config_int(self.config, "APS_MAX_HEATS_PER_LOT", 8),
+            "urgent_window_hours": resolve_config_int(self.config, "APS_URGENT_WINDOW_HOURS", 48),
+            "max_due_spread_days": resolve_config_int(self.config, "APS_MAX_DUE_SPREAD_DAYS", 3),
+            "section_tolerance_mm": resolve_config_float(self.config, "APS_SECTION_TOLERANCE_MM", 0.6),
         }
-
-        def _priority_rank(priority: str) -> int:
-            p = str(priority or "").strip().upper()
-            return {"URGENT": 0, "HIGH": 1, "NORMAL": 2, "LOW": 3}.get(p, 9)
 
         def _is_urgent(so: SalesOrder) -> bool:
             return so.hours_until_due() <= rules["urgent_window_hours"] or str(so.priority or "").upper() == "URGENT"
@@ -266,7 +265,7 @@ class APSPlanner:
         ordered = sorted(
             window_sos,
             key=lambda so: (
-                _priority_rank(so.priority),
+                priority_rank(so.priority, config=self.config),
                 so.due_date_obj(),
                 str(so.grade or ""),
                 float(so.section_mm or 0),
@@ -362,7 +361,7 @@ class APSPlanner:
         """
         Derive heats using ceiling-based fill logic.
         """
-        heat_size_mt = float(heat_size_mt or self.config.get("HEAT_SIZE_MT", 50) or 50)
+        heat_size_mt = float(heat_size_mt or resolve_config_float(self.config, "HEAT_SIZE_MT", 50.0) or 50.0)
         heats: List[HeatBatch] = []
         heat_counter = 1
 
@@ -385,7 +384,11 @@ class APSPlanner:
                     heat_number_seq=seq,
                     upstream_route=po.route_family or "SMS→RM",
                     compatibility_class=str(po.grade_family or "").strip(),
-                    expected_duration_hours=float(self.config.get("default_heat_duration", 2.0) or 2.0),
+                    expected_duration_hours=resolve_config_float(
+                        self.config,
+                        "DEFAULT_HEAT_DURATION_HOURS",
+                        max(resolve_config_float(self.config, "CYCLE_TIME_EAF_MIN", 120.0), 1.0) / 60.0,
+                    ),
                 )
                 heats.append(heat)
                 heat_counter += 1
@@ -402,9 +405,9 @@ class APSPlanner:
         rules: Dict[str, Any] = None,
     ) -> int:
         """Estimate heats using ceiling, never round."""
-        rules = rules or {"heat_size_mt": float(self.config.get("HEAT_SIZE_MT", 50) or 50)}
+        rules = rules or {"heat_size_mt": resolve_config_float(self.config, "HEAT_SIZE_MT", 50.0)}
         total_mt = sum(float(so.qty_mt or 0) for so in sos)
-        heat_size = float(rules.get("heat_size_mt", 50) or 50)
+        heat_size = float(rules.get("heat_size_mt", 50.0) or 50.0)
         if heat_size <= 0:
             heat_size = 50.0
         return max(1, int(math.ceil(total_mt / heat_size)))
@@ -484,9 +487,17 @@ class APSPlanner:
         sms_count = max(1, len(sms_resources or ["SMS-01"]))
         rm_count = max(1, len(rm_resources or ["RM-01"]))
 
-        default_heat_hrs = float(self.config.get("default_heat_duration", 2.0) or 2.0)
-        rm_factor = float(self.config.get("rm_duration_factor", 1.2) or 1.2)
-        horizon_hours = float(self.config.get("planning_horizon_hours", 168) or 168)
+        default_heat_hrs = resolve_config_float(
+            self.config,
+            "DEFAULT_HEAT_DURATION_HOURS",
+            max(resolve_config_float(self.config, "CYCLE_TIME_EAF_MIN", 120.0), 1.0) / 60.0,
+        )
+        rm_factor = resolve_config_float(self.config, "RM_DURATION_FACTOR", 1.2)
+        horizon_hours = resolve_config_float(
+            self.config,
+            "PLANNING_HORIZON_HOURS",
+            resolve_config_float(self.config, "PLANNING_HORIZON_DAYS", 7.0) * 24.0,
+        )
 
         total_sms_hours = sum(float(h.expected_duration_hours or default_heat_hrs) for h in heat_batches)
         total_rm_hours = sum(float(h.expected_duration_hours or default_heat_hrs) * rm_factor for h in heat_batches)

@@ -471,10 +471,16 @@ def inventory_map(inventory: pd.DataFrame | dict | None) -> dict:
         return {}
 
     qty_col = "Available_Qty" if "Available_Qty" in inventory.columns else "Available"
-    inv = inventory[["SKU_ID", qty_col]].copy()
+    columns = ["SKU_ID", qty_col]
+    if "Reserved_Qty" in inventory.columns:
+        columns.append("Reserved_Qty")
+    inv = inventory[columns].copy()
     inv["SKU_ID"] = inv["SKU_ID"].map(_normalize_sku_id)
     inv = inv[inv["SKU_ID"] != ""].copy()
     inv[qty_col] = pd.to_numeric(inv[qty_col], errors="coerce").fillna(0.0)
+    if "Reserved_Qty" in inv.columns:
+        inv["Reserved_Qty"] = pd.to_numeric(inv["Reserved_Qty"], errors="coerce").fillna(0.0)
+        inv[qty_col] = (inv[qty_col] - inv["Reserved_Qty"]).clip(lower=0.0)
     return inv.groupby("SKU_ID", as_index=False)[qty_col].sum().set_index("SKU_ID")[qty_col].to_dict()
 
 

@@ -18,7 +18,7 @@ except ModuleNotFoundError:  # pragma: no cover - environment-dependent import
     cp_model = None
 
 from engine.campaign import billet_family_for_grade, rm_minutes_for_qty, needs_vd_for_grade, _get_heat_size_mt
-from engine.config import get_config
+from engine.config import get_config, resolve_config_bool, resolve_config_float, resolve_config_int
 
 # Cycle times are now config-driven (read from Algorithm_Config)
 # Defaults are embedded for backward compatibility
@@ -100,8 +100,8 @@ def _planning_start(planning_start, frozen_jobs: dict | None = None) -> datetime
 
 
 def _config_flag(config: dict | None, key: str, default: str = "N") -> bool:
-    value = str((config or {}).get(key, default) or default).strip().upper()
-    return value in {"Y", "YES", "TRUE", "1", "ON"}
+    default_bool = str(default).strip().upper() in {"Y", "YES", "TRUE", "1", "ON"}
+    return resolve_config_bool(config, key, default_bool)
 
 
 def _allow_scheduler_default_masters(config: dict | None = None) -> bool:
@@ -896,7 +896,7 @@ def schedule(
     campaigns: list,
     resources: pd.DataFrame,
     planning_start=None,
-    planning_horizon_days: int = 14,
+    planning_horizon_days: int | None = None,
     machine_down_resource: str | None = None,
     machine_down_hours: float = 0.0,
     machine_down_start_hour: float = 0.0,
@@ -905,7 +905,7 @@ def schedule(
     queue_times: dict | None = None,
     changeover_matrix: pd.DataFrame | None = None,
     config: dict | None = None,
-    solver_time_limit_sec: float = 30.0,
+    solver_time_limit_sec: float | None = None,
 ) -> dict:
     """Run the CP-SAT scheduler."""
     if not _cp_sat_available():
@@ -928,11 +928,12 @@ def schedule(
 
     model = cp_model.CpModel()
 
-    planning_horizon_days = max(int(planning_horizon_days or 14), 1)
+    planning_horizon_days = max(resolve_config_int(config, "PLANNING_HORIZON_DAYS", planning_horizon_days or 14), 1)
     frozen_jobs = frozen_jobs or {}
     t0 = _planning_start(planning_start, frozen_jobs)
     horizon = planning_horizon_days * 24 * 60
-    max_time = horizon + (7 * 24 * 60)
+    horizon_extension_days = max(resolve_config_int(config, "PLANNING_HORIZON_EXTENSION_DAYS", 7), 0)
+    max_time = horizon + (horizon_extension_days * 24 * 60)
     op_lookup = _build_op_lookup(resources)
     op_order = _build_operation_order(routing, op_lookup)
     allow_default_masters = _allow_scheduler_default_masters(config)
@@ -1210,7 +1211,7 @@ def schedule(
                     else:
                         q_viol = model.NewIntVar(0, max_time, f"qviol_{cid}_CCM_RM")
                         model.Add(q_viol >= rm_task["start"] - (gate_var + transfer_gap + max_queue))
-                        objective_terms.append((q_viol, 100))  # Proportional per-minute penalty (was QUEUE_VIOLATION_WEIGHT=500)
+                        objective_terms.append((q_viol, _get_queue_violation_weight()))
             else:
                 model.Add(previous_rm_end <= rm_task["start"])
 
@@ -1295,8 +1296,11 @@ def schedule(
         model.Minimize(sum(var * weight for var, weight in objective_terms))
 
     solver = cp_model.CpSolver()
-    solver.parameters.max_time_in_seconds = max(float(solver_time_limit_sec or 30), 1.0)
-    solver.parameters.num_search_workers = 4
+    solver.parameters.max_time_in_seconds = max(
+        resolve_config_float(config, "SOLVER_TIME_LIMIT_SECONDS", solver_time_limit_sec or 30.0),
+        1.0,
+    )
+    solver.parameters.num_search_workers = max(resolve_config_int(config, "SOLVER_NUM_SEARCH_WORKERS", 4), 1)
     status = solver.Solve(model)
 
     status_str = {
@@ -1509,7 +1513,7 @@ def _greedy_fallback(
     campaigns: list,
     resources: pd.DataFrame | None = None,
     planning_start=None,
-    planning_horizon_days: int = 14,
+    planning_horizon_days: int | None = None,
     machine_down_resource: str | None = None,
     machine_down_hours: float = 0.0,
     machine_down_start_hour: float = 0.0,
@@ -1522,6 +1526,7 @@ def _greedy_fallback(
 ) -> dict:
     """Greedy fallback that uses the same campaign/production-order structure."""
     frozen_jobs = frozen_jobs or {}
+    planning_horizon_days = max(resolve_config_int(config, "PLANNING_HORIZON_DAYS", planning_horizon_days or 14), 1)
     t0 = _planning_start(planning_start, frozen_jobs)
     op_lookup = _build_op_lookup(resources)
     op_order = _build_operation_order(routing, op_lookup)
