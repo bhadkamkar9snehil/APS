@@ -4,7 +4,13 @@ Test script for APS Planning Workflow
 Validates the complete SO → PO → Heat → Schedule implementation
 """
 
+import sys
 from datetime import datetime, timedelta
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
 from engine.aps_planner import (
     APSPlanner, PlanningHorizon, SalesOrder, PlanningOrder, HeatBatch
 )

@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Verify all Excel macro functions are callable via Flask API."""
 
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))
+
 from xaps_application_api import app
 import json
 

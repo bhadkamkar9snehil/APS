@@ -1,7 +1,10 @@
 """Test Phase 1: Configuration Infrastructure implementation."""
 
 import sys
-sys.path.insert(0, ".")
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 
 from data.loader import load_all
 from engine.config import get_config
@@ -13,7 +16,7 @@ def test_algorithm_config_sheet():
     print("-" * 60)
 
     import openpyxl
-    wb = openpyxl.load_workbook("APS_BF_SMS_RM.xlsx")
+    wb = openpyxl.load_workbook(ROOT / "APS_BF_SMS_RM.xlsx")
 
     assert "Algorithm_Config" in wb.sheetnames, "Algorithm_Config sheet not found"
     ws = wb["Algorithm_Config"]
@@ -39,7 +42,7 @@ def test_config_loading():
     print("\n[TEST 2] Configuration Loading")
     print("-" * 60)
 
-    data = load_all("APS_BF_SMS_RM.xlsx")
+    data = load_all(str(ROOT / "APS_BF_SMS_RM.xlsx"))
     config = get_config()
 
     params = config.all_params()
@@ -60,7 +63,7 @@ def test_config_validation():
     print("\n[TEST 3] Configuration Validation")
     print("-" * 60)
 
-    data = load_all("APS_BF_SMS_RM.xlsx")
+    data = load_all(str(ROOT / "APS_BF_SMS_RM.xlsx"))
     config = get_config()
 
     # Test numeric bounds
@@ -87,7 +90,7 @@ def test_getter_methods():
     print("\n[TEST 4] Type-Safe Getter Methods")
     print("-" * 60)
 
-    data = load_all("APS_BF_SMS_RM.xlsx")
+    data = load_all(str(ROOT / "APS_BF_SMS_RM.xlsx"))
     config = get_config()
 
     # Test duration getter
@@ -122,7 +125,7 @@ def test_category_filtering():
     print("\n[TEST 5] Category-Based Filtering")
     print("-" * 60)
 
-    data = load_all("APS_BF_SMS_RM.xlsx")
+    data = load_all(str(ROOT / "APS_BF_SMS_RM.xlsx"))
     config = get_config()
 
     # Test each category
@@ -148,7 +151,7 @@ def test_config_metadata():
     print("\n[TEST 6] Configuration Metadata")
     print("-" * 60)
 
-    data = load_all("APS_BF_SMS_RM.xlsx")
+    data = load_all(str(ROOT / "APS_BF_SMS_RM.xlsx"))
     config = get_config()
 
     # Check metadata for a sample parameter
@@ -173,7 +176,7 @@ def test_all_params_dict():
     print("\n[TEST 7] All Parameters Dictionary")
     print("-" * 60)
 
-    data = load_all("APS_BF_SMS_RM.xlsx")
+    data = load_all(str(ROOT / "APS_BF_SMS_RM.xlsx"))
     config = get_config()
 
     all_params = config.all_params()
