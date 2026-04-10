@@ -160,6 +160,106 @@ class TestBomPersistence:
         assert set(get_data.keys()) >= required_keys
 
 
+class TestSelectionScopedBomTree:
+    """Test explicit selected-root BOM tree payloads."""
+
+    def test_post_bom_tree_returns_selection_scoped_netted_rows(self, client, monkeypatch):
+        monkeypatch.setattr(api, "_load_all", lambda: _make_minimal_load_all())
+
+        resp = client.post(
+            "/api/aps/bom/tree",
+            json={"items": [{"sku_id": "FG-WR-001", "qty_mt": 10.0}]},
+        )
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["roots"] == [{"sku_id": "FG-WR-001", "required_qty": 10.0}]
+        assert data["rows"] == 3
+
+        rows_by_sku = {row["SKU_ID"]: row for row in data["net_bom"]}
+        assert rows_by_sku["BIL-100"]["Gross_Req"] == 10.0
+        assert rows_by_sku["BIL-100"]["Net_Req"] == 10.0
+        assert rows_by_sku["RM-SCRAP"]["Gross_Req"] == 8.5
+        assert rows_by_sku["RM-SCRAP"]["Available"] == 5.0
+        assert rows_by_sku["RM-SCRAP"]["Net_Req"] == 3.5
+        assert rows_by_sku["RM-LIME"]["Net_Req"] == 0.0
+
+    def test_post_bom_tree_aggregates_duplicate_requested_roots(self, client, monkeypatch):
+        monkeypatch.setattr(api, "_load_all", lambda: _make_minimal_load_all())
+
+        resp = client.post(
+            "/api/aps/bom/tree",
+            json={
+                "items": [
+                    {"sku_id": "FG-WR-001", "qty_mt": 4.0},
+                    {"sku_id": "FG-WR-001", "qty_mt": 6.0},
+                ]
+            },
+        )
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["roots"] == [{"sku_id": "FG-WR-001", "required_qty": 10.0}]
+
+        billet_row = next(row for row in data["net_bom"] if row["SKU_ID"] == "BIL-100")
+        assert billet_row["Gross_Req"] == 10.0
+        assert billet_row["Parent_SKU"] == "FG-WR-001"
+
+    def test_post_bom_tree_preserves_root_attribution_for_shared_intermediates(self, client, monkeypatch):
+        import pandas as pd
+
+        def _load_all_with_shared_billet():
+            return {
+                "sales_orders": pd.DataFrame(),
+                "bom": pd.DataFrame({
+                    "Parent_SKU": ["FG-A", "FG-B", "BIL-100"],
+                    "Child_SKU": ["BIL-100", "BIL-100", "RM-SCRAP"],
+                    "Qty_Per": [1.0, 1.0, 0.85],
+                    "Effect_Yield": [1.0, 1.0, 1.0],
+                    "BOM_Level": [1, 1, 2],
+                }),
+                "inventory": pd.DataFrame({
+                    "SKU_ID": ["RM-SCRAP"],
+                    "Available_Qty": [0.0],
+                }),
+                "config": {},
+                "resources": pd.DataFrame(),
+            }
+
+        monkeypatch.setattr(api, "_load_all", _load_all_with_shared_billet)
+
+        resp = client.post(
+            "/api/aps/bom/tree",
+            json={
+                "items": [
+                    {"sku_id": "FG-A", "qty_mt": 5.0},
+                    {"sku_id": "FG-B", "qty_mt": 7.0},
+                ]
+            },
+        )
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+
+        billet_rows = [row for row in data["net_bom"] if row["SKU_ID"] == "BIL-100"]
+        assert len(billet_rows) == 2
+        assert {row["Root_SKU"] for row in billet_rows} == {"FG-A", "FG-B"}
+
+        scrap_rows = [row for row in data["net_bom"] if row["SKU_ID"] == "RM-SCRAP"]
+        assert len(scrap_rows) == 2
+        assert {row["Root_SKU"] for row in scrap_rows} == {"FG-A", "FG-B"}
+        assert sorted(row["Gross_Req"] for row in scrap_rows) == [4.25, 5.95]
+
+    def test_post_bom_tree_returns_empty_payload_for_empty_items(self, client):
+        resp = client.post("/api/aps/bom/tree", json={"items": []})
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["roots"] == []
+        assert data["net_bom"] == []
+        assert data["rows"] == 0
+
+
 class TestMaterialPlanPayload:
     """Test Material plan response includes grouped plant structure."""
 

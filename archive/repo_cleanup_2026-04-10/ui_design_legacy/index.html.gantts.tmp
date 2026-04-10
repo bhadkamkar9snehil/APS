@@ -1,0 +1,156 @@
+// PO Gantt - clean: PO ID | Plant | Timeline
+function renderPOGantt(scheduleRows){
+  if(!scheduleRows || !scheduleRows.length) return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No schedule data.</div>';
+
+  let minTime = Infinity, maxTime = -Infinity;
+  const byPO = {};
+  const plantColor = {BF: '#3b82f6', SMS: '#f97316', RM: '#8b5cf6'};
+
+  scheduleRows.forEach(row => {
+    const campaign = row.Campaign || '';
+    const poMatch = campaign.match(/PO-\d+/);
+    const po = poMatch ? poMatch[0] : null;
+    if(!po) return;
+
+    if(!byPO[po]) byPO[po] = [];
+    byPO[po].push(row);
+
+    const start = new Date(row.Planned_Start);
+    const end = new Date(row.Planned_End);
+    if(!isNaN(start)) minTime = Math.min(minTime, start.getTime());
+    if(!isNaN(end)) maxTime = Math.max(maxTime, end.getTime());
+  });
+
+  if(minTime === Infinity || Object.keys(byPO).length === 0)
+    return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No valid schedule data.</div>';
+
+  const span = maxTime - minTime || 86400000;
+  const poList = Object.keys(byPO).sort();
+  const dayWidth = 120;
+  const totalDays = Math.ceil(span / 86400000);
+  const ganttWidth = dayWidth * (totalDays + 1);
+
+  const dateLabels = [];
+  for(let i = 0; i <= totalDays; i++){
+    const d = new Date(minTime + i * 86400000);
+    dateLabels.push(d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}));
+  }
+
+  let html = `
+    <div style="border:1px solid var(--border);border-radius:.3rem;overflow:hidden;background:var(--panel);font-size:.75rem">
+      <div style="display:flex;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--panel);z-index:10">
+        <div style="width:8rem;flex-shrink:0;padding:.5rem;font-weight:600;border-right:1px solid var(--border)">PO | Plant</div>
+        <div style="display:flex;width:${ganttWidth}px">
+          ${dateLabels.map(d => `<div style="width:${dayWidth}px;padding:.3rem;text-align:center;font-size:.7rem;border-right:1px solid var(--border-soft);color:var(--text-soft)">${d}</div>`).join('')}
+        </div>
+      </div>
+
+      ${poList.map(po => {
+        const ops = byPO[po];
+        const plant = ops[0]?.Plant || 'SMS';
+        const color = plantColor[plant];
+
+        return `
+          <div style="display:flex;border-bottom:1px solid var(--border-soft)">
+            <div style="width:8rem;flex-shrink:0;padding:.5rem;border-right:1px solid var(--border)">
+              <div style="font-weight:600">${po}</div>
+              <div style="font-size:.7rem;color:${color};margin-top:.2rem">${plant}</div>
+            </div>
+            <div style="position:relative;width:${ganttWidth}px;height:1.8rem">
+              ${dateLabels.map((d,i) => `<div style="position:absolute;left:${i*dayWidth}px;width:${dayWidth}px;height:100%;border-right:1px solid var(--border-soft);opacity:.1"></div>`).join('')}
+              ${ops.map(op => {
+                const opStart = new Date(op.Planned_Start).getTime();
+                const opEnd = new Date(op.Planned_End).getTime();
+                const opLeft = Math.max(0, (opStart - minTime) / span * 100);
+                const opWidth = Math.max(1.5, (opEnd - opStart) / span * 100);
+                return `<div style="position:absolute;left:${opLeft}%;width:${opWidth}%;top:.3rem;bottom:.3rem;background:${color};opacity:.85;border-radius:.2rem;border:1px solid ${color}"></div>`;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  return html;
+}
+
+// Equipment Gantt - clean: Equipment | Plant | Timeline
+function renderEquipmentGantt(scheduleRows){
+  if(!scheduleRows || !scheduleRows.length) return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No schedule data.</div>';
+
+  let minTime = Infinity, maxTime = -Infinity;
+  const byEquip = {};
+  const plantColor = {BF: '#3b82f6', SMS: '#f97316', RM: '#8b5cf6'};
+
+  scheduleRows.forEach(row => {
+    const equip = row.Resource_ID;
+    if(!equip) return;
+
+    if(!byEquip[equip]) byEquip[equip] = [];
+    byEquip[equip].push(row);
+
+    const start = new Date(row.Planned_Start);
+    const end = new Date(row.Planned_End);
+    if(!isNaN(start)) minTime = Math.min(minTime, start.getTime());
+    if(!isNaN(end)) maxTime = Math.max(maxTime, end.getTime());
+  });
+
+  if(minTime === Infinity || Object.keys(byEquip).length === 0)
+    return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No valid schedule data.</div>';
+
+  const span = maxTime - minTime || 86400000;
+  const dayWidth = 120;
+  const totalDays = Math.ceil(span / 86400000);
+  const ganttWidth = dayWidth * (totalDays + 1);
+
+  const dateLabels = [];
+  for(let i = 0; i <= totalDays; i++){
+    const d = new Date(minTime + i * 86400000);
+    dateLabels.push(d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}));
+  }
+
+  let html = `
+    <div style="border:1px solid var(--border);border-radius:.3rem;overflow:hidden;background:var(--panel);font-size:.75rem">
+      <div style="display:flex;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--panel);z-index:10">
+        <div style="width:10rem;flex-shrink:0;padding:.5rem;font-weight:600;border-right:1px solid var(--border)">Equipment | Plant</div>
+        <div style="display:flex;width:${ganttWidth}px">
+          ${dateLabels.map(d => `<div style="width:${dayWidth}px;padding:.3rem;text-align:center;font-size:.7rem;border-right:1px solid var(--border-soft);color:var(--text-soft)">${d}</div>`).join('')}
+        </div>
+      </div>
+
+      ${['BF', 'SMS', 'RM'].map(plant => {
+        const equipInPlant = Object.keys(byEquip).filter(equip => byEquip[equip].some(o => (o.Plant || 'SMS') === plant)).sort();
+        if(equipInPlant.length === 0) return '';
+
+        return `
+          <div style="border-bottom:1px solid var(--border)">
+            <div style="padding:.4rem;background:${plantColor[plant]};color:#fff;font-weight:600;font-size:.8rem">${plant}</div>
+            ${equipInPlant.map(equip => {
+              const ops = byEquip[equip].filter(o => (o.Plant || 'SMS') === plant);
+              const color = plantColor[plant];
+              return `
+                <div style="display:flex;border-bottom:1px solid var(--border-soft)">
+                  <div style="width:10rem;flex-shrink:0;padding:.5rem;border-right:1px solid var(--border);font-weight:600;font-size:.8rem">${equip}</div>
+                  <div style="position:relative;width:${ganttWidth}px;height:1.8rem">
+                    ${dateLabels.map((d,i) => `<div style="position:absolute;left:${i*dayWidth}px;width:${dayWidth}px;height:100%;border-right:1px solid var(--border-soft);opacity:.1"></div>`).join('')}
+                    ${ops.map(op => {
+                      const opStart = new Date(op.Planned_Start).getTime();
+                      const opEnd = new Date(op.Planned_End).getTime();
+                      const opLeft = Math.max(0, (opStart - minTime) / span * 100);
+                      const opWidth = Math.max(1.5, (opEnd - opStart) / span * 100);
+                      const campaign = (op.Campaign || '').substring(0, 8);
+                      return `<div style="position:absolute;left:${opLeft}%;width:${opWidth}%;top:.3rem;bottom:.3rem;background:${color};opacity:.85;border-radius:.2rem;border:1px solid ${color};display:flex;align-items:center;justify-content:center;font-size:.6rem;color:#fff;font-weight:600;overflow:hidden" title="${campaign}">${campaign}</div>`;
+                    }).join('')}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+
+  return html;
+}

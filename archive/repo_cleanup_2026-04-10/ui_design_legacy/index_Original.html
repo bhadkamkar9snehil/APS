@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>X-APS iframe application</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+
+</head>
+<body>
+<div id="loadingBar" class="loading-bar"></div>
+<div class="app">
+  <div class="shell">
+    <div class="navbar">
+      <div class="tabs" id="topTabs">
+        <!-- Main Tabs -->
+        <button class="tab active" data-page="dashboard">Dashboard</button>
+        <button class="tab" data-page="planning">Planning</button>
+        <button class="tab" data-page="bom">BOM</button>
+        <button class="tab" data-page="execution">Execution</button>
+        <button class="tab" data-page="material">Material</button>
+        <button class="tab" data-page="capacity">Capacity</button>
+
+        <button class="tab" data-page="ctp">CTP</button>
+        <button class="tab" data-page="scenarios">Scenarios</button>
+        <button class="tab" data-page="master">Master Data</button>
+      </div>
+    </div>
+
+    <div class="top">
+      <div class="top-controls">
+        <!-- Default controls: schedule tabs -->
+        <div class="control-group" id="ctrl-default">
+          <select class="sel" id="horizonSelect">
+            <option value="7">7 Days Horizon</option>
+            <option value="14" selected>14 Days Horizon</option>
+            <option value="21">21 Days Horizon</option>
+            <option value="30">30 Days Horizon</option>
+          </select>
+          <select class="sel" id="solverDepth">
+            <option value="30">Fast 30s</option>
+            <option value="60" selected>Standard 60s</option>
+            <option value="120">Deep 120s</option>
+            <option value="300">Full 5m</option>
+          </select>
+          <button class="btn primary" id="runBtn">Run Schedule</button>
+        </div>
+        <!-- Planning tab controls -->
+        <div class="control-group" id="ctrl-planning" style="display:none">
+          <select class="sel" id="planningWindowDays">
+            <option value="3">3-Day Window</option>
+            <option value="7" selected>7-Day Window</option>
+            <option value="10">10-Day Window</option>
+            <option value="14">14-Day Window</option>
+          </select>
+          <button class="btn ghost" id="pipelineExpandAllBtn" title="Expand / collapse all stages">Expand All</button>
+          <button class="btn primary" id="pipelineRunBtn">&#9654; Run Pipeline</button>
+        </div>
+      </div>
+      <div class="top-summary">
+        <div class="brand-row">
+          <div class="summary-grid">
+            <div class="metric"><div class="metric-label">Planning Orders</div><div class="metric-value" id="summaryCampaigns">—</div><div class="metric-sub" id="summaryCampaignsSub">Loading…</div></div>
+            <div class="metric success"><div class="metric-label">Heats Planned</div><div class="metric-value" id="summaryHeats">—</div><div class="metric-sub" id="summaryHeatsSub">—</div></div>
+            <div class="metric"><div class="metric-label">MT Planned</div><div class="metric-value" id="summaryMt">—</div><div class="metric-sub" id="summaryMtSub">in heats</div></div>
+            <div class="metric warn"><div class="metric-label">On-Time</div><div class="metric-value" id="summaryOt">—</div><div class="metric-sub" id="summaryOtSub">delivery rate</div></div>
+            <div class="metric"><div class="metric-label">SMS Utilisation</div><div class="metric-value" id="summaryCapacity">—</div><div class="metric-sub" id="summaryCapacitySub">peak resource</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="body">
+      <section class="page active" id="page-dashboard" style="display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:.4rem .6rem .4rem">
+
+        <!-- ═══ MAIN BODY: 3 columns ═══ -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.45rem;flex:1;min-height:0;overflow:hidden">
+
+          <!-- ── COL 1: Planning Status + Alerts ── -->
+          <div style="display:flex;flex-direction:column;gap:.45rem;min-height:0;overflow:hidden">
+
+            <!-- Planning Status -->
+            <div class="dash-card" style="flex:0.55;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+              <div class="dash-card-hd">
+                <span class="dash-card-title">Planning Status</span>
+                <button class="btn ghost" style="font-size:.65rem;padding:.15rem .45rem;height:1.5rem" onclick="activatePage('planning')">Open →</button>
+              </div>
+              <div style="flex:1;overflow-y:auto;padding:.5rem .6rem;display:flex;flex-direction:column;gap:.35rem" id="dashboardPipelineBody">
+                <div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:1rem 0">Run the Planning Pipeline to see status here.</div>
+              </div>
+            </div>
+
+            <!-- Alerts & Insights -->
+            <div class="dash-card" style="flex:0.45;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+              <div class="dash-card-hd">
+                <span class="dash-card-title">Alerts &amp; Insights</span>
+                <span id="dashAlertCount" style="font-size:.65rem;font-weight:700;background:var(--danger-soft);color:var(--danger);padding:.15rem .4rem;border-radius:1rem;display:none">0</span>
+              </div>
+              <div style="overflow-y:auto;flex:1;padding:.4rem .6rem;display:flex;flex-direction:column;gap:.3rem" id="dashAlertsList">
+                <div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">No alerts. System nominal.</div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- ── COL 2: Capacity + Delivery ── -->
+          <div style="display:flex;flex-direction:column;gap:.45rem;min-height:0;overflow:hidden">
+
+            <!-- Capacity Utilisation -->
+            <div class="dash-card" style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+              <div class="dash-card-hd">
+                <span class="dash-card-title">Capacity Utilisation</span>
+                <span id="bottleneckPeak" style="font-size:.65rem;font-weight:700;color:var(--text-soft)">—</span>
+              </div>
+              <div style="flex:1;overflow-y:auto;padding:.5rem .6rem;display:flex;flex-direction:column;gap:.5rem" id="bottleneckList">
+                <div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">—</div>
+              </div>
+            </div>
+
+            <!-- Delivery Performance -->
+            <div class="dash-card" style="flex:none;height:42%">
+              <div class="dash-card-hd"><span class="dash-card-title">Delivery Performance</span></div>
+              <div style="padding:.5rem .6rem;display:flex;flex-direction:column;gap:.5rem">
+                <!-- On-time gauge row -->
+                <div style="display:flex;align-items:center;gap:.8rem">
+                  <div style="flex:none;text-align:center">
+                    <div style="font-size:1.9rem;font-weight:900;line-height:1;letter-spacing:-.03em" id="perfOnTime">—</div>
+                    <div style="font-size:.6rem;color:var(--text-soft);margin-top:.1rem">On-Time</div>
+                  </div>
+                  <div style="flex:1">
+                    <div style="width:100%;height:7px;background:var(--border-soft);border-radius:4px;overflow:hidden">
+                      <div id="perfOnTimeBar" style="height:100%;width:0%;background:var(--success);border-radius:4px;transition:width .6s ease"></div>
+                    </div>
+                  </div>
+                </div>
+                <!-- Late breakdown -->
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.3rem">
+                  <div class="dash-mini-stat">
+                    <div class="dms-label">Late Orders</div>
+                    <div class="dms-value" id="perfLate" style="color:var(--danger)">—</div>
+                  </div>
+                  <div class="dash-mini-stat">
+                    <div class="dms-label">Avg Delay</div>
+                    <div class="dms-value" id="perfAvgLate">—</div>
+                  </div>
+                  <div class="dash-mini-stat">
+                    <div class="dms-label">On Hold</div>
+                    <div class="dms-value" id="execHolds" style="color:var(--warning)">—</div>
+                  </div>
+                </div>
+                <!-- This week -->
+                <div style="border-top:1px solid var(--border-soft);padding-top:.4rem;display:flex;gap:.4rem">
+                  <div style="flex:1;text-align:center">
+                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Campaigns</div>
+                    <div style="font-size:1rem;font-weight:700;color:var(--info)" id="execStarted">—</div>
+                  </div>
+                  <div style="flex:1;text-align:center">
+                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Heats</div>
+                    <div style="font-size:1rem;font-weight:700;color:var(--success)" id="execHeats">—</div>
+                  </div>
+                  <div style="flex:1;text-align:center">
+                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Equip</div>
+                    <div style="font-size:1rem;font-weight:700" id="execEquip">—</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- ── COL 3: Material Health + PO Summary ── -->
+          <div style="display:flex;flex-direction:column;gap:.45rem;min-height:0;overflow:hidden">
+
+            <!-- Material Health -->
+            <div class="dash-card" style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+              <div class="dash-card-hd">
+                <span class="dash-card-title">Material Health</span>
+                <button class="btn ghost" style="font-size:.65rem;padding:.15rem .45rem;height:1.5rem" onclick="activatePage('material')">View →</button>
+              </div>
+              <div style="flex:1;overflow-y:auto;padding:.5rem .6rem;display:flex;flex-direction:column;gap:.45rem" id="dashboardInventoryBody">
+                <div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">—</div>
+              </div>
+            </div>
+
+            <!-- Active POs summary -->
+            <div class="dash-card" style="flex:none;height:34%">
+              <div class="dash-card-hd">
+                <span class="dash-card-title">Active Planning Orders</span>
+                <button class="btn ghost" style="font-size:.65rem;padding:.15rem .45rem;height:1.5rem" onclick="activatePage('planning')">Plan →</button>
+              </div>
+              <div style="padding:.4rem .6rem;display:flex;flex-direction:column;gap:.3rem" id="dashActivePOs">
+                <div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">No POs yet.</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== UNIFIED PLANNING PIPELINE PAGE ===== -->
+      <section class="page" id="page-planning" style="display:flex;flex-direction:column;min-height:0">
+        <div class="page-header" style="padding-bottom:.5rem;flex-shrink:0">
+          <div>
+            <div class="page-title">Planning Pipeline</div>
+            <div class="page-sub">Select window → Propose lots → Derive heats → Simulate → Release</div>
+          </div>
+          <div class="page-actions" style="gap:.5rem">
+            <div id="pipelineStatusBadge" style="font-size:.75rem;padding:.25rem .6rem;border-radius:1rem;background:var(--border);color:var(--text-soft);white-space:nowrap">Idle</div>
+          </div>
+        </div>
+        <div style="flex:1;overflow:hidden;min-height:0;display:flex;gap:.6rem">
+          <!-- PIPELINE CONTAINER (LEFT) -->
+          <div style="flex:1;overflow:auto;display:flex;flex-direction:column;gap:.6rem;padding:.25rem .6rem 2.5rem">
+
+          <!-- STAGE 1: ORDER POOL -->
+          <div class="pipeline-stage" id="ps-pool">
+            <div class="ps-header" onclick="toggleStage('ps-pool')">
+              <div class="ps-num">1</div>
+              <div class="ps-info">
+                <div class="ps-title">Order Pool</div>
+                <div class="ps-meta" id="ps-pool-meta">Load all open sales orders</div>
+              </div>
+              <div class="ps-kpis" id="ps-pool-kpis"></div>
+              <div class="ps-badge" id="ps-pool-badge">READY</div>
+              <div class="ps-chevron" id="ps-pool-chevron">&#9660;</div>
+            </div>
+            <div class="ps-body" id="ps-pool-body">
+              <div class="ps-body-inner">
+                <div class="filters" style="margin-bottom:.6rem">
+                  <input class="inp" id="poolSearch" placeholder="Search SO / Grade / Customer…" />
+                  <select class="sel" id="poolGrade"><option value="">All grades</option></select>
+                  <select class="sel" id="poolPriority"><option value="">All priorities</option><option>URGENT</option><option>HIGH</option><option>NORMAL</option></select>
+                </div>
+                <div class="toolbar" style="margin-bottom:.5rem;gap:.4rem">
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="poolSelectAllBtn">Select All</button>
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="poolClearAllBtn">Clear All</button>
+                  <div style="font-size:.75rem;color:var(--text-soft);padding:.3rem .5rem;white-space:nowrap" id="poolSelectionCount">0 selected</div>
+                  <div style="flex:1"></div>
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;background:rgba(107,114,207,.08);border:1px solid rgba(107,114,207,.2)" onclick="showPoolSOGantt()" title="View timeline for selected SOs (plant-based)">📅 Gantt</button>
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;background:rgba(107,114,207,.08);border:1px solid rgba(107,114,207,.2)" onclick="showFullBOMForSelectedSOs()" title="View material requirements for selected SOs in side panel">📊 Full BOM</button>
+                </div>
+                <div style="overflow:auto;max-height:280px;border:1px solid var(--border);border-radius:.3rem">
+                  <table class="table">
+                    <thead><tr><th style="width:2rem"><input type="checkbox" id="poolSelectAll" title="Select all" style="width:1.2rem;height:1.2rem;cursor:pointer"></th><th>SO ID</th><th>SKU</th><th>Customer</th><th>Grade</th><th>Section</th><th>Qty MT</th><th>Due Date</th><th>Priority</th><th>Status</th><th style="width:3rem"></th></tr></thead>
+                    <tbody id="poolBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- STAGE 2: PROPOSE ORDERS (window select → POs) -->
+          <div class="pipeline-stage" id="ps-propose">
+            <div class="ps-header" onclick="toggleStage('ps-propose')">
+              <div class="ps-num">2</div>
+              <div class="ps-info">
+                <div class="ps-title">Propose Orders</div>
+                <div class="ps-meta" id="ps-propose-meta">Group candidates into manufacturing lots</div>
+              </div>
+              <div class="ps-kpis" id="ps-propose-kpis"></div>
+              <div class="ps-badge pending" id="ps-propose-badge">PENDING</div>
+              <button class="btn primary ps-action" id="planningProposeBtn" onclick="event.stopPropagation();proposePlanningOrders()">Propose</button>
+              <div class="ps-chevron collapsed" id="ps-propose-chevron">&#9660;</div>
+            </div>
+            <div class="ps-body collapsed" id="ps-propose-body">
+              <div class="ps-body-inner">
+                <div class="grid-4" style="margin-bottom:.75rem">
+                  <div class="metric"><div class="metric-label">Window</div><div class="metric-value" id="planningWindowLabel">—</div></div>
+                  <div class="metric"><div class="metric-label">Candidates</div><div class="metric-value" id="planningCandidates">—</div></div>
+                  <div class="metric"><div class="metric-label">Proposed POs</div><div class="metric-value" id="planningProposedCount">—</div></div>
+                  <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="planningTotalMT">—</div></div>
+                </div>
+                <div class="toolbar" style="margin-bottom:.5rem;gap:.3rem">
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="mergeSelectedBtn" disabled onclick="mergeSelectedPOs()">Merge Selected</button>
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="freezeSelectedBtn" disabled onclick="freezeSelectedPOs()">Freeze Selected</button>
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" onclick="proposePlanningOrders()">Re-propose</button>
+                  <div style="font-size:.75rem;color:var(--text-soft);padding:.3rem .5rem;white-space:nowrap" id="poSelectionCount">0 selected</div>
+                  <button class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;margin-left:auto" onclick="state.lastScheduleRows ? showGanttModal('Planning Orders - Production Timeline', state.lastScheduleRows, 'po') : alert('Run Feasibility Check first')" title="View timeline for proposed POs">📅 Gantt</button>
+                </div>
+                <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
+                  <table class="table">
+                    <thead><tr><th style="width:2rem"><input type="checkbox" id="poSelectAll" style="width:1.2rem;height:1.2rem;cursor:pointer"></th><th>PO ID</th><th>SOs</th><th>SKUs</th><th>Qty MT</th><th>Grade</th><th>Due Window</th><th>Heats</th><th>Status</th><th>Actions</th></tr></thead>
+                    <tbody id="planningBoard"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- STAGE 3: HEAT BATCHES -->
+          <div class="pipeline-stage" id="ps-heats">
+            <div class="ps-header" onclick="toggleStage('ps-heats')">
+              <div class="ps-num">3</div>
+              <div class="ps-info">
+                <div class="ps-title">Heat Batches</div>
+                <div class="ps-meta" id="ps-heats-meta">Derive SMS production heats from planning lots</div>
+              </div>
+              <div class="ps-kpis" id="ps-heats-kpis"></div>
+              <div class="ps-badge pending" id="ps-heats-badge">PENDING</div>
+              <button class="btn primary ps-action" id="heatDeriveBtn" onclick="event.stopPropagation();deriveHeatBatches()">Derive</button>
+              <div class="ps-chevron collapsed" id="ps-heats-chevron">&#9660;</div>
+            </div>
+            <div class="ps-body collapsed" id="ps-heats-body">
+              <div class="ps-body-inner">
+                <div class="toolbar" style="margin-bottom:.6rem">
+                  <label style="font-size:.78rem;font-weight:600;color:var(--text-soft)">Heat size:</label>
+                  <input class="inp" id="heatSizeMt" type="number" value="50" min="10" max="200" step="5" style="width:4.5rem;height:1.8rem;font-size:.8rem" title="MT per heat">
+                  <span style="font-size:.75rem;color:var(--text-faint)">MT / heat</span>
+                </div>
+                <div class="grid-4" style="margin-bottom:.75rem">
+                  <div class="metric"><div class="metric-label">Total heats</div><div class="metric-value" id="heatTotal">—</div></div>
+                  <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="heatMT">—</div></div>
+                  <div class="metric"><div class="metric-label">Avg / heat</div><div class="metric-value" id="heatAvg">—</div></div>
+                  <div class="metric"><div class="metric-label">Est. duration</div><div class="metric-value" id="heatDuration">—</div></div>
+                </div>
+                <div class="toolbar" style="margin-bottom:.5rem;gap:.3rem">
+                  <div style="flex:1"></div>
+                </div>
+                <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
+                  <table class="table">
+                    <thead><tr><th>Heat ID</th><th>PO ID</th><th>FG (Finished Good)</th><th>Grade</th><th>Qty MT</th><th>Seq</th><th>Route</th><th>Duration</th></tr></thead>
+                    <tbody id="heatBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- STAGE 4: SCHEDULE FEASIBILITY -->
+          <div class="pipeline-stage" id="ps-schedule">
+            <div class="ps-header" onclick="toggleStage('ps-schedule')">
+              <div class="ps-num">4</div>
+              <div class="ps-info">
+                <div class="ps-title">Feasibility Check</div>
+                <div class="ps-meta" id="ps-schedule-meta">Verify heats fit within planning horizon</div>
+              </div>
+              <div class="ps-kpis" id="ps-schedule-kpis"></div>
+              <div class="ps-badge pending" id="ps-schedule-badge">PENDING</div>
+              <button class="btn primary ps-action" id="schedulerSimulateBtn" onclick="event.stopPropagation();simulateSchedule()">Simulate</button>
+              <div class="ps-chevron collapsed" id="ps-schedule-chevron">&#9660;</div>
+            </div>
+            <div class="ps-body collapsed" id="ps-schedule-body">
+              <div class="ps-body-inner">
+                <!-- SIMULATION CONFIGURATION PANEL (before simulate) -->
+                <div id="simConfigPanel" style="background:#f0f9ff;border:1px solid #bfdbfe;border-radius:.4rem;padding:1rem;margin-bottom:1rem">
+                  <div style="font-weight:600;font-size:.85rem;color:#1e40af;margin-bottom:.8rem">⚙️ Simulation Configuration</div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.8rem;margin-bottom:.8rem">
+                    <!-- Planning Horizon -->
+                    <div>
+                      <label style="display:block;font-size:.75rem;font-weight:600;color:var(--text-soft);margin-bottom:.3rem">Planning Horizon (days)</label>
+                      <select class="sel" id="simHorizonDays" style="width:100%;font-size:.8rem">
+                        <option value="7">7 days</option>
+                        <option value="14">14 days</option>
+                        <option value="21">21 days</option>
+                        <option value="30">30 days</option>
+                      </select>
+                      <div style="font-size:.65rem;color:var(--text-faint);margin-top:.2rem">Default: <span id="configHorizonDefault">—</span> days</div>
+                    </div>
+                    <!-- Heat Size -->
+                    <div>
+                      <label style="display:block;font-size:.75rem;font-weight:600;color:var(--text-soft);margin-bottom:.3rem">Heat Size (MT)</label>
+                      <input type="number" class="inp" id="simHeatSizeMt" style="width:100%;font-size:.8rem" min="10" max="300" step="5">
+                      <div style="font-size:.65rem;color:var(--text-faint);margin-top:.2rem">Default: <span id="configHeatDefault">—</span> MT</div>
+                    </div>
+                    <!-- Priority Filter -->
+                    <div>
+                      <label style="display:block;font-size:.75rem;font-weight:600;color:var(--text-soft);margin-bottom:.3rem">Priority Filter</label>
+                      <select class="sel" id="simPriorityFilter" style="width:100%;font-size:.8rem">
+                        <option value="">All priorities</option>
+                        <option value="URGENT+HIGH">URGENT + HIGH only</option>
+                        <option value="URGENT">URGENT only</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-bottom:.8rem">
+                    <!-- SMS Lines -->
+                    <div>
+                      <label style="display:block;font-size:.75rem;font-weight:600;color:var(--text-soft);margin-bottom:.3rem">SMS Lines Available</label>
+                      <select class="sel" id="simSmsLines" style="width:100%;font-size:.8rem">
+                        <option value="1">1 line (baseline)</option>
+                        <option value="2">2 lines (parallel)</option>
+                        <option value="3">3 lines (parallel)</option>
+                      </select>
+                      <div style="font-size:.65rem;color:var(--text-faint);margin-top:.2rem">How many steelmaking furnaces available</div>
+                    </div>
+                    <!-- RM Lines -->
+                    <div>
+                      <label style="display:block;font-size:.75rem;font-weight:600;color:var(--text-soft);margin-bottom:.3rem">RM Lines Available</label>
+                      <select class="sel" id="simRmLines" style="width:100%;font-size:.8rem">
+                        <option value="1">1 line (baseline)</option>
+                        <option value="2">2 lines (parallel)</option>
+                        <option value="3">3 lines (parallel)</option>
+                      </select>
+                      <div style="font-size:.65rem;color:var(--text-faint);margin-top:.2rem">How many rolling mill lines available</div>
+                    </div>
+                  </div>
+                  <div style="background:rgba(30,58,138,.05);border-left:3px solid #1e40af;padding:.6rem;border-radius:.2rem;margin-bottom:.8rem;font-size:.75rem">
+                    <div style="font-weight:600;color:#1e40af;margin-bottom:.3rem">What gets simulated:</div>
+                    <div style="color:var(--text);line-height:1.4">
+                      ✓ All derived heats within the priority filter<br>
+                      ✓ Scheduled across SMS and RM lines with changeovers<br>
+                      ✓ Resource availability constraints checked<br>
+                      ✓ Result: FEASIBLE (fits in horizon) or INFEASIBLE (over capacity)
+                    </div>
+                  </div>
+                  <button class="btn primary" style="width:100%;font-size:.8rem;padding:.5rem" onclick="simulateWithConfig()">▶ Run Simulation</button>
+                </div>
+
+                <!-- SIMULATION RESULTS (shown after simulate) -->
+                <div class="grid-4" style="margin-bottom:.75rem">
+                  <div class="metric"><div class="metric-label">Feasible</div><div class="metric-value" id="scheduleFeasible">—</div></div>
+                  <div class="metric"><div class="metric-label">Total duration</div><div class="metric-value" id="scheduleDuration">—</div></div>
+                  <div class="metric"><div class="metric-label">SMS hours</div><div class="metric-value" id="scheduleSmsHours">—</div></div>
+                  <div class="metric"><div class="metric-label">RM hours</div><div class="metric-value" id="scheduleRmHours">—</div></div>
+                </div>
+                <div id="schedulerContent" style="color:var(--text-soft);text-align:center;font-size:.9rem;padding:.75rem;border:1px solid var(--border);border-radius:.3rem;display:none"></div>
+                <!-- Remediation panel - shown only when infeasible -->
+                <div id="remediationPanel" style="display:none;margin-top:.75rem;background:#fff7ed;border:1px solid #fed7aa;border-radius:.4rem;padding:.75rem">
+                  <div style="font-weight:600;font-size:.82rem;color:#92400e;margin-bottom:.6rem">&#9888; Schedule infeasible — planner options:</div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+                    <div style="background:#fff;border:1px solid var(--border);border-radius:.3rem;padding:.6rem">
+                      <div style="font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.4rem">NARROW WINDOW</div>
+                      <div style="font-size:.78rem;color:var(--text);margin-bottom:.5rem">Plan only the most urgent orders to reduce heat count.</div>
+                      <select class="sel" id="remPriorityFilter" style="font-size:.75rem;margin-bottom:.4rem;width:100%">
+                        <option value="">All priorities (current)</option>
+                        <option value="URGENT+HIGH">URGENT + HIGH only</option>
+                        <option value="URGENT">URGENT only</option>
+                      </select>
+                      <button class="btn warn" style="width:100%;font-size:.75rem;padding:.3rem" onclick="remSimulate()">Re-simulate with filter</button>
+                    </div>
+                    <div style="background:#fff;border:1px solid var(--border);border-radius:.3rem;padding:.6rem">
+                      <div style="font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.4rem">PARALLEL RESOURCES</div>
+                      <div style="font-size:.78rem;color:var(--text);margin-bottom:.5rem">Add SMS or RM lines to run heats in parallel.</div>
+                      <div style="display:flex;gap:.4rem;margin-bottom:.4rem">
+                        <select class="sel" id="remSmsLines" style="font-size:.75rem;flex:1">
+                          <option value="1">SMS × 1</option>
+                          <option value="2">SMS × 2</option>
+                        </select>
+                        <select class="sel" id="remRmLines" style="font-size:.75rem;flex:1">
+                          <option value="1">RM × 1</option>
+                          <option value="2">RM × 2</option>
+                        </select>
+                      </div>
+                      <button class="btn primary" style="width:100%;font-size:.75rem;padding:.3rem" onclick="remSimulate()">Re-simulate with resources</button>
+                    </div>
+                    <div style="background:#fff;border:1px solid var(--border);border-radius:.3rem;padding:.6rem">
+                      <div style="font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.4rem">EXTEND HORIZON</div>
+                      <div style="font-size:.78rem;color:var(--text);margin-bottom:.5rem">Give more time — spread same heats across a longer window.</div>
+                      <select class="sel" id="remHorizonHours" style="font-size:.75rem;margin-bottom:.4rem;width:100%">
+                        <option value="">Current horizon</option>
+                        <option value="336">14 days (336h)</option>
+                        <option value="504">21 days (504h)</option>
+                        <option value="720">30 days (720h)</option>
+                      </select>
+                      <button class="btn ghost" style="width:100%;font-size:.75rem;padding:.3rem" onclick="remSimulate()">Re-simulate with horizon</button>
+                    </div>
+                    <div style="background:#fff;border:1px solid var(--border);border-radius:.3rem;padding:.6rem">
+                      <div style="font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.4rem">WHAT'S TAKING TIME?</div>
+                      <div style="font-size:.78rem;color:var(--text);margin-bottom:.4rem">Heats by grade — identify which grade to defer:</div>
+                      <div id="remGradeBreakdown" style="font-size:.75rem;color:var(--text)">Run simulation first.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- STAGE 5: RELEASE -->
+          <div class="pipeline-stage" id="ps-release">
+            <div class="ps-header" onclick="toggleStage('ps-release')">
+              <div class="ps-num">5</div>
+              <div class="ps-info">
+                <div class="ps-title">Release to Execution</div>
+                <div class="ps-meta" id="ps-release-meta">Approve and send planning orders to operations</div>
+              </div>
+              <div class="ps-kpis" id="ps-release-kpis"></div>
+              <div class="ps-badge pending" id="ps-release-badge">PENDING</div>
+              <button class="btn success ps-action" id="releaseApproveBtn" onclick="event.stopPropagation();releaseSelectedPOs()" disabled>Release</button>
+              <div class="ps-chevron collapsed" id="ps-release-chevron">&#9660;</div>
+            </div>
+            <div class="ps-body collapsed" id="ps-release-body">
+              <div class="ps-body-inner">
+                <div class="grid-4" style="margin-bottom:.75rem">
+                  <div class="metric"><div class="metric-label">POs ready</div><div class="metric-value" id="releaseReady">—</div></div>
+                  <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="releaseMT">—</div></div>
+                  <div class="metric"><div class="metric-label">Total SOs</div><div class="metric-value" id="releaseSOs">—</div></div>
+                  <div class="metric"><div class="metric-label">Status</div><div class="metric-value" id="releaseStatus">—</div></div>
+                </div>
+                <div style="display:flex;gap:.5rem;margin-bottom:.75rem;flex-shrink:0">
+                  <button class="btn primary" id="releaseSelectAllBtn" onclick="releaseSelectAll()" style="font-size:.75rem;padding:.4rem .8rem">Select All</button>
+                  <button class="btn primary" id="releaseClearAllBtn" onclick="releaseClearAll()" style="font-size:.75rem;padding:.4rem .8rem">Clear All</button>
+                  <button class="btn success" id="releaseAllBtn" onclick="releaseAllSelected()" style="font-size:.75rem;padding:.4rem .8rem">Release All</button>
+                </div>
+                <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
+                  <table class="table">
+                    <thead><tr><th style="width:3rem"><input type="checkbox" id="releaseSelectAllCheckbox" onchange="releaseToggleSelectAll()" style="width:1.2rem;height:1.2rem;cursor:pointer" title="Select all"/></th><th>PO ID</th><th>SOs</th><th>Qty MT</th><th>Grade</th><th>Heats</th><th>Material</th><th>Actions</th></tr></thead>
+                    <tbody id="releaseBoard"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          </div><!-- end pipeline left -->
+
+          <!-- MATERIAL PANEL (RIGHT) -->
+          <div id="planningMaterialPanel" class="bom-split-container" style="display:none;width:45%;border-left:1px solid var(--border);background:var(--panel);flex-direction:column;min-height:0;overflow:hidden">
+            <div style="padding:.6rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+              <div style="font-weight:600;font-size:.85rem" id="materialCheckTitle">Material Requirements</div>
+              <button class="btn ghost" style="font-size:.75rem;padding:.2rem .4rem;height:1.5rem" onclick="closeMaterialPanel()">✕</button>
+            </div>
+            <div class="bom-tree-panel" style="flex:1;min-height:0;overflow:auto;border:none;padding:.6rem">
+              <div class="bom-tree-header">Materials Needed</div>
+              <div class="bom-tree" id="planningBomTree"></div>
+            </div>
+            <div class="bom-split-divider" style="width:100%;height:1px"></div>
+            <div class="bom-detail-panel" style="flex:1;min-height:0;overflow:auto;border:none;padding:.6rem">
+              <div id="planningBomDetail"></div>
+            </div>
+          </div>
+        </div><!-- end main flex container -->
+
+        <!-- Pipeline status bar removed - now shows in main status footer -->
+      </section>
+      <!-- ===== END PLANNING PIPELINE ===== -->
+
+      <!-- ===== EXECUTION PAGE (merged Campaigns + Dispatch + Gantt) ===== -->
+      <section class="page" id="page-execution" style="display:flex;flex-direction:column;min-height:0">
+        <div class="page-header" style="flex-shrink:0">
+          <div><div class="page-title">Execution</div><div class="page-sub">Released lots, equipment timeline, and live dispatch sequence.</div></div>
+          <div class="page-actions" style="gap:.5rem">
+            <button class="btn ghost" id="clearCampaignBtn" style="display:none" onclick="clearCampaignSelection()">Clear Filter</button>
+            <button class="btn primary" id="campaignRerunBtn">Re-run Schedule</button>
+          </div>
+        </div>
+
+        <!-- Sub-tabs -->
+        <div class="filters" style="padding:0 0 .5rem 0;border:none;margin-bottom:.5rem;flex-shrink:0">
+          <button class="subtab active" data-exec-view="timeline" onclick="switchExecView('timeline')">Equipment Timeline</button>
+          <button class="subtab" data-exec-view="campaigns" onclick="switchExecView('campaigns')">Released Lots</button>
+          <button class="subtab" data-exec-view="gantt" onclick="switchExecView('gantt')">Gantt</button>
+        </div>
+
+        <!-- KPI strip -->
+        <div class="grid-4" style="margin-bottom:.75rem;flex-shrink:0">
+          <div class="metric"><div class="metric-label">Equipment active</div><div class="metric-value" id="dispatchMachines">—</div></div>
+          <div class="metric"><div class="metric-label">Operations</div><div class="metric-value" id="dispatchJobs">—</div></div>
+          <div class="metric"><div class="metric-label">Total duration</div><div class="metric-value" id="dispatchDuration">—</div></div>
+          <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="dispatchMt">—</div></div>
+        </div>
+
+        <!-- TIMELINE VIEW -->
+        <div id="exec-view-timeline" class="exec-view active-view">
+          <div style="display:flex;gap:0.75rem;margin-bottom:0.75rem;flex-shrink:0">
+            <select class="sel" id="dispatchFilterCampaign" onchange="filterDispatchByDropdown()" style="max-width:220px">
+              <option value="">All Campaigns</option>
+            </select>
+            <select class="sel" id="dispatchFilterGrade" onchange="filterDispatchByDropdown()" style="max-width:160px">
+              <option value="">All Grades</option>
+            </select>
+            <select class="sel" id="dispatchFilterPlant" onchange="filterDispatchByDropdown()" style="max-width:160px">
+              <option value="">All Plants</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:1rem;flex:1;min-height:0;overflow:hidden">
+            <div class="dispatch-grid" id="dispatchGrid" style="flex:1;overflow:auto"><div class="notice">Run Schedule first.</div></div>
+            <div id="campaignDetailsPanel" class="campaign-details-panel" style="display:none;width:300px;border-left:1px solid var(--border);background:var(--panel);overflow:auto">
+              <div id="campaignDetailsContent"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- RELEASED LOTS VIEW -->
+        <div id="exec-view-campaigns" class="exec-view">
+          <div class="filters" style="flex-shrink:0">
+            <button class="subtab active" data-camp-filter="all">All</button>
+            <button class="subtab" data-camp-filter="released">Released</button>
+            <button class="subtab" data-camp-filter="held">Held</button>
+            <button class="subtab" data-camp-filter="late">Late</button>
+          </div>
+          <div class="stack" id="campaignCards" style="flex:1;min-height:0;overflow:auto"></div>
+        </div>
+
+        <!-- GANTT VIEW -->
+        <div id="exec-view-gantt" class="exec-view">
+          <div class="card" style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+            <div class="card-header">
+              <div><div class="card-title">Resource Gantt</div></div>
+              <button class="btn ghost" id="patchJobBtn" style="font-size:.75rem">Patch Job</button>
+            </div>
+            <div class="card-body" style="padding:0;overflow:auto;flex:1;min-height:0"><div class="gantt-wrap"><div id="scheduleTimeline"></div><div id="tt"></div></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-material" style="display:flex;flex-direction:column;min-height:0">
+        <div class="page-header">
+          <div><div class="page-title">Material</div><div class="page-sub">Coverage status, BOM netting, holds, and shortage resolution.</div></div>
+          <div class="page-actions"><button class="btn primary" id="bomRunBtn">Run BOM Netting</button></div>
+        </div>
+        <!-- KPI strip -->
+        <div class="grid-4" style="margin-bottom:.75rem;flex-shrink:0">
+          <div class="metric success"><div class="metric-label">Covered</div><div class="metric-value" id="matOk">—</div><div class="metric-sub" id="bomKpiCoveredVal">—</div></div>
+          <div class="metric warn"><div class="metric-label">Partial / Low</div><div class="metric-value" id="matLow">—</div><div class="metric-sub" id="bomKpiPartialVal">—</div></div>
+          <div class="metric danger"><div class="metric-label">Short</div><div class="metric-value" id="matCrit">—</div><div class="metric-sub" id="bomKpiShortVal">—</div></div>
+          <div class="metric"><div class="metric-label">Held lots</div><div class="metric-value" id="matHeld">—</div><div class="metric-sub">Awaiting material</div></div>
+        </div>
+        <!-- BOM strip (hidden until run) -->
+        <div class="bom-summary-strip" id="bomSummaryStrip" style="display:none;flex-shrink:0">
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiLinesVal">—</span><span class="kpi-label">Items</span></div>
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiGrossVal">—</span><span class="kpi-label">Gross MT</span></div>
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiNetVal">—</span><span class="kpi-label">Net MT</span></div>
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiByproductVal">—</span><span class="kpi-label">Byproduct</span></div>
+        </div>
+        <!-- Split layout: tree left, detail right -->
+        <div class="material-split-container" style="flex:1;min-height:0;overflow:hidden">
+          <div class="material-tree-panel">
+            <div class="material-tree-header">Material Groups</div>
+            <div class="material-tree" id="materialTree"></div>
+          </div>
+          <div class="material-split-divider" id="materialDivider"></div>
+          <div class="material-detail-panel">
+            <!-- BOM tree is also here when available -->
+            <div id="materialDetailContent"></div>
+
+          </div>
+        </div>
+
+      </section>
+
+      <section class="page" id="page-capacity" style="display:flex;flex-direction:column;min-height:0">
+        <div class="page-header">
+          <div><div class="page-title">Capacity</div><div class="page-sub">Resource loading, bottlenecks, and utilisation by equipment.</div></div>
+        </div>
+        <!-- KPI strip -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:.75rem;flex-shrink:0">
+          <div class="metric danger"><div class="metric-label">Bottleneck</div><div class="metric-value" id="capBottleneck">—</div><div class="metric-sub" id="capBottleneckSub">Most constrained</div></div>
+          <div class="metric"><div class="metric-label">Avg utilisation</div><div class="metric-value" id="capAvg">—</div><div class="metric-sub">All resources</div></div>
+          <div class="metric warn"><div class="metric-label">Overloaded</div><div class="metric-value" id="capOverloaded">—</div><div class="metric-sub">Above 100%</div></div>
+          <div class="metric success"><div class="metric-label">Available slack</div><div class="metric-value" id="capSlack">—</div><div class="metric-sub">Below 60%</div></div>
+        </div>
+        <!-- Scrollable content area -->
+        <div style="flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:.75rem">
+          <!-- Resource bars -->
+          <div class="card">
+            <div class="card-header"><div class="card-title">Resource loading</div></div>
+            <div class="card-body" style="padding:.75rem">
+              <div id="capacityBars" style="display:flex;flex-direction:column;gap:.5rem"></div>
+            </div>
+          </div>
+          <!-- Detail table -->
+          <div class="card" style="overflow:hidden;display:flex;flex-direction:column">
+            <div class="card-header"><div class="card-title">Full capacity map</div></div>
+            <div class="card-body" style="padding:0;overflow:auto;flex:1;min-height:0">
+              <table class="table">
+                <thead><tr><th>Resource</th><th>Operation</th><th>Demand Hrs</th><th>Avail Hrs</th><th>Util %</th><th>Status</th></tr></thead>
+                <tbody id="capacityBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-scenarios" style="display:flex;flex-direction:column;min-height:0">
+        <div class="page-header"><div><div class="page-title">Scenarios</div><div class="page-sub">Preview, create, update, delete, and apply scenarios.</div></div></div>
+        <div style="flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:.75rem">
+          <div class="grid-3" id="scenarioCards"></div>
+          <div class="card" style="overflow:hidden;display:flex;flex-direction:column">
+            <div class="card-header"><div><div class="card-title">Scenario list</div><div class="card-sub">Workbook-backed scenario rows.</div></div><button class="btn success" id="newScenarioBtn">Add Scenario</button></div>
+            <div class="card-body" style="padding:0;overflow:auto;flex:1;min-height:0">
+              <table class="table">
+                <thead><tr><th>Key</th><th>Value</th><th>Actions</th></tr></thead>
+                <tbody id="scenarioTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-ctp" style="display:flex;flex-direction:column;min-height:0">
+        <div class="page-header"><div><div class="page-title">CTP</div><div class="page-sub">Capable-to-Promise check plus request/output history.</div></div></div>
+        <div style="flex:1;min-height:0;overflow:auto">
+          <div class="grid-2">
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Run CTP check</div><div class="card-sub">Calls <code class="inline">/api/aps/ctp/check</code>.</div></div></div>
+              <div class="card-body">
+                <div class="stack">
+                  <select class="sel" id="ctpSku"><option value="">Loading SKUs…</option></select>
+                  <div class="grid-2">
+                    <input class="inp" id="ctpQty" value="120" />
+                    <input class="inp" id="ctpDate" type="date" />
+                  </div>
+                  <button class="btn primary" id="ctpRunBtn">Run CTP</button>
+                  <div class="notice" id="ctpResult">No request yet.</div>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div><div class="card-title">Recent CTP activity</div><div class="card-sub">Merged request and output history.</div></div></div>
+              <div class="card-body" style="padding:0">
+                <table class="table">
+                  <thead><tr><th>SKU</th><th>Qty</th><th>Requested</th><th>Earliest</th><th>Margin</th><th>Feasible</th></tr></thead>
+                  <tbody id="ctpHistoryBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-bom" style="display:flex;flex-direction:column;min-height:0">
+        <div class="page-header"><div><div class="page-title">BOM Explosion</div><div class="page-sub">Material requirements breakdown by production stage and finished goods.</div></div>
+          <div class="page-actions"><button class="btn primary" id="bomExplodeBtn">Run BOM Explosion</button></div>
+        </div>
+        <div class="bom-summary-strip" id="bomSummaryStrip2" style="display:none;flex-shrink:0">
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiLinesVal2">—</span><span class="kpi-label">Items</span></div>
+          <div class="bom-kpi covered"><span class="kpi-val" id="bomKpiCoveredVal2">—</span><span class="kpi-label">Covered</span></div>
+          <div class="bom-kpi short"><span class="kpi-val" id="bomKpiShortVal2">—</span><span class="kpi-label">Short</span></div>
+          <div class="bom-kpi partial"><span class="kpi-val" id="bomKpiPartialVal2">—</span><span class="kpi-label">Partial</span></div>
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiGrossVal2">—</span><span class="kpi-label">Gross MT</span></div>
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiNetVal2">—</span><span class="kpi-label">Net MT</span></div>
+        </div>
+        <div class="bom-split-container">
+          <div class="bom-tree-panel">
+            <div class="bom-tree-header">Production Stages</div>
+            <div class="bom-tree" id="bomTree"></div>
+          </div>
+          <div class="bom-split-divider" id="bomDivider"></div>
+          <div class="bom-detail-panel">
+            <div id="bomDetailContent"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-master" style="display:flex;flex-direction:column;min-height:0">
+        <div class="page-header"><div><div class="page-title">Master Data</div><div class="page-sub">All workbook sections surfaced through the application API.</div></div></div>
+        <div class="page-content">
+          <div class="toolbar">
+            <select class="sel" id="masterSection">
+              <option value="config">Config</option>
+              <option value="resources">Resources</option>
+              <option value="routing">Routing</option>
+              <option value="queue">Queue</option>
+              <option value="changeover">Changeover</option>
+              <option value="skus">SKUs</option>
+              <option value="bom">BOM</option>
+              <option value="inventory">Inventory</option>
+              <option value="campaign-config">Campaign Config</option>
+              <option value="scenarios">Scenarios</option>
+            </select>
+            <button class="btn ghost" id="masterRefreshBtn">Refresh</button>
+            <button class="btn success" id="masterAddBtn">Add Row</button>
+            <button class="btn ghost" id="masterEditBtn">Patch Row</button>
+            <button class="btn danger" id="masterDeleteBtn">Delete Row</button>
+            <button class="btn warn" id="masterBulkBtn">Bulk Replace</button>
+            <span class="master-toolbar-note" id="masterSelectionNote">No row selected.</span>
+          </div>
+          <div class="card" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+            <div class="card-header"><div><div class="card-title" id="masterTitle">Master Data</div><div class="card-sub">Section rows loaded from <code class="inline">/api/aps/masterdata</code>.</div></div></div>
+            <div class="card-body" style="padding:0;overflow:auto;flex:1;min-height:0">
+              <table class="table">
+                <thead id="masterHead"></thead>
+                <tbody id="masterBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="status-footer">
+      <div class="status-footer-content">
+        <div class="status-group">
+          <div class="chip" id="chipApi"><span class="dot"></span><span id="chipApiText">API unknown</span></div>
+          <div class="chip success" id="chipSolver"><span class="dot"></span><span id="chipSolverText">Solver —</span></div>
+          <div class="chip" id="chipPipeline" style="display:none"><span class="dot"></span><span id="chipPipelineText">—</span></div>
+          <div class="chip warn"><span class="dot"></span><span id="chipHeld">— on hold</span></div>
+          <div class="chip danger"><span class="dot"></span><span id="chipLate">— late</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="master-form-modal" id="masterModal">
+  <div class="master-form-card">
+    <div class="master-form-head">
+      <div>
+        <div id="masterModalTitle" style="font-size:1rem;font-weight:850;color:var(--text)">Edit Master Data</div>
+        <div id="masterModalSub" style="font-size:.75rem;color:var(--text-soft);margin-top:.125rem"></div>
+      </div>
+      <button class="btn ghost" id="masterModalCloseBtn">Close</button>
+    </div>
+    <div class="master-form-body">
+      <form id="masterForm">
+        <div id="masterFormGrid" class="master-form-grid"></div>
+      </form>
+      <div id="masterBulkBox" style="display:none">
+        <div class="master-form-field">
+          <label>JSON Array</label>
+          <textarea id="masterBulkText"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="master-form-foot">
+      <button class="btn ghost" id="masterModalCancelBtn" type="button">Cancel</button>
+      <button class="btn primary" id="masterSaveBtn" type="submit" form="masterForm">Save</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js" defer></script>
+</body>
+</html>
