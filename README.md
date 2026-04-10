@@ -378,7 +378,8 @@ python xaps_application_api.py
 - `ui_design/` - active frontend: [index.html](/mnt/c/Users/bhadk/Documents/APS/ui_design/index.html), [styles.css](/mnt/c/Users/bhadk/Documents/APS/ui_design/styles.css), [app.js](/mnt/c/Users/bhadk/Documents/APS/ui_design/app.js)
 - `engine/` - scheduling, BOM, capacity, CTP, campaign, and workbook helpers
 - `aps-ui/` - React/TypeScript UI workstream now vendored into the repo
-- `tests/` and root `test_*.py` files - regression and workflow checks
+- `tests/` - regression, workflow, and manual verification scripts
+- `tools/workbook/` - workbook bootstrap, config, repair, and master-data maintenance utilities
 - `docs/` - architecture, audits, and implementation notes
 - `archive/` - archived legacy files kept for traceability
 
@@ -388,8 +389,15 @@ python xaps_application_api.py
 - `run_all.py` - helper for running workbook-oriented APS pipeline steps
 - `aps_functions.py` - legacy/helper APS workflow logic still used by some tooling
 - `requirements-excel-api.txt` - Python dependency reference for workbook/API work
-- `setup_excel.py`, `create_algorithm_config_sheet.py`, `master_data_fixer.py`, `optimize_master_data.py` - support scripts, not the main application entry path
 - `VERSION` - lightweight local version marker
+
+## Workbook Maintenance Scripts
+
+- `tools/workbook/setup_excel.py` - bootstrap or repair the workbook structure and helper sheets
+- `tools/workbook/create_algorithm_config_sheet.py` - recreate the `Algorithm_Config` sheet with seeded defaults
+- `tools/workbook/master_data_fixer.py` - apply cleanup and routing fixes to workbook master data
+
+Legacy workbook one-offs that are not part of the active tool surface live under `archive/`.
 
 ## Useful Commands
 
@@ -398,6 +406,7 @@ python xaps_application_api.py
 python run_all.py
 python run_all.py schedule
 python -m pytest tests
+python tools/workbook/setup_excel.py
 node --check ui_design/app.js
 ```
 
