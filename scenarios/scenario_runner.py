@@ -308,8 +308,10 @@ def run_scenario(data: dict, scenario: dict, *, planning_start=None, frozen_jobs
         max_campaign_mt=max_cmt,
         inventory=data.get("inventory"),
         bom=data.get("bom"),
+        routing=data.get("routing"),
         config=data.get("config"),
         skus=data.get("skus"),
+        campaign_config=data.get("campaign_cfg"),
         yield_loss_pct=float(scenario.get("yield_loss", 0.0) or 0.0),
     )
     frozen_campaign_ids = {

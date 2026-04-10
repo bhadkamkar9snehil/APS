@@ -214,6 +214,7 @@ __marimo__/
 # Project cleanup ignore patterns
 /archive/root_cleanup/
 api_server.log
+.runtime/
 *.xlsm
 *.docx
 *.pptx

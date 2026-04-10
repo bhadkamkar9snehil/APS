@@ -20,7 +20,7 @@ from engine.bom_explosion import (
     inventory_map,
     simulate_material_commit,
 )
-from engine.config import get_config
+from engine.config import get_config, resolve_config_bool, resolve_config_float, resolve_config_value
 
 # Core batch and yield parameters from Algorithm_Config
 def _get_heat_size_mt():
@@ -111,8 +111,62 @@ GRADE_ORDER = {
 PRIORITY_ORDER = {"URGENT": 1, "HIGH": 2, "NORMAL": 3, "LOW": 4}
 
 
-def priority_rank(priority: str) -> int:
-    return PRIORITY_ORDER.get(str(priority or "").strip().upper(), 9)
+def _config_list(value: object, default: list[str]) -> list[str]:
+    if value is None:
+        return list(default)
+    if isinstance(value, str):
+        items = [item.strip() for item in value.split(",") if item.strip()]
+        return items or list(default)
+    if isinstance(value, (list, tuple, set)):
+        items = [str(item).strip() for item in value if str(item).strip()]
+        return items or list(default)
+    return list(default)
+
+
+def _priority_rank_lookup(config: dict | None = None) -> dict[str, int]:
+    configured = _config_list(
+        resolve_config_value(config, "PRIORITY_SEQUENCE", ["URGENT", "HIGH", "NORMAL", "LOW"]),
+        ["URGENT", "HIGH", "NORMAL", "LOW"],
+    )
+    lookup = {priority.upper(): idx + 1 for idx, priority in enumerate(configured)}
+    for priority, rank in PRIORITY_ORDER.items():
+        lookup.setdefault(priority, rank)
+    return lookup
+
+
+def priority_rank(priority: str, config: dict | None = None) -> int:
+    return _priority_rank_lookup(config).get(str(priority or "").strip().upper(), 9)
+
+
+def _campaign_grade_order_lookup(campaign_config: pd.DataFrame | None = None) -> dict[str, int]:
+    if campaign_config is None or getattr(campaign_config, "empty", True):
+        return {}
+    if "Grade" not in campaign_config.columns or "Grade_Seq_Order" not in campaign_config.columns:
+        return {}
+
+    df = campaign_config.copy()
+    df["Grade"] = df["Grade"].fillna("").astype(str).str.strip()
+    df["Grade_Seq_Order"] = pd.to_numeric(df["Grade_Seq_Order"], errors="coerce")
+    df = df[(df["Grade"] != "") & df["Grade_Seq_Order"].notna()].copy()
+    if df.empty:
+        return {}
+    return (
+        df.sort_values(["Grade_Seq_Order", "Grade"], kind="stable")
+        .drop_duplicates(subset=["Grade"], keep="first")
+        .set_index("Grade")["Grade_Seq_Order"]
+        .astype(int)
+        .to_dict()
+    )
+
+
+def grade_order_for_grade(grade: str, campaign_config: pd.DataFrame | None = None) -> int:
+    grade_text = str(grade or "").strip()
+    if not grade_text:
+        return 9
+    configured = _campaign_grade_order_lookup(campaign_config)
+    if grade_text in configured:
+        return configured[grade_text]
+    return GRADE_ORDER.get(grade_text, 9)
 
 
 def needs_vd_for_grade(grade: str) -> bool:
@@ -146,21 +200,11 @@ def _matches_primary_batch_stage(sku_id: str, primary_group: str) -> bool:
 
 
 def _config_flag(config: dict | None, key: str, default: bool = False) -> bool:
-    value = (config or {}).get(key, default)
-    if value is None or (isinstance(value, float) and pd.isna(value)):
-        return default
-    if isinstance(value, bool):
-        return value
-    text = str(value).strip().upper()
-    if text in {"Y", "YES", "TRUE", "1", "ON"}:
-        return True
-    if text in {"N", "NO", "FALSE", "0", "OFF"}:
-        return False
-    return default
+    return resolve_config_bool(config, key, default)
 
 
 def _config_choice(config: dict | None, key: str, default: str, aliases: dict[str, str]) -> str:
-    raw_value = str((config or {}).get(key, default) or default).strip().upper()
+    raw_value = str(resolve_config_value(config, key, default) or default).strip().upper()
     normalized = aliases.get(raw_value)
     if normalized is None:
         allowed = ", ".join(sorted(dict.fromkeys(aliases.values())))
@@ -317,7 +361,7 @@ def _heats_estimate_from_lines(
     if batch_size_mt is None:
         batch_size_mt = _get_heat_size_mt()
     total_primary_batch_mt = 0.0
-    primary_group = str((config or {}).get("Primary_Batch_Resource_Group", "EAF") or "EAF").strip().upper()
+    primary_group = str(resolve_config_value(config, "Primary_Batch_Resource_Group", "EAF") or "EAF").strip().upper()
     bom_lookup = _bom_input_lookup(bom)
     scenario_yield = max(0.01, 1 - (float(yield_loss_pct or 0.0) / 100.0))
     allow_legacy_fallback = _config_flag(config, "Allow_Legacy_Primary_Batch_Fallback", default=False)
@@ -395,7 +439,7 @@ def _normalize_sales_orders(
     missing_cols = [col for col in ["SO_ID", "SKU_ID", "Grade"] if col not in so.columns]
     if missing_cols:
         raise ValueError(f"Sales orders are missing required columns: {', '.join(missing_cols)}")
-    default_section = float((config or {}).get("Default_Section_Fallback", 6.5) or 6.5)
+    default_section = resolve_config_float(config, "Default_Section_Fallback", 6.5)
     if "Status" not in so.columns:
         so["Status"] = "Open"
     so["Status"] = so["Status"].fillna("Open").astype(str).str.strip()
@@ -421,7 +465,7 @@ def _normalize_sales_orders(
     so["Delivery_Date"] = pd.to_datetime(so["Delivery_Date"], errors="coerce")
     so["Order_Date"] = pd.to_datetime(so["Order_Date"], errors="coerce")
     so["Priority"] = so["Priority"].fillna("NORMAL").astype(str).str.upper().str.strip()
-    so["Priority_Rank"] = so["Priority"].map(priority_rank).fillna(9).astype(int)
+    so["Priority_Rank"] = so["Priority"].map(lambda priority: priority_rank(priority, config=config)).fillna(9).astype(int)
     so["Campaign_Group"] = so["Campaign_Group"].fillna(so["Grade"]).astype(str).str.strip()
     so.loc[so["Campaign_Group"] == "", "Campaign_Group"] = so["Grade"]
 
@@ -429,22 +473,50 @@ def _normalize_sales_orders(
     if skus is not None and not getattr(skus, "empty", True) and "SKU_ID" in skus.columns:
         sku_lookup = skus.drop_duplicates(subset=["SKU_ID"]).set_index("SKU_ID")
 
-    if sku_lookup is not None and "Attribute_1" in sku_lookup.columns:
-        attr_values = pd.to_numeric(so["SKU_ID"].map(sku_lookup["Attribute_1"]), errors="coerce")
-        so["Section_mm"] = so["Section_mm"].fillna(attr_values)
+    if sku_lookup is not None:
+        if "Section_mm" in sku_lookup.columns:
+            sku_sections = pd.to_numeric(so["SKU_ID"].map(sku_lookup["Section_mm"]), errors="coerce")
+            so["Section_mm"] = so["Section_mm"].fillna(sku_sections)
+        if "Attribute_1" in sku_lookup.columns:
+            attr_values = pd.to_numeric(so["SKU_ID"].map(sku_lookup["Attribute_1"]), errors="coerce")
+            so["Section_mm"] = so["Section_mm"].fillna(attr_values)
     so["Section_mm"] = so["Section_mm"].fillna(default_section)
+
+    sku_needs_vd = None
+    if sku_lookup is not None and "Needs_VD" in sku_lookup.columns:
+        sku_needs_vd = (
+            so["SKU_ID"]
+            .map(sku_lookup["Needs_VD"])
+            .fillna("")
+            .astype(str)
+            .str.strip()
+            .str.upper()
+            .map(lambda value: value in {"Y", "YES", "TRUE", "1", "ON"})
+        )
 
     if sku_lookup is not None and "Route_Variant" in sku_lookup.columns:
         so["Route_Variant"] = (
             so["SKU_ID"].map(sku_lookup["Route_Variant"]).fillna("").astype(str).str.upper().str.strip()
         )
         fallback_mask = so["Route_Variant"] == ""
+        if sku_needs_vd is not None:
+            so.loc[fallback_mask, "Route_Variant"] = sku_needs_vd.loc[fallback_mask].map(lambda value: "Y" if value else "N")
+            fallback_mask = so["Route_Variant"] == ""
         so.loc[fallback_mask, "Route_Variant"] = so.loc[fallback_mask, "Grade"].map(
             lambda grade: "Y" if needs_vd_for_grade(grade) else "N"
         )
     else:
-        so["Route_Variant"] = so["Grade"].map(lambda grade: "Y" if needs_vd_for_grade(grade) else "N")
+        if sku_needs_vd is not None:
+            so["Route_Variant"] = sku_needs_vd.map(lambda value: "Y" if value else "N")
+        else:
+            so["Route_Variant"] = so["Grade"].map(lambda grade: "Y" if needs_vd_for_grade(grade) else "N")
     so["Needs_VD"] = so["Route_Variant"].eq("Y")
+    if sku_needs_vd is not None:
+        so["Needs_VD"] = sku_needs_vd.fillna(so["Needs_VD"]).astype(bool)
+        blank_variant_mask = so["Route_Variant"].astype(str).str.strip() == ""
+        so.loc[blank_variant_mask, "Route_Variant"] = so.loc[blank_variant_mask, "Needs_VD"].map(
+            lambda value: "Y" if value else "N"
+        )
 
     if sku_lookup is not None and "Product_Family" in sku_lookup.columns:
         so["Product_Family"] = so["SKU_ID"].map(sku_lookup["Product_Family"]).fillna("").astype(str).str.strip()
@@ -485,6 +557,53 @@ def _consume_finished_goods_stock(sales_orders: pd.DataFrame, inv_map: dict) -> 
     return so, inv_map
 
 
+def _routing_campaign_limits(
+    orders: pd.DataFrame,
+    routing: pd.DataFrame | None,
+    min_campaign_mt: float,
+    max_campaign_mt: float,
+) -> tuple[float, float]:
+    effective_min = max(float(min_campaign_mt or 0.0), 0.0)
+    effective_max = max(float(max_campaign_mt or 0.0), 1.0)
+    if routing is None or getattr(routing, "empty", True) or orders is None or getattr(orders, "empty", True):
+        return effective_min, effective_max
+
+    route_rows = routing.copy()
+    mask = pd.Series([True] * len(route_rows), index=route_rows.index)
+
+    if "SKU_ID" in route_rows.columns and "SKU_ID" in orders.columns:
+        route_rows["SKU_ID"] = route_rows["SKU_ID"].fillna("").astype(str).str.strip()
+        order_skus = {str(sku).strip() for sku in orders["SKU_ID"] if str(sku).strip()}
+        if order_skus:
+            mask &= route_rows["SKU_ID"].eq("") | route_rows["SKU_ID"].isin(order_skus)
+
+    if "Grade" in route_rows.columns and "Grade" in orders.columns:
+        route_rows["Grade"] = route_rows["Grade"].fillna("").astype(str).str.strip()
+        order_grades = {str(grade).strip() for grade in orders["Grade"] if str(grade).strip()}
+        if order_grades:
+            mask &= route_rows["Grade"].eq("") | route_rows["Grade"].isin(order_grades)
+
+    matched = route_rows[mask].copy()
+    if matched.empty:
+        return effective_min, effective_max
+
+    if "Min_Campaign_MT" in matched.columns:
+        min_values = pd.to_numeric(matched["Min_Campaign_MT"], errors="coerce").dropna()
+        min_values = min_values[min_values > 0]
+        if not min_values.empty:
+            effective_min = max(effective_min, float(min_values.max()))
+
+    if "Max_Campaign_MT" in matched.columns:
+        max_values = pd.to_numeric(matched["Max_Campaign_MT"], errors="coerce").dropna()
+        max_values = max_values[max_values > 0]
+        if not max_values.empty:
+            effective_max = min(effective_max, float(max_values.min()))
+
+    if effective_max < effective_min:
+        effective_max = effective_min
+    return effective_min, effective_max
+
+
 def _campaign_sort_key(campaign: dict):
     return (
         int(campaign.get("priority_rank", 9)),
@@ -513,6 +632,7 @@ def _finalize_campaign(
     min_campaign_mt: float,
     bom: pd.DataFrame | None = None,
     config: dict | None = None,
+    campaign_config: pd.DataFrame | None = None,
     yield_loss_pct: float = 0.0,
     batch_size_mt: float | None = None,
 ) -> dict:
@@ -565,7 +685,7 @@ def _finalize_campaign(
         "due_date": due_date,
         "priority": primary_priority,
         "priority_rank": priority_rank_value,
-        "grade_order": GRADE_ORDER.get(grade, 9),
+        "grade_order": grade_order_for_grade(grade, campaign_config=campaign_config),
         "production_orders": production_orders,
         "release_status": "UNREVIEWED",
         "material_status": "UNREVIEWED",
@@ -629,8 +749,10 @@ def build_campaigns(
     max_campaign_mt: float = 500.0,
     inventory: pd.DataFrame | dict | None = None,
     bom: pd.DataFrame | None = None,
+    routing: pd.DataFrame | None = None,
     config: dict | None = None,
     skus: pd.DataFrame | None = None,
+    campaign_config: pd.DataFrame | None = None,
     yield_loss_pct: float = 0.0,
 ) -> list:
     """
@@ -653,7 +775,7 @@ def build_campaigns(
 
     # Use Algorithm_Config for batch size, allow legacy config dict override
     default_batch_size = _get_heat_size_mt()
-    batch_size_mt = float((config or {}).get("Default_Batch_Size_MT") or default_batch_size)
+    batch_size_mt = resolve_config_float(config, "HEAT_SIZE_MT", default_batch_size)
     max_campaign_mt = max(float(max_campaign_mt or 0.0), 1.0)
     min_campaign_mt = max(float(min_campaign_mt or 0.0), 0.0)
 
@@ -679,6 +801,12 @@ def build_campaigns(
             cid_group = cid_group.sort_values(
                 ["Priority_Rank", "Delivery_Date", "Order_Date", "Section_mm", "SO_ID"]
             ).reset_index(drop=True)
+            group_min_campaign_mt, group_max_campaign_mt = _routing_campaign_limits(
+                cid_group,
+                routing,
+                min_campaign_mt,
+                max_campaign_mt,
+            )
             if manual_grouping_mode == "PRESERVE_EXACT":
                 manual_lines: list[dict] = []
                 for _, order in cid_group.iterrows():
@@ -706,9 +834,10 @@ def build_campaigns(
                         _finalize_campaign(
                             manual_lines,
                             campaign_num,
-                            min_campaign_mt,
+                            group_min_campaign_mt,
                             bom=bom,
                             config=config,
+                            campaign_config=campaign_config,
                             yield_loss_pct=yield_loss_pct,
                             batch_size_mt=batch_size_mt,
                         )
@@ -716,7 +845,7 @@ def build_campaigns(
                     campaigns[-1]["manual_campaign_id"] = str(cid_val).strip()
                     campaigns[-1]["manual_campaign_grouping_mode"] = manual_grouping_mode
                     campaigns[-1]["manual_campaign_over_max"] = (
-                        float(campaigns[-1].get("total_coil_mt", 0.0) or 0.0) > max_campaign_mt + 1e-6
+                        float(campaigns[-1].get("total_coil_mt", 0.0) or 0.0) > group_max_campaign_mt + 1e-6
                     )
                     campaign_num += 1
                 continue
@@ -734,9 +863,10 @@ def build_campaigns(
                     _finalize_campaign(
                         lines,
                         campaign_num,
-                        min_campaign_mt,
+                        group_min_campaign_mt,
                         bom=bom,
                         config=config,
+                        campaign_config=campaign_config,
                         yield_loss_pct=yield_loss_pct,
                         batch_size_mt=batch_size_mt,
                     )
@@ -751,10 +881,10 @@ def build_campaigns(
             for _, order in cid_group.iterrows():
                 remaining_qty = float(order["Make_Qty_MT"] or 0.0)
                 while remaining_qty > 1e-6:
-                    available_slot = max_campaign_mt - current_total
+                    available_slot = group_max_campaign_mt - current_total
                     if available_slot <= 1e-6:
                         _flush_manual()
-                        available_slot = max_campaign_mt
+                        available_slot = group_max_campaign_mt
                     alloc_qty = min(remaining_qty, available_slot)
                     current_lines.append({
                         "so_id": str(order["SO_ID"]),
@@ -772,7 +902,7 @@ def build_campaigns(
                     })
                     current_total += alloc_qty
                     remaining_qty = round(remaining_qty - alloc_qty, 6)
-                    if current_total >= max_campaign_mt - 1e-6:
+                    if current_total >= group_max_campaign_mt - 1e-6:
                         _flush_manual()
             _flush_manual()
             if len(manual_campaign_indexes) > 1:
@@ -782,7 +912,8 @@ def build_campaigns(
     make_so = auto_group_so
 
     group_by_str = str(
-        (config or {}).get(
+        resolve_config_value(
+            config,
             "Campaign_Group_By",
             "Route_Family,Campaign_Group,Grade,Product_Family,Route_Variant",
         )
@@ -801,6 +932,12 @@ def build_campaigns(
         group = group.sort_values(
             ["Priority_Rank", "Delivery_Date", "Order_Date", "Section_mm", "SO_ID"]
         ).reset_index(drop=True)
+        group_min_campaign_mt, group_max_campaign_mt = _routing_campaign_limits(
+            group,
+            routing,
+            min_campaign_mt,
+            max_campaign_mt,
+        )
 
         current_lines = []
         current_total = 0.0
@@ -813,9 +950,10 @@ def build_campaigns(
                 _finalize_campaign(
                     current_lines,
                     campaign_num,
-                    min_campaign_mt,
+                    group_min_campaign_mt,
                     bom=bom,
                     config=config,
+                    campaign_config=campaign_config,
                     yield_loss_pct=yield_loss_pct,
                     batch_size_mt=batch_size_mt,
                 )
@@ -827,10 +965,10 @@ def build_campaigns(
         for _, order in group.iterrows():
             remaining_qty = float(order["Make_Qty_MT"] or 0.0)
             while remaining_qty > 1e-6:
-                available_slot = max_campaign_mt - current_total
+                available_slot = group_max_campaign_mt - current_total
                 if available_slot <= 1e-6:
                     flush_campaign()
-                    available_slot = max_campaign_mt
+                    available_slot = group_max_campaign_mt
 
                 alloc_qty = min(remaining_qty, available_slot)
                 current_lines.append(
@@ -851,7 +989,7 @@ def build_campaigns(
                 current_total += alloc_qty
                 remaining_qty = round(remaining_qty - alloc_qty, 6)
 
-                if current_total >= max_campaign_mt - 1e-6:
+                if current_total >= group_max_campaign_mt - 1e-6:
                     flush_campaign()
 
         flush_campaign()
@@ -905,7 +1043,7 @@ def build_campaigns(
             committed_inventory,
             on_structure_error=_bom_structure_error_mode(config),
             byproduct_inventory_mode=str(
-                (config or {}).get("Byproduct_Inventory_Mode", "DEFERRED") or "DEFERRED"
+                resolve_config_value(config, "BYPRODUCT_INVENTORY_MODE", "DEFERRED") or "DEFERRED"
             ).strip().lower(),
         )
         shortages = material_check["shortages"]

@@ -43,9 +43,15 @@ from engine.aps_planner import APSPlanner, SalesOrder, PlanningHorizon, HeatBatc
 from engine.bom_explosion import consolidate_demand, explode_bom_details, net_requirements
 from engine.campaign import build_campaigns
 from engine.capacity import capacity_map, compute_demand_hours
-from engine.config import get_config
+from engine.config import (
+    canonicalize_config_key,
+    get_config,
+    load_workbook_config_snapshot,
+    update_algorithm_config_in_workbook,
+)
 from engine.ctp import capable_to_promise, _frozen_jobs_from_schedule_dataframe
 from engine.excel_store import ExcelStore
+from engine.masterdata_audit import audit_workbook_masterdata
 from engine.scheduler import schedule
 from engine.workbook_schema import SHEETS
 
@@ -363,7 +369,7 @@ def _read_config() -> dict:
         return {}
 
 
-def _read_queue_times() -> dict:
+def _read_queue_times(default_enforcement: str = "Hard") -> dict:
     try:
         df = _read_sheet("Queue_Times", ["From_Operation"])
         out = {}
@@ -376,7 +382,7 @@ def _read_queue_times() -> dict:
                 out[key] = {
                     "min": float(r.get("Min_Queue_Min") or 0),
                     "max": float(r.get("Max_Queue_Min") or 120),
-                    "enforcement": str(r.get("Enforcement") or "Hard").strip(),
+                    "enforcement": str(r.get("Enforcement") or default_enforcement or "Hard").strip(),
                 }
             except Exception:
                 pass
@@ -386,7 +392,8 @@ def _read_queue_times() -> dict:
 
 
 def _load_all() -> dict:
-    config = _read_config()
+    config_snapshot = load_workbook_config_snapshot(WORKBOOK, reload_algorithm=True)
+    config = config_snapshot.runtime_config
 
     so_raw = _read_sheet("Sales_Orders", ["SO_ID", "SKU_ID"])
     so_raw = so_raw[so_raw["SO_ID"].notna()].copy()
@@ -399,7 +406,8 @@ def _load_all() -> dict:
     routing = _read_sheet("Routing", ["SKU_ID", "Operation"])
     bom = _read_sheet("BOM", ["Parent_SKU", "Child_SKU"])
     inv = _read_sheet("Inventory", ["SKU_ID"])
-    queue = _read_queue_times()
+    campaign_config = _read_sheet("Campaign_Config", ["Grade"])
+    queue = _read_queue_times(str(config.get("Queue_Enforcement", "Hard") or "Hard"))
     changeover = _read_sheet("Changeover_Matrix", ["From \\ To"])
 
     def _num(df, col, default=0.0):
@@ -467,6 +475,9 @@ def _load_all() -> dict:
 
     return {
         "config": config,
+        "config_conflicts": config_snapshot.conflicts,
+        "algorithm_config": config_snapshot.algorithm_config.all_params(),
+        "system_config": config_snapshot.system_config,
         "sales_orders": open_so,
         "all_orders": so_raw,
         "resources": res,
@@ -474,6 +485,7 @@ def _load_all() -> dict:
         "routing": routing,
         "bom": bom,
         "inventory": inv,
+        "campaign_config": campaign_config,
         "queue_times": queue,
         "changeover_matrix": changeover,
     }
@@ -1055,7 +1067,7 @@ def health():
 @app.route('/api/config/algorithm', methods=['GET'])
 def get_algorithm_config():
     """Get all algorithm configuration parameters."""
-    config = get_config()
+    config = get_config(WORKBOOK, reload=True)
     params = config.all_params()
     metadata = config.metadata
 
@@ -1086,19 +1098,19 @@ def get_algorithm_config():
 @app.route('/api/config/algorithm/<key>', methods=['GET'])
 def get_algorithm_config_param(key):
     """Get single algorithm parameter."""
-    config = get_config()
-    value = config.get(key)
+    config = get_config(WORKBOOK, reload=True)
+    canonical_key = canonicalize_config_key(key)
+    value = config.get(canonical_key)
 
     if value is None:
         return _jsonify({
             'status': 'error',
             'error': f'Parameter {key} not found'
         }, 404)
-
-    meta = config.metadata.get(key, {})
+    meta = config.metadata.get(canonical_key, {})
     return _jsonify({
         'status': 'success',
-        'key': key,
+        'key': canonical_key,
         'value': value,
         'category': meta.get('category'),
         'data_type': meta.get('data_type'),
@@ -1111,7 +1123,7 @@ def get_algorithm_config_param(key):
 @app.route('/api/config/algorithm/category/<category>', methods=['GET'])
 def get_algorithm_config_by_category(category):
     """Get all parameters in a category."""
-    config = get_config()
+    config = get_config(WORKBOOK, reload=True)
     params = config.params_by_category(category.upper())
 
     if not params:
@@ -1156,33 +1168,37 @@ def update_algorithm_config_param(key):
                 'error': 'Missing required field: value'
             }, 400)
 
-        config = get_config()
-        old_value = config.get(key)
-
-        if old_value is None:
-            return _jsonify({
-                'status': 'error',
-                'error': f'Parameter {key} not found'
-            }, 404)
-
-        # Validate and update
-        if not config.update(key, new_value, user, reason):
-            return _jsonify({
-                'status': 'error',
-                'error': f'Invalid value for {key}: {new_value}'
-            }, 400)
-
-        # TODO: In real implementation, would write back to Excel here
+        updated = update_algorithm_config_in_workbook(
+            WORKBOOK,
+            key,
+            new_value,
+            user=user,
+            reason=reason,
+        )
         return _jsonify({
             'status': 'success',
-            'key': key,
-            'old_value': old_value,
-            'new_value': new_value,
+            'key': updated['key'],
+            'old_value': updated['old_value'],
+            'new_value': updated['new_value'],
             'user': user,
             'reason': reason,
             'timestamp': datetime.now().isoformat(),
         })
-
+    except KeyError as e:
+        return _jsonify({
+            'status': 'error',
+            'error': str(e)
+        }, 404)
+    except PermissionError as e:
+        return _jsonify({
+            'status': 'error',
+            'error': str(e)
+        }, 409)
+    except ValueError as e:
+        return _jsonify({
+            'status': 'error',
+            'error': str(e)
+        }, 400)
     except Exception as e:
         return _jsonify({
             'status': 'error',
@@ -1203,15 +1219,16 @@ def validate_algorithm_config():
                 'error': 'Missing required field: changes'
             }, 400)
 
-        config = get_config()
+        config = get_config(WORKBOOK, reload=True)
         metadata = config.metadata
 
         validations = {}
         all_valid = True
 
         for key, new_value in changes.items():
-            current = config.get(key)
-            meta = metadata.get(key, {})
+            canonical_key = canonicalize_config_key(key)
+            current = config.get(canonical_key)
+            meta = metadata.get(canonical_key, {})
 
             if current is None:
                 validations[key] = {
@@ -1222,7 +1239,7 @@ def validate_algorithm_config():
                 continue
 
             is_valid = config._validate_value(
-                key, new_value, meta.get('data_type'),
+                canonical_key, config._convert_value(new_value, meta.get('data_type')), meta.get('data_type'),
                 meta.get('min'), meta.get('max')
             )
 
@@ -1255,7 +1272,7 @@ def validate_algorithm_config():
 def export_algorithm_config():
     """Export current configuration to CSV."""
     try:
-        config = get_config()
+        config = get_config(WORKBOOK, reload=True)
         params = config.all_params()
         metadata = config.metadata
 
@@ -1877,8 +1894,10 @@ def run_schedule_api():
                 max_campaign_mt=max_cmt,
                 inventory=d["inventory"],
                 bom=d["bom"],
+                routing=d["routing"],
                 config=config,
                 skus=d["skus"],
+                campaign_config=d["campaign_config"],
             )
 
         released = [c for c in campaigns if str(c.get("release_status", "")).upper() == "RELEASED"]
@@ -1999,8 +2018,10 @@ def run_ctp_api():
                 max_cmt,
                 inventory=d["inventory"],
                 bom=d["bom"],
+                routing=d["routing"],
                 config=config,
                 skus=d["skus"],
+                campaign_config=d["campaign_config"],
             )
 
         schedule_df = _active_run_heat_schedule()
@@ -2018,6 +2039,7 @@ def run_ctp_api():
             skus=d["skus"],
             planning_start=datetime.now(),
             config=config,
+            campaign_config=d["campaign_config"],
             queue_times=d["queue_times"],
             changeover_matrix=d["changeover_matrix"],
             frozen_jobs=frozen_jobs,
@@ -2095,6 +2117,11 @@ def aps_dashboard_overview():
         "release_queue": sorted(campaigns, key=lambda x: str(x.get('Due_Date') or x.get('due_date') or '9999-12-31'))[:8],
         "last_simulation": last_simulation,
     })
+
+
+@app.route('/api/masterdata/audit')
+def masterdata_audit():
+    return _jsonify(audit_workbook_masterdata(WORKBOOK))
 
 
 @app.route('/api/aps/orders/list')
@@ -3127,8 +3154,12 @@ def aps_planning_heats_derive():
                 )
             )
 
-        planner = APSPlanner(get_config().all_params())
-        heats = planner.derive_heat_batches(pos, heat_size_mt=float(get_config().get("HEAT_SIZE_MT", 50) or 50))
+        runtime_config = load_workbook_config_snapshot(WORKBOOK, reload_algorithm=True).runtime_config
+        planner = APSPlanner(runtime_config)
+        heats = planner.derive_heat_batches(
+            pos,
+            heat_size_mt=float(get_config(WORKBOOK, reload=True).get("HEAT_SIZE_MT", 50) or 50),
+        )
 
         aps_planning_orders_propose._planning_orders = [po.to_dict() for po in pos]
         aps_planning_simulate._heat_batches = [h.to_dict() for h in heats]
@@ -3714,7 +3745,7 @@ def _planning_orders_to_scheduler_campaigns(
 
     This lets the real scheduler stay unchanged while APS becomes the primary planning model.
     """
-    from engine.campaign import billet_family_for_grade, needs_vd_for_grade
+    from engine.campaign import billet_family_for_grade, needs_vd_for_grade, priority_rank
 
     if all_orders_df is None or all_orders_df.empty:
         all_orders_df = pd.DataFrame()
@@ -3727,10 +3758,6 @@ def _planning_orders_to_scheduler_campaigns(
         for _, row in so_df.iterrows()
         if str(row.get("SO_ID", "")).strip()
     }
-
-    def _priority_rank(priority: str) -> int:
-        p = str(priority or "").strip().upper()
-        return {"URGENT": 1, "HIGH": 2, "NORMAL": 3, "LOW": 4}.get(p, 9)
 
     campaigns: List[Dict[str, Any]] = []
     heat_size = float(pd.to_numeric(pd.Series([config.get("HEAT_SIZE_MT", 50)]), errors="coerce").fillna(50).iloc[0])
@@ -3799,7 +3826,7 @@ def _planning_orders_to_scheduler_campaigns(
                     "section_mm": float(pd.to_numeric(pd.Series([row.get("Section_mm", section_mm)]), errors="coerce").fillna(section_mm).iloc[0]),
                     "qty_mt": qty_mt,
                     "due_date": po_due if pd.notna(po_due) else due_ts,
-                    "priority_rank": _priority_rank(row.get("Priority", priority)),
+                    "priority_rank": priority_rank(row.get("Priority", priority), config=config),
                     "priority": str(row.get("Priority", priority)).strip().upper(),
                 })
         else:
@@ -3810,7 +3837,7 @@ def _planning_orders_to_scheduler_campaigns(
                 "section_mm": section_mm,
                 "qty_mt": total_mt,
                 "due_date": due_ts,
-                "priority_rank": _priority_rank(priority),
+                "priority_rank": priority_rank(priority, config=config),
                 "priority": priority,
             })
 
@@ -3827,7 +3854,7 @@ def _planning_orders_to_scheduler_campaigns(
             "billet_family": billet_family_for_grade(grade),
             "due_date": due_ts,
             "priority": priority,
-            "priority_rank": _priority_rank(priority),
+            "priority_rank": priority_rank(priority, config=config),
             "total_coil_mt": total_mt,
             "total_mt": total_mt,
             "section_mm": section_mm,

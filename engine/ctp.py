@@ -14,14 +14,14 @@ import pandas as pd
 
 from engine.bom_explosion import inventory_map
 from engine.campaign import build_campaigns, _heats_needed_from_lines
-from engine.config import get_config
+from engine.config import get_config, resolve_config_bool, resolve_config_float, resolve_config_int, resolve_config_value
 from engine.scheduler import schedule
 
 COMMITTED_STATUSES = {"RELEASED", "RUNNING LOCK"}
 DEGRADED_INVENTORY_LINEAGE_STATUSES = {"RECOMPUTED_FROM_CONSUMPTION", "CONSERVATIVE_BLEND"}
 HEURISTIC_SOLVER_STATUSES = {"GREEDY", "UNKNOWN"}
 
-DECISION_PRECEDENCE = {
+DEFAULT_DECISION_PRECEDENCE = {
     "PROMISE_CONFIRMED_STOCK_ONLY": 1,
     "PROMISE_CONFIRMED_MERGED": 2,
     "PROMISE_CONFIRMED_NEW_CAMPAIGN": 3,
@@ -36,6 +36,33 @@ DECISION_PRECEDENCE = {
     "CANNOT_PROMISE_MASTER_DATA": 12,
     "CANNOT_PROMISE_MIXED_BLOCKERS": 13,
 }
+
+
+def _config_sequence(value: object, default: list[str]) -> list[str]:
+    if value is None:
+        return list(default)
+    if isinstance(value, str):
+        items = [item.strip() for item in value.split(",") if item.strip()]
+        return items or list(default)
+    if isinstance(value, (list, tuple, set)):
+        items = [str(item).strip() for item in value if str(item).strip()]
+        return items or list(default)
+    return list(default)
+
+
+def _decision_precedence_lookup(config: dict | None = None) -> dict[str, int]:
+    configured = _config_sequence(
+        resolve_config_value(
+            config,
+            "CTP_DECISION_PRECEDENCE_SEQUENCE",
+            list(DEFAULT_DECISION_PRECEDENCE),
+        ),
+        list(DEFAULT_DECISION_PRECEDENCE),
+    )
+    lookup = {decision: idx + 1 for idx, decision in enumerate(configured)}
+    for decision_class, rank in DEFAULT_DECISION_PRECEDENCE.items():
+        lookup.setdefault(decision_class, rank)
+    return lookup
 
 
 def _campaign_number(campaign_id: str) -> int:
@@ -59,20 +86,19 @@ def _committed_campaign_sort_key(campaign: dict) -> tuple:
 def _normalize_planning_start(planning_start, requested_ts, config: dict | None = None) -> datetime:
     ts = pd.to_datetime(planning_start, errors="coerce")
     if pd.isna(ts):
-        horizon_days = max(int((config or {}).get("Planning_Horizon_Days", 14) or 14), 1)
+        horizon_days = max(resolve_config_int(config, "PLANNING_HORIZON_DAYS", 14), 1)
         ts = requested_ts - pd.Timedelta(days=horizon_days)
     anchor = ts.to_pydatetime() if hasattr(ts, "to_pydatetime") else ts
     return anchor.replace(minute=0, second=0, microsecond=0)
 
 
 def _config_flag(config: dict | None, key: str, default: str = "N") -> bool:
-    value = str((config or {}).get(key, default) or default).strip().upper()
-    return value in {"Y", "YES", "TRUE", "1", "ON"}
+    default_bool = str(default).strip().upper() in {"Y", "YES", "TRUE", "1", "ON"}
+    return resolve_config_bool(config, key, default_bool)
 
 
 def _config_float(config: dict | None, key: str, default: float) -> float:
-    value = pd.to_numeric(pd.Series([(config or {}).get(key, default)]), errors="coerce").iloc[0]
-    return float(default if pd.isna(value) else value)
+    return resolve_config_float(config, key, default)
 
 
 def _get_ctp_score_stock_only() -> float:
@@ -917,6 +943,7 @@ def _evaluate_scenario(
     skus: pd.DataFrame,
     planning_anchor: datetime,
     config: dict | None,
+    campaign_config: pd.DataFrame | None,
     min_campaign_mt: float,
     max_campaign_mt: float,
     frozen_jobs: dict | None,
@@ -1073,8 +1100,10 @@ def _evaluate_scenario(
         max_campaign_mt=float(max_campaign_mt),
         inventory=net_inventory,
         bom=bom,
+        routing=routing,
         config=config,
         skus=skus,
+        campaign_config=campaign_config,
     )
 
     if not ghost_campaigns:
@@ -1244,13 +1273,13 @@ def _evaluate_scenario(
         prepared["combined_campaigns"],
         resources,
         planning_start=planning_anchor,
-        planning_horizon_days=max(int((config or {}).get("Planning_Horizon_Days", 14) or 14), 1),
+        planning_horizon_days=max(resolve_config_int(config, "PLANNING_HORIZON_DAYS", 14), 1),
         frozen_jobs=frozen_jobs,
         routing=routing,
         queue_times=queue_times,
         changeover_matrix=changeover_matrix,
         config=config,
-        solver_time_limit_sec=float((config or {}).get("Default_Solver_Limit_Sec", 30.0) or 30.0),
+        solver_time_limit_sec=resolve_config_float(config, "SOLVER_TIME_LIMIT_SECONDS", 30.0),
     )
 
     ghost_rows = _extract_ghost_rows(
@@ -1389,10 +1418,10 @@ def _scenario_is_on_time(scenario: dict | None) -> bool:
     return bool(scenario.get("exact_requested_qty_feasible")) and bool(scenario.get("exact_requested_date_feasible"))
 
 
-def _scenario_rank_key(scenario: dict | None) -> tuple:
+def _scenario_rank_key(scenario: dict | None, config: dict | None = None) -> tuple:
     scenario = scenario or {}
     decision_class = _safe_str(scenario.get("decision_class"))
-    precedence = DECISION_PRECEDENCE.get(decision_class, 999)
+    precedence = _decision_precedence_lookup(config).get(decision_class, 999)
     promised_qty = -float(scenario.get("promised_qty_mt", 0.0) or 0.0)
     promised_date = _coerce_timestamp(scenario.get("promised_completion_date")) or pd.Timestamp.max
     confidence_rank = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}.get(_safe_str(scenario.get("promise_confidence")).upper(), 9)
@@ -1413,6 +1442,7 @@ def _find_max_qty_by_date(
     skus: pd.DataFrame,
     planning_anchor: datetime,
     config: dict | None,
+    campaign_config: pd.DataFrame | None,
     min_campaign_mt: float,
     max_campaign_mt: float,
     frozen_jobs: dict | None,
@@ -1457,6 +1487,7 @@ def _find_max_qty_by_date(
             skus=skus,
             planning_anchor=planning_anchor,
             config=config,
+            campaign_config=campaign_config,
             min_campaign_mt=min_campaign_mt,
             max_campaign_mt=max_campaign_mt,
             frozen_jobs=frozen_jobs,
@@ -1488,6 +1519,7 @@ def _augment_with_alternatives(
     skus: pd.DataFrame,
     planning_anchor: datetime,
     config: dict | None,
+    campaign_config: pd.DataFrame | None,
     min_campaign_mt: float,
     max_campaign_mt: float,
     frozen_jobs: dict | None,
@@ -1521,6 +1553,7 @@ def _augment_with_alternatives(
         skus=skus,
         planning_anchor=planning_anchor,
         config=config,
+        campaign_config=campaign_config,
         min_campaign_mt=min_campaign_mt,
         max_campaign_mt=max_campaign_mt,
         frozen_jobs=frozen_jobs,
@@ -1561,7 +1594,15 @@ def _augment_with_alternatives(
             routing=routing,
             skus=skus,
             planning_anchor=planning_anchor,
-            config={**(config or {}), "Require_Authoritative_CTP_Inventory": (config or {}).get("Require_Authoritative_CTP_Inventory", "Y")},
+            config={
+                **(config or {}),
+                "Require_Authoritative_CTP_Inventory": resolve_config_value(
+                    config,
+                    "Require_Authoritative_CTP_Inventory",
+                    "Y",
+                ),
+            },
+            campaign_config=campaign_config,
             min_campaign_mt=relaxed_min,
             max_campaign_mt=max(max_campaign_mt, requested_qty),
             frozen_jobs=frozen_jobs,
@@ -1592,7 +1633,7 @@ def _augment_with_alternatives(
         ]
         valid_pairs = [(alt, scn) for alt, scn in zip(alternatives, alt_scenarios) if scn is not None]
         if valid_pairs:
-            best_alt = min(valid_pairs, key=lambda pair: _scenario_rank_key(pair[1]))[0]
+            best_alt = min(valid_pairs, key=lambda pair: _scenario_rank_key(pair[1], config=config))[0]
 
     base["alternatives"] = alternatives
     base["best_alternative"] = best_alt
@@ -1622,6 +1663,7 @@ def capable_to_promise(
     planning_start,
     config: dict = None,
     *,
+    campaign_config: pd.DataFrame | None = None,
     min_campaign_mt: float | None = None,
     max_campaign_mt: float | None = None,
     frozen_jobs: dict | None = None,
@@ -1633,10 +1675,10 @@ def capable_to_promise(
     qty_mt = round(float(qty_mt or 0.0), 3)
 
     effective_min_campaign_mt = float(
-        min_campaign_mt if min_campaign_mt is not None else (config or {}).get("Min_Campaign_MT", 100.0) or 100.0
+        min_campaign_mt if min_campaign_mt is not None else resolve_config_value(config, "CAMPAIGN_MIN_SIZE_MT", 100.0) or 100.0
     )
     effective_max_campaign_mt = float(
-        max_campaign_mt if max_campaign_mt is not None else (config or {}).get("Max_Campaign_MT", 500.0) or 500.0
+        max_campaign_mt if max_campaign_mt is not None else resolve_config_value(config, "CAMPAIGN_MAX_SIZE_MT", 500.0) or 500.0
     )
 
     base = _evaluate_scenario(
@@ -1651,6 +1693,7 @@ def capable_to_promise(
         skus=skus,
         planning_anchor=planning_anchor,
         config=config,
+        campaign_config=campaign_config,
         min_campaign_mt=effective_min_campaign_mt,
         max_campaign_mt=effective_max_campaign_mt,
         frozen_jobs=frozen_jobs,
@@ -1680,6 +1723,7 @@ def capable_to_promise(
             skus=skus,
             planning_anchor=planning_anchor,
             config=config,
+            campaign_config=campaign_config,
             min_campaign_mt=effective_min_campaign_mt,
             max_campaign_mt=effective_max_campaign_mt,
             frozen_jobs=frozen_jobs,
