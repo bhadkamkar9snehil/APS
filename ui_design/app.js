@@ -31,19 +31,69 @@ const state = {
 };
 
 function qs(id){ return document.getElementById(id); }
-function parseDate(v){ if(!v) return new Date(NaN); return new Date(String(v).replace(' ','T')); }
+function parseDate(v){
+  if(!v) return new Date(NaN);
+  if(v instanceof Date) return new Date(v.getTime());
+  if(typeof v === 'number') return new Date(v);
+  const raw = String(v).trim();
+  let d = new Date(raw);
+  if(!Number.isNaN(d.getTime())) return d;
+  d = new Date(raw.replace(' ', 'T'));
+  return d;
+}
 function setText(id,v){ const el=qs(id); if(el) el.textContent = v; }
 function escapeHtml(v){ return String(v ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
 function fmtDate(v){ if(!v) return '—'; const d=parseDate(v); if(Number.isNaN(d.getTime())) return String(v); return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}).replace(' ','-'); }
 function fmtDateTime(v){ if(!v) return '—'; const d=parseDate(v); if(Number.isNaN(d.getTime())) return String(v); const date = d.toLocaleDateString('en-GB',{day:'2-digit',month:'short'}); const time = d.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',hour12:false}); return `${date} ${time}`; }
 function num(v, fallback=0){ const n = Number(v); return Number.isFinite(n) ? n : fallback; }
 function upper(v){ return String(v || '').trim().toUpperCase(); }
+function escapeAttr(v){ return escapeHtml(v).replace(/"/g, '&quot;'); }
 function badgeForStatus(status){
   const s = String(status || '').toUpperCase();
   if (s.includes('HOLD')) return '<span class="badge amber">'+escapeHtml(status || 'HOLD')+'</span>';
   if (s.includes('LATE') || s==='CRITICAL' || s==='BLOCKED') return '<span class="badge red">'+escapeHtml(status || 'LATE')+'</span>';
   if (s.includes('RUN')) return '<span class="badge blue">'+escapeHtml(status || 'RUNNING')+'</span>';
   return '<span class="badge green">'+escapeHtml(status || 'RELEASED')+'</span>';
+}
+function initGanttTooltips(container){
+  if(!container) return;
+  const targets = container.querySelectorAll('[data-gantt-tooltip]');
+  if(!targets.length) return;
+
+  let tooltip = container.querySelector('.gantt-tooltip');
+  if(!tooltip){
+    tooltip = document.createElement('div');
+    tooltip.className = 'gantt-tooltip';
+    tooltip.style.cssText = 'position:fixed;z-index:10001;max-width:22rem;padding:.55rem .7rem;background:rgba(15,23,42,.96);color:#fff;border-radius:.5rem;font-size:.74rem;line-height:1.35;box-shadow:0 10px 30px rgba(15,23,42,.22);pointer-events:none;opacity:0;transform:translateY(4px);transition:opacity .12s ease, transform .12s ease;white-space:normal';
+    document.body.appendChild(tooltip);
+  }
+
+  const show = (event) => {
+    tooltip.innerHTML = event.currentTarget.dataset.ganttTooltip || '';
+    tooltip.style.opacity = '1';
+    tooltip.style.transform = 'translateY(0)';
+  };
+  const move = (event) => {
+    const pad = 14;
+    const rect = tooltip.getBoundingClientRect();
+    let left = event.clientX + pad;
+    let top = event.clientY - 12;
+    if(left + rect.width > window.innerWidth - 12) left = event.clientX - rect.width - pad;
+    if(top + rect.height > window.innerHeight - 12) top = window.innerHeight - rect.height - 12;
+    if(top < 12) top = 12;
+    tooltip.style.left = left + 'px';
+    tooltip.style.top = top + 'px';
+  };
+  const hide = () => {
+    tooltip.style.opacity = '0';
+    tooltip.style.transform = 'translateY(4px)';
+  };
+
+  targets.forEach(el => {
+    el.addEventListener('mouseenter', show);
+    el.addEventListener('mousemove', move);
+    el.addEventListener('mouseleave', hide);
+  });
 }
 function formatStatus(text){ return String(text || '').replace(/_/g, ' '); }
 function utilBar(u){
@@ -107,10 +157,10 @@ function _ridToOp(rid){
   return r.split('-')[0] || '—';
 }
 function renderCapacityBars(){
-  const rows = state.capacity || [];
+  const rows = [...(state.capacity || [])].sort((a,b)=>num(b['Utilisation_%'] || b.utilisation) - num(a['Utilisation_%'] || a.utilisation));
   const barsEl = qs('capacityBars');
   if(!barsEl) return;
-  if(!rows.length){ barsEl.innerHTML = '<div style="font-size:.8rem;color:var(--text-soft)">Run schedule to load capacity data.</div>'; return; }
+  if(!rows.length){ barsEl.innerHTML = '<div style="font-size:.8rem;color:var(--text-soft)">No capacity rows loaded yet.</div>'; return; }
 
   let overloaded = 0, slack = 0, totalUtil = 0;
   barsEl.innerHTML = rows.map(r=>{
@@ -1447,6 +1497,7 @@ function renderMaterialDetail(campaign){
 function renderCapacity(){
   const rows = [...(state.capacity||[])].sort((a,b)=>num(b['Utilisation_%'] || b.utilisation) - num(a['Utilisation_%'] || a.utilisation));
   const body = qs('capacityBody');
+  renderCapacityBars();
   if(!rows.length){ body.innerHTML = '<tr><td colspan="6">No capacity rows loaded.</td></tr>'; return; }
   const avg = rows.reduce((a,r)=>a + num(r['Utilisation_%'] || r.utilisation),0) / Math.max(rows.length,1);
   setText('capAvg', avg.toFixed(1) + '%');
@@ -2759,9 +2810,29 @@ function renderPOGantt(scheduleRows){
 
   let minTime = Infinity, maxTime = -Infinity;
   const byPO = {};
-  const plantColor = {BF: '#3b82f6', SMS: '#f97316', RM: '#8b5cf6'};
+  const opPalette = {
+    BF:  { fill: '#3b82f6', text: '#ffffff' },
+    EAF: { fill: '#f97316', text: '#ffffff' },
+    LRF: { fill: '#f59e0b', text: '#111827' },
+    VD:  { fill: '#64748b', text: '#ffffff' },
+    CCM: { fill: '#10b981', text: '#ffffff' },
+    RM:  { fill: '#8b5cf6', text: '#ffffff' },
+    DEF: { fill: '#94a3b8', text: '#ffffff' }
+  };
+  const laneTop = { BF: 10, EAF: 10, LRF: 34, VD: 34, CCM: 58, RM: 58 };
+  const rowHeight = 96;
 
-  // Group by PO
+  const fmtGanttDay = (ts) => {
+    const d = parseDate(ts);
+    if(Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleDateString('en-GB', { weekday:'short', day:'2-digit', month:'short' }).replace(',', '');
+  };
+  const fmtGanttTick = (ts) => {
+    const d = parseDate(ts);
+    if(Number.isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', hour12:false });
+  };
+
   scheduleRows.forEach(row => {
     const campaign = row.Campaign || '';
     const poMatch = campaign.match(/PO-\d+/);
@@ -2770,62 +2841,78 @@ function renderPOGantt(scheduleRows){
     if(!byPO[po]) byPO[po] = [];
     byPO[po].push(row);
 
-    const start = new Date(row.Planned_Start);
-    const end = new Date(row.Planned_End);
-    if(!isNaN(start)) minTime = Math.min(minTime, start.getTime());
-    if(!isNaN(end)) maxTime = Math.max(maxTime, end.getTime());
+    const start = parseDate(row.Planned_Start);
+    const end = parseDate(row.Planned_End);
+    if(!Number.isNaN(start.getTime())) minTime = Math.min(minTime, start.getTime());
+    if(!Number.isNaN(end.getTime())) maxTime = Math.max(maxTime, end.getTime());
   });
 
   if(minTime === Infinity) return '<div style="padding:1rem;color:var(--text-soft)">No valid time data.</div>';
 
   const span = maxTime - minTime || 86400000;
   const poList = Object.keys(byPO).sort();
-  const dayWidth = 100;
+  const dayWidth = 112;
   const totalDays = span / 86400000;
-  const ganttWidth = Math.max(900, dayWidth * (totalDays + 1));
+  const ganttWidth = Math.max(980, dayWidth * (totalDays + 1));
 
   const dateLabels = [];
   for(let i = 0; i <= Math.ceil(totalDays); i++){
-    const d = new Date(minTime + i * 86400000);
-    dateLabels.push(fmtDate(d));
+    dateLabels.push(new Date(minTime + i * 86400000));
   }
 
   let html = `
-    <div style="border:1px solid var(--border);border-radius:.3rem;overflow:hidden;background:var(--panel)">
-      <!-- Header -->
-      <div style="display:flex;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--panel)">
-        <div style="width:7rem;flex-shrink:0;padding:.5rem;font-weight:600;border-right:1px solid var(--border);font-size:.75rem">PO ID | Plant</div>
+    <div style="border:1px solid var(--border);border-radius:.4rem;overflow:hidden;background:var(--panel)">
+      <div style="display:flex;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--panel);z-index:2">
+        <div style="width:14rem;flex-shrink:0;padding:.7rem .85rem;font-weight:800;border-right:1px solid var(--border);font-size:.76rem;background:#fbfcfe">Planning Order</div>
         <div style="display:flex;width:${ganttWidth}px">
-          ${dateLabels.map(d => `<div style="width:${dayWidth}px;padding:.3rem;text-align:center;font-size:.7rem;border-right:1px solid var(--border-soft);color:var(--text-soft)">${d}</div>`).join('')}
+          ${dateLabels.map(d => `
+            <div style="width:${dayWidth}px;padding:.35rem .2rem;text-align:center;font-size:.69rem;border-right:1px solid var(--border-soft);color:var(--text-soft);line-height:1.25">
+              <div style="font-weight:700;color:var(--text)">${fmtGanttDay(d)}</div>
+              <div>${fmtGanttTick(d)}</div>
+            </div>
+          `).join('')}
         </div>
       </div>
 
-      <!-- PO rows -->
-      ${poList.map(po => {
-        const ops = byPO[po];
-        const primaryPlant = ops[0]?.Plant || 'SMS';
-        const color = plantColor[primaryPlant];
-        const totalHours = ops.reduce((sum, o) => sum + (num(o.Duration_Hrs) || 0), 0);
+      ${poList.map((po, idx) => {
+        const ops = byPO[po].slice().sort((a,b)=>parseDate(a.Planned_Start) - parseDate(b.Planned_Start));
+        const totalHours = ops.reduce((sum, o) => sum + num(o.Duration_Hrs || 0), 0);
+        const families = [...new Set(ops.map(o => _ridToOp(o.Resource_ID || o.resource_id)).filter(Boolean))];
+        const poStart = Math.min(...ops.map(op => parseDate(op.Planned_Start).getTime()).filter(Number.isFinite));
+        const poEnd = Math.max(...ops.map(op => parseDate(op.Planned_End).getTime()).filter(Number.isFinite));
+        const poLeft = Math.max(0, (poStart - minTime) / span * 100);
+        const poWidth = Math.max(0.8, (poEnd - poStart) / span * 100);
+        const familyChips = families.map(family => {
+          const palette = opPalette[family] || opPalette.DEF;
+          return `<span data-gantt-tooltip="${escapeAttr(`<strong>${family}</strong><br>Operation family used in this PO timeline.`)}" style="display:inline-flex;align-items:center;gap:.28rem;padding:.12rem .38rem;border-radius:.8rem;background:rgba(148,163,184,.08);font-size:.64rem;font-weight:700;color:var(--text-soft);cursor:help"><span style="width:.42rem;height:.42rem;border-radius:999px;background:${palette.fill};display:inline-block"></span>${family}</span>`;
+        }).join('');
+        const rowBg = idx % 2 === 0 ? '#ffffff' : '#fcfdff';
 
         return `
-          <div style="display:flex;border-bottom:1px solid var(--border-soft)">
-            <div style="width:7rem;flex-shrink:0;padding:.6rem;font-weight:600;border-right:1px solid var(--border);font-size:.8rem">
-              <div>${po}</div>
-              <div style="font-size:.7rem;color:${color};margin-top:.2rem">${primaryPlant}</div>
+          <div style="display:flex;border-bottom:1px solid var(--border-soft);background:${rowBg}">
+            <div style="width:14rem;flex-shrink:0;padding:.8rem .85rem;border-right:1px solid var(--border);display:flex;flex-direction:column;justify-content:center;gap:.35rem;background:${rowBg}">
+              <div style="font-size:.9rem;font-weight:900;letter-spacing:-.01em">${po}</div>
+              <div style="display:flex;flex-wrap:wrap;gap:.28rem">${familyChips || '<span style="font-size:.68rem;color:var(--text-soft)">Scheduled ops</span>'}</div>
+              <div style="font-size:.68rem;color:var(--text-soft)">Start ${fmtDateTime(poStart)} · End ${fmtDateTime(poEnd)}</div>
+              <div style="font-size:.72rem;font-weight:700;color:var(--text)">${totalHours.toFixed(1)}h total</div>
             </div>
-            <div style="position:relative;width:${ganttWidth}px;height:2.5rem">
-              <!-- Grid -->
-              ${dateLabels.map((d,i) => `<div style="position:absolute;left:${i*dayWidth}px;width:${dayWidth}px;height:100%;border-right:1px solid var(--border-soft);opacity:.15"></div>`).join('')}
-
-              <!-- Bars -->
+            <div style="position:relative;width:${ganttWidth}px;height:${rowHeight}px;background:linear-gradient(180deg,#fff,#fcfdff)">
+              ${dateLabels.map((d,i) => `<div style="position:absolute;left:${i*dayWidth}px;width:${dayWidth}px;height:100%;border-right:1px solid var(--border-soft);opacity:.18"></div>`).join('')}
+              <div style="position:absolute;left:0;right:0;top:28px;border-top:1px dashed rgba(148,163,184,.16)"></div>
+              <div style="position:absolute;left:0;right:0;top:52px;border-top:1px dashed rgba(148,163,184,.16)"></div>
+              <div style="position:absolute;left:${poLeft}%;width:${poWidth}%;top:12px;height:66px;border-radius:.55rem;border:1px dashed rgba(15,23,42,.18);background:rgba(148,163,184,.08);box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)"></div>
               ${ops.map(op => {
-                const opStart = new Date(op.Planned_Start);
-                const opEnd = new Date(op.Planned_End);
+                const opStart = parseDate(op.Planned_Start);
+                const opEnd = parseDate(op.Planned_End);
                 const opLeft = Math.max(0, (opStart.getTime() - minTime) / span * 100);
-                const opWidth = Math.max(1, (opEnd.getTime() - opStart.getTime()) / span * 100);
-                const dur = num(op.Duration_Hrs || 0).toFixed(0);
+                const opWidth = Math.max(0.8, (opEnd.getTime() - opStart.getTime()) / span * 100);
+                const dur = num(op.Duration_Hrs || 0).toFixed(1);
+                const family = _ridToOp(op.Resource_ID || op.resource_id);
+                const palette = opPalette[family] || opPalette.DEF;
+                const top = laneTop[family] ?? 30;
+                const label = opWidth > 4.5 ? family : '';
                 return `
-                  <div style="position:absolute;left:${opLeft}%;width:${opWidth}%;top:.4rem;bottom:.4rem;background:${color};opacity:.8;border-radius:.2rem;border:1px solid ${color};display:flex;align-items:center;justify-content:center;font-size:.65rem;color:#fff;font-weight:600" title="${op.Resource_ID} | ${dur}h">${dur}h</div>
+                  <div data-gantt-tooltip="${escapeAttr(`<strong>${po}</strong><br>${family} on ${escapeHtml(op.Resource_ID || '—')}<br>Duration: ${dur}h<br>Start: ${fmtDateTime(opStart)}<br>End: ${fmtDateTime(opEnd)}`)}" style="position:absolute;left:${opLeft}%;width:${opWidth}%;top:${top}px;height:20px;background:${palette.fill};opacity:.95;border-radius:.32rem;border:1px solid rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center;font-size:.62rem;color:${palette.text};font-weight:800;overflow:hidden;white-space:nowrap;padding:0 .24rem;box-shadow:0 1px 2px rgba(15,23,42,.12);cursor:pointer" title="">${label}</div>
                 `;
               }).join('')}
             </div>
@@ -2834,10 +2921,11 @@ function renderPOGantt(scheduleRows){
       }).join('')}
     </div>
 
-    <div style="margin-top:1rem;display:flex;gap:1rem;font-size:.75rem">
-      <div><span style="color:var(--text-soft)">Start:</span> <strong>${fmtDateTime(minTime).substring(0, 16)}</strong></div>
-      <div><span style="color:var(--text-soft)">End:</span> <strong>${fmtDateTime(maxTime).substring(0, 16)}</strong></div>
-      <div><span style="color:var(--text-soft)">Total POs:</span> <strong>${poList.length}</strong></div>
+    <div style="margin-top:1rem;display:flex;gap:.65rem;flex-wrap:wrap;justify-content:center;font-size:.75rem">
+      <div style="padding:.45rem .7rem;border:1px solid var(--border);border-radius:.7rem;background:#fbfcfe"><span style="color:var(--text-soft)">Start:</span> <strong>${fmtDateTime(minTime)}</strong></div>
+      <div style="padding:.45rem .7rem;border:1px solid var(--border);border-radius:.7rem;background:#fbfcfe"><span style="color:var(--text-soft)">End:</span> <strong>${fmtDateTime(maxTime)}</strong></div>
+      <div style="padding:.45rem .7rem;border:1px solid var(--border);border-radius:.7rem;background:#fbfcfe"><span style="color:var(--text-soft)">Total POs:</span> <strong>${poList.length}</strong></div>
+      <div style="padding:.45rem .7rem;border:1px solid var(--border);border-radius:.7rem;background:#fbfcfe"><span style="color:var(--text-soft)">Legend:</span> <strong>EAF / LRF / VD / CCM / RM</strong></div>
     </div>
   `;
 
@@ -2987,6 +3075,7 @@ function showGanttModal(title, data, type = 'so'){
 
   modal.appendChild(content);
   document.body.appendChild(modal);
+  initGanttTooltips(content);
 
   modal.addEventListener('click', (e) => {
     if(e.target === modal) modal.remove();
@@ -3067,36 +3156,38 @@ async function simulateSchedule(config = {}){
     }
 
     qs('schedulerContent').innerHTML = `
-      <div style="display:flex;align-items:center;gap:2rem;padding:.5rem 0">
-        <div style="font-size:1.8rem;font-weight:800;color:${statusColor}">${feasible ? '✓ FEASIBLE' : '✗ INFEASIBLE'}</div>
-        <div style="display:flex;gap:2rem;font-size:.85rem">
-          <div><div style="color:var(--text-soft);font-size:.7rem">Duration</div><div style="font-weight:700">${duration}h</div></div>
-          <div><div style="color:var(--text-soft);font-size:.7rem">Horizon</div><div style="font-weight:700">${returnedHorizonHours}h</div></div>
-          <div><div style="color:var(--text-soft);font-size:.7rem">Horizon use</div><div style="font-weight:700">${horizonUse}</div></div>
-          <div><div style="color:var(--text-soft);font-size:.7rem">SMS span</div><div style="font-weight:700">${smsHours}h</div></div>
-          <div><div style="color:var(--text-soft);font-size:.7rem">RM span</div><div style="font-weight:700">${rmHours}h</div></div>
-          <div><div style="color:var(--text-soft);font-size:.7rem">Bottleneck</div><div style="font-weight:700;color:${statusColor}">${escapeHtml(bottleneck)}</div></div>
-        </div>
-        <div style="flex:1;text-align:left;display:flex;flex-direction:column;gap:.3rem">
-          <div style="font-size:.95rem;font-weight:800;color:${statusColor}">
-            ${feasible
-              ? `Finite schedule generated within selected horizon`
-              : (data.horizon_exceeded
-                ? `Not feasible for selected horizon: need ${duration.toFixed(1)}h, but only ${returnedHorizonHours.toFixed(1)}h selected`
-                : `No feasible finite schedule was produced`)}
+      <div class="scheduler-summary">
+        <div class="scheduler-summary-inner">
+          <div class="scheduler-summary-status" style="color:${statusColor}">${feasible ? '✓ FEASIBLE' : '✗ INFEASIBLE'}</div>
+          <div class="scheduler-summary-metrics">
+            <div class="scheduler-summary-metric"><div class="scheduler-summary-metric-label">Duration</div><div class="scheduler-summary-metric-value">${duration}h</div></div>
+            <div class="scheduler-summary-metric"><div class="scheduler-summary-metric-label">Horizon</div><div class="scheduler-summary-metric-value">${returnedHorizonHours}h</div></div>
+            <div class="scheduler-summary-metric"><div class="scheduler-summary-metric-label">Horizon use</div><div class="scheduler-summary-metric-value">${horizonUse}</div></div>
+            <div class="scheduler-summary-metric"><div class="scheduler-summary-metric-label">SMS span</div><div class="scheduler-summary-metric-value">${smsHours}h</div></div>
+            <div class="scheduler-summary-metric"><div class="scheduler-summary-metric-label">RM span</div><div class="scheduler-summary-metric-value">${rmHours}h</div></div>
+            <div class="scheduler-summary-metric"><div class="scheduler-summary-metric-label">Bottleneck</div><div class="scheduler-summary-metric-value" style="color:${statusColor}">${escapeHtml(bottleneck)}</div></div>
           </div>
-          <div style="font-size:.8rem;color:var(--text-soft)">
-            ${feasible
-              ? `The schedule fits within the selected horizon.`
-              : (data.horizon_exceeded
-                ? `The issue is horizon overflow, not missing rows: the schedule exceeds the selected horizon by ${overflowHours.toFixed(1)}h.`
-                : escapeHtml(data.message || 'Finite schedule is infeasible with current planning orders / master data.'))}
-          </div>
-          <div style="font-size:.8rem;font-weight:700;color:var(--text)">
-            Workload: SMS ${smsWorkload}h · RM ${rmWorkload}h
-          </div>
-          <div style="font-size:.72rem;color:var(--text-soft)">
-            Span = elapsed time from first start to last finish in that family. Workload = summed processing hours, so workload can be higher than span when lines run in parallel.
+          <div class="scheduler-summary-message">
+            <div class="scheduler-summary-title" style="color:${statusColor}">
+              ${feasible
+                ? `Finite schedule generated within selected horizon`
+                : (data.horizon_exceeded
+                  ? `Not feasible for selected horizon: need ${duration.toFixed(1)}h, but only ${returnedHorizonHours.toFixed(1)}h selected`
+                  : `No feasible finite schedule was produced`)}
+            </div>
+            <div class="scheduler-summary-detail">
+              ${feasible
+                ? `The schedule fits within the selected horizon.`
+                : (data.horizon_exceeded
+                  ? `The issue is horizon overflow, not missing rows: the schedule exceeds the selected horizon by ${overflowHours.toFixed(1)}h.`
+                  : escapeHtml(data.message || 'Finite schedule is infeasible with current planning orders / master data.'))}
+            </div>
+            <div class="scheduler-summary-workload">
+              Workload: SMS ${smsWorkload}h · RM ${rmWorkload}h
+            </div>
+            <div class="scheduler-summary-note">
+              Span = elapsed time from first start to last finish in that family. Workload = summed processing hours, so workload can be higher than span when lines run in parallel.
+            </div>
           </div>
         </div>
       </div>

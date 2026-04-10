@@ -7,8 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-<!-- <link rel="stylesheet" href="styles.css"> -->
-<link rel="stylesheet" href="styles_final_corrected.css">
+<link rel="stylesheet" href="styles.css">
 <!-- Font Awesome is optional here; labels remain visible if CDN fails. -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
 
@@ -455,7 +454,7 @@
                 </div>
 
                 <!-- SIMULATION RESULTS (shown after simulate) -->
-                <div class="grid-4" style="margin-bottom:.75rem">
+                <div class="grid-4 sim-results-grid">
                   <div class="metric" id="scheduleFeasibleCard"><div class="metric-label">Feasible</div><div class="metric-value" id="scheduleFeasible">—</div></div>
                   <div class="metric" id="scheduleDurationCard"><div class="metric-label">Schedule span</div><div class="metric-value" id="scheduleDuration">—</div></div>
                   <div class="metric" id="scheduleSmsCard"><div class="metric-label">SMS span (elapsed)</div><div class="metric-value" id="scheduleSmsHours">—</div></div>
@@ -681,7 +680,7 @@
         <div style="flex:1;min-height:0;overflow:auto">
           <div class="grid-2">
             <div class="card">
-              <div class="card-header"><div><div class="card-title">Run CTP check</div><div class="card-sub">Calls <code class="inline">/api/aps/ctp/check</code>.</div></div></div>
+              <div class="card-header"><div><div class="card-title">Run CTP check</div></div></div>
               <div class="card-body">
                 <div class="stack">
                   <select class="sel" id="ctpSku" aria-label="CTP SKU"><option value="">Loading SKUs…</option></select>

@@ -1,4 +1,8 @@
 {
+  "name": "x-aps",
+  "private": true,
+  "version": "0.10.0",
+  "description": "Workbook-backed advanced planning and scheduling prototype for steel operations.",
   "dependencies": {
     "docx": "^9.6.1"
   }
