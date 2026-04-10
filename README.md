@@ -1,53 +1,105 @@
-# APS
+# X-APS
 
-Proto Advanced Planning & Scheduling
+Version `0.10.0`
 
-## Overview
+Workbook-backed Advanced Planning and Scheduling prototype for steel operations. The app combines a Flask API, a static HTML/JS frontend, and planning engines for scheduling, BOM netting, capacity, material, execution, CTP, and scenarios.
 
-This repository contains a prototype for Advanced Planning and Scheduling (APS) functionality, inspired by AVEVA MESA patterns.
+## What Is In This Repo
 
-## Directory structure
+- `xaps_application_api.py` - main Flask API and workbook-backed application layer
+- `ui_design/` - active frontend (`index.html`, `styles.css`, `app.js`)
+- `engine/` - planning engines for scheduling, BOM, capacity, campaigns, CTP, and workbook access
+- `tests/` and root `test_*.py` files - regression and workflow checks
+- `APS_BF_SMS_RM.xlsx` / `APS_BF_SMS_RM.xlsm` - workbook data sources used by the API and helpers
+- `docs/` - reference notes and architecture material
 
-- `api_server.py` - API server entry point.
-- `aps_functions.py` - APS domain logic helpers.
-- `engine/` - core engine modules for BOM explosion, capacity, CTP, scheduler.
-- `scenarios/` - scenario runner and orchestrator code.
-- `simulation/` - SimPy-based simulation engine.
-- `tests/` - unit tests.
-- `aps-ui/` - React UI frontend.
-- `docs/` - architecture and feature reference documentation.
+## Quick Start
 
-## Setup
+### Windows launcher
 
-1. Python 3.11+ recommended.
-2. Create virtual environment: `python -m venv .venv`.
-3. Activate environment:
-   - Windows: `.\.venv\Scripts\activate`
-4. Install dependencies (if dependency file exists). For example:
-   `pip install flask pydantic simpy` etc.
+Use the bundled launcher if you want the API and UI started together:
 
-## Usage
-
-Run the API server:
-
-```powershell
-python api_server.py
+```bat
+start_aps.bat
 ```
 
-Check `docs/` for functional and architectural details.
+That starts:
 
-## Docs
+- API: `http://localhost:5000`
+- UI: `http://localhost:3131`
 
-Primary docs are in the `docs/` folder, including:
+### Manual start
 
-- `APS_Functional_Concept_Guide.md`
-- `APS_Gap_Analysis_vs_AVEVA.md`
-- `APS_Generic_Architecture_And_Scenario_Workbench.md`
-- `APS_Implementation_Plan_Config_Masters.md`
-- `APS_Planning_Views_And_Visibility_Design.md`
-- `APS_Roadmap_Industry_Agnostic.md`
-- `wiggly-kindling-lynx.md`
+1. Create and activate a Python environment.
+2. Install the Python dependencies you need for the API.
+3. Start the API:
 
-## Cleanup policy
+```bash
+python xaps_application_api.py
+```
 
-- Ignore `.claude`, `.vscode/`, `__pycache__/`, `node_modules/`, and `archive/` via `.gitignore`.
+4. In a second terminal, serve the UI folder:
+
+```bash
+npx serve -s ui_design -p 3131 --no-clipboard
+```
+
+5. Open:
+
+```text
+http://localhost:3131
+```
+
+If you need to point at a different workbook, set `WORKBOOK_PATH` before starting the API.
+
+## How To Use The App
+
+### Main planning flow
+
+1. `Dashboard`
+   Review the current order pool, planning status, material health, capacity, and alerts.
+2. `Planning`
+   Propose planning orders, derive heats, run feasibility checks, and release lots.
+3. `BOM`
+   Run total BOM netting and inspect overall exploded material requirements.
+4. `Material`
+   Review campaign-level material readiness and release blockers.
+5. `Capacity`
+   Inspect resource loading, bottlenecks, and utilisation by equipment.
+6. `Execution`
+   Review released lots and dispatch-oriented views.
+7. `CTP`
+   Run capable-to-promise checks for a requested SKU, quantity, and date.
+
+### Key actions
+
+- `Run Schedule`
+  Runs the schedule solver for the selected horizon and solver time budget.
+- `Run Pipeline`
+  Walks through the planning sequence from order selection through feasibility and release preparation.
+- `Run BOM Netting`
+  Generates total BOM explosion and netting outputs for the active demand pool.
+- `Run Feasibility Check`
+  Evaluates whether the selected planning orders fit inside the chosen horizon and resource configuration.
+
+## Useful Development Commands
+
+```bash
+python xaps_application_api.py
+python run_all.py
+python run_all.py schedule
+python -m pytest tests
+node --check ui_design/app.js
+```
+
+## Repo Notes
+
+- The workbook is part of the runtime, not just test data.
+- The active frontend path is intentionally small: `ui_design/index.html`, `ui_design/styles.css`, and `ui_design/app.js`.
+- Legacy one-off UI files and root-level notes have been moved out of the active surface so the working tree is easier to navigate.
+
+## Source Control Hygiene
+
+- Keep generated files, logs, PID files, backups, caches, and archived legacy files out of commits.
+- Prefer focused commits by feature area instead of sweeping the full dirty workbook/runtime state into one change.
+- Use checkpoint tags before larger cleanup or redesign passes.

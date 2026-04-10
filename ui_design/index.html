@@ -7,8 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-<!-- <link rel="stylesheet" href="styles.css"> -->
-<link rel="stylesheet" href="styles_final_corrected.css">
+<link rel="stylesheet" href="styles.css">
 <!-- Font Awesome is optional here; labels remain visible if CDN fails. -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
 
@@ -110,7 +109,7 @@
             <div class="metric success"><div class="metric-label">Heats Planned</div><div class="metric-value" id="summaryHeats">—</div><div class="metric-sub" id="summaryHeatsSub">—</div></div>
             <div class="metric"><div class="metric-label">MT Planned</div><div class="metric-value" id="summaryMt">—</div><div class="metric-sub" id="summaryMtSub">in heats</div></div>
             <div class="metric warn"><div class="metric-label">On-Time</div><div class="metric-value" id="summaryOt">—</div><div class="metric-sub" id="summaryOtSub">delivery rate</div></div>
-            <div class="metric"><div class="metric-label">SMS Utilisation</div><div class="metric-value" id="summaryCapacity">—</div><div class="metric-sub" id="summaryCapacitySub">peak resource</div></div>
+            <div class="metric info" id="summaryPlanCard"><div class="metric-label">Plan Status</div><div class="metric-value" id="summaryCapacity">—</div><div class="metric-sub" id="summaryCapacitySub">Feasibility not run</div></div>
           </div>
         </div>
       </div>
@@ -120,13 +119,13 @@
       <section class="page active" id="page-dashboard" role="tabpanel" aria-labelledby="tab-dashboard" style="display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:.4rem .6rem .4rem">
 
         <!-- ═══ MAIN BODY: 3 columns ═══ -->
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.45rem;flex:1;min-height:0;overflow:hidden">
+        <div style="display:grid;grid-template-columns:1fr 1.05fr 1.05fr;gap:.45rem;flex:1;min-height:0;overflow:hidden">
 
           <!-- ── COL 1: Planning Status + Alerts ── -->
           <div style="display:flex;flex-direction:column;gap:.45rem;min-height:0;overflow:hidden">
 
             <!-- Planning Status -->
-            <div class="dash-card" style="flex:0.55;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+            <div class="dash-card" style="flex:0.6;min-height:18rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Planning Status</span>
                 <button type="button" class="btn ghost" style="font-size:.65rem;padding:.15rem .45rem;height:1.5rem" onclick="activatePage('planning')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> Open</span></button>
@@ -137,7 +136,7 @@
             </div>
 
             <!-- Alerts & Insights -->
-            <div class="dash-card" style="flex:0.45;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+            <div class="dash-card" style="flex:0.44;min-height:13.5rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Alerts &amp; Insights</span>
                 <span id="dashAlertCount" style="font-size:.65rem;font-weight:700;background:var(--danger-soft);color:var(--danger);padding:.15rem .4rem;border-radius:1rem;display:none">0</span>
@@ -153,7 +152,7 @@
           <div style="display:flex;flex-direction:column;gap:.45rem;min-height:0;overflow:hidden">
 
             <!-- Capacity Utilisation -->
-            <div class="dash-card" style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+            <div class="dash-card" style="flex:0.56;min-height:16rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Capacity Utilisation</span>
                 <span id="bottleneckPeak" style="font-size:.65rem;font-weight:700;color:var(--text-soft)">—</span>
@@ -164,7 +163,7 @@
             </div>
 
             <!-- Delivery Performance -->
-            <div class="dash-card" style="flex:.42;min-height:12rem;overflow:hidden;display:flex;flex-direction:column">
+            <div class="dash-card" style="flex:0.44;min-height:13.5rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd"><span class="dash-card-title">Delivery Performance</span></div>
               <div style="padding:.5rem .6rem;display:flex;flex-direction:column;gap:.5rem">
                 <!-- On-time gauge row -->
@@ -186,7 +185,7 @@
                     <div class="dms-value" id="perfLate" style="color:var(--danger)">—</div>
                   </div>
                   <div class="dash-mini-stat">
-                    <div class="dms-label">Avg Delay</div>
+                    <div class="dms-label">Plan Gap</div>
                     <div class="dms-value" id="perfAvgLate">—</div>
                   </div>
                   <div class="dash-mini-stat">
@@ -197,15 +196,15 @@
                 <!-- This week -->
                 <div style="border-top:1px solid var(--border-soft);padding-top:.4rem;display:flex;gap:.4rem">
                   <div style="flex:1;text-align:center">
-                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Campaigns</div>
+                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Planning POs</div>
                     <div style="font-size:1rem;font-weight:700;color:var(--info)" id="execStarted">—</div>
                   </div>
                   <div style="flex:1;text-align:center">
-                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Heats</div>
+                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Sched Heats</div>
                     <div style="font-size:1rem;font-weight:700;color:var(--success)" id="execHeats">—</div>
                   </div>
                   <div style="flex:1;text-align:center">
-                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Equip</div>
+                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Resources</div>
                     <div style="font-size:1rem;font-weight:700" id="execEquip">—</div>
                   </div>
                 </div>
@@ -218,7 +217,7 @@
           <div style="display:flex;flex-direction:column;gap:.45rem;min-height:0;overflow:hidden">
 
             <!-- Material Health -->
-            <div class="dash-card" style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
+            <div class="dash-card" style="flex:0.62;min-height:18rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Material Health</span>
                 <button type="button" class="btn ghost" style="font-size:.65rem;padding:.15rem .45rem;height:1.5rem" onclick="activatePage('material')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> View</span></button>
@@ -229,12 +228,12 @@
             </div>
 
             <!-- Active POs summary -->
-            <div class="dash-card" style="flex:.34;min-height:10rem;overflow:hidden;display:flex;flex-direction:column">
+            <div class="dash-card" style="flex:0.44;min-height:13.5rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Active Planning Orders</span>
                 <button type="button" class="btn ghost" style="font-size:.65rem;padding:.15rem .45rem;height:1.5rem" onclick="activatePage('planning')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> Plan</span></button>
               </div>
-              <div style="padding:.4rem .6rem;display:flex;flex-direction:column;gap:.3rem" id="dashActivePOs">
+              <div style="padding:.4rem .6rem;display:flex;flex-direction:column;gap:.3rem;flex:1;overflow-y:auto" id="dashActivePOs">
                 <div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">No POs yet.</div>
               </div>
             </div>
@@ -455,11 +454,11 @@
                 </div>
 
                 <!-- SIMULATION RESULTS (shown after simulate) -->
-                <div class="grid-4" style="margin-bottom:.75rem">
-                  <div class="metric"><div class="metric-label">Feasible</div><div class="metric-value" id="scheduleFeasible">—</div></div>
-                  <div class="metric"><div class="metric-label">Total duration</div><div class="metric-value" id="scheduleDuration">—</div></div>
-                  <div class="metric"><div class="metric-label">SMS hours</div><div class="metric-value" id="scheduleSmsHours">—</div></div>
-                  <div class="metric"><div class="metric-label">RM hours</div><div class="metric-value" id="scheduleRmHours">—</div></div>
+                <div class="grid-4 sim-results-grid">
+                  <div class="metric" id="scheduleFeasibleCard"><div class="metric-label">Feasible</div><div class="metric-value" id="scheduleFeasible">—</div></div>
+                  <div class="metric" id="scheduleDurationCard"><div class="metric-label">Schedule span</div><div class="metric-value" id="scheduleDuration">—</div></div>
+                  <div class="metric" id="scheduleSmsCard"><div class="metric-label">SMS span (elapsed)</div><div class="metric-value" id="scheduleSmsHours">—</div></div>
+                  <div class="metric" id="scheduleRmCard"><div class="metric-label">RM span (elapsed)</div><div class="metric-value" id="scheduleRmHours">—</div></div>
                 </div>
                 <div id="schedulerContent" style="color:var(--text-soft);text-align:center;font-size:.9rem;padding:.75rem;border:1px solid var(--border);border-radius:.3rem;display:none"></div>
 
@@ -598,25 +597,21 @@
 
       <section class="page" id="page-material" role="tabpanel" aria-labelledby="tab-material" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header">
-          <div><div class="page-title">Material</div><div class="page-sub">Coverage status, BOM netting, holds, and shortage resolution.</div></div>
-          <div class="page-actions"><button type="button" class="btn primary" id="bomRunBtn"><i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i><span> Run BOM Netting</span></button></div>
+          <div><div class="page-title">Material</div><div class="page-sub">Campaign material readiness, holds, conversion needs, and shortage resolution.</div></div>
+          <div class="page-actions"><button type="button" class="btn primary" id="materialRefreshBtn"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i><span> Refresh Material Status</span></button></div>
         </div>
-        <!-- KPI strip -->
-        <div class="grid-4" style="margin-bottom:.75rem;flex-shrink:0">
-          <div class="metric success"><div class="metric-label">Covered</div><div class="metric-value" id="matOk">—</div><div class="metric-sub" id="bomKpiCoveredVal">—</div></div>
-          <div class="metric warn"><div class="metric-label">Partial / Low</div><div class="metric-value" id="matLow">—</div><div class="metric-sub" id="bomKpiPartialVal">—</div></div>
-          <div class="metric danger"><div class="metric-label">Short</div><div class="metric-value" id="matCrit">—</div><div class="metric-sub" id="bomKpiShortVal">—</div></div>
+        <div class="material-kpi-row" style="margin-bottom:.75rem;flex-shrink:0">
+          <div class="metric info"><div class="metric-label">Campaigns</div><div class="metric-value" id="matCampaigns">—</div><div class="metric-sub">In material review</div></div>
+          <div class="metric success"><div class="metric-label">Ready</div><div class="metric-value" id="matOk">—</div><div class="metric-sub">Campaigns ready</div></div>
+          <div class="metric warn"><div class="metric-label">Needs Convert</div><div class="metric-value" id="matLow">—</div><div class="metric-sub">Coverage via make / convert</div></div>
           <div class="metric"><div class="metric-label">Held lots</div><div class="metric-value" id="matHeld">—</div><div class="metric-sub">Awaiting material</div></div>
-        </div>
-        <!-- BOM strip (hidden until run) -->
-        <div class="bom-summary-strip" id="bomSummaryStrip" style="display:none;flex-shrink:0">
-          <div class="bom-kpi"><span class="kpi-val" id="bomKpiLinesVal">—</span><span class="kpi-label">Items</span></div>
-          <div class="bom-kpi"><span class="kpi-val" id="bomKpiGrossVal">—</span><span class="kpi-label">Gross MT</span></div>
-          <div class="bom-kpi"><span class="kpi-val" id="bomKpiNetVal">—</span><span class="kpi-label">Net MT</span></div>
-          <div class="bom-kpi"><span class="kpi-val" id="bomKpiByproductVal">—</span><span class="kpi-label">Byproduct</span></div>
+          <div class="metric danger"><div class="metric-label">Short</div><div class="metric-value" id="matCrit">—</div><div class="metric-sub">Campaigns with shortages</div></div>
+          <div class="metric"><div class="metric-label">Required Qty</div><div class="metric-value" id="matReqQty">—</div><div class="metric-sub">Across all campaigns</div></div>
+          <div class="metric info"><div class="metric-label">Stock Covered</div><div class="metric-value" id="matCoveredQty">—</div><div class="metric-sub">Met from inventory</div></div>
+          <div class="metric warn"><div class="metric-label">Make / Convert</div><div class="metric-value" id="matConvertQty">—</div><div class="metric-sub" id="matShortQtySub">Shortage: —</div></div>
         </div>
         <!-- Split layout: tree left, detail right -->
-        <div class="material-split-container" style="flex:1;min-height:0;overflow:hidden">
+        <div class="material-split-container material-page-layout" style="flex:1;min-height:0;overflow:hidden">
           <div class="material-tree-panel">
             <div class="material-tree-header">Material Groups</div>
             <div class="material-tree" id="materialTree"></div>
@@ -685,7 +680,7 @@
         <div style="flex:1;min-height:0;overflow:auto">
           <div class="grid-2">
             <div class="card">
-              <div class="card-header"><div><div class="card-title">Run CTP check</div><div class="card-sub">Calls <code class="inline">/api/aps/ctp/check</code>.</div></div></div>
+              <div class="card-header"><div><div class="card-title">Run CTP check</div></div></div>
               <div class="card-body">
                 <div class="stack">
                   <select class="sel" id="ctpSku" aria-label="CTP SKU"><option value="">Loading SKUs…</option></select>
@@ -772,6 +767,9 @@
     </div>
 
     <div class="status-footer">
+      <div class="status-footer-progress" aria-hidden="true">
+        <div id="statusFooterProgressFill"></div>
+      </div>
       <div class="status-footer-content">
         <div class="status-group">
           <div class="chip" id="chipApi"><span class="dot"></span><span id="chipApiText">API unknown</span></div>

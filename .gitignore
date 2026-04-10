@@ -57,6 +57,11 @@ cover/
 
 # Django stuff:
 *.log
+api.pid
+api.log
+*.backup
+*.tmp
+.DS_Store
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
