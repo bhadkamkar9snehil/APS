@@ -32,6 +32,8 @@ import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from zipfile import BadZipFile
+import zipfile
 
 import numpy as np
 import pandas as pd
@@ -1010,8 +1012,14 @@ def health():
     if exists:
         try:
             if quick:
-                workbook_ok = True
-                schema_validation = {"valid": True, "mode": "quick"}
+                workbook_ok = zipfile.is_zipfile(WORKBOOK)
+                schema_validation = {
+                    "valid": workbook_ok,
+                    "mode": "quick",
+                    "zip_container_ok": workbook_ok,
+                }
+                if not workbook_ok:
+                    workbook_error = "Workbook is not a valid .xlsx zip container"
             else:
                 import openpyxl
                 wb = openpyxl.load_workbook(WORKBOOK, read_only=True, data_only=True)
@@ -3439,16 +3447,24 @@ def aps_planning_release():
 
         so_to_po = {}
         for po in released_orders:
-            for so_id in (po.get("selected_so_ids") or []):
+            po_id_for_map = str(po.get("po_id") or po.get("PO_ID") or "").strip()
+            if not po_id_for_map:
+                return _jsonify({
+                    "error": "Invalid planning order payload: missing po_id"
+                }, 400)
+            raw_so_ids = po.get("selected_so_ids") or po.get("Selected_SO_IDs") or []
+            if isinstance(raw_so_ids, str):
+                raw_so_ids = [x.strip() for x in raw_so_ids.split(",") if str(x).strip()]
+            for so_id in raw_so_ids:
                 clean_so = str(so_id).strip()
                 if clean_so:
-                    if clean_so in so_to_po and so_to_po[clean_so] != po["po_id"]:
+                    if clean_so in so_to_po and so_to_po[clean_so] != po_id_for_map:
                         return _jsonify({
                             "error": f"SO {clean_so} is mapped to multiple release planning orders",
                             "existing_po": so_to_po[clean_so],
-                            "new_po": po["po_id"],
+                            "new_po": po_id_for_map,
                         }, 400)
-                    so_to_po[clean_so] = po["po_id"]
+                    so_to_po[clean_so] = po_id_for_map
 
         if not so_to_po:
             return _jsonify({"error": "Selected planning orders have no sales orders to release"}, 400)
@@ -3476,6 +3492,12 @@ def aps_planning_release():
                 updated_sales_orders.append(item)
             except PermissionError as pe:
                 return _jsonify({"error": "Cannot write to Excel file - it may be open in another application. Please close the file and try again.", "details": str(pe)}, 409)
+            except BadZipFile as ze:
+                return _jsonify({
+                    "error": "Workbook is not readable as a valid .xlsx file (zip container). Close Excel/OneDrive sync and restore a valid workbook, then retry unrelease.",
+                    "details": str(ze),
+                    "workbook": str(WORKBOOK),
+                }, 409)
             except Exception as e:
                 return _jsonify({"error": f"Failed to update sales order {so_id}: {str(e)}"}, 400)
 
@@ -3505,6 +3527,12 @@ def aps_planning_release():
             "total_heats": total_heats,
             "message": "Planning orders released to execution",
         })
+    except BadZipFile as ze:
+        return _jsonify({
+            "error": "Workbook is not readable as a valid .xlsx file (zip container). Close Excel/OneDrive sync and restore a valid workbook, then retry release.",
+            "details": str(ze),
+            "workbook": str(WORKBOOK),
+        }, 409)
     except Exception as e:
         return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
 
@@ -3600,6 +3628,12 @@ def aps_planning_unrelease():
                 updated_sales_orders.append(item)
             except PermissionError as pe:
                 return _jsonify({"error": "Cannot write to Excel file - it may be open in another application. Please close the file and try again.", "details": str(pe)}, 409)
+            except BadZipFile as ze:
+                return _jsonify({
+                    "error": "Workbook is not readable as a valid .xlsx file (zip container). Close Excel/OneDrive sync and restore a valid workbook, then retry release.",
+                    "details": str(ze),
+                    "workbook": str(WORKBOOK),
+                }, 409)
             except Exception as e:
                 return _jsonify({"error": f"Failed to update sales order {so_id}: {str(e)}"}, 400)
 
@@ -3644,6 +3678,12 @@ def aps_planning_unrelease():
             "total_heats": total_heats,
             "message": "Planning orders returned from execution to planning",
         })
+    except BadZipFile as ze:
+        return _jsonify({
+            "error": "Workbook is not readable as a valid .xlsx file (zip container). Close Excel/OneDrive sync and restore a valid workbook, then retry release.",
+            "details": str(ze),
+            "workbook": str(WORKBOOK),
+        }, 409)
     except Exception as e:
         return _jsonify({"error": str(e), "traceback": traceback.format_exc()}, 500)
 
