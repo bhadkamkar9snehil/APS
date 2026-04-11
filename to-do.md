@@ -125,13 +125,1192 @@ ChatGPT's Version including findings from screenshots.
 
 ---
 
-# Key Missing Things (Now Added)
+# X-APS Complete To-Do List
 
-These were **not explicitly in your list but critical**:
+## Document purpose
 
-* Kill `.dash-card` vs `.card` fragmentation
-* Replace KPI system completely (not just tweak)
-* Introduce view-mode architecture for gantt
-* Add visual encoding for constraints (not text)
-* Fix typography + spacing system (root cause issue)
-* Fix empty states and splash screen
+This document consolidates the current master UI to-do, the latest uploaded frontend files, and the supporting architecture/logic notes into one implementation-ready backlog. It is intended to be the single working list for UI, frontend behavior, API wiring, and planning-logic improvements. The active product surface is the static UI driven by `index.html`, `styles.css`, `app.js`, backed by `xaps_application_api.py` and the `engine/` modules.     
+
+---
+
+## 1. Core product principles that must govern all fixes
+
+* There must be **one shared KPI system**, not a global KPI strip plus local page KPI strips.
+* The top KPI row must be **tab-aware** and must change meaning based on the active tab.
+* The top tab strip must be the **single page-level action zone**.
+* Cards, statuses, buttons, spacing, typography, and surfaces must feel like **one product**, not multiple stitched-together interfaces.
+* The Material page must answer: **“Can this lot/campaign release, and what is blocking it?”**
+* The BOM page must answer: **“What does the active plan require in total?”**
+* Material and BOM are related, but they are not the same page and must not collapse into one view.
+* Execution must feel like a true **handoff and dispatch workspace**, not just another reporting page.  
+
+---
+
+## 2. Current state summary
+
+### 2.1 What is already in place
+
+* The UI already has a shared top summary row with tab-aware KPI rendering logic.
+* The top strip already has contextual actions for Planning, BOM, Execution, and Material.
+* The app already supports a single-page contained layout with page scroll containment improvements.
+* The Material tab is already positioned as a release-readiness view, but the implementation is still campaign-centric.
+* The API already auto-computes a material plan after scheduling and stores it in the active run artifact.    
+
+### 2.2 What is still fundamentally wrong
+
+* Material is still **not next to BOM** in the top navigation.
+* The Material page is still structurally **campaign-centric**, not truly multi-granular.
+* There is still **no first-class per-heat material mode**.
+* The KPI collapse control works, but its UX is bulky and consumes vertical space.
+* The CSS is cleaner than before, but the design system is still **not fully unified**.
+* Dashboard, Material, Execution, and bottom status patterns still need stronger consistency.    
+
+---
+
+## 3. Priority framework
+
+### P0 — must fix first
+
+These items directly affect product structure, clarity, workflow correctness, or release decisions.
+
+### P1 — should fix next
+
+These items improve consistency, readability, workflow quality, and user confidence.
+
+### P2 — valuable improvements
+
+These items improve polish, maintainability, and deeper operational usefulness.
+
+---
+
+# 4. P0 To-Do Items
+
+## 4.1 Navigation and tab ordering
+
+### P0.1 Reorder tabs so Material sits next to BOM
+
+**Problem**
+The current order is `Dashboard → Planning → BOM → Execution → Material → Capacity → CTP → Scenarios → Master Data`, which breaks the intended material-flow mental model. Material must sit adjacent to BOM. 
+
+**Required change**
+
+* Move `Material` so the top strip reads:
+
+  * Dashboard
+  * Planning
+  * BOM
+  * Material
+  * Execution
+  * Capacity
+  * CTP
+  * Scenarios
+  * Master Data
+
+**Files**
+
+* `index.html`
+
+**Notes**
+
+* This is mostly a markup/order fix.
+* Existing `data-page` activation logic should continue to work without a redesign because tab activation is keyed by `data-page`, not by visual position. 
+
+---
+
+## 4.2 Top-strip architecture and page actions
+
+### P0.2 Complete the top-strip single action area pattern
+
+**Problem**
+The app has the basic context slot pattern, but it still needs to become the definitive and clean action model for every tab. Some action semantics are still not fully normalized.  
+
+**Required change**
+
+* Keep one right-aligned action zone for page-level actions.
+* Ensure every tab has a clear action pattern:
+
+  * Planning: planning window + pipeline controls
+  * BOM: run explosion / refresh / grouping controls
+  * Material: refresh + view-mode controls
+  * Execution: rerun / filter / view controls
+  * Capacity: export / grouping / threshold controls
+  * CTP: run request / reset / history controls
+* Remove page-local duplicated action clusters if any still exist inside page content.
+
+**Files**
+
+* `index.html`
+* `app.js`
+* `styles.css`
+
+---
+
+## 4.3 KPI system and top summary UX
+
+### P0.3 Keep one KPI system only
+
+**Problem**
+The product requirement is explicit: one shared KPI row, tab-aware, no duplicate page-local KPI rows. That principle must remain enforced everywhere.  
+
+**Required change**
+
+* Audit all tabs and remove any secondary KPI strips that duplicate the top summary.
+* Use the top summary as the single KPI surface for each tab.
+* Keep per-card inline stats only when they are subordinate, not competing KPI systems.
+
+**Files**
+
+* `index.html`
+* `app.js`
+* `styles.css`
+
+### P0.4 Redesign the KPI collapse UX
+
+**Problem**
+The current “Hide KPIs” control is functionally correct but visually heavy and vertically wasteful. It sits in its own tool row, which defeats the purpose of reclaiming space.   
+
+**Required change**
+
+* Remove the separate `top-summary-tools` row pattern.
+* Replace it with a compact inline edge control attached to the summary container.
+* Use:
+
+  * corner-mounted chevron handle
+  * icon-first compact state
+  * minimal hover-reveal label
+  * smoother collapse/expand behavior
+* When collapsed, reclaim real vertical space.
+
+**Files**
+
+* `index.html`
+* `styles.css`
+* `app.js`
+
+### P0.5 Tighten KPI semantics by tab
+
+**Problem**
+The KPI row is already tab-aware, but the semantics still need to be reviewed for precision and usefulness. 
+
+**Required change**
+
+* Dashboard: global plan health
+* Planning: order pool / planning orders / heats / progress / feasibility
+* BOM: coverage / gross / net / short / blocked material counts
+* Material: ready / convert / short / held / release-risk counts
+* Execution: released lots / due soon / in-progress / late / holds
+* Capacity: bottleneck / avg util / overloaded / slack / critical assets
+* CTP: confirmed / conditional / later-date / blocked mix
+* Scenarios: active / last compare / delta metrics
+* Master Data: audit issues / stale sheets / config conflicts / required master gaps
+
+**Files**
+
+* `app.js`
+
+---
+
+## 4.4 Design system unification
+
+### P0.6 Unify card system
+
+**Problem**
+The design-system audit explicitly identified fragmented card types, and the current CSS still contains separate `.dash-card` identity instead of one canonical shell family.  
+
+**Required change**
+
+* Create one base card shell for:
+
+  * dashboard panels
+  * planning panels
+  * material panels
+  * alerts
+  * list cards
+  * tables
+* Normalize:
+
+  * header height
+  * header padding
+  * body padding
+  * border
+  * radius
+  * shadow
+* Remove “this page has its own card language” behavior.
+
+**Files**
+
+* `styles.css`
+* `index.html`
+
+### P0.7 Unify KPI components
+
+**Problem**
+Global metrics, dashboard mini stats, section KPIs, and status counts still feel like separate components.  
+
+**Required change**
+
+* Define one KPI family with variants:
+
+  * top summary KPI
+  * sub KPI
+  * inline KPI
+* Stop visually splitting `.metric` and mini-stat styles into unrelated systems.
+* Normalize hierarchy:
+
+  * label
+  * value
+  * supporting text
+  * tone state
+
+**Files**
+
+* `styles.css`
+* `index.html`
+
+### P0.8 Unify status tokens
+
+**Problem**
+Status chips, badges, warnings, footer statuses, and release states still need a single semantic language. 
+
+**Required change**
+
+* Create one semantic mapping:
+
+  * success
+  * warning
+  * danger
+  * info
+  * neutral
+* Apply across:
+
+  * footer strip
+  * planning pipeline
+  * material states
+  * execution states
+  * dashboard alerts
+  * badges and chips
+
+**Files**
+
+* `styles.css`
+* `app.js`
+* `index.html`
+
+### P0.9 Finish typography and spacing cleanup
+
+**Problem**
+The design audit identified too many font sizes, spacing values, radius values, and visual densities. The new stylesheet improved this but did not fully finish the work.  
+
+**Required change**
+
+* Remove stray hard-coded font sizes not aligned to the token scale.
+* Remove stray hard-coded gap and padding values.
+* Normalize all cards and toolbars to the token scale.
+* Improve important-text contrast where faint text is still overused.
+
+**Files**
+
+* `styles.css`
+
+---
+
+## 4.5 Dashboard overhaul
+
+### P0.10 Rework dashboard around one dominant operational story
+
+**Problem**
+The dashboard is improved but still feels like multiple stacked panels rather than one coherent cockpit. The to-do explicitly asks for a stronger primary focal area and better constraint visibility. 
+
+**Required change**
+
+* Make the dashboard read as:
+
+  * left = planning status and alerts
+  * center = schedule/capacity focal area
+  * right = material/release readiness and active work
+* Ensure one clearly dominant visual region exists.
+* Reduce the sense of “three unrelated columns.”
+
+**Files**
+
+* `index.html`
+* `styles.css`
+* `app.js`
+
+### P0.11 Surface planning constraints visually, not just textually
+
+**Problem**
+Constraint visibility is still weak. The to-do explicitly called out horizon, utilization pressure, lateness, shortages, held status, and capacity risk. 
+
+**Required change**
+
+* Add explicit visual cards or compact bars for:
+
+  * planning horizon pressure
+  * late-order pressure
+  * material shortage pressure
+  * hold pressure
+  * bottleneck pressure
+  * release readiness
+
+**Files**
+
+* `index.html`
+* `styles.css`
+* `app.js`
+
+### P0.12 Fully unify long horizontal dashboard cards
+
+**Problem**
+Planning Status, Alerts, and Active Orders still risk feeling like slightly different components. 
+
+**Required change**
+
+* Use one long-panel pattern everywhere on the dashboard.
+* Standardize:
+
+  * title row
+  * action slot
+  * meta slot
+  * empty state
+  * list density
+
+**Files**
+
+* `styles.css`
+* `index.html`
+
+---
+
+## 4.6 Material tab redesign
+
+### P0.13 Keep Material as a release-readiness workspace
+
+**Problem**
+Material must answer release-readiness, not act like a generic report or campaign browser. This is already the intended product meaning. 
+
+**Required change**
+
+* Ensure the Material page always starts with decision-oriented content:
+
+  * can release?
+  * what blocks release?
+  * what is the next action?
+* Push raw tables lower in the hierarchy.
+
+**Files**
+
+* `index.html`
+* `styles.css`
+* `app.js`
+
+### P0.14 Add explicit Material granularity modes
+
+**Problem**
+The current Material implementation is campaign-centric and there is no first-class heat-level view. The API auto-computes material plan using `detail_level="campaign"`, which is the root reason the UI has no true heat provision. 
+
+**Required change**
+
+* Add a granularity model:
+
+  * Campaign
+  * Planning Order
+  * Heat
+* Keep Campaign as the default mode.
+* Make Heat a drill-down or alternate mode, not a hidden derived detail.
+
+**Files**
+
+* `xaps_application_api.py`
+* `app.js`
+* `index.html`
+
+### P0.15 Extend backend material-plan generation beyond campaign granularity
+
+**Problem**
+The frontend cannot honestly show heat-level material readiness until the backend supports it. The current active run artifact creation uses campaign detail by default. 
+
+**Required change**
+
+* Extend `_calculate_material_plan()` or add a new API path so material data can be requested as:
+
+  * campaign-level
+  * planning-order-level
+  * heat-level
+* Include release blockers, shortages, convert requirements, and readiness status at each granularity.
+
+**Files**
+
+* `xaps_application_api.py`
+
+### P0.16 Add Material mode controls to the top action area
+
+**Problem**
+If the Material tab gains multiple granularities, the mode switch must live in the top strip, not buried inside page content.
+
+**Required change**
+
+* Add a mode toggle beside the Material refresh action:
+
+  * Campaign
+  * PO
+  * Heat
+* Persist selected mode in frontend state.
+
+**Files**
+
+* `index.html`
+* `app.js`
+* `styles.css`
+
+### P0.17 Reorganize Material detail hierarchy
+
+**Problem**
+Even with improvements, the Material page still needs a stricter decision-first composition.
+
+**Required structure**
+
+1. Verdict hero
+2. Recommended actions
+3. Plant/stage readiness summary
+4. Shortage list
+5. Convert/make requirements
+6. Supporting material detail table
+7. Supporting lineage/explanation metadata
+
+**Files**
+
+* `index.html`
+* `styles.css`
+* `app.js`
+
+### P0.18 Improve Material grouping and default selection
+
+**Problem**
+Material should group work by operational risk and should default to the most urgent/highest-risk item first.
+
+**Required change**
+
+* Group left-side tree/list by:
+
+  * Ready
+  * Needs Convert
+  * Short
+  * Held
+* Sort within each group by severity, due date, and release urgency.
+* Default selected item should be highest-risk entry, not first in raw order.
+
+**Files**
+
+* `app.js`
+* `styles.css`
+
+### P0.19 Make actions explicit on Material page
+
+**Problem**
+Material needs obvious “what next?” controls instead of passive reporting.
+
+**Required change**
+Add explicit recommended-action states such as:
+
+* Convert
+* Expedite
+* Substitute
+* Release
+* Hold
+* Investigate shortage
+* Wait for upstream completion
+
+**Files**
+
+* `app.js`
+* `index.html`
+* `styles.css`
+
+---
+
+## 4.7 Execution tab redesign
+
+### P0.20 Organize execution Gantt plant-wise
+
+**Problem**
+The to-do explicitly calls for plant-wise Gantts sourced dynamically from config and sequenced in routing order. 
+
+**Required change**
+
+* Group execution timeline by plant.
+* Plant ordering must follow routing sequence.
+* Default order must reflect upstream to downstream flow, not arbitrary grouping.
+
+**Files**
+
+* `app.js`
+* `xaps_application_api.py`
+* possibly config-driven support in engine/API
+
+### P0.21 Ensure plant/equipment order follows routing logic
+
+**Problem**
+You explicitly called out that plant/equipment arrangement must respect routing sequence, not arbitrary order.
+
+**Required change**
+
+* Use routing-derived operation order where available.
+* Fall back to canonical stage order only when routing is incomplete.
+
+**Files**
+
+* `app.js`
+* `xaps_application_api.py`
+* `engine/scheduler.py` where needed for consistent metadata
+
+### P0.22 Make execution sub-KPIs consistent with the rest of the app
+
+**Problem**
+The to-do explicitly called out KPI inconsistency beneath the equipment timeline strip. 
+
+**Required change**
+
+* Replace execution-specific odd KPI styles with the shared KPI family.
+* Use the same semantic and visual hierarchy as the rest of the app.
+
+**Files**
+
+* `styles.css`
+* `index.html`
+
+### P0.23 Add easy switching between global, SO-wise, PO-wise, and plant-wise execution views
+
+**Problem**
+Execution needs multiple valid slices of the same schedule.
+
+**Required change**
+
+* Provide direct switches for:
+
+  * Global timeline
+  * Plant-wise
+  * SO-wise
+  * PO-wise
+* Make these first-class subviews, not hidden behavior.
+
+**Files**
+
+* `app.js`
+* `index.html`
+
+### P0.24 Make Gantt interaction more cohesive
+
+**Problem**
+The to-do explicitly says execution interactivity needs review.
+
+**Required change**
+
+* Standardize:
+
+  * hover detail
+  * click-to-pin detail
+  * selection highlight
+  * zoom behavior
+  * empty state
+* Ensure timeline and plant views feel related, not separate widgets.
+
+**Files**
+
+* `app.js`
+* `styles.css`
+
+---
+
+## 4.8 Bottom status strip
+
+### P0.25 Make bottom strip tab-aware
+
+**Problem**
+The to-do explicitly called for right-aligned tab-aware content in the bottom status strip. 
+
+**Required change**
+
+* Show different bottom-strip status content based on active tab.
+* Example:
+
+  * Planning: pipeline stage / selected pool / run status
+  * BOM: explosion status / structure warnings
+  * Material: selected entity readiness / blockers
+  * Execution: selected campaign/lot / timeline status
+  * Capacity: bottleneck / overload count
+  * CTP: last promise result state
+
+**Files**
+
+* `app.js`
+* `index.html`
+
+### P0.26 Unify all footer statuses
+
+**Problem**
+The to-do explicitly says unify all the various statuses in the bottom strip. 
+
+**Required change**
+
+* Normalize status chips, progress bars, text hierarchy, and severity colors.
+* Make the bottom strip feel like the same design system as the top summary and cards.
+
+**Files**
+
+* `styles.css`
+* `app.js`
+
+---
+
+# 5. P1 To-Do Items
+
+## 5.1 Layout and page containment
+
+### P1.1 Verify page-content containment across all active pages
+
+**Problem**
+Single-page scroll containment was marked complete, but it should be re-audited against the latest active files because layout regressions are common. 
+
+**Required change**
+
+* Check every active page for:
+
+  * fixed header behavior
+  * correct scroll containment
+  * no nested awkward scrollbars
+  * proper flex shrink/grow behavior
+* Regressions should be fixed before feature work piles on.
+
+**Files**
+
+* `index.html`
+* `styles.css`
+
+---
+
+## 5.2 Planning tab improvements
+
+### P1.2 Make planning page clearly the primary APS workflow
+
+**Problem**
+Planning is the core APS page and should visually read that way. The README defines it as the main workflow surface. 
+
+**Required change**
+
+* Make pipeline stages clearer.
+* Improve hierarchy between:
+
+  * pool selection
+  * planning-order proposal
+  * heat derivation
+  * simulation
+  * release
+* Ensure actions and progress feel sequential.
+
+**Files**
+
+* `index.html`
+* `app.js`
+* `styles.css`
+
+### P1.3 Improve pipeline feedback and progress clarity
+
+**Problem**
+Pipeline stage status is present but can be clearer and more productized.
+
+**Required change**
+
+* Stronger visual stage progression
+* Better “running / done / blocked / error” semantics
+* Better carry-forward of run context into bottom status strip
+
+**Files**
+
+* `app.js`
+* `styles.css`
+
+---
+
+## 5.3 BOM tab improvements
+
+### P1.4 Strengthen BOM as total-plan material page
+
+**Problem**
+BOM and Material must be clearly differentiated.
+
+**Required change**
+
+* Re-emphasize BOM as total exploded/netted requirement
+* Improve grouping by:
+
+  * plant
+  * stage
+  * material type
+  * coverage state
+* Improve summary narrative at the top of the page
+
+**Files**
+
+* `app.js`
+* `index.html`
+* `styles.css`
+
+### P1.5 Improve BOM structure-error visibility
+
+**Problem**
+The BOM engine explicitly supports structure errors like cycle and max-level issues. These deserve better UI surfacing. 
+
+**Required change**
+
+* Surface:
+
+  * BOM cycle errors
+  * max-level exceeded
+  * degraded feasibility due to structure issues
+* Show clear warnings in BOM view and bottom status strip.
+
+**Files**
+
+* `xaps_application_api.py`
+* `app.js`
+
+---
+
+## 5.4 Capacity tab improvements
+
+### P1.6 Make Capacity page more diagnostic
+
+**Problem**
+Capacity should identify where the load sits and what constrains the plan, not just display bars. 
+
+**Required change**
+
+* Highlight:
+
+  * bottleneck resource
+  * overloaded group count
+  * slack/underutilized assets
+  * setup/changeover burden
+  * demand vs available hours
+* Provide sort/group controls by:
+
+  * plant
+  * operation family
+  * utilization severity
+
+**Files**
+
+* `app.js`
+* `index.html`
+
+### P1.7 Align Capacity semantics with capacity engine outputs
+
+**Problem**
+The capacity engine explicitly tracks demand, process, setup, and changeover hours. The UI should expose these meaningfully. 
+
+**Required change**
+
+* Show breakdowns for:
+
+  * Demand_Hrs
+  * Process_Hrs
+  * Setup_Hrs
+  * Changeover_Hrs
+  * Task_Count
+  * Available hours
+* Avoid collapsing all of it into a single utilization bar.
+
+**Files**
+
+* `app.js`
+* `xaps_application_api.py`
+
+---
+
+## 5.5 CTP page improvements
+
+### P1.8 Improve explanation quality for CTP outcomes
+
+**Problem**
+CTP already supports many decision classes and inventory lineage states; the UI should explain them better. 
+
+**Required change**
+
+* Clearly surface:
+
+  * stock-only promise
+  * merged promise
+  * new-campaign promise
+  * later-date promise
+  * material block
+  * capacity block
+  * inventory-trust degradation
+* Show why an answer is blocked, not just that it is blocked.
+
+**Files**
+
+* `xaps_application_api.py`
+* `app.js`
+
+### P1.9 Surface inventory lineage trust state in CTP
+
+**Problem**
+CTP already differentiates authoritative, recomputed, and conservative-blend inventory lineage states. That matters operationally. 
+
+**Required change**
+
+* Display lineage trust state in UI with severity:
+
+  * authoritative
+  * recomputed
+  * conservative blend
+* Explain implications for planner confidence.
+
+**Files**
+
+* `app.js`
+* `xaps_application_api.py`
+
+---
+
+## 5.6 Master Data and Scenarios
+
+### P1.10 Add clearer master-data audit surfacing
+
+**Problem**
+Master Data should not just be CRUD. It should expose the health of the workbook-backed system.
+
+**Required change**
+
+* Surface:
+
+  * missing master rows
+  * invalid routing
+  * config conflicts
+  * stale/inactive resources
+  * bad queue-time definitions
+
+**Files**
+
+* `xaps_application_api.py`
+* `app.js`
+
+### P1.11 Improve scenario comparison UX
+
+**Problem**
+Scenarios should support operational comparison, not just persistence.
+
+**Required change**
+
+* Show delta in:
+
+  * planned MT
+  * heats
+  * on-time %
+  * bottleneck load
+  * material holds
+* Make comparison read as “what changed if I apply this scenario?”
+
+**Files**
+
+* `app.js`
+* `index.html`
+
+---
+
+# 6. P2 To-Do Items
+
+## 6.1 Accessibility and interaction polish
+
+### P2.1 Improve keyboard and focus behavior
+
+**Required change**
+
+* Ensure tabs, toggles, segmented controls, and detail panels have visible and consistent focus behavior.
+* Improve keyboard navigation across top tabs, subviews, and detail panels.
+
+**Files**
+
+* `index.html`
+* `styles.css`
+* `app.js`
+
+### P2.2 Improve empty states and instructional copy
+
+**Required change**
+
+* Replace generic empties with context-aware operational guidance:
+
+  * “Run planning pipeline”
+  * “No shortages in current run”
+  * “No released lots yet”
+  * “No capacity overloads found”
+
+**Files**
+
+* `app.js`
+* `index.html`
+
+---
+
+## 6.2 Export and traceability
+
+### P2.3 Add export actions for high-value views
+
+**Required change**
+
+* Add export for:
+
+  * BOM net/gross view
+  * Material readiness list
+  * Capacity table
+  * Execution dispatch list
+  * CTP result history
+
+**Files**
+
+* `app.js`
+* `xaps_application_api.py`
+
+### P2.4 Improve run traceability
+
+**Problem**
+The API already has run artifacts and trace IDs. The UI should use them more explicitly. 
+
+**Required change**
+
+* Surface run ID, solver status, degraded flags, and timestamp in a clean diagnostics drawer or footer zone.
+
+**Files**
+
+* `xaps_application_api.py`
+* `app.js`
+
+---
+
+# 7. Backend and data-model To-Do
+
+## 7.1 Align Material page with APS planner model
+
+**Problem**
+The APS planner defines a correct layered model: `SalesOrder -> PlanningOrder -> HeatBatch -> ScheduledOperation`. Material should align better with this model instead of staying purely campaign-first. 
+
+**Required change**
+
+* Introduce material-readiness mapping for:
+
+  * PlanningOrder
+  * HeatBatch
+* Keep campaign view where useful, but stop making it the only reality.
+
+**Files**
+
+* `engine/aps_planner.py`
+* `xaps_application_api.py`
+
+## 7.2 Clarify coexistence of campaign engine and APS planner
+
+**Problem**
+The repo contains both campaign-first and APS planner-first concepts. This creates confusion unless intentionally bridged.  
+
+**Required change**
+
+* Document and enforce where:
+
+  * campaign model is still authoritative
+  * planning-order model is authoritative
+* Reduce UI ambiguity between PO, campaign, and heat identity.
+
+**Files**
+
+* `README.md`
+* `xaps_application_api.py`
+* `app.js`
+
+## 7.3 Revisit Excel vs API expectations
+
+**Problem**
+Data wiring notes already explain that Excel mode and API mode are architecturally separate, especially for Material. Users will still get confused unless the UI communicates this. 
+
+**Required change**
+
+* Add diagnostics/help text where needed:
+
+  * API mode uses in-memory run artifacts
+  * Excel workbook is not auto-written during REST scheduling
+* Ensure users do not assume web actions instantly mutate workbook sheets.
+
+**Files**
+
+* `app.js`
+* `README.md`
+
+---
+
+# 8. Engine and scheduling To-Do
+
+## 8.1 Scheduling objective improvements
+
+**Problem**
+The schedule logic audit identified important optimization weaknesses in lateness balance, idle time, and queue-violation modeling. 
+
+**Required change**
+
+* Rebalance SMS vs RM lateness weighting
+* Add idle-time or fragmentation minimization
+* Make queue-violation penalties proportional
+* Add early-finish incentive where appropriate
+
+**Files**
+
+* `engine/scheduler.py`
+
+## 8.2 Add SMS changeover enforcement
+
+**Problem**
+The audit identified that changeovers are enforced only on RM, not SMS equipment. This is a correctness issue. 
+
+**Required change**
+
+* Add changeover constraints across SMS stages where applicable.
+* Distinguish transfer time from changeover time more clearly.
+
+**Files**
+
+* `engine/scheduler.py`
+
+## 8.3 Improve campaign grouping logic
+
+**Problem**
+The audit identified limitations in campaign split/merge logic and all-or-nothing material holds. 
+
+**Required change**
+
+* Add split-by-urgency heuristic
+* Review merge-for-utilization opportunities
+* Review partial release vs hard-hold behavior
+* Improve priority inheritance consistency
+
+**Files**
+
+* `engine/campaign.py`
+
+## 8.4 Improve CTP ranking logic
+
+**Problem**
+CTP alternatives are ranked by precedence but not strongly by feasibility margin. 
+
+**Required change**
+
+* Improve ranking with confidence/feasibility margin scoring.
+* Surface better rationale for chosen promise path.
+
+**Files**
+
+* `engine/ctp.py`
+
+---
+
+# 9. Immediate change bundle for the three issues you explicitly raised
+
+## 9.1 Put Material next to BOM
+
+**Status:** Not done
+**Action:** Reorder tabs in `index.html`.
+**Priority:** P0. 
+
+## 9.2 Stop forcing Material into one campaign-only lens
+
+**Status:** Not done
+**Action:** Add Material granularity modes and backend support for Heat view.
+**Priority:** P0. 
+
+## 9.3 Replace the ugly KPI collapse button
+
+**Status:** Partially done functionally, not done UX-wise
+**Action:** Remove the separate tool row and replace it with a compact anchored handle.
+**Priority:** P0.   
+
+---
+
+# 10. Suggested implementation order
+
+## Phase 1 — Structural fixes
+
+1. Reorder tabs
+2. Redesign KPI collapse UX
+3. Finish top-strip action pattern
+4. Unify card/KPI/status system
+5. Rework bottom strip into tab-aware status zone
+
+## Phase 2 — Material and Execution correctness
+
+6. Add Material granularity model
+7. Extend material-plan backend for PO/Heat views
+8. Rebuild Material detail hierarchy
+9. Make Execution plant-wise and routing-sequenced
+10. Add execution multi-slice views
+
+## Phase 3 — Dashboard and supporting pages
+
+11. Rework dashboard focal structure
+12. Improve BOM summary and structure-error surfacing
+13. Improve Capacity diagnostics
+14. Improve CTP explanation surfaces
+15. Improve Scenarios and Master Data visibility
+
+## Phase 4 — Logic and engine improvements
+
+16. Scheduler objective improvements
+17. SMS changeover enforcement
+18. Campaign grouping refinement
+19. CTP ranking refinement
+
+---
+
+# 11. Definition of done
+
+A task should only be considered done when all of the following are true:
+
+* The UI behavior is implemented in the active static app, not just in documentation.
+* The design matches the shared design system and does not introduce a page-specific one-off style.
+* The bottom strip and top summary remain consistent with the new behavior.
+* Empty states, loading states, and degraded/error states are handled.
+* The behavior is grounded in the actual API/data model and is not simulated only in frontend state.
+* The change does not break page containment or introduce scroll regressions.
+* The change does not create a second competing KPI or action system.
+
+---
+
+# 12. Final condensed checklist
+
+## Must do now
+
+* [ ] Move Material next to BOM
+* [ ] Replace current KPI toggle UX
+* [ ] Finish one true top action strip model
+* [ ] Finish one true card/KPI/status design system
+* [ ] Make bottom strip tab-aware
+* [ ] Add Material mode switch: Campaign / PO / Heat
+* [ ] Extend backend material plan beyond campaign-only
+* [ ] Rebuild Material as verdict-first workspace
+* [ ] Make Execution plant-wise and routing-sequenced
+* [ ] Unify execution KPIs with global KPI family
+
+## Should do next
+
+* [ ] Rework dashboard into one stronger cockpit
+* [ ] Improve BOM summary and error surfacing
+* [ ] Make Capacity more diagnostic
+* [ ] Improve CTP explanation and trust-state UI
+* [ ] Improve Master Data audit visibility
+* [ ] Improve Scenario comparison UX
+
+## Logic backlog
+
+* [ ] Improve scheduler objective balance
+* [ ] Add SMS changeover constraints
+* [ ] Improve campaign split/merge logic
+* [ ] Improve CTP ranking quality
+
