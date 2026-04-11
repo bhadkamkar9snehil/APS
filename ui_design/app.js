@@ -121,9 +121,10 @@ function setTopActionContext(page) {
   const contextClassByPage = {
     execution: 'ctx-execution',
     bom: 'ctx-bom',
-    material: 'ctx-material'
+    material: 'ctx-material',
+    ctp: 'ctx-ctp'
   };
-  const showDefaultActions = new Set(['dashboard', 'capacity', 'ctp', 'scenarios', 'master']);
+  const showDefaultActions = new Set(['dashboard', 'capacity', 'scenarios', 'master']);
   const showPlanningActions = page === 'planning';
   const activeContextClass = contextClassByPage[page] || '';
 
@@ -546,6 +547,30 @@ function initNavigation() {
       activatePage(btn.dataset.page);
     });
 
+    topTabs.addEventListener('keydown', (e) => {
+      const navKeys = ['ArrowRight', 'ArrowLeft', 'Home', 'End'];
+      if (!navKeys.includes(e.key)) return;
+      const current = e.target.closest('[data-page]');
+      if (!current) return;
+
+      const tabs = [...topTabs.querySelectorAll('[data-page]')];
+      if (!tabs.length) return;
+      const currentIndex = tabs.indexOf(current);
+      if (currentIndex < 0) return;
+
+      let nextIndex = currentIndex;
+      if (e.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+      if (e.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+      if (e.key === 'Home') nextIndex = 0;
+      if (e.key === 'End') nextIndex = tabs.length - 1;
+
+      const nextTab = tabs[nextIndex];
+      if (!nextTab) return;
+      e.preventDefault();
+      nextTab.focus();
+      activatePage(nextTab.dataset.page);
+    });
+
     topTabs.dataset.bound = 'true';
   }
 
@@ -770,10 +795,14 @@ function syncTopSummaryState() {
   const toggle = qs('topSummaryToggle');
   if (panel) panel.classList.toggle('is-collapsed', Boolean(state.topSummaryCollapsed));
   if (toggle) {
-    toggle.setAttribute('aria-expanded', state.topSummaryCollapsed ? 'false' : 'true');
-    toggle.innerHTML = state.topSummaryCollapsed
-      ? '<i class="fa-solid fa-chevron-down" aria-hidden="true"></i><span>Show KPIs</span>'
-      : '<i class="fa-solid fa-chevron-up" aria-hidden="true"></i><span>Hide KPIs</span>';
+    const collapsed = Boolean(state.topSummaryCollapsed);
+    const label = collapsed ? 'Expand KPI row' : 'Collapse KPI row';
+    toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    toggle.setAttribute('aria-label', label);
+    toggle.setAttribute('title', label);
+    toggle.innerHTML = collapsed
+      ? '<i class="fa-solid fa-chevron-down" aria-hidden="true"></i>'
+      : '<i class="fa-solid fa-chevron-up" aria-hidden="true"></i>';
   }
 }
 

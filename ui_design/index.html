@@ -23,8 +23,8 @@
         <button type="button" class="tab active" id="tab-dashboard" data-page="dashboard" role="tab" aria-selected="true" aria-controls="page-dashboard" tabindex="0">Dashboard</button>
         <button type="button" class="tab" id="tab-planning" data-page="planning" role="tab" aria-selected="false" aria-controls="page-planning" tabindex="-1">Planning</button>
         <button type="button" class="tab" id="tab-bom" data-page="bom" role="tab" aria-selected="false" aria-controls="page-bom" tabindex="-1">BOM</button>
-        <button type="button" class="tab" id="tab-execution" data-page="execution" role="tab" aria-selected="false" aria-controls="page-execution" tabindex="-1">Execution</button>
         <button type="button" class="tab" id="tab-material" data-page="material" role="tab" aria-selected="false" aria-controls="page-material" tabindex="-1">Material</button>
+        <button type="button" class="tab" id="tab-execution" data-page="execution" role="tab" aria-selected="false" aria-controls="page-execution" tabindex="-1">Execution</button>
         <button type="button" class="tab" id="tab-capacity" data-page="capacity" role="tab" aria-selected="false" aria-controls="page-capacity" tabindex="-1">Capacity</button>
         <button type="button" class="tab" id="tab-ctp" data-page="ctp" role="tab" aria-selected="false" aria-controls="page-ctp" tabindex="-1">CTP</button>
         <button type="button" class="tab" id="tab-scenarios" data-page="scenarios" role="tab" aria-selected="false" aria-controls="page-scenarios" tabindex="-1">Scenarios</button>
@@ -67,16 +67,17 @@
           <div class="tab-context-actions ctx-material">
             <button type="button" class="btn primary btn-compact" id="materialRefreshBtn"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i><span>Refresh Material Status</span></button>
           </div>
+          <div class="tab-context-actions ctx-ctp">
+            <button type="button" class="btn primary btn-compact" id="ctpRunBtn"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i><span>Run CTP</span></button>
+          </div>
         </div>
       </div>
     </div>
 
     <div class="top">
       <div class="top-summary" id="topSummary">
+        <button type="button" class="top-summary-toggle" id="topSummaryToggle" aria-expanded="true" aria-label="Collapse KPI row" title="Collapse KPI row" onclick="toggleTopSummary()"><i class="fa-solid fa-chevron-up" aria-hidden="true"></i></button>
         <div class="brand-row">
-          <div class="top-summary-tools">
-            <button type="button" class="btn ghost btn-compact top-summary-toggle" id="topSummaryToggle" aria-expanded="true" onclick="toggleTopSummary()"><i class="fa-solid fa-chevron-up" aria-hidden="true"></i><span>Hide KPIs</span></button>
-          </div>
           <div class="summary-grid" id="summaryGrid">
             <div class="metric" id="summaryCard1"><div class="metric-label" id="summaryLabel1">Planning Orders</div><div class="metric-value" id="summaryValue1">—</div><div class="metric-sub" id="summarySub1">Loading…</div></div>
             <div class="metric success" id="summaryCard2"><div class="metric-label" id="summaryLabel2">Heats Planned</div><div class="metric-value" id="summaryValue2">—</div><div class="metric-sub" id="summarySub2">—</div></div>
@@ -709,7 +710,7 @@
                     <input class="inp" id="ctpQty" value="120" aria-label="CTP quantity" />
                     <input class="inp" id="ctpDate" type="date" aria-label="CTP requested date" />
                   </div>
-                  <button type="button" class="btn primary" id="ctpRunBtn"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i><span> Run CTP</span></button>
+                  <div class="notice">Use <strong>Run CTP</strong> in the top-right action strip to evaluate this request.</div>
                   <div class="notice" id="ctpResult">No request yet.</div>
                 </div>
               </div>

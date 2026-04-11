@@ -170,7 +170,8 @@ button, input, select, textarea { font: inherit; }
 }
 
 .top-summary {
-  padding: 0.35rem 0.8rem 0.45rem;
+  position: relative;
+  padding: 0.35rem 2.55rem 0.4rem 0.8rem;
   flex-shrink: 0;
   overflow: hidden;
   display: flex;
@@ -181,7 +182,8 @@ button, input, select, textarea { font: inherit; }
 }
 
 .top-summary.is-collapsed {
-  padding-bottom: 0.18rem;
+  padding-top: 0.16rem;
+  padding-bottom: 0.16rem;
 }
 
 .top-controls {
@@ -213,18 +215,41 @@ button, input, select, textarea { font: inherit; }
   margin: 0 auto;
 }
 
-.top-summary-tools {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 0.28rem;
-}
-
-.top-summary.is-collapsed .top-summary-tools {
-  margin-bottom: 0;
-}
-
 .top-summary-toggle {
-  min-width: 6.9rem;
+  position: absolute;
+  top: 0.26rem;
+  right: 0.8rem;
+  width: 1.7rem;
+  height: 1.7rem;
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--text-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+}
+
+.top-summary-toggle:hover {
+  color: var(--text);
+  border-color: var(--border);
+  background: #fff;
+}
+
+.top-summary-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.22);
+}
+
+.top-summary-toggle i {
+  font-size: 0.74rem;
+}
+
+.top-summary.is-collapsed .top-summary-toggle {
+  top: 0.12rem;
 }
 
 .summary-grid {
