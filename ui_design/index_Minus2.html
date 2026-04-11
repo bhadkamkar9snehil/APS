@@ -11,13 +11,52 @@
 <!-- Font Awesome is optional here; labels remain visible if CDN fails. -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
 
+<style>
+/* Offline-safe icon/text rendering and structural fallbacks */
+.btn i[aria-hidden="true"],
+.ps-chevron i[aria-hidden="true"],
+.icon-inline i[aria-hidden="true"]{
+  display:inline-block;
+  width:1em;
+  min-width:1em;
+  text-align:center;
+}
+.btn span,
+.ps-chevron-label{
+  display:inline-block;
+}
+.tabs [role="tab"][aria-selected="true"],
+.filters [role="tab"][aria-selected="true"]{
+  outline:none;
+}
+.ps-chevron{
+  display:flex;
+  align-items:center;
+  gap:.28rem;
+  transform:none;
+  white-space:nowrap;
+}
+.ps-chevron i{
+  display:inline-block;
+  transition:transform .2s;
+}
+.ps-chevron.collapsed i{
+  transform:rotate(-90deg);
+}
+.ps-chevron-label{
+  font-size:.62rem;
+  font-weight:600;
+  color:var(--text-faint);
+  letter-spacing:.01em;
+}
+</style>
+
 </head>
 <body>
 <div id="loadingBar" class="loading-bar"></div>
 <div class="app">
   <div class="shell">
     <div class="navbar">
-      <div class="navbar-balance" aria-hidden="true"></div>
       <div class="tabs" id="topTabs" role="tablist" aria-label="Primary navigation">
         <!-- Main Tabs -->
         <button type="button" class="tab active" id="tab-dashboard" data-page="dashboard" role="tab" aria-selected="true" aria-controls="page-dashboard" tabindex="0">Dashboard</button>
@@ -56,106 +95,92 @@
           <button type="button" class="btn ghost btn-compact" id="pipelineExpandAllBtn" title="Expand or collapse all stages"><i class="fa-solid fa-up-down" aria-hidden="true"></i><span>Expand</span></button>
           <button type="button" class="btn primary btn-compact" id="pipelineRunBtn" title="Run Pipeline"><i class="fa-solid fa-play" aria-hidden="true"></i><span>Run</span></button>
         </div>
-        <div class="navbar-context" id="navbarContextSlot" aria-live="polite">
-          <div class="tab-context-actions ctx-execution">
-            <button type="button" class="btn ghost btn-compact" id="clearCampaignBtn" style="display:none" onclick="clearCampaignSelection()"><i class="fa-solid fa-filter-circle-xmark" aria-hidden="true"></i><span>Clear Filter</span></button>
-            <button type="button" class="btn primary btn-compact" id="campaignRerunBtn"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>Re-run Schedule</span></button>
-          </div>
-          <div class="tab-context-actions ctx-bom">
-            <button type="button" class="btn primary btn-compact" id="bomExplodeBtn"><i class="fa-solid fa-sitemap" aria-hidden="true"></i><span>Run BOM Explosion</span></button>
-          </div>
-          <div class="tab-context-actions ctx-material">
-            <button type="button" class="btn primary btn-compact" id="materialRefreshBtn"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i><span>Refresh Material Status</span></button>
-          </div>
-        </div>
+        <div class="navbar-context" id="navbarContextSlot" aria-live="polite"></div>
       </div>
     </div>
 
     <div class="top">
-      <div class="top-summary" id="topSummary">
+      <div class="top-summary">
         <div class="brand-row">
-          <div class="top-summary-tools">
-            <button type="button" class="btn ghost btn-compact top-summary-toggle" id="topSummaryToggle" aria-expanded="true" onclick="toggleTopSummary()"><i class="fa-solid fa-chevron-up" aria-hidden="true"></i><span>Hide KPIs</span></button>
-          </div>
-          <div class="summary-grid" id="summaryGrid">
-            <div class="metric" id="summaryCard1"><div class="metric-label" id="summaryLabel1">Planning Orders</div><div class="metric-value" id="summaryValue1">—</div><div class="metric-sub" id="summarySub1">Loading…</div></div>
-            <div class="metric success" id="summaryCard2"><div class="metric-label" id="summaryLabel2">Heats Planned</div><div class="metric-value" id="summaryValue2">—</div><div class="metric-sub" id="summarySub2">—</div></div>
-            <div class="metric" id="summaryCard3"><div class="metric-label" id="summaryLabel3">MT Planned</div><div class="metric-value" id="summaryValue3">—</div><div class="metric-sub" id="summarySub3">in heats</div></div>
-            <div class="metric warn" id="summaryCard4"><div class="metric-label" id="summaryLabel4">On-Time</div><div class="metric-value" id="summaryValue4">—</div><div class="metric-sub" id="summarySub4">delivery rate</div></div>
-            <div class="metric info" id="summaryCard5"><div class="metric-label" id="summaryLabel5">Plan Status</div><div class="metric-value" id="summaryValue5">—</div><div class="metric-sub" id="summarySub5">Feasibility not run</div></div>
+          <div class="summary-grid">
+            <div class="metric"><div class="metric-label">Planning Orders</div><div class="metric-value" id="summaryCampaigns">—</div><div class="metric-sub" id="summaryCampaignsSub">Loading…</div></div>
+            <div class="metric success"><div class="metric-label">Heats Planned</div><div class="metric-value" id="summaryHeats">—</div><div class="metric-sub" id="summaryHeatsSub">—</div></div>
+            <div class="metric"><div class="metric-label">MT Planned</div><div class="metric-value" id="summaryMt">—</div><div class="metric-sub" id="summaryMtSub">in heats</div></div>
+            <div class="metric warn"><div class="metric-label">On-Time</div><div class="metric-value" id="summaryOt">—</div><div class="metric-sub" id="summaryOtSub">delivery rate</div></div>
+            <div class="metric info" id="summaryPlanCard"><div class="metric-label">Plan Status</div><div class="metric-value" id="summaryCapacity">—</div><div class="metric-sub" id="summaryCapacitySub">Feasibility not run</div></div>
           </div>
         </div>
       </div>
     </div>
 
     <div class="body">
-      <section class="page active page-dashboard" id="page-dashboard" role="tabpanel" aria-labelledby="tab-dashboard">
+      <section class="page active" id="page-dashboard" role="tabpanel" aria-labelledby="tab-dashboard" style="display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:.4rem .6rem .4rem">
 
         <!-- ═══ MAIN BODY: 3 columns ═══ -->
-        <div class="dashboard-layout">
+        <div style="display:grid;grid-template-columns:1fr 1.05fr 1.05fr;gap:.45rem;flex:1;min-height:0;overflow:hidden">
 
           <!-- ── COL 1: Planning Status + Alerts ── -->
-          <div class="dashboard-column">
+          <div style="display:flex;flex-direction:column;gap:.45rem;min-height:0;overflow:hidden">
 
             <!-- Planning Status -->
-            <div class="dash-card dashboard-panel dashboard-panel--planning">
+            <div class="dash-card" style="flex:0.6;min-height:18rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Planning Status</span>
-                <button type="button" class="btn ghost dashboard-panel-action" onclick="activatePage('planning')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> Open</span></button>
+                <button type="button" class="btn ghost" style="font-size:.65rem;padding:.15rem .45rem;height:1.5rem" onclick="activatePage('planning')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> Open</span></button>
               </div>
-              <div class="dashboard-panel-body dashboard-panel-body--tight" id="dashboardPipelineBody">
-                <div class="dashboard-empty dashboard-empty--spacious">Run the Planning Pipeline to see status here.</div>
+              <div style="flex:1;overflow-y:auto;padding:.5rem .6rem;display:flex;flex-direction:column;gap:.35rem" id="dashboardPipelineBody">
+                <div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:1rem 0">Run the Planning Pipeline to see status here.</div>
               </div>
             </div>
 
             <!-- Alerts & Insights -->
-            <div class="dash-card dashboard-panel dashboard-panel--secondary">
+            <div class="dash-card" style="flex:0.44;min-height:13.5rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Alerts &amp; Insights</span>
-                <span id="dashAlertCount" class="dashboard-alert-count" style="display:none">0</span>
+                <span id="dashAlertCount" style="font-size:.65rem;font-weight:700;background:var(--danger-soft);color:var(--danger);padding:.15rem .4rem;border-radius:1rem;display:none">0</span>
               </div>
-              <div class="dashboard-panel-body dashboard-panel-body--compact" id="dashAlertsList">
-                <div class="dashboard-empty">No alerts. System nominal.</div>
+              <div style="overflow-y:auto;flex:1;padding:.4rem .6rem;display:flex;flex-direction:column;gap:.3rem" id="dashAlertsList">
+                <div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">No alerts. System nominal.</div>
               </div>
             </div>
 
           </div>
 
           <!-- ── COL 2: Capacity + Delivery ── -->
-          <div class="dashboard-column">
+          <div style="display:flex;flex-direction:column;gap:.45rem;min-height:0;overflow:hidden">
 
             <!-- Capacity Utilisation -->
-            <div class="dash-card dashboard-panel dashboard-panel--capacity">
+            <div class="dash-card" style="flex:0.56;min-height:16rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Capacity Utilisation</span>
-                <span id="bottleneckPeak" class="dashboard-inline-meta">—</span>
+                <span id="bottleneckPeak" style="font-size:.65rem;font-weight:700;color:var(--text-soft)">—</span>
               </div>
-              <div class="dashboard-panel-body dashboard-panel-body--regular" id="bottleneckList">
-                <div class="dashboard-empty">—</div>
+              <div style="flex:1;overflow-y:auto;padding:.5rem .6rem;display:flex;flex-direction:column;gap:.5rem" id="bottleneckList">
+                <div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">—</div>
               </div>
             </div>
 
             <!-- Delivery Performance -->
-            <div class="dash-card dashboard-panel dashboard-panel--secondary">
+            <div class="dash-card" style="flex:0.44;min-height:13.5rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd"><span class="dash-card-title">Delivery Performance</span></div>
-              <div class="dashboard-performance">
+              <div style="padding:.5rem .6rem;display:flex;flex-direction:column;gap:.5rem">
                 <!-- On-time gauge row -->
-                <div class="dashboard-gauge-row">
-                  <div class="dashboard-gauge-value">
-                    <div class="dashboard-gauge-number" id="perfOnTime">—</div>
-                    <div class="dashboard-gauge-label">On-Time</div>
+                <div style="display:flex;align-items:center;gap:.8rem">
+                  <div style="flex:none;text-align:center">
+                    <div style="font-size:1.9rem;font-weight:900;line-height:1;letter-spacing:-.03em" id="perfOnTime">—</div>
+                    <div style="font-size:.6rem;color:var(--text-soft);margin-top:.1rem">On-Time</div>
                   </div>
-                  <div class="dashboard-gauge-track-wrap">
-                    <div class="dashboard-gauge-track">
-                      <div id="perfOnTimeBar" class="dashboard-gauge-fill"></div>
+                  <div style="flex:1">
+                    <div style="width:100%;height:7px;background:var(--border-soft);border-radius:4px;overflow:hidden">
+                      <div id="perfOnTimeBar" style="height:100%;width:0%;background:var(--success);border-radius:4px;transition:width .6s ease"></div>
                     </div>
                   </div>
                 </div>
                 <!-- Late breakdown -->
-                <div class="dashboard-mini-grid">
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.3rem">
                   <div class="dash-mini-stat">
                     <div class="dms-label">Late Orders</div>
-                    <div class="dms-value dashboard-value-danger" id="perfLate">—</div>
+                    <div class="dms-value" id="perfLate" style="color:var(--danger)">—</div>
                   </div>
                   <div class="dash-mini-stat">
                     <div class="dms-label">Plan Gap</div>
@@ -163,22 +188,22 @@
                   </div>
                   <div class="dash-mini-stat">
                     <div class="dms-label">On Hold</div>
-                    <div class="dms-value dashboard-value-warn" id="execHolds">—</div>
+                    <div class="dms-value" id="execHolds" style="color:var(--warning)">—</div>
                   </div>
                 </div>
                 <!-- This week -->
-                <div class="dashboard-snapshot-row">
-                  <div class="dashboard-snapshot-item">
-                    <div class="dashboard-snapshot-label">Planning POs</div>
-                    <div class="dashboard-snapshot-value dashboard-snapshot-value--info" id="execStarted">—</div>
+                <div style="border-top:1px solid var(--border-soft);padding-top:.4rem;display:flex;gap:.4rem">
+                  <div style="flex:1;text-align:center">
+                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Planning POs</div>
+                    <div style="font-size:1rem;font-weight:700;color:var(--info)" id="execStarted">—</div>
                   </div>
-                  <div class="dashboard-snapshot-item">
-                    <div class="dashboard-snapshot-label">Sched Heats</div>
-                    <div class="dashboard-snapshot-value dashboard-snapshot-value--success" id="execHeats">—</div>
+                  <div style="flex:1;text-align:center">
+                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Sched Heats</div>
+                    <div style="font-size:1rem;font-weight:700;color:var(--success)" id="execHeats">—</div>
                   </div>
-                  <div class="dashboard-snapshot-item">
-                    <div class="dashboard-snapshot-label">Resources</div>
-                    <div class="dashboard-snapshot-value" id="execEquip">—</div>
+                  <div style="flex:1;text-align:center">
+                    <div style="font-size:.6rem;color:var(--text-faint);text-transform:uppercase;letter-spacing:.04em">Resources</div>
+                    <div style="font-size:1rem;font-weight:700" id="execEquip">—</div>
                   </div>
                 </div>
               </div>
@@ -187,27 +212,27 @@
           </div>
 
           <!-- ── COL 3: Material Health + PO Summary ── -->
-          <div class="dashboard-column">
+          <div style="display:flex;flex-direction:column;gap:.45rem;min-height:0;overflow:hidden">
 
             <!-- Material Health -->
-            <div class="dash-card dashboard-panel dashboard-panel--material">
+            <div class="dash-card" style="flex:0.62;min-height:18rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Material Health</span>
-                <button type="button" class="btn ghost dashboard-panel-action" onclick="activatePage('material')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> View</span></button>
+                <button type="button" class="btn ghost" style="font-size:.65rem;padding:.15rem .45rem;height:1.5rem" onclick="activatePage('material')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> View</span></button>
               </div>
-              <div class="dashboard-panel-body dashboard-panel-body--regular" id="dashboardInventoryBody">
-                <div class="dashboard-empty">—</div>
+              <div style="flex:1;overflow-y:auto;padding:.5rem .6rem;display:flex;flex-direction:column;gap:.45rem" id="dashboardInventoryBody">
+                <div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">—</div>
               </div>
             </div>
 
             <!-- Active POs summary -->
-            <div class="dash-card dashboard-panel dashboard-panel--secondary">
+            <div class="dash-card" style="flex:0.44;min-height:13.5rem;overflow:hidden;display:flex;flex-direction:column">
               <div class="dash-card-hd">
                 <span class="dash-card-title">Active Planning Orders</span>
-                <button type="button" class="btn ghost dashboard-panel-action" onclick="activatePage('planning')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> Plan</span></button>
+                <button type="button" class="btn ghost" style="font-size:.65rem;padding:.15rem .45rem;height:1.5rem" onclick="activatePage('planning')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> Plan</span></button>
               </div>
-              <div class="dashboard-panel-body dashboard-panel-body--compact" id="dashActivePOs">
-                <div class="dashboard-empty">No POs yet.</div>
+              <div style="padding:.4rem .6rem;display:flex;flex-direction:column;gap:.3rem;flex:1;overflow-y:auto" id="dashActivePOs">
+                <div style="text-align:center;color:var(--text-faint);font-size:.75rem;padding:.5rem 0">No POs yet.</div>
               </div>
             </div>
 
@@ -216,19 +241,19 @@
       </section>
 
       <!-- ===== UNIFIED PLANNING PIPELINE PAGE ===== -->
-      <section class="page" id="page-planning" role="tabpanel" aria-labelledby="tab-planning">
-        <div class="page-header page-header--planning">
+      <section class="page" id="page-planning" role="tabpanel" aria-labelledby="tab-planning" style="display:flex;flex-direction:column;min-height:0">
+        <div class="page-header" style="padding-bottom:.5rem;flex-shrink:0">
           <div>
             <div class="page-title">Planning Pipeline</div>
             <div class="page-sub">Select window, propose lots, derive heats, simulate, release.</div>
           </div>
-          <div class="page-actions page-actions--tight">
-            <div id="pipelineStatusBadge" class="pipeline-status-badge">Idle</div>
+          <div class="page-actions" style="gap:.5rem">
+            <div id="pipelineStatusBadge" style="font-size:.75rem;padding:.25rem .6rem;border-radius:1rem;background:var(--border);color:var(--text-soft);white-space:nowrap">Idle</div>
           </div>
         </div>
-        <div class="planning-shell">
+        <div style="flex:1;overflow:hidden;min-height:0;display:flex;gap:.6rem">
           <!-- PIPELINE CONTAINER (LEFT) -->
-          <div class="planning-main">
+          <div style="flex:1;overflow:auto;display:flex;flex-direction:column;gap:.6rem;padding:.25rem .6rem 2.5rem">
 
           <!-- STAGE 1: ORDER POOL -->
           <div class="pipeline-stage" id="ps-pool">
@@ -244,24 +269,24 @@
             </div>
             <div class="ps-body" id="ps-pool-body">
               <div class="ps-body-inner">
-                <div class="filters planning-stage-filters">
+                <div class="filters" style="margin-bottom:.6rem">
                   <input class="inp" id="poolSearch" placeholder="Search SO / Grade / Customer…" aria-label="Search order pool" />
                   <select class="sel" id="poolGrade" aria-label="Filter order pool by grade"><option value="">All grades</option></select>
                   <select class="sel" id="poolPriority" aria-label="Filter order pool by priority"><option value="">All priorities</option><option>URGENT</option><option>HIGH</option><option>NORMAL</option></select>
                   <select class="sel" id="poolOrderType" aria-label="Filter by order type"><option value="">All types</option><option>MTO</option><option>MTS</option></select>
                   <select class="sel" id="poolRollingMode" aria-label="Filter by rolling mode"><option value="">All modes</option><option>HOT</option><option>COLD</option></select>
                 </div>
-                <div class="toolbar planning-toolbar planning-toolbar--wide">
-                  <button type="button" class="btn ghost planning-toolbar-btn" id="poolSelectAllBtn"><i class="fa-solid fa-check-double" aria-hidden="true"></i><span> Select All</span></button>
-                  <button type="button" class="btn ghost planning-toolbar-btn" id="poolClearAllBtn"><i class="fa-solid fa-eraser" aria-hidden="true"></i><span> Clear All</span></button>
-                  <div class="planning-selection-count" id="poolSelectionCount">0 selected</div>
-                  <div class="planning-toolbar-spacer"></div>
-                  <button type="button" class="btn ghost planning-toolbar-btn planning-toolbar-btn--accent" onclick="showPoolSOGantt()" title="View timeline for selected SOs (plant-based)"><i class="fa-regular fa-calendar-days" aria-hidden="true"></i><span> Gantt</span></button>
-                  <button type="button" class="btn ghost planning-toolbar-btn planning-toolbar-btn--accent" onclick="showFullBOMForSelectedSOs()" title="View material requirements for selected SOs in side panel"><i class="fa-solid fa-diagram-project" aria-hidden="true"></i><span> Full BOM</span></button>
+                <div class="toolbar" style="margin-bottom:.5rem;gap:.4rem">
+                  <button type="button" class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="poolSelectAllBtn"><i class="fa-solid fa-check-double" aria-hidden="true"></i><span> Select All</span></button>
+                  <button type="button" class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="poolClearAllBtn"><i class="fa-solid fa-eraser" aria-hidden="true"></i><span> Clear All</span></button>
+                  <div style="font-size:.75rem;color:var(--text-soft);padding:.3rem .5rem;white-space:nowrap" id="poolSelectionCount">0 selected</div>
+                  <div style="flex:1"></div>
+                  <button type="button" class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;background:rgba(107,114,207,.08);border:1px solid rgba(107,114,207,.2)" onclick="showPoolSOGantt()" title="View timeline for selected SOs (plant-based)"><i class="fa-regular fa-calendar-days" aria-hidden="true"></i><span> Gantt</span></button>
+                  <button type="button" class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;background:rgba(107,114,207,.08);border:1px solid rgba(107,114,207,.2)" onclick="showFullBOMForSelectedSOs()" title="View material requirements for selected SOs in side panel"><i class="fa-solid fa-diagram-project" aria-hidden="true"></i><span> Full BOM</span></button>
                 </div>
-                <div class="planning-table-wrap planning-table-wrap--pool">
+                <div style="overflow:auto;max-height:280px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
-                    <thead><tr><th class="planning-col-checkbox"><input type="checkbox" id="poolSelectAll" title="Select all" aria-label="Select all order pool rows" class="table-checkbox"></th><th>SO ID</th><th>SKU</th><th>Customer</th><th>Grade</th><th>Section</th><th>Qty MT</th><th>Due Date</th><th>Priority</th><th>Order Type</th><th>Rolling Mode</th><th>Status</th><th class="planning-col-actions"></th></tr></thead>
+                    <thead><tr><th style="width:2rem"><input type="checkbox" id="poolSelectAll" title="Select all" aria-label="Select all order pool rows" style="width:1.2rem;height:1.2rem;cursor:pointer"></th><th>SO ID</th><th>SKU</th><th>Customer</th><th>Grade</th><th>Section</th><th>Qty MT</th><th>Due Date</th><th>Priority</th><th>Order Type</th><th>Rolling Mode</th><th>Status</th><th style="width:3rem"></th></tr></thead>
                     <tbody id="poolBody"></tbody>
                   </table>
                 </div>
@@ -284,23 +309,23 @@
             </div>
             <div class="ps-body collapsed" id="ps-propose-body">
               <div class="ps-body-inner">
-                <div class="grid-4 planning-summary-grid">
+                <div class="grid-4" style="margin-bottom:.75rem">
                   <div class="metric"><div class="metric-label">Window</div><div class="metric-value" id="planningWindowLabel">—</div></div>
                   <div class="metric"><div class="metric-label">Candidates</div><div class="metric-value" id="planningCandidates">—</div></div>
                   <div class="metric"><div class="metric-label">Proposed POs</div><div class="metric-value" id="planningProposedCount">—</div></div>
                   <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="planningTotalMT">—</div></div>
                 </div>
-                <div class="toolbar planning-toolbar">
-                  <button type="button" class="btn ghost planning-toolbar-btn" id="mergeSelectedBtn" disabled onclick="mergeSelectedPOs()"><i class="fa-solid fa-code-merge" aria-hidden="true"></i><span> Merge Selected</span></button>
-                  <button type="button" class="btn ghost planning-toolbar-btn" id="freezeSelectedBtn" disabled onclick="freezeSelectedPOs()"><i class="fa-regular fa-snowflake" aria-hidden="true"></i><span> Freeze Selected</span></button>
-                  <button type="button" class="btn ghost planning-toolbar-btn" onclick="proposePlanningOrders()"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span> Re-propose</span></button>
-                  <div class="planning-selection-count" id="poSelectionCount">0 selected</div>
-                  <select class="sel planning-toolbar-select" id="poRollingMode" aria-label="Filter planning orders by rolling mode"><option value="">All modes</option><option>HOT</option><option>COLD</option></select>
-                  <button type="button" class="btn ghost planning-toolbar-btn planning-toolbar-btn--push" onclick="state.lastScheduleRows ? showGanttModal('Planning Orders - Production Timeline', state.lastScheduleRows, 'po') : alert('Run Feasibility Check first')" title="View timeline for proposed POs"><i class="fa-regular fa-calendar-days" aria-hidden="true"></i><span> Gantt</span></button>
+                <div class="toolbar" style="margin-bottom:.5rem;gap:.3rem">
+                  <button type="button" class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="mergeSelectedBtn" disabled onclick="mergeSelectedPOs()"><i class="fa-solid fa-code-merge" aria-hidden="true"></i><span> Merge Selected</span></button>
+                  <button type="button" class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" id="freezeSelectedBtn" disabled onclick="freezeSelectedPOs()"><i class="fa-regular fa-snowflake" aria-hidden="true"></i><span> Freeze Selected</span></button>
+                  <button type="button" class="btn ghost" style="font-size:.75rem;padding:.3rem .5rem;height:1.7rem" onclick="proposePlanningOrders()"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span> Re-propose</span></button>
+                  <div style="font-size:.75rem;color:var(--text-soft);padding:.3rem .5rem;white-space:nowrap" id="poSelectionCount">0 selected</div>
+                  <select class="sel" id="poRollingMode" aria-label="Filter planning orders by rolling mode" style="height:1.8rem;font-size:.78rem"><option value="">All modes</option><option>HOT</option><option>COLD</option></select>
+                  <button type="button" class="btn ghost" style="font-size:.75rem;padding:.3rem .6rem;height:1.7rem;margin-left:auto" onclick="state.lastScheduleRows ? showGanttModal('Planning Orders - Production Timeline', state.lastScheduleRows, 'po') : alert('Run Feasibility Check first')" title="View timeline for proposed POs"><i class="fa-regular fa-calendar-days" aria-hidden="true"></i><span> Gantt</span></button>
                 </div>
-                <div class="planning-table-wrap">
+                <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
-                    <thead><tr><th class="planning-col-checkbox"><input type="checkbox" id="poSelectAll" aria-label="Select all proposed planning orders" class="table-checkbox"></th><th>PO ID</th><th>SOs</th><th>SKUs</th><th>Qty MT</th><th>Grade</th><th>Due Window</th><th>Heats</th><th>Rolling Mode</th><th>Status</th><th>Actions</th></tr></thead>
+                    <thead><tr><th style="width:2rem"><input type="checkbox" id="poSelectAll" aria-label="Select all proposed planning orders" style="width:1.2rem;height:1.2rem;cursor:pointer"></th><th>PO ID</th><th>SOs</th><th>SKUs</th><th>Qty MT</th><th>Grade</th><th>Due Window</th><th>Heats</th><th>Rolling Mode</th><th>Status</th><th>Actions</th></tr></thead>
                     <tbody id="planningBoard"></tbody>
                   </table>
                 </div>
@@ -323,21 +348,21 @@
             </div>
             <div class="ps-body collapsed" id="ps-heats-body">
               <div class="ps-body-inner">
-                <div class="toolbar planning-toolbar planning-toolbar--heat">
-                  <label for="heatSizeMt" class="planning-toolbar-label">Heat size:</label>
-                  <input class="inp planning-heat-input" id="heatSizeMt" type="number" value="50" min="10" max="200" step="5" title="MT per heat">
-                  <span class="planning-toolbar-note">MT / heat</span>
+                <div class="toolbar" style="margin-bottom:.6rem">
+                  <label for="heatSizeMt" style="font-size:.78rem;font-weight:600;color:var(--text-soft)">Heat size:</label>
+                  <input class="inp" id="heatSizeMt" type="number" value="50" min="10" max="200" step="5" style="width:4.5rem;height:1.8rem;font-size:.8rem" title="MT per heat">
+                  <span style="font-size:.75rem;color:var(--text-faint)">MT / heat</span>
                 </div>
-                <div class="grid-4 planning-summary-grid">
+                <div class="grid-4" style="margin-bottom:.75rem">
                   <div class="metric"><div class="metric-label">Total heats</div><div class="metric-value" id="heatTotal">—</div></div>
                   <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="heatMT">—</div></div>
                   <div class="metric"><div class="metric-label">Avg / heat</div><div class="metric-value" id="heatAvg">—</div></div>
                   <div class="metric"><div class="metric-label">Est. duration</div><div class="metric-value" id="heatDuration">—</div></div>
                 </div>
-                <div class="toolbar planning-toolbar">
-                  <div class="planning-toolbar-spacer"></div>
+                <div class="toolbar" style="margin-bottom:.5rem;gap:.3rem">
+                  <div style="flex:1"></div>
                 </div>
-                <div class="planning-table-wrap">
+                <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
                     <thead><tr><th>Heat ID</th><th>PO ID</th><th>FG (Finished Good)</th><th>Grade</th><th>Materials</th><th>Qty MT</th><th>Seq</th><th>Route</th><th>Duration</th></tr></thead>
                     <tbody id="heatBody"></tbody>
@@ -364,13 +389,13 @@
               <div class="ps-body-inner">
                 <!-- SIMULATION CONFIGURATION PANEL (before simulate) -->
                 <!-- SIMULATION PARAMETERS (always visible, used for first run and what-if) -->
-                <div id="simParamsPanel" class="planning-sim-panel">
-                  <div class="planning-sim-title">SIMULATION PARAMETERS</div>
-                  <div class="planning-sim-grid">
+                <div id="simParamsPanel" style="background:#f8fafc;border:1px solid var(--border);border-radius:.4rem;padding:.9rem;margin-bottom:.9rem">
+                  <div style="font-weight:600;font-size:.82rem;color:var(--text-soft);margin-bottom:.7rem;letter-spacing:.03em">SIMULATION PARAMETERS</div>
+                  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem;margin-bottom:.6rem">
                     <!-- Planning Horizon -->
                     <div>
-                      <label for="simHorizonDays" class="planning-sim-label">Horizon (days)</label>
-                      <select class="sel planning-sim-select" id="simHorizonDays">
+                      <label for="simHorizonDays" style="display:block;font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.25rem">Horizon (days)</label>
+                      <select class="sel" id="simHorizonDays" style="width:100%;font-size:.8rem">
                         <option value="7">7 days</option>
                         <option value="14" selected>14 days</option>
                         <option value="21">21 days</option>
@@ -379,8 +404,8 @@
                     </div>
                     <!-- Priority Filter -->
                     <div>
-                      <label for="simPriorityFilter" class="planning-sim-label">Priority</label>
-                      <select class="sel planning-sim-select" id="simPriorityFilter">
+                      <label for="simPriorityFilter" style="display:block;font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.25rem">Priority</label>
+                      <select class="sel" id="simPriorityFilter" style="width:100%;font-size:.8rem">
                         <option value="">All priorities</option>
                         <option value="URGENT+HIGH">URGENT + HIGH</option>
                         <option value="URGENT">URGENT only</option>
@@ -388,8 +413,8 @@
                     </div>
                     <!-- Rolling Mode Filter -->
                     <div>
-                      <label for="simRollingMode" class="planning-sim-label">Rolling Mode</label>
-                      <select class="sel planning-sim-select" id="simRollingMode">
+                      <label for="simRollingMode" style="display:block;font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.25rem">Rolling Mode</label>
+                      <select class="sel" id="simRollingMode" style="width:100%;font-size:.8rem">
                         <option value="">HOT + COLD</option>
                         <option value="HOT">HOT only</option>
                         <option value="COLD">COLD only</option>
@@ -397,8 +422,8 @@
                     </div>
                     <!-- SMS Lines -->
                     <div>
-                      <label for="simSmsLines" class="planning-sim-label">SMS Lines</label>
-                      <select class="sel planning-sim-select" id="simSmsLines">
+                      <label for="simSmsLines" style="display:block;font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.25rem">SMS Lines</label>
+                      <select class="sel" id="simSmsLines" style="width:100%;font-size:.8rem">
                         <option value="1">×1 (baseline)</option>
                         <option value="2">×2 (parallel)</option>
                         <option value="3">×3 (parallel)</option>
@@ -406,8 +431,8 @@
                     </div>
                     <!-- RM Lines -->
                     <div>
-                      <label for="simRmLines" class="planning-sim-label">RM Lines</label>
-                      <select class="sel planning-sim-select" id="simRmLines">
+                      <label for="simRmLines" style="display:block;font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.25rem">RM Lines</label>
+                      <select class="sel" id="simRmLines" style="width:100%;font-size:.8rem">
                         <option value="1">×1 (baseline)</option>
                         <option value="2">×2 (parallel)</option>
                         <option value="3">×3 (parallel)</option>
@@ -415,13 +440,13 @@
                     </div>
                     <!-- Grade Filter (populated dynamically from planning orders) -->
                     <div>
-                      <label for="simGradeFilter" class="planning-sim-label">Grade</label>
-                      <select class="sel planning-sim-select" id="simGradeFilter">
+                      <label for="simGradeFilter" style="display:block;font-size:.72rem;font-weight:600;color:var(--text-soft);margin-bottom:.25rem">Grade</label>
+                      <select class="sel" id="simGradeFilter" style="width:100%;font-size:.8rem">
                         <option value="">All grades</option>
                       </select>
                     </div>
                   </div>
-                  <button type="button" class="btn primary planning-sim-run" onclick="simulateSchedule()">
+                  <button type="button" class="btn primary" style="width:100%;font-size:.82rem;padding:.45rem" onclick="simulateSchedule()">
                     <i class="fa-solid fa-play" aria-hidden="true"></i><span id="simBtnText"> Run Feasibility Check</span>
                   </button>
                 </div>
@@ -433,7 +458,7 @@
                   <div class="metric" id="scheduleSmsCard"><div class="metric-label">SMS span (elapsed)</div><div class="metric-value" id="scheduleSmsHours">—</div></div>
                   <div class="metric" id="scheduleRmCard"><div class="metric-label">RM span (elapsed)</div><div class="metric-value" id="scheduleRmHours">—</div></div>
                 </div>
-                <div id="schedulerContent" class="planning-results-note" style="display:none"></div>
+                <div id="schedulerContent" style="color:var(--text-soft);text-align:center;font-size:.9rem;padding:.75rem;border:1px solid var(--border);border-radius:.3rem;display:none"></div>
 
 
               </div>
@@ -455,20 +480,20 @@
             </div>
             <div class="ps-body collapsed" id="ps-release-body">
               <div class="ps-body-inner">
-                <div class="grid-4 planning-summary-grid">
+                <div class="grid-4" style="margin-bottom:.75rem">
                   <div class="metric"><div class="metric-label">POs ready</div><div class="metric-value" id="releaseReady">—</div></div>
                   <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="releaseMT">—</div></div>
                   <div class="metric"><div class="metric-label">Total SOs</div><div class="metric-value" id="releaseSOs">—</div></div>
                   <div class="metric"><div class="metric-label">Status</div><div class="metric-value" id="releaseStatus">—</div></div>
                 </div>
-                <div class="planning-release-actions">
-                  <button type="button" class="btn primary planning-release-btn" id="releaseSelectAllBtn" onclick="releaseSelectAll()"><i class="fa-solid fa-check-double" aria-hidden="true"></i><span> Select All</span></button>
-                  <button type="button" class="btn primary planning-release-btn" id="releaseClearAllBtn" onclick="releaseClearAll()"><i class="fa-solid fa-eraser" aria-hidden="true"></i><span> Clear All</span></button>
-                  <button type="button" class="btn success planning-release-btn" id="releaseAllBtn" onclick="releaseAllSelected()"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span> Release All</span></button>
+                <div style="display:flex;gap:.5rem;margin-bottom:.75rem;flex-shrink:0">
+                  <button type="button" class="btn primary" id="releaseSelectAllBtn" onclick="releaseSelectAll()" style="font-size:.75rem;padding:.4rem .8rem"><i class="fa-solid fa-check-double" aria-hidden="true"></i><span> Select All</span></button>
+                  <button type="button" class="btn primary" id="releaseClearAllBtn" onclick="releaseClearAll()" style="font-size:.75rem;padding:.4rem .8rem"><i class="fa-solid fa-eraser" aria-hidden="true"></i><span> Clear All</span></button>
+                  <button type="button" class="btn success" id="releaseAllBtn" onclick="releaseAllSelected()" style="font-size:.75rem;padding:.4rem .8rem"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span> Release All</span></button>
                 </div>
-                <div class="planning-table-wrap">
+                <div style="overflow:auto;max-height:260px;border:1px solid var(--border);border-radius:.3rem">
                   <table class="table">
-                    <thead><tr><th class="planning-col-select"><input type="checkbox" id="releaseSelectAllCheckbox" onchange="releaseToggleSelectAll()" class="table-checkbox" title="Select all" aria-label="Select all planning orders ready for release"/></th><th>PO ID</th><th>SOs</th><th>Qty MT</th><th>Grade</th><th>Heats</th><th>Material</th><th>Actions</th></tr></thead>
+                    <thead><tr><th style="width:3rem"><input type="checkbox" id="releaseSelectAllCheckbox" onchange="releaseToggleSelectAll()" style="width:1.2rem;height:1.2rem;cursor:pointer" title="Select all" aria-label="Select all planning orders ready for release"/></th><th>PO ID</th><th>SOs</th><th>Qty MT</th><th>Grade</th><th>Heats</th><th>Material</th><th>Actions</th></tr></thead>
                     <tbody id="releaseBoard"></tbody>
                   </table>
                 </div>
@@ -479,17 +504,17 @@
           </div><!-- end pipeline left -->
 
           <!-- MATERIAL PANEL (RIGHT) -->
-          <div id="planningMaterialPanel" class="bom-split-container planning-material-panel" style="display:none">
-            <div class="planning-material-panel__header">
-              <div class="planning-material-panel__title" id="materialCheckTitle">Material Requirements</div>
-              <button type="button" class="btn ghost planning-material-panel__close" onclick="closeMaterialPanel()" aria-label="Close material requirements panel"><i class="fa-solid fa-xmark" aria-hidden="true"></i><span> Close</span></button>
+          <div id="planningMaterialPanel" class="bom-split-container" style="display:none;width:45%;border-left:1px solid var(--border);background:var(--panel);flex-direction:column;min-height:0;overflow:hidden">
+            <div style="padding:.6rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+              <div style="font-weight:600;font-size:.85rem" id="materialCheckTitle">Material Requirements</div>
+              <button type="button" class="btn ghost" style="font-size:.75rem;padding:.2rem .4rem;height:1.5rem" onclick="closeMaterialPanel()" aria-label="Close material requirements panel"><i class="fa-solid fa-xmark" aria-hidden="true"></i><span> Close</span></button>
             </div>
-            <div class="bom-tree-panel planning-material-panel__tree">
+            <div class="bom-tree-panel" style="flex:1;min-height:0;overflow:auto;border:none;padding:.6rem">
               <div class="bom-tree-header">Materials Needed</div>
               <div class="bom-tree" id="planningBomTree"></div>
             </div>
-            <div class="bom-split-divider planning-material-panel__divider"></div>
-            <div class="bom-detail-panel planning-material-panel__detail">
+            <div class="bom-split-divider" style="width:100%;height:1px"></div>
+            <div class="bom-detail-panel" style="flex:1;min-height:0;overflow:auto;border:none;padding:.6rem">
               <div id="planningBomDetail"></div>
             </div>
           </div>
@@ -500,29 +525,31 @@
       <!-- ===== END PLANNING PIPELINE ===== -->
 
       <!-- ===== EXECUTION PAGE (merged Campaigns + Dispatch + Gantt) ===== -->
-      <section class="page execution-page" id="page-execution" role="tabpanel" aria-labelledby="tab-execution">
-        <div class="page-header execution-header page-header--fixed">
+      <section class="page execution-page" id="page-execution" role="tabpanel" aria-labelledby="tab-execution" style="display:flex;flex-direction:column;min-height:0">
+        <div class="page-header execution-header" style="flex-shrink:0">
           <div>
             <div class="page-title">Execution</div>
-            <div class="page-sub">Timeline-first execution surface for released lots, equipment sequencing, live dispatch, and plant-level schedule review.</div>
+            <div class="page-sub">Timeline-first execution view for released lots, equipment sequencing, and dispatch monitoring.</div>
           </div>
-          <div class="page-actions execution-header-actions execution-header-actions--empty" aria-hidden="true"></div>
+          <div class="page-actions execution-header-actions" style="gap:.5rem">
+            <button type="button" class="btn ghost" id="clearCampaignBtn" style="display:none" onclick="clearCampaignSelection()"><i class="fa-solid fa-filter-circle-xmark" aria-hidden="true"></i><span>Clear Filter</span></button>
+            <button type="button" class="btn primary" id="campaignRerunBtn"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>Re-run Schedule</span></button>
+          </div>
         </div>
 
         <div class="execution-topbar">
-          <div class="execution-views filters filters--bare" role="tablist" aria-label="Execution views">
+          <div class="execution-views filters" style="padding:0;border:none;margin:0;flex-shrink:0" role="tablist" aria-label="Execution views">
             <button type="button" class="subtab active" id="exec-tab-timeline" data-exec-view="timeline" onclick="switchExecView('timeline')" role="tab" aria-selected="true" aria-controls="exec-view-timeline" tabindex="0">Equipment Timeline</button>
             <button type="button" class="subtab" id="exec-tab-campaigns" data-exec-view="campaigns" onclick="switchExecView('campaigns')" role="tab" aria-selected="false" aria-controls="exec-view-campaigns" tabindex="-1">Released Lots</button>
-            <button type="button" class="subtab" id="exec-tab-gantt" data-exec-view="gantt" onclick="switchExecView('gantt')" role="tab" aria-selected="false" aria-controls="exec-view-gantt" tabindex="-1">Plant Timeline</button>
+            <button type="button" class="subtab" id="exec-tab-gantt" data-exec-view="gantt" onclick="switchExecView('gantt')" role="tab" aria-selected="false" aria-controls="exec-view-gantt" tabindex="-1">Plant Gantt</button>
           </div>
-          <div class="execution-topbar-note">
-            <div class="execution-topbar-tools">
-              <button type="button" class="subtab execution-action-pill" onclick="openExecutionGanttMode('so')">SO Timeline</button>
-              <button type="button" class="subtab execution-action-pill" onclick="openExecutionGanttMode('po')">PO Timeline</button>
-              <button type="button" class="subtab execution-action-pill" onclick="openExecutionGanttMode('global')">Global Timeline</button>
-            </div>
-            <span class="execution-topbar-copy" id="executionTopbarCopy">Execution surface ready.</span>
-          </div>
+        </div>
+
+        <div class="grid-4 execution-kpi-row" style="margin-bottom:.75rem;flex-shrink:0">
+          <div class="metric"><div class="metric-label">Equipment Active</div><div class="metric-value" id="dispatchMachines">—</div><div class="metric-sub">Resources in current view</div></div>
+          <div class="metric"><div class="metric-label">Operations</div><div class="metric-value" id="dispatchJobs">—</div><div class="metric-sub">Scheduled jobs</div></div>
+          <div class="metric"><div class="metric-label">Schedule Span</div><div class="metric-value" id="dispatchDuration">—</div><div class="metric-sub">Visible horizon</div></div>
+          <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="dispatchMt">—</div><div class="metric-sub">Across visible work</div></div>
         </div>
 
         <div id="exec-view-timeline" aria-labelledby="exec-tab-timeline" class="exec-view active-view execution-view" role="tabpanel">
@@ -542,66 +569,49 @@
               <div class="card-header execution-board-header">
                 <div>
                   <div class="card-title">Equipment Timeline</div>
-                  <div class="card-sub">Resource sequence by day. Select a bar to inspect campaign, due date, heat count, and linked orders.</div>
+                  <div class="card-sub">Resource lanes should follow routing sequence and stay visually dense.</div>
                 </div>
-                <div class="execution-board-meta execution-board-meta--status">
-                <div class="execution-zoom-controls" aria-label="Equipment timeline zoom">
-                  <button type="button" class="btn ghost btn-compact" title="Zoom out" onclick="stepExecutionZoom('timeline', -0.2)">-</button>
-                  <span class="execution-zoom-value" id="timelineZoomLabel">100%</span>
-                  <span class="execution-board-meta-item" id="timelineScaleLabel">1 day buckets</span>
-                  <button type="button" class="btn ghost btn-compact" title="Zoom in" onclick="stepExecutionZoom('timeline', 0.2)">+</button>
-                </div>
-                <span class="execution-board-status" id="executionBoardStatus">Awaiting schedule data</span>
-                <span class="execution-board-meta-item" id="executionMetaPlantLoad">Load —</span>
-                <span class="execution-board-meta-item" id="executionMetaBottleneck">Bottleneck —</span>
-                <button type="button" class="btn ghost btn-compact" id="execDetailToggle" onclick="toggleExecutionDetailPanel()">Show Detail</button>
+              </div>
+              <div class="card-body execution-board-body">
+                <div class="dispatch-grid" id="dispatchGrid" style="flex:1;overflow:auto"><div class="notice">Run Schedule first.</div></div>
               </div>
             </div>
-            <div class="card-body execution-board-body">
-              <div class="dispatch-grid execution-timeline-grid execution-timeline-scroll" id="dispatchGrid"><div class="notice">Run Schedule first.</div></div>
+            <div id="campaignDetailsPanel" class="campaign-details-panel execution-detail-panel" style="display:none;width:320px;overflow:auto">
+              <div id="campaignDetailsContent"></div>
             </div>
-          </div>
           </div>
         </div>
 
         <div id="exec-view-campaigns" aria-labelledby="exec-tab-campaigns" class="exec-view execution-view" role="tabpanel">
           <div class="card execution-list-card">
-            <div class="card-header execution-list-header">
+            <div class="card-header">
               <div>
                 <div class="card-title">Released Lots</div>
-                <div class="card-sub">Operational lot list with quick focus back into equipment sequencing and release exceptions.</div>
+                <div class="card-sub">Operational list of released, held, and late lots.</div>
               </div>
-              <div class="filters execution-campaign-filters">
+              <div class="filters execution-campaign-filters" style="margin:0;flex-shrink:0">
                 <button type="button" class="subtab active" data-camp-filter="all">All</button>
                 <button type="button" class="subtab" data-camp-filter="released">Released</button>
                 <button type="button" class="subtab" data-camp-filter="held">Held</button>
                 <button type="button" class="subtab" data-camp-filter="late">Late</button>
               </div>
             </div>
-            <div class="card-body execution-list-body">
-              <div class="stack execution-campaign-list" id="campaignCards"></div>
+            <div class="card-body execution-list-body" style="padding:.7rem .8rem">
+              <div class="stack" id="campaignCards" style="flex:1;min-height:0;overflow:auto"></div>
             </div>
           </div>
         </div>
 
         <div id="exec-view-gantt" aria-labelledby="exec-tab-gantt" class="exec-view execution-view" role="tabpanel">
-          <div class="card execution-gantt-card">
+          <div class="card execution-gantt-card" style="flex:1;min-height:0;overflow:hidden;display:flex;flex-direction:column">
             <div class="card-header execution-gantt-header">
               <div>
-                <div class="card-title">Plant Timeline</div>
-                <div class="card-sub">Primary schedule surface for plant and equipment sequence review. Use this for broader horizon checks and bottleneck tracing.</div>
+                <div class="card-title">Resource Gantt</div>
+                <div class="card-sub">Primary scheduling surface with plant and equipment sequence emphasis.</div>
               </div>
-              <div class="execution-gantt-actions">
-                <div class="execution-zoom-controls" aria-label="Plant gantt zoom">
-                  <button type="button" class="btn ghost btn-compact" title="Zoom out" onclick="stepExecutionZoom('plant', -0.2)">-</button>
-                  <span class="execution-zoom-value" id="plantZoomLabel">100%</span>
-                  <span class="execution-board-meta-item" id="plantScaleLabel">1 day buckets</span>
-                  <button type="button" class="btn ghost btn-compact" title="Zoom in" onclick="stepExecutionZoom('plant', 0.2)">+</button>
-                </div>
-                <button type="button" class="btn ghost execution-patch-btn" id="patchJobBtn"><i class="fa-solid fa-wrench" aria-hidden="true"></i><span>Patch Job</span></button>
-              </div>
+              <button type="button" class="btn ghost" id="patchJobBtn" style="font-size:.75rem"><i class="fa-solid fa-wrench" aria-hidden="true"></i><span>Patch Job</span></button>
             </div>
-            <div class="card-body execution-gantt-body">
+            <div class="card-body execution-gantt-body" style="padding:0;overflow:auto;flex:1;min-height:0">
               <div class="gantt-wrap execution-gantt-wrap">
                 <div id="scheduleTimeline"></div>
                 <div id="tt"></div>
@@ -609,32 +619,27 @@
             </div>
           </div>
         </div>
-
-        <div id="campaignDetailsPanel" class="campaign-details-panel execution-detail-drawer" aria-live="polite">
-          <div class="execution-detail-drawer-surface">
-            <div class="execution-detail-drawer-header">
-              <div class="execution-detail-drawer-title">Execution Detail</div>
-              <button type="button" class="btn ghost btn-compact" onclick="closeExecutionDetailPanel()">Close</button>
-            </div>
-            <div id="campaignDetailsContent" class="execution-detail-drawer-content">
-              <div class="execution-detail-empty-state">
-                <div class="execution-detail-empty-title">Execution detail</div>
-                <div class="execution-detail-empty-copy">Select a bar from a timeline to inspect campaign, due date, heat count, linked sales orders, and material context.</div>
-              </div>
-            </div>
-          </div>
-        </div>
       </section>
 
-      <section class="page" id="page-material" role="tabpanel" aria-labelledby="tab-material">
+      <section class="page" id="page-material" role="tabpanel" aria-labelledby="tab-material" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header">
           <div><div class="page-title">Material</div><div class="page-sub">Campaign material readiness, holds, conversion needs, and shortage resolution.</div></div>
-          <div class="page-actions page-actions--empty" aria-hidden="true"></div>
+          <div class="page-actions"><button type="button" class="btn primary" id="materialRefreshBtn"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i><span> Refresh Material Status</span></button></div>
+        </div>
+        <div class="material-kpi-row" style="margin-bottom:.75rem;flex-shrink:0">
+          <div class="metric info"><div class="metric-label">Campaigns</div><div class="metric-value" id="matCampaigns">—</div><div class="metric-sub">In material review</div></div>
+          <div class="metric success"><div class="metric-label">Ready</div><div class="metric-value" id="matOk">—</div><div class="metric-sub">Campaigns ready</div></div>
+          <div class="metric warn"><div class="metric-label">Needs Convert</div><div class="metric-value" id="matLow">—</div><div class="metric-sub">Coverage via make / convert</div></div>
+          <div class="metric metric-optional"><div class="metric-label">Held lots</div><div class="metric-value" id="matHeld">—</div><div class="metric-sub">Awaiting material</div></div>
+          <div class="metric danger"><div class="metric-label">Short</div><div class="metric-value" id="matCrit">—</div><div class="metric-sub">Campaigns with shortages</div></div>
+          <div class="metric metric-optional"><div class="metric-label">Required Qty</div><div class="metric-value" id="matReqQty">—</div><div class="metric-sub">Across all campaigns</div></div>
+          <div class="metric metric-optional info"><div class="metric-label">Stock Covered</div><div class="metric-value" id="matCoveredQty">—</div><div class="metric-sub">Met from inventory</div></div>
+          <div class="metric metric-optional warn"><div class="metric-label">Make / Convert</div><div class="metric-value" id="matConvertQty">—</div><div class="metric-sub" id="matShortQtySub">Shortage: —</div></div>
         </div>
         <!-- Split layout: tree left, detail right -->
-        <div class="material-split-container material-page-layout">
+        <div class="material-split-container material-page-layout" style="flex:1;min-height:0;overflow:hidden">
           <div class="material-tree-panel">
-            <div class="material-tree-header">Campaign Material Risk</div>
+            <div class="material-tree-header">Material Groups</div>
             <div class="material-tree" id="materialTree"></div>
           </div>
           <div class="material-split-divider" id="materialDivider"></div>
@@ -647,7 +652,7 @@
 
       </section>
 
-      <section class="page" id="page-capacity" role="tabpanel" aria-labelledby="tab-capacity">
+      <section class="page" id="page-capacity" role="tabpanel" aria-labelledby="tab-capacity" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header">
           <div><div class="page-title">Capacity</div><div class="page-sub">Resource loading, bottlenecks, and utilisation by equipment.</div></div>
         </div>
@@ -680,7 +685,7 @@
         </div>
       </section>
 
-      <section class="page" id="page-scenarios" role="tabpanel" aria-labelledby="tab-scenarios">
+      <section class="page" id="page-scenarios" role="tabpanel" aria-labelledby="tab-scenarios" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header"><div><div class="page-title">Scenarios</div><div class="page-sub">Preview, create, update, delete, and apply scenarios.</div></div></div>
         <div style="flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:.75rem">
           <div class="grid-3" id="scenarioCards"></div>
@@ -696,7 +701,7 @@
         </div>
       </section>
 
-      <section class="page" id="page-ctp" role="tabpanel" aria-labelledby="tab-ctp">
+      <section class="page" id="page-ctp" role="tabpanel" aria-labelledby="tab-ctp" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header"><div><div class="page-title">CTP</div><div class="page-sub">Capable-to-Promise check plus request/output history.</div></div></div>
         <div style="flex:1;min-height:0;overflow:auto">
           <div class="grid-2">
@@ -727,9 +732,17 @@
         </div>
       </section>
 
-      <section class="page" id="page-bom" role="tabpanel" aria-labelledby="tab-bom">
+      <section class="page" id="page-bom" role="tabpanel" aria-labelledby="tab-bom" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header"><div><div class="page-title">BOM Explosion</div><div class="page-sub">Material requirements breakdown by production stage and finished goods.</div></div>
-          <div class="page-actions page-actions--empty" aria-hidden="true"></div>
+          <div class="page-actions"><button type="button" class="btn primary" id="bomExplodeBtn"><i class="fa-solid fa-sitemap" aria-hidden="true"></i><span> Run BOM Explosion</span></button></div>
+        </div>
+        <div class="bom-summary-strip" id="bomSummaryStrip2" style="display:none;flex-shrink:0">
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiLinesVal2">—</span><span class="kpi-label">Items</span></div>
+          <div class="bom-kpi covered"><span class="kpi-val" id="bomKpiCoveredVal2">—</span><span class="kpi-label">Covered</span></div>
+          <div class="bom-kpi short"><span class="kpi-val" id="bomKpiShortVal2">—</span><span class="kpi-label">Short</span></div>
+          <div class="bom-kpi partial"><span class="kpi-val" id="bomKpiPartialVal2">—</span><span class="kpi-label">Partial</span></div>
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiGrossVal2">—</span><span class="kpi-label">Gross MT</span></div>
+          <div class="bom-kpi"><span class="kpi-val" id="bomKpiNetVal2">—</span><span class="kpi-label">Net MT</span></div>
         </div>
         <div class="bom-split-container">
           <div class="bom-tree-panel">
@@ -743,7 +756,7 @@
         </div>
       </section>
 
-      <section class="page" id="page-master" role="tabpanel" aria-labelledby="tab-master">
+      <section class="page" id="page-master" role="tabpanel" aria-labelledby="tab-master" style="display:flex;flex-direction:column;min-height:0">
         <div class="page-header"><div><div class="page-title">Master Data</div><div class="page-sub">All workbook sections surfaced through the application API.</div></div></div>
         <div class="page-content">
           <div class="toolbar">
@@ -800,8 +813,8 @@
   <div class="master-form-card">
     <div class="master-form-head">
       <div>
-        <div id="masterModalTitle" class="master-form-title">Edit Master Data</div>
-        <div id="masterModalSub" class="master-form-sub"></div>
+        <div id="masterModalTitle" style="font-size:1rem;font-weight:850;color:var(--text)">Edit Master Data</div>
+        <div id="masterModalSub" style="font-size:.75rem;color:var(--text-soft);margin-top:.125rem"></div>
       </div>
       <button type="button" class="btn ghost" id="masterModalCloseBtn" aria-label="Close master data dialog"><i class="fa-solid fa-xmark" aria-hidden="true"></i><span> Close</span></button>
     </div>

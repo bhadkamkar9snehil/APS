@@ -26,6 +26,13 @@ const state = {
     sms_lines: 2,
     rm_lines: 2
   },
+  ganttZoom: {
+    executionTimeline: 1,
+    executionPlant: 1,
+    modal: 1
+  },
+  topSummaryCollapsed: false,
+  executionDetailPinned: false,
   // Planner-set rolling mode overrides for individual SOs (so_id → 'HOT'|'COLD')
   soRollingOverrides: {}
 };
@@ -106,6 +113,37 @@ async function apiFetch(url, opts={}){
   if(!res.ok) throw new Error(data.error || ('API error ' + res.status));
   return data;
 }
+function setTopActionContext(page) {
+  const ctrlDefault = qs('ctrl-default');
+  const ctrlPlanning = qs('ctrl-planning');
+  const navbarActions = document.querySelector('.navbar-actions');
+  const contextSlot = qs('navbarContextSlot');
+  const contextClassByPage = {
+    execution: 'ctx-execution',
+    bom: 'ctx-bom',
+    material: 'ctx-material'
+  };
+  const showDefaultActions = new Set(['dashboard', 'capacity', 'ctp', 'scenarios', 'master']);
+  const showPlanningActions = page === 'planning';
+  const activeContextClass = contextClassByPage[page] || '';
+
+  if (ctrlDefault) ctrlDefault.style.display = showDefaultActions.has(page) ? '' : 'none';
+  if (ctrlPlanning) ctrlPlanning.style.display = showPlanningActions ? '' : 'none';
+
+  if (!contextSlot) return;
+  contextSlot.querySelectorAll('.tab-context-actions').forEach((el) => {
+    el.classList.remove('is-active');
+  });
+
+  if (activeContextClass) {
+    const activeContext = contextSlot.querySelector(`.${activeContextClass}`);
+    if (activeContext) activeContext.classList.add('is-active');
+  }
+
+  if (navbarActions) {
+    navbarActions.classList.toggle('has-context', Boolean(activeContextClass));
+  }
+}
 function activatePage(page) {
   const remap = {
     campaigns: 'execution',
@@ -125,25 +163,187 @@ function activatePage(page) {
   });
 
   document.querySelectorAll('#topTabs [data-page]').forEach((el) => {
-    el.classList.toggle('active', el.dataset.page === page);
+    const active = el.dataset.page === page;
+    el.classList.toggle('active', active);
+    el.setAttribute('aria-selected', active ? 'true' : 'false');
+    el.tabIndex = active ? 0 : -1;
   });
 
-  const isPlanning = page === 'planning';
-  const ctrlDefault = qs('ctrl-default');
-  const ctrlPlanning = qs('ctrl-planning');
-
-  if (ctrlDefault) ctrlDefault.style.display = isPlanning ? 'none' : '';
-  if (ctrlPlanning) ctrlPlanning.style.display = isPlanning ? '' : 'none';
+  setTopActionContext(page);
+  renderTopSummaryForPage(page);
 
   if (page === 'material') initSplitResizer('materialDivider');
   if (page === 'bom') initSplitResizer('bomDivider');
   if (page === 'capacity') renderCapacityBars();
+  syncExecutionDetailPanel();
 }
 
 function switchExecView(view){
   document.querySelectorAll('.exec-view').forEach(el=>el.classList.remove('active-view'));
   qs('exec-view-'+view).classList.add('active-view');
-  document.querySelectorAll('[data-exec-view]').forEach(b=>b.classList.toggle('active',b.dataset.execView===view));
+  document.querySelectorAll('[data-exec-view]').forEach(b=>{
+    const active = b.dataset.execView===view;
+    b.classList.toggle('active', active);
+    b.setAttribute('aria-selected', active ? 'true' : 'false');
+    b.tabIndex = active ? 0 : -1;
+  });
+  refreshExecutionTopbarMeta(view);
+  syncExecutionDetailPanel();
+}
+
+function clampZoomValue(value){
+  return Math.max(0.6, Math.min(2.6, Number(value) || 1));
+}
+
+function getZoomValue(key, fallback = 1){
+  if(!state.ganttZoom) state.ganttZoom = { executionTimeline: 1, executionPlant: 1, modal: 1 };
+  state.ganttZoom[key] = clampZoomValue(state.ganttZoom[key] ?? fallback);
+  return state.ganttZoom[key];
+}
+
+function setZoomLabel(id, value){
+  const el = qs(id);
+  if(el) el.textContent = `${Math.round(clampZoomValue(value) * 100)}%`;
+}
+
+function getTimelineScalePreset(zoom){
+  const z = clampZoomValue(zoom);
+  if (z <= 0.8) return { bucketHours: 24, bucketPx: 78, scaleLabel: '1 day buckets' };
+  if (z <= 1.2) return { bucketHours: 12, bucketPx: 92, scaleLabel: '12 hr buckets' };
+  if (z <= 1.8) return { bucketHours: 6, bucketPx: 108, scaleLabel: '6 hr buckets' };
+  return { bucketHours: 3, bucketPx: 124, scaleLabel: '3 hr buckets' };
+}
+
+function floorTimeToBucket(timestamp, bucketHours){
+  const d = parseDate(timestamp);
+  if (Number.isNaN(d.getTime())) return Date.now();
+  d.setMinutes(0, 0, 0);
+  d.setHours(Math.floor(d.getHours() / bucketHours) * bucketHours);
+  return d.getTime();
+}
+
+function ceilTimeToBucket(timestamp, bucketHours){
+  const bucketMs = bucketHours * 3600000;
+  const floor = floorTimeToBucket(timestamp, bucketHours);
+  if (timestamp <= floor) return floor + bucketMs;
+  return floor + Math.ceil((timestamp - floor) / bucketMs) * bucketMs;
+}
+
+function formatTimelineBucketLabel(timestamp, bucketHours){
+  const d = parseDate(timestamp);
+  if (Number.isNaN(d.getTime())) return { primary: '—', secondary: '' };
+  const primaryDate = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  if (bucketHours >= 24) {
+    return {
+      primary: primaryDate,
+      secondary: d.toLocaleDateString('en-US', { weekday: 'short' })
+    };
+  }
+  return {
+    primary: primaryDate,
+    secondary: d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
+  };
+}
+
+function buildTimelineScale(starts, ends, zoom, fallbackDays = 14, minWidth = 960){
+  const startTimes = (starts || []).map(v => parseDate(v).getTime()).filter(Number.isFinite);
+  const endTimes = (ends || []).map(v => parseDate(v).getTime()).filter(Number.isFinite);
+  const preset = getTimelineScalePreset(zoom);
+  const bucketMs = preset.bucketHours * 3600000;
+  const minTime = startTimes.length ? Math.min(...startTimes) : Date.now();
+  const fallbackEnd = minTime + fallbackDays * 86400000;
+  const maxTime = endTimes.length ? Math.max(...endTimes) : fallbackEnd;
+  const startMs = floorTimeToBucket(minTime, preset.bucketHours);
+  let endMs = ceilTimeToBucket(maxTime, preset.bucketHours);
+  if (endMs <= startMs) endMs = startMs + bucketMs;
+  const bucketCount = Math.max(1, Math.ceil((endMs - startMs) / bucketMs));
+  const contentWidth = Math.max(minWidth, bucketCount * preset.bucketPx);
+  const buckets = Array.from({ length: bucketCount }, (_, index) => {
+    const ts = startMs + index * bucketMs;
+    return {
+      index,
+      ts,
+      left: index * preset.bucketPx,
+      label: formatTimelineBucketLabel(ts, preset.bucketHours)
+    };
+  });
+  return {
+    ...preset,
+    bucketMs,
+    startMs,
+    endMs,
+    spanMs: endMs - startMs,
+    bucketCount,
+    contentWidth,
+    buckets
+  };
+}
+
+function timelineBarMetrics(start, end, scale, minWidth = 6){
+  const s = parseDate(start).getTime();
+  const e = parseDate(end).getTime();
+  if (!Number.isFinite(s) || !Number.isFinite(e)) return null;
+  const left = Math.max(0, ((s - scale.startMs) / scale.bucketMs) * scale.bucketPx);
+  const width = Math.max(minWidth, ((Math.max(e, s + 1) - s) / scale.bucketMs) * scale.bucketPx);
+  return {
+    left,
+    width: Math.min(width, Math.max(minWidth, scale.contentWidth - left))
+  };
+}
+
+function setScaleLabel(id, text){
+  const el = qs(id);
+  if (el) el.textContent = text;
+}
+
+function refreshExecutionZoomLabels(){
+  const timelineScale = getTimelineScalePreset(getZoomValue('executionTimeline', 1));
+  const plantScale = getTimelineScalePreset(getZoomValue('executionPlant', 1));
+  setZoomLabel('timelineZoomLabel', getZoomValue('executionTimeline', 1));
+  setZoomLabel('plantZoomLabel', getZoomValue('executionPlant', 1));
+  setScaleLabel('timelineScaleLabel', timelineScale.scaleLabel);
+  setScaleLabel('plantScaleLabel', plantScale.scaleLabel);
+}
+
+function syncExecutionDetailPanel(){
+  const panel = qs('campaignDetailsPanel');
+  const toggle = qs('execDetailToggle');
+  const onExecutionPage = qs('page-execution')?.classList.contains('active');
+  const show = onExecutionPage && Boolean(state.executionDetailPinned);
+  if(panel) panel.classList.toggle('open', show);
+  if(toggle) toggle.textContent = show ? 'Hide Detail' : 'Show Detail';
+}
+
+function toggleExecutionDetailPanel(){
+  state.executionDetailPinned = !state.executionDetailPinned;
+  const content = qs('campaignDetailsContent');
+  if(state.executionDetailPinned && !state.selectedCampaign && content){
+    content.innerHTML = executionDetailEmptyMarkup();
+  }
+  syncExecutionDetailPanel();
+}
+
+function closeExecutionDetailPanel(){
+  state.executionDetailPinned = false;
+  syncExecutionDetailPanel();
+}
+
+function currentExecutionView(){
+  return (document.querySelector('.exec-view.active-view')?.id || '').replace('exec-view-', '') || 'timeline';
+}
+
+function stepExecutionZoom(target, delta){
+  if(target === 'timeline'){
+    state.ganttZoom.executionTimeline = clampZoomValue(getZoomValue('executionTimeline', 1) + delta);
+    refreshExecutionZoomLabels();
+    renderDispatch();
+    return;
+  }
+  if(target === 'plant'){
+    state.ganttZoom.executionPlant = clampZoomValue(getZoomValue('executionPlant', 1) + delta);
+    refreshExecutionZoomLabels();
+    renderSchedule();
+  }
 }
 
 function _ridToOp(rid){
@@ -155,6 +355,21 @@ function _ridToOp(rid){
   if(r.startsWith('RM'))  return 'RM';
   if(r.startsWith('BF'))  return 'BF';
   return r.split('-')[0] || '—';
+}
+
+function inferPlantFromResource(resourceId){
+  const rid = String(resourceId || '').trim().toUpperCase();
+  if (!rid) return 'SHARED';
+  if (rid.startsWith('RM')) return 'RM';
+  if (rid.startsWith('BF')) return 'BF';
+  if (rid.startsWith('EAF') || rid.startsWith('LRF') || rid.startsWith('VD') || rid.startsWith('CCM') || rid.startsWith('SMS')) return 'SMS';
+  return 'SHARED';
+}
+
+function plantForJob(job){
+  const raw = String(job?.Plant || job?.plant || '').trim();
+  if (raw && raw.toUpperCase() !== 'SHARED') return raw.toUpperCase();
+  return inferPlantFromResource(job?.Resource_ID || job?.resource_id || '');
 }
 function renderCapacityBars(){
   const rows = [...(state.capacity || [])].sort((a,b)=>num(b['Utilisation_%'] || b.utilisation) - num(a['Utilisation_%'] || a.utilisation));
@@ -346,6 +561,12 @@ function initAppUi() {
   initNavigation();
   initSplitResizer('materialDivider');
   initSplitResizer('bomDivider');
+  restoreTopSummaryPreference();
+  const activePage = document.querySelector('.page.active')?.id?.replace('page-', '') || 'dashboard';
+  setTopActionContext(activePage);
+  renderTopSummaryForPage(activePage);
+  refreshExecutionZoomLabels();
+  syncExecutionDetailPanel();
 }
 
 initAppUi();
@@ -527,27 +748,165 @@ function deriveAppKpis(summary = state.overview || {}) {
   };
 }
 
-function hydrateSummary(summary){
-  const kpis = deriveAppKpis(summary);
-  const ot = kpis.onTimePct == null ? '—' : kpis.onTimePct.toFixed(1) + '%';
+function activePageKey() {
+  return document.querySelector('.page.active')?.id?.replace('page-', '') || 'dashboard';
+}
+
+function setTopSummaryCard(slot, card) {
+  const cfg = card || {};
+  const tone = cfg.tone || '';
+  setText(`summaryLabel${slot}`, cfg.label ?? '—');
+  setText(`summaryValue${slot}`, cfg.value ?? '—');
+  setText(`summarySub${slot}`, cfg.sub ?? '—');
+  const cardEl = qs(`summaryCard${slot}`);
+  if (cardEl) {
+    cardEl.className = ['metric', tone].filter(Boolean).join(' ');
+    cardEl.hidden = !card;
+  }
+}
+
+function syncTopSummaryState() {
+  const panel = qs('topSummary');
+  const toggle = qs('topSummaryToggle');
+  if (panel) panel.classList.toggle('is-collapsed', Boolean(state.topSummaryCollapsed));
+  if (toggle) {
+    toggle.setAttribute('aria-expanded', state.topSummaryCollapsed ? 'false' : 'true');
+    toggle.innerHTML = state.topSummaryCollapsed
+      ? '<i class="fa-solid fa-chevron-down" aria-hidden="true"></i><span>Show KPIs</span>'
+      : '<i class="fa-solid fa-chevron-up" aria-hidden="true"></i><span>Hide KPIs</span>';
+  }
+}
+
+function restoreTopSummaryPreference() {
+  try {
+    state.topSummaryCollapsed = localStorage.getItem('aps.topSummaryCollapsed') === 'true';
+  } catch (_) {
+    state.topSummaryCollapsed = false;
+  }
+  syncTopSummaryState();
+}
+
+function toggleTopSummary() {
+  state.topSummaryCollapsed = !state.topSummaryCollapsed;
+  try {
+    localStorage.setItem('aps.topSummaryCollapsed', String(state.topSummaryCollapsed));
+  } catch (_) {}
+  syncTopSummaryState();
+}
+
+function materialCampaignsForSummary() {
+  const matPlan = (state.material && typeof state.material === 'object') ? state.material : {};
+  const materialCampaigns = matPlan.campaigns || [];
+  if (materialCampaigns.length) return materialCampaigns;
+  return (state.campaigns || []).map(c => ({
+    campaign_id: c.campaign_id || c.Campaign_ID || '',
+    required_qty: num(c.total_mt || c.Total_MT),
+    shortage_qty: (c.shortages || []).reduce((a, s) => a + num(s.qty), 0),
+    make_convert_qty: num(c.make_convert_qty || 0),
+    material_status: c.material_status || c.Material_Status || '',
+    release_status: c.release_status || c.Release_Status || ''
+  }));
+}
+
+function topSummaryCardsForPage(page = activePageKey(), summary = state.overview || {}, cachedKpis = null) {
+  const kpis = cachedKpis || deriveAppKpis(summary);
+  const planStatus = derivePlanStatus();
+  const ot = kpis.onTimePct == null ? '—' : `${kpis.onTimePct.toFixed(1)}%`;
   const simSub = kpis.sim
     ? (kpis.sim.horizon_exceeded
       ? `Needs ${num(kpis.sim.total_duration_hours || 0).toFixed(1)}h vs ${num(kpis.sim.horizon_hours || 0).toFixed(1)}h horizon`
       : (kpis.sim.message || kpis.solverStatus))
     : (kpis.solverStatus || 'delivery rate');
-  const planStatus = derivePlanStatus();
 
-  setText('summaryCampaigns', kpis.planningOrderCount || '—');
-  setText('summaryCampaignsSub', `${kpis.releasedCount} released · ${kpis.heldCount} held`);
-  setText('summaryHeats', kpis.totalHeats || '—');
-  setText('summaryHeatsSub', kpis.totalMt ? `${kpis.totalMt.toLocaleString()} MT total` : 'MT planned');
-  setText('summaryMt', kpis.totalMt ? kpis.totalMt.toLocaleString() : '—');
-  setText('summaryMtSub', kpis.totalHeats ? `${kpis.totalHeats} heats` : 'in heats');
-  setText('summaryOt', ot);
-  setText('summaryOtSub', kpis.lateCount ? `${kpis.lateCount} late` : simSub);
-  setText('summaryCapacity', planStatus.value);
-  setText('summaryCapacitySub', planStatus.sub);
-  setMetricTone('summaryPlanCard', planStatus.tone);
+  if (page === 'material') {
+    const campaigns = materialCampaignsForSummary();
+    const riskTagged = campaigns.map(c => materialRiskKey(c));
+    const readyCount = riskTagged.filter(r => r === 'ready').length;
+    const convertCount = riskTagged.filter(r => r === 'convert').length;
+    const heldCount = riskTagged.filter(r => r === 'held').length;
+    const shortCount = riskTagged.filter(r => r === 'short').length;
+    return [
+      { label: 'Total Campaigns', value: String(campaigns.length || 0), sub: 'Material review scope', tone: 'info' },
+      { label: 'Ready', value: String(readyCount), sub: 'Can release now', tone: 'success' },
+      { label: 'Needs Convert', value: String(convertCount), sub: 'Make/convert action', tone: 'warn' },
+      { label: 'Held', value: String(heldCount), sub: 'Manual hold status', tone: '' },
+      { label: 'Short', value: String(shortCount), sub: 'Blocking shortages', tone: 'danger' }
+    ];
+  }
+
+  if (page === 'execution') {
+    const rows = state.lastScheduleRows && state.lastScheduleRows.length ? state.lastScheduleRows : (state.gantt || []);
+    const equipment = new Set(rows.map(r => String(r.Resource_ID || r.resource_id || '').trim()).filter(Boolean));
+    const startTimes = rows.map(r => parseDate(r.Planned_Start).getTime()).filter(Number.isFinite);
+    const endTimes = rows.map(r => parseDate(r.Planned_End).getTime()).filter(Number.isFinite);
+    const spanHours = startTimes.length && endTimes.length ? Math.max(0, (Math.max(...endTimes) - Math.min(...startTimes)) / 36e5) : null;
+    const spanLabel = kpis.sim?.total_duration_hours != null
+      ? `${num(kpis.sim.total_duration_hours).toFixed(1)}h`
+      : (spanHours == null ? '—' : `${spanHours.toFixed(1)}h`);
+    return [
+      { label: 'Equipment Active', value: String(equipment.size || 0), sub: 'Resources in timeline', tone: 'info' },
+      { label: 'Operations', value: String(rows.length || 0), sub: 'Scheduled jobs', tone: '' },
+      { label: 'Schedule Span', value: spanLabel, sub: 'Current visible horizon', tone: '' },
+      { label: 'Planned MT', value: kpis.totalMt ? kpis.totalMt.toLocaleString() : '—', sub: `${kpis.totalHeats || 0} heats`, tone: 'success' },
+      { label: 'Plan Status', value: planStatus.value, sub: planStatus.sub, tone: planStatus.tone }
+    ];
+  }
+
+  if (page === 'bom') {
+    const s = state.bomSummary || {};
+    return [
+      { label: 'BOM Lines', value: String(s.total_sku_lines || 0), sub: 'Total material lines', tone: 'info' },
+      { label: 'Covered', value: String(s.covered_lines || 0), sub: 'Fully covered lines', tone: 'success' },
+      { label: 'Short', value: String(s.short_lines || 0), sub: 'Blocking shortages', tone: 'danger' },
+      { label: 'Partial', value: String(s.partial_lines || 0), sub: 'Partially covered', tone: 'warn' },
+      { label: 'Net Requirement', value: `${((s.total_net_req || 0) / 1000).toFixed(1)}k`, sub: 'Across exploded BOM', tone: '' }
+    ];
+  }
+
+  if (page === 'capacity') {
+    const rows = [...(state.capacity || [])];
+    const sorted = rows.sort((a, b) =>
+      num(b['Utilisation_%'] || b.utilisation || 0) - num(a['Utilisation_%'] || a.utilisation || 0)
+    );
+    const avgUtil = sorted.length
+      ? sorted.reduce((a, r) => a + num(r['Utilisation_%'] || r.utilisation || 0), 0) / sorted.length
+      : null;
+    const overloaded = sorted.filter(r => num(r['Utilisation_%'] || r.utilisation || 0) > 100).length;
+    const slack = sorted.filter(r => num(r['Utilisation_%'] || r.utilisation || 0) < 60).length;
+    const peak = sorted.length ? Math.round(num(sorted[0]['Utilisation_%'] || sorted[0].utilisation || 0)) : null;
+    const peakTone = peak == null ? '' : (peak > 100 ? 'danger' : peak > 85 ? 'warn' : 'success');
+    return [
+      { label: 'Bottleneck', value: sorted.length ? String(sorted[0].Resource_ID || sorted[0].resource_id || '—') : '—', sub: 'Most constrained resource', tone: 'danger' },
+      { label: 'Avg Utilisation', value: avgUtil == null ? '—' : `${avgUtil.toFixed(1)}%`, sub: 'Across all resources', tone: '' },
+      { label: 'Overloaded', value: String(overloaded), sub: 'Above 100%', tone: 'warn' },
+      { label: 'Available Slack', value: String(slack), sub: 'Below 60%', tone: 'success' },
+      { label: 'Peak Utilisation', value: peak == null ? '—' : `${peak}%`, sub: 'Current peak load', tone: peakTone }
+    ];
+  }
+
+  return [
+    { label: 'Planning Orders', value: kpis.planningOrderCount || '—', sub: `${kpis.releasedCount} released · ${kpis.heldCount} held`, tone: '' },
+    { label: 'Heats Planned', value: kpis.totalHeats || '—', sub: kpis.totalMt ? `${kpis.totalMt.toLocaleString()} MT total` : 'MT planned', tone: 'success' },
+    { label: 'MT Planned', value: kpis.totalMt ? kpis.totalMt.toLocaleString() : '—', sub: kpis.totalHeats ? `${kpis.totalHeats} heats` : 'in heats', tone: '' },
+    { label: 'On-Time', value: ot, sub: kpis.lateCount ? `${kpis.lateCount} late` : simSub, tone: 'warn' },
+    { label: 'Plan Status', value: planStatus.value, sub: planStatus.sub, tone: planStatus.tone }
+  ];
+}
+
+function renderTopSummaryForPage(page = activePageKey(), summary = state.overview || {}, cachedKpis = null) {
+  const cards = topSummaryCardsForPage(page, summary, cachedKpis);
+  const grid = qs('summaryGrid');
+  for (let idx = 0; idx < 5; idx += 1) {
+    setTopSummaryCard(idx + 1, cards[idx] || null);
+  }
+  if (grid) {
+    grid.style.setProperty('--summary-count', String(Math.max(1, Math.min(5, cards.length || 1))));
+  }
+}
+
+function hydrateSummary(summary){
+  const kpis = deriveAppKpis(summary);
+  renderTopSummaryForPage(activePageKey(), summary, kpis);
 
   setText('chipSolverText', 'Solver ' + (kpis.solverStatus || '—'));
   setText('chipHeld', `${kpis.heldCount} on hold`);
@@ -882,6 +1241,7 @@ function renderCampaigns(){
     <tbody>
     ${items.map(c=>{
       const cid = c.campaign_id || c.Campaign_ID || '';
+      const cidLiteral = JSON.stringify(String(cid));
       const status = c.release_status || c.Release_Status || c.Status || '—';
       const isReleased = String(status).toUpperCase() === 'RELEASED';
       const margin = c.Margin_Hrs == null ? '—' : (num(c.Margin_Hrs)>=0?'+':'') + Math.round(num(c.Margin_Hrs)) + 'h';
@@ -898,7 +1258,7 @@ function renderCampaigns(){
           <button class="btn success" style="font-size:.72rem;padding:.25rem .55rem;${isReleased?'opacity:.4;cursor:not-allowed':''}" ${isReleased?'disabled':''} onclick="releaseSinglePO('${escapeHtml(cid)}')">Release</button>
           <button class="btn danger" style="font-size:.72rem;padding:.25rem .55rem;${!isReleased?'opacity:.4;cursor:not-allowed':''}" ${!isReleased?'disabled':''} onclick="unreleasePlanningOrder('${escapeHtml(cid)}')">Unrelease</button>
           <button class="btn warn" style="font-size:.72rem;padding:.25rem .55rem" onclick="updateCampaignStatus('${escapeHtml(cid)}','Release_Status','MATERIAL HOLD')">Hold</button>
-          <button class="btn ghost" style="font-size:.72rem;padding:.25rem .55rem" onclick="activatePage('execution');switchExecView('gantt')">Gantt</button>
+          <button class="btn ghost" style="font-size:.72rem;padding:.25rem .55rem" onclick='focusCampaignInExecution(${cidLiteral})'>Focus</button>
         </td>
       </tr>`;
     }).join('')}
@@ -907,82 +1267,307 @@ function renderCampaigns(){
 }
 function renderSchedule(){
   const wrap = qs('scheduleTimeline');
-  const jobs = (state.gantt||[]);
+  const jobs = getExecutionJobs();
   if(!jobs.length){ wrap.innerHTML = '<div class="notice">Run Schedule to populate the Gantt.</div>'; return; }
-  const starts = jobs.map(j=>parseDate(j.Planned_Start)).filter(d=>!isNaN(d));
-  const ends = jobs.map(j=>parseDate(j.Planned_End)).filter(d=>!isNaN(d));
-  const t0 = starts.length ? new Date(Math.min(...starts)) : new Date();
-  t0.setHours(0,0,0,0);
-  const tEnd = ends.length ? new Date(Math.max(...ends)) : new Date(t0.getTime() + 14*86400000);
-  const days = Math.max(14, Math.ceil((tEnd - t0) / 86400000) + 1);
-  const horizonMs = days*86400000;
+  const zoom = getZoomValue('executionPlant', 1);
+  setZoomLabel('plantZoomLabel', zoom);
+  const scale = buildTimelineScale(
+    jobs.map(j => j.Planned_Start),
+    jobs.map(j => j.Planned_End),
+    zoom,
+    14,
+    1120
+  );
+  setScaleLabel('plantScaleLabel', scale.scaleLabel);
 
-  // Group by campaign
-  const campaigns = {};
-  jobs.forEach(job=>{
-    const cid = job.Campaign || 'Unknown';
-    if(!campaigns[cid]) campaigns[cid] = {id:cid, grade:job.Grade, jobs:[], minStart:new Date(8640000000000000), maxEnd:new Date(0)};
+  // Group by plant first, then resource, and keep routing sequence order.
+  const byPlant = {};
+  jobs.forEach(job => {
     const s = parseDate(job.Planned_Start);
     const e = parseDate(job.Planned_End);
-    if(!isNaN(s) && !isNaN(e)){
-      campaigns[cid].jobs.push(job);
-      if(s < campaigns[cid].minStart) campaigns[cid].minStart = s;
-      if(e > campaigns[cid].maxEnd) campaigns[cid].maxEnd = e;
-    }
+    if (isNaN(s) || isNaN(e)) return;
+    const plant = plantForJob(job);
+    const rid = String(job.Resource_ID || '?').trim() || '?';
+    if (!byPlant[plant]) byPlant[plant] = {};
+    if (!byPlant[plant][rid]) byPlant[plant][rid] = [];
+    byPlant[plant][rid].push(job);
   });
 
-  const dayLabels=Array.from({length:days},(_,i)=>{const d=new Date(t0.getTime()+i*86400000);const m=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];return`${d.getDate()}<small>${m[d.getMonth()]}</small>`;});
-  wrap.innerHTML='';
-  const hdr=document.createElement('div');hdr.className='gantt-hdr';hdr.innerHTML=`<div class="gantt-res-col" style="font-weight:700">Campaign</div><div class="gantt-days">${dayLabels.map(d=>`<div class="gantt-day">${d}</div>`).join('')}</div>`;wrap.appendChild(hdr);
+  const axisHtml = scale.buckets.map(bucket => `
+    <div class="gantt-day" style="width:${scale.bucketPx}px;min-width:${scale.bucketPx}px">
+      <div>${bucket.label.primary}</div>
+      <small>${bucket.label.secondary}</small>
+    </div>
+  `).join('');
+  let html = `<div class="gantt-hdr">
+    <div class="gantt-res-col" style="font-weight:700">Resource</div>
+    <div class="gantt-days" style="width:${scale.contentWidth}px;min-width:${scale.contentWidth}px">${axisHtml}</div>
+  </div>`;
 
-  Object.values(campaigns).sort((a,b)=>a.id.localeCompare(b.id)).forEach(camp=>{
-    const row=document.createElement('div');row.className='gantt-row';row.innerHTML=`<div class="gantt-res-lbl"><div class="rid">${camp.id}</div><div class="rop" style="font-size:.7rem">${camp.grade||'—'}</div></div>`;
-    const tl=document.createElement('div');tl.className='gantt-tl';
-    const s = camp.minStart; const e = camp.maxEnd;
-    if(!isNaN(s) && !isNaN(e) && s <= e){
-      const left=Math.max(0,(s-t0)/horizonMs*100);
-      const width=Math.max(1,(e-s)/horizonMs*100);
-      const bar=document.createElement('div');bar.className='gantt-job eaf';bar.style.left=left+'%';bar.style.width=Math.min(width,100-left)+'%';bar.style.cursor='pointer';
-      bar.innerHTML=`<span>${camp.id}</span> <span style="opacity:.6;font-size:9px">${camp.jobs.length}H</span>`;
-      bar.addEventListener('click',()=>{selectCampaignFromGantt(camp.id);});
-      bar.addEventListener('mouseenter',ev=>{const tt=document.getElementById('tt');tt.innerHTML=`<strong>${camp.id}</strong><br>Grade: ${camp.grade||'—'}<br>Heats: ${camp.jobs.length}<br>Start: ${fmtDate(s)}<br>End: ${fmtDate(e)}<br><small style="color:var(--brand)">Click to view equipment schedule</small>`;tt.classList.add('show');});
-      bar.addEventListener('mousemove',ev=>{const tt=document.getElementById('tt');tt.style.left=(ev.clientX+14)+'px';tt.style.top=(ev.clientY-10)+'px';});
-      bar.addEventListener('mouseleave',()=>{document.getElementById('tt').classList.remove('show');});
-      tl.appendChild(bar);
-    }
-    row.appendChild(tl);
-    wrap.appendChild(row);
+  const orderedPlants = getExecutionPlantOrder(jobs);
+  orderedPlants.forEach((plant, plantIndex) => {
+    const resources = byPlant[plant] || {};
+    const orderedResources = Object.keys(resources).sort((a, b) => {
+      const aOp = _ridToOp(a);
+      const bOp = _ridToOp(b);
+      const aIdx = EXEC_OPERATION_ORDER.indexOf(aOp);
+      const bIdx = EXEC_OPERATION_ORDER.indexOf(bOp);
+      const safeA = aIdx === -1 ? 999 : aIdx;
+      const safeB = bIdx === -1 ? 999 : bIdx;
+      if (safeA !== safeB) return safeA - safeB;
+      return String(a).localeCompare(String(b));
+    });
+
+    html += `<div class="gantt-row gantt-plant-band" style="${plantIndex ? 'border-top:1px solid var(--border);' : ''}">
+      <div class="gantt-res-lbl"><div class="rid">${escapeHtml(plant)} Plant</div><div class="rop">Routing sequence view</div></div>
+      <div class="gantt-tl" style="width:${scale.contentWidth}px;min-width:${scale.contentWidth}px;background-size:${scale.bucketPx}px 100%"></div>
+    </div>`;
+
+    orderedResources.forEach(rid => {
+      const ops = resources[rid];
+      const bars = ops.map(op => {
+        const s = parseDate(op.Planned_Start);
+        const e = parseDate(op.Planned_End);
+        if (isNaN(s) || isNaN(e) || s > e) return '';
+        const metrics = timelineBarMetrics(s, e, scale, 8);
+        if (!metrics) return '';
+        const campaign = String(op.Campaign || '').trim() || 'Campaign';
+        const campaignLiteral = JSON.stringify(campaign);
+        const jobId = String(op.Job_ID || '').trim();
+        const cls = ganttClassFromOperation(_ridToOp(rid));
+        const label = metrics.width >= 86 ? escapeHtml(campaign) : '';
+        const tip = `${escapeHtml(campaign)} | ${escapeHtml(rid)}${jobId ? ` | ${escapeHtml(jobId)}` : ''} | ${fmtDateTime(s)} → ${fmtDateTime(e)}`;
+        const selectedCls = state.selectedCampaign === campaign ? ' is-selected' : '';
+        return `<div class="gantt-job ${cls}${selectedCls}" style="left:${metrics.left.toFixed(1)}px;width:${metrics.width.toFixed(1)}px;cursor:pointer;min-width:6px" onclick='selectCampaignFromGantt(${campaignLiteral})' title="${tip}">${label}</div>`;
+      }).join('');
+      html += `<div class="gantt-row">
+        <div class="gantt-res-lbl"><div class="rid">${escapeHtml(rid)}</div><div class="rop">${escapeHtml(_ridToOp(rid))}</div></div>
+        <div class="gantt-tl" style="width:${scale.contentWidth}px;min-width:${scale.contentWidth}px;background-size:${scale.bucketPx}px 100%">${bars}</div>
+      </div>`;
+    });
+  });
+
+  wrap.innerHTML = `<div style="min-width:${scale.contentWidth + 180}px">${html}</div>`;
+  initGanttTooltips(wrap);
+  refreshExecutionTopbarMeta('gantt');
+}
+
+const EXEC_OPERATION_ORDER = ['EAF', 'LRF', 'VD', 'CCM', 'RM', 'BF'];
+
+function ganttClassFromOperation(op) {
+  const n = String(op || '').toUpperCase();
+  if (n === 'EAF') return 'eaf';
+  if (n === 'LRF') return 'lrf';
+  if (n === 'VD') return 'vd';
+  if (n === 'CCM') return 'ccm';
+  if (n === 'RM') return 'rm';
+  return 'eaf';
+}
+
+function getExecutionPlantOrder(jobs) {
+  const knownOrder = ['BF', 'SMS', 'RM'];
+  const plants = [...new Set((jobs || []).map(j => plantForJob(j)))];
+  const configured =
+    state.config?.plant_order ||
+    state.config?.plant_sequence ||
+    state.config?.PLANT_ORDER ||
+    state.config?.PLANT_SEQUENCE;
+  const explicitOrder = Array.isArray(configured) ? configured.map(x => String(x).trim().toUpperCase()) : null;
+  const orderSource = explicitOrder && explicitOrder.length ? explicitOrder : knownOrder;
+  return plants.sort((a, b) => {
+    const ua = String(a).toUpperCase();
+    const ub = String(b).toUpperCase();
+    const ia = orderSource.indexOf(ua);
+    const ib = orderSource.indexOf(ub);
+    const sa = ia === -1 ? 999 : ia;
+    const sb = ib === -1 ? 999 : ib;
+    if (sa !== sb) return sa - sb;
+    return ua.localeCompare(ub);
   });
 }
-function selectCampaignFromGantt(campaignId) {
-  state.selectedCampaign = campaignId;
+
+function executionDetailEmptyMarkup() {
+  return `<div class="execution-detail-empty-state">
+    <div class="execution-detail-empty-title">Execution detail</div>
+    <div class="execution-detail-empty-copy">Select a bar from the equipment or plant timeline to inspect campaign, due date, heat count, linked sales orders, and material context.</div>
+  </div>`;
+}
+
+function getExecutionJobs() {
+  const primary = state.gantt || [];
+  if (primary.length) return primary;
+  return state.lastScheduleRows || [];
+}
+
+function openExecutionGanttMode(mode) {
+  if (mode === 'equipment') {
+    switchExecView('timeline');
+    return;
+  }
+  if (mode === 'plant') {
+    switchExecView('gantt');
+    return;
+  }
+
+  const jobs = getExecutionJobs();
+  if (!jobs.length) {
+    alert('No schedule data available for this view. Run Schedule first.');
+    return;
+  }
+
+  if (mode === 'so') {
+    showGanttModal('Sales Orders - Scheduled Timeline', jobs, 'so');
+    return;
+  }
+  if (mode === 'po') {
+    showGanttModal('Planning Orders - Operation Timeline', jobs, 'po');
+    return;
+  }
+  showGanttModal('Global Plant-Campaign Timeline', jobs, 'global');
+}
+
+function updateExecutionCapacityMeta(resourceIds = []) {
+  const loadEl = qs('executionMetaPlantLoad');
+  const bottleneckEl = qs('executionMetaBottleneck');
+  if (!loadEl || !bottleneckEl) return;
+
+  const normalized = [...new Set((resourceIds || []).map(r => String(r || '').trim()).filter(Boolean))];
+  if (!normalized.length) {
+    loadEl.textContent = 'Load —';
+    bottleneckEl.textContent = 'Bottleneck —';
+    return;
+  }
+
+  const resourceSet = new Set(normalized);
+  const capRows = (state.capacity || [])
+    .map(row => ({
+      rid: String(row.Resource_ID || row.resource_id || '').trim(),
+      util: num(row['Utilisation_%'] || row.utilisation, NaN)
+    }))
+    .filter(row => resourceSet.has(row.rid) && Number.isFinite(row.util));
+
+  if (!capRows.length) {
+    loadEl.textContent = 'Load n/a';
+    bottleneckEl.textContent = 'Bottleneck n/a';
+    return;
+  }
+
+  const avgUtil = Math.round(capRows.reduce((sum, row) => sum + row.util, 0) / capRows.length);
+  const overCount = capRows.filter(row => row.util > 100).length;
+  const bottleneck = capRows.slice().sort((a, b) => b.util - a.util)[0];
+  loadEl.textContent = `${avgUtil}% avg util${overCount ? ` · ${overCount} over` : ''}`;
+  bottleneckEl.textContent = `Bottleneck ${bottleneck.rid} ${Math.round(bottleneck.util)}%`;
+}
+
+function refreshExecutionTopbarMeta(view = null) {
+  const activeView = view || (document.querySelector('.exec-view.active-view')?.id || '').replace('exec-view-', '') || 'timeline';
+  const sourceJobs = getExecutionJobs();
+  const jobs = activeView === 'timeline' ? (state.executionLastFilteredJobs || sourceJobs) : sourceJobs;
+  const resources = new Set(jobs.map(j => String(j.Resource_ID || j.resource_id || '').trim()).filter(Boolean));
+  const plants = new Set(jobs.map(j => plantForJob(j)).filter(Boolean));
+  const topbarCopy = qs('executionTopbarCopy');
+  const boardStatus = qs('executionBoardStatus');
+  const filters = state.dispatchFilters || {};
+  const filterBits = [];
+  if (filters.campaignFilter) filterBits.push(`Campaign ${filters.campaignFilter}`);
+  if (filters.gradeFilter) filterBits.push(`Grade ${filters.gradeFilter}`);
+  if (filters.plantFilter) filterBits.push(`Plant ${filters.plantFilter}`);
+  const filterLabel = filterBits.length ? ` · Filters: ${filterBits.join(', ')}` : '';
+
+  if (!jobs.length && sourceJobs.length && activeView === 'timeline') {
+    updateExecutionCapacityMeta([]);
+    if (topbarCopy) topbarCopy.textContent = 'No operations match current timeline filters. Clear or adjust Campaign / Grade / Plant filters.';
+    if (boardStatus) boardStatus.textContent = '0 rows in filtered timeline';
+    return;
+  }
+
+  if (!jobs.length) {
+    updateExecutionCapacityMeta([]);
+    if (topbarCopy) topbarCopy.textContent = 'No scheduled operations loaded. Run Schedule from the top action bar.';
+    if (boardStatus) boardStatus.textContent = 'Awaiting schedule data';
+    return;
+  }
+
+  updateExecutionCapacityMeta([...resources]);
+
+  if (activeView === 'timeline') {
+    const constraints = state.executionConstraintSummary || {};
+    const constraintBits = [];
+    if (constraints.held) constraintBits.push(`${constraints.held} held`);
+    if (constraints.late) constraintBits.push(`${constraints.late} late`);
+    if (constraints.bottleneck) constraintBits.push(`${constraints.bottleneck} bottleneck bars`);
+    const constraintLabel = constraintBits.length ? ` · ${constraintBits.join(' · ')}` : '';
+    if (topbarCopy) topbarCopy.textContent = `Equipment timeline (resource lanes) · ${jobs.length} operations across ${resources.size} resources${filterLabel}`;
+    if (boardStatus) boardStatus.textContent = state.selectedCampaign ? `Inspecting ${state.selectedCampaign}` : `${resources.size} resources · ${jobs.length} ops${constraintLabel}`;
+    return;
+  }
+  if (activeView === 'campaigns') {
+    if (topbarCopy) topbarCopy.textContent = `Released-lot list synced to equipment and plant timelines · ${jobs.length} scheduled operations`;
+    if (boardStatus) boardStatus.textContent = `${resources.size} resources in active schedule`;
+    return;
+  }
+  if (topbarCopy) topbarCopy.textContent = `Plant timeline view · ${jobs.length} operations across ${resources.size} resources in ${plants.size || 1} plants`;
+  if (boardStatus) boardStatus.textContent = 'Plant sequence focus';
+}
+
+function selectCampaignFromGantt(campaignId, options = {}) {
+  const normalizedCampaign = String(campaignId || '').trim();
+  if (!normalizedCampaign) return;
+  state.selectedCampaign = normalizedCampaign;
+  state.executionDetailPinned = true;
 
   const panel = qs('campaignDetailsPanel');
   const content = qs('campaignDetailsContent');
   const clearBtn = qs('clearCampaignBtn');
-  const campSel = qs('dispatchFilterCampaign');
 
-  if (panel) panel.style.display = 'block';
+  if (panel) panel.classList.add('open');
   if (content) {
-    content.innerHTML = `<div style="padding:1rem"><strong>${escapeHtml(campaignId)}</strong><br><small>Campaign details loading...</small></div>`;
+    content.innerHTML = `<div style="padding:1rem"><strong>${escapeHtml(normalizedCampaign)}</strong><br><small>Campaign details loading...</small></div>`;
   }
-  if (clearBtn) clearBtn.style.display = 'block';
-  if (campSel) campSel.value = campaignId;
+  if (clearBtn && options.showClearFilter) clearBtn.style.display = 'block';
 
   activatePage('execution');
-  switchExecView('timeline');
-  renderDispatch();
+  if (options.view) switchExecView(options.view);
+  syncExecutionDetailPanel();
+  if (currentExecutionView() === 'timeline') renderDispatch();
+  else refreshExecutionTopbarMeta(currentExecutionView());
+  if (currentExecutionView() === 'gantt') renderSchedule();
   renderCampaignDetails();
 }
 
 function clearCampaignSelection(){
   state.selectedCampaign = null;
-  document.getElementById('clearCampaignBtn').style.display = 'none';
-  const panel = document.getElementById('campaignDetailsPanel');
-  if(panel) panel.style.display = 'none';
+  state.executionDetailPinned = false;
+  state.dispatchFilters = { campaignFilter: '', gradeFilter: '', plantFilter: '' };
+  const clearBtn = document.getElementById('clearCampaignBtn');
+  if(clearBtn) clearBtn.style.display = 'none';
+  const contentDiv = qs('campaignDetailsContent');
+  if(contentDiv) contentDiv.innerHTML = executionDetailEmptyMarkup();
   const campSel = qs('dispatchFilterCampaign');
+  const gradeSel = qs('dispatchFilterGrade');
+  const plantSel = qs('dispatchFilterPlant');
   if(campSel) campSel.value = '';
-  renderDispatch();
+  if(gradeSel) gradeSel.value = '';
+  if(plantSel) plantSel.value = '';
+  syncExecutionDetailPanel();
+  const activeView = currentExecutionView();
+  if (activeView === 'gantt') renderSchedule();
+  if (activeView === 'timeline') renderDispatch();
+  refreshExecutionTopbarMeta(activeView);
+}
+
+function focusCampaignInExecution(campaignId){
+  const normalizedCampaign = String(campaignId || '').trim();
+  if (!normalizedCampaign) return;
+  state.dispatchFilters = {
+    ...(state.dispatchFilters || {}),
+    campaignFilter: normalizedCampaign
+  };
+  const campSel = qs('dispatchFilterCampaign');
+  if (campSel) campSel.value = normalizedCampaign;
+  const clearBtn = qs('clearCampaignBtn');
+  if (clearBtn) clearBtn.style.display = 'inline-flex';
+  selectCampaignFromGantt(normalizedCampaign, { view: 'timeline', showClearFilter: true });
 }
 function togglePlant(plantId){
   const body = document.getElementById(plantId);
@@ -991,16 +1576,16 @@ function togglePlant(plantId){
   if(header) header.querySelector('span').textContent = body.style.display === 'none' ? '▶' : '▼';
 }
 function renderCampaignDetails(){
-  const panel = qs('campaignDetailsPanel');
   const contentDiv = qs('campaignDetailsContent');
   if(!state.selectedCampaign){
-    panel.style.display = 'none';
+    if (contentDiv) contentDiv.innerHTML = executionDetailEmptyMarkup();
+    syncExecutionDetailPanel();
     return;
   }
   const campaign = (state.campaigns || []).find(c=>(c.campaign_id || c.Campaign_ID) === state.selectedCampaign);
   if(!campaign){
     contentDiv.innerHTML = '<div style="padding:1rem;color:var(--text-faint)">Campaign not found</div>';
-    panel.style.display = 'block';
+    syncExecutionDetailPanel();
     return;
   }
   const grade = campaign.grade || campaign.Grade || '—';
@@ -1070,7 +1655,7 @@ function renderCampaignDetails(){
       }).join('') : '<div style="font-size:.8rem;color:var(--text-faint);padding:.5rem">No orders linked</div>'}
     </div>
   `;
-  panel.style.display = 'block';
+  syncExecutionDetailPanel();
 }
 function toggleOrderItem(el){
   el.classList.toggle('expanded');
@@ -1081,12 +1666,16 @@ function filterDispatchByDropdown(){
   const plantFilter = qs('dispatchFilterPlant').value;
 
   state.dispatchFilters = { campaignFilter, gradeFilter, plantFilter };
+  const clearBtn = qs('clearCampaignBtn');
+  if (clearBtn) clearBtn.style.display = (campaignFilter || gradeFilter || plantFilter) ? 'inline-flex' : 'none';
   renderDispatch();
 }
 function populateDispatchFilters(){
-  const campaigns = [...new Set((state.gantt || []).map(j=>j.Campaign || j.campaign_id).filter(Boolean))].sort();
-  const grades = [...new Set((state.gantt || []).map(j=>j.Grade || '').filter(Boolean))].sort();
-  const plants = [...new Set((state.gantt || []).map(j=>j.Plant || 'Shared').filter(Boolean))].sort();
+  const sourceJobs = getExecutionJobs();
+  const campaigns = [...new Set(sourceJobs.map(j=>j.Campaign || j.campaign_id).filter(Boolean))].sort();
+  const grades = [...new Set(sourceJobs.map(j=>j.Grade || '').filter(Boolean))].sort();
+  const plants = [...new Set(sourceJobs.map(j=>plantForJob(j)).filter(Boolean))].sort();
+  const filters = state.dispatchFilters || {};
 
   const campSel = qs('dispatchFilterCampaign');
   const gradeSel = qs('dispatchFilterGrade');
@@ -1095,63 +1684,94 @@ function populateDispatchFilters(){
   campSel.innerHTML = '<option value="">All Campaigns</option>' + campaigns.map(c=>`<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
   gradeSel.innerHTML = '<option value="">All Grades</option>' + grades.map(g=>`<option value="${escapeHtml(g)}">${escapeHtml(g)}</option>`).join('');
   plantSel.innerHTML = '<option value="">All Plants</option>' + plants.map(p=>`<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+  campSel.value = filters.campaignFilter || '';
+  gradeSel.value = filters.gradeFilter || '';
+  plantSel.value = filters.plantFilter || '';
 }
 function renderDispatch(){
   const grid = qs('dispatchGrid');
-  let jobs = state.gantt || [];
+  const sourceJobs = getExecutionJobs();
+  if(!sourceJobs.length){
+    grid.innerHTML = '<div class="notice">No schedule rows are available in Execution yet. Run Schedule, then open Execution.</div>';
+    state.executionLastFilteredJobs = [];
+    state.executionConstraintSummary = { held: 0, late: 0, bottleneck: 0 };
+    syncExecutionDetailPanel();
+    refreshExecutionTopbarMeta('timeline');
+    return;
+  }
+  let jobs = [...sourceJobs];
+  const zoom = getZoomValue('executionTimeline', 1);
+  setZoomLabel('timelineZoomLabel', zoom);
   const filters = state.dispatchFilters || {};
 
   if(filters.campaignFilter) jobs = jobs.filter(j=>(j.Campaign||j.campaign_id)===filters.campaignFilter);
   if(filters.gradeFilter) jobs = jobs.filter(j=>(j.Grade||'')===filters.gradeFilter);
-  if(filters.plantFilter) jobs = jobs.filter(j=>(j.Plant||'Shared')===filters.plantFilter);
-  if(state.selectedCampaign) jobs = jobs.filter(j=>(j.Campaign||j.campaign_id)===state.selectedCampaign);
+  if(filters.plantFilter) jobs = jobs.filter(j=>plantForJob(j)===filters.plantFilter);
 
   if(!jobs.length){
-    grid.innerHTML = '<div class="notice">No schedule data. Run Schedule first.</div>';
-    setText('dispatchMachines','—'); setText('dispatchJobs','—'); setText('dispatchDuration','—'); setText('dispatchMt','—');
+    grid.innerHTML = '<div class="notice">No operations match the current Campaign / Grade / Plant filters.</div>';
+    state.executionLastFilteredJobs = [];
+    state.executionConstraintSummary = { held: 0, late: 0, bottleneck: 0 };
+    syncExecutionDetailPanel();
+    refreshExecutionTopbarMeta('timeline');
     return;
   }
+  const scale = buildTimelineScale(
+    jobs.map(j => j.Planned_Start),
+    jobs.map(j => j.Planned_End),
+    zoom,
+    14,
+    1080
+  );
+  setScaleLabel('timelineScaleLabel', scale.scaleLabel);
 
-  // Time range
-  const allStarts = jobs.map(j => parseDate(j.Planned_Start)).filter(d => !Number.isNaN(d.getTime()));
-  const allEnds   = jobs.map(j => parseDate(j.Planned_End)).filter(d => !Number.isNaN(d.getTime()));
-  const t0 = allStarts.length ? new Date(Math.min(...allStarts)) : new Date();
-  t0.setHours(0,0,0,0);
-  const tMax = allEnds.length ? new Date(Math.max(...allEnds)) : new Date(t0.getTime()+14*86400000);
-  const totalMs = Math.max(tMax - t0, 86400000);
-
-  // KPIs
+  // Summary values for topbar status/meta
   const byResource = {};
   jobs.forEach(j=>{ const r=j.Resource_ID||'?'; if(!byResource[r]) byResource[r]=[]; byResource[r].push(j); });
-  const totalMt = jobs.reduce((a,j)=>a+num(j.Qty_MT||j.Order_Qty_MT||j.qty_mt),0);
-  const durationH = Math.round((tMax-t0)/3600000);
-  setText('dispatchMachines', Object.keys(byResource).length);
-  setText('dispatchJobs', jobs.length);
-  setText('dispatchDuration', durationH+'h');
-  setText('dispatchMt', totalMt.toFixed(1)+' MT');
-
-  // Day axis labels
-  const days = Math.ceil(totalMs/86400000);
-  let axisHtml = '';
-  for(let i=0;i<days;i++){
-    const d = new Date(t0.getTime()+i*86400000);
-    const pct = (i/days*100).toFixed(2);
-    axisHtml += `<div style="position:absolute;left:${pct}%;top:0;height:100%;border-left:1px solid var(--border-soft);padding-left:3px;font-size:.62rem;color:var(--text-faint);white-space:nowrap">${d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</div>`;
-  }
+  const campaignStatusMap = new Map((state.campaigns || []).map(c => [
+    String(c.campaign_id || c.Campaign_ID || '').trim(),
+    upper(c.release_status || c.Release_Status || c.Status || '')
+  ]));
+  const overloadedResources = new Set(
+    (state.capacity || [])
+      .filter(c => num(c['Utilisation_%'] || c.utilisation) > 100)
+      .map(c => String(c.Resource_ID || c.resource_id || '').trim())
+      .filter(Boolean)
+  );
+  const visibleHeld = new Set();
+  const visibleLate = new Set();
+  let visibleBottleneckBars = 0;
 
   // Build rows — one flat row per resource, individual job bars
-  const LABEL_W = 80; // px
-  let html = `<div style="display:table;width:100%;border-collapse:collapse">`;
+  const LABEL_W = 90;
+  const axisHtml = scale.buckets.map(bucket => `
+    <div style="width:${scale.bucketPx}px;min-width:${scale.bucketPx}px;padding:.16rem .25rem;border-right:1px solid var(--border-soft);font-size:.63rem;color:var(--text-faint);line-height:1.2">
+      <div style="font-weight:800;color:var(--text)">${bucket.label.primary}</div>
+      <div>${bucket.label.secondary}</div>
+    </div>
+  `).join('');
+  let html = `<div style="display:table;min-width:${scale.contentWidth + LABEL_W + 20}px;border-collapse:collapse">`;
 
   // Header axis row
   html += `<div style="display:table-row">
     <div style="display:table-cell;width:${LABEL_W}px;vertical-align:middle;padding-right:6px"></div>
     <div style="display:table-cell;vertical-align:top;padding-bottom:4px">
-      <div style="position:relative;height:22px;background:var(--panel-muted);border-radius:3px;border:1px solid var(--border-soft)">${axisHtml}</div>
+      <div style="display:flex;width:${scale.contentWidth}px;min-width:${scale.contentWidth}px;background:var(--panel-muted);border-radius:3px;border:1px solid var(--border-soft);overflow:hidden">${axisHtml}</div>
     </div>
   </div>`;
 
-  Object.keys(byResource).sort().forEach(rid=>{
+  const orderedResources = Object.keys(byResource).sort((a, b) => {
+    const aOp = _ridToOp(a);
+    const bOp = _ridToOp(b);
+    const aIdx = EXEC_OPERATION_ORDER.indexOf(aOp);
+    const bIdx = EXEC_OPERATION_ORDER.indexOf(bOp);
+    const safeA = aIdx === -1 ? 999 : aIdx;
+    const safeB = bIdx === -1 ? 999 : bIdx;
+    if (safeA !== safeB) return safeA - safeB;
+    return String(a).localeCompare(String(b));
+  });
+
+  orderedResources.forEach(rid=>{
     const list = byResource[rid];
     const utilRow = (state.capacity||[]).find(c=>(c.Resource_ID||c.resource_id)===rid);
     const util = Math.round(num(utilRow&&(utilRow['Utilisation_%']||utilRow.utilisation)));
@@ -1162,12 +1782,32 @@ function renderDispatch(){
       const s = parseDate(j.Planned_Start);
       const e = parseDate(j.Planned_End);
       if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) return '';
-      const left  = Math.max(0,(s-t0)/totalMs*100);
-      const width = Math.max(0.3,(e-s)/totalMs*100);
+      const metrics = timelineBarMetrics(s, e, scale, 5);
+      if (!metrics) return '';
       const op = (j.Operation||'').toUpperCase();
       const cls = ['EAF','LRF','VD','CCM','RM'].includes(op)?op.toLowerCase():'eaf';
-      const camp = escapeHtml(j.Campaign||'');
-      return `<div class="eq-gantt-bar ${cls}" style="position:absolute;left:${left.toFixed(2)}%;width:${Math.min(width,100-left).toFixed(2)}%;top:1px;bottom:1px;border-radius:2px;cursor:pointer;min-width:2px" onclick="selectCampaignFromGantt('${camp}')" title="${camp} | ${escapeHtml(j.Job_ID||'')} | ${fmtDateTime(s)} → ${fmtDateTime(e)}"></div>`;
+      const camp = String(j.Campaign || '').trim();
+      const campaignLiteral = JSON.stringify(camp);
+      const status = campaignStatusMap.get(camp) || '';
+      const isHeld = status.includes('HOLD');
+      const isLate = status.includes('LATE');
+      const isBottleneck = overloadedResources.has(String(rid).trim());
+      if (isHeld) visibleHeld.add(camp);
+      if (isLate) visibleLate.add(camp);
+      if (isBottleneck) visibleBottleneckBars += 1;
+      const flagClasses = [
+        isHeld ? 'flag-held' : '',
+        isLate ? 'flag-late' : '',
+        isBottleneck ? 'flag-bottleneck' : ''
+      ].filter(Boolean).join(' ');
+      const flags = [];
+      if (isHeld) flags.push('HELD');
+      if (isLate) flags.push('LATE');
+      if (isBottleneck) flags.push('BOTTLENECK');
+      const flagLabel = flags.length ? ` | ${flags.join(' · ')}` : '';
+      const selectedCls = state.selectedCampaign === camp ? ' is-selected' : '';
+      const label = metrics.width >= 72 ? escapeHtml(camp) : '';
+      return `<div class="eq-gantt-bar ${cls} ${flagClasses}${selectedCls}" style="position:absolute;left:${metrics.left.toFixed(1)}px;width:${metrics.width.toFixed(1)}px;top:1px;bottom:1px;border-radius:2px;cursor:pointer;min-width:2px;display:flex;align-items:center;justify-content:center;font-size:.6rem;font-weight:800;color:rgba(255,255,255,.92);overflow:hidden;white-space:nowrap;padding:0 .18rem" onclick='selectCampaignFromGantt(${campaignLiteral})' title="${escapeHtml(camp)} | ${escapeHtml(j.Job_ID||'')} | ${fmtDateTime(s)} → ${fmtDateTime(e)}${flagLabel}">${label}</div>`;
     }).join('');
 
     html += `<div style="display:table-row">
@@ -1176,15 +1816,31 @@ function renderDispatch(){
         <div style="font-size:.62rem;${pillCls}">${util}%</div>
       </div>
       <div style="display:table-cell;vertical-align:middle;padding:.25rem 0;border-top:1px solid var(--border-soft)">
-        <div style="position:relative;height:34px;background:var(--panel-soft);border-radius:3px;border:1px solid var(--border-soft);overflow:hidden">${bars}</div>
+        <div style="position:relative;width:${scale.contentWidth}px;min-width:${scale.contentWidth}px;height:34px;background:var(--panel-soft);border-radius:3px;border:1px solid var(--border-soft);overflow:hidden;background-image:repeating-linear-gradient(90deg, transparent, transparent ${Math.max(scale.bucketPx - 1, 1)}px, #edf2f7 ${Math.max(scale.bucketPx - 1, 1)}px, #edf2f7 ${scale.bucketPx}px)">${bars}</div>
       </div>
     </div>`;
   });
 
   html += '</div>';
   grid.innerHTML = html;
+  const clearBtn = qs('clearCampaignBtn');
+  const hasFilters = Boolean(filters.campaignFilter || filters.gradeFilter || filters.plantFilter);
+  if (clearBtn) clearBtn.style.display = hasFilters ? 'inline-flex' : 'none';
+  state.executionLastFilteredJobs = jobs;
+  state.executionConstraintSummary = {
+    held: visibleHeld.size,
+    late: visibleLate.size,
+    bottleneck: visibleBottleneckBars
+  };
+  refreshExecutionTopbarMeta('timeline');
   populateDispatchFilters();
-  if(state.selectedCampaign) renderCampaignDetails();
+  if(state.selectedCampaign) {
+    renderCampaignDetails();
+  } else {
+    const contentDiv = qs('campaignDetailsContent');
+    if (contentDiv && !contentDiv.innerHTML.trim()) contentDiv.innerHTML = executionDetailEmptyMarkup();
+    syncExecutionDetailPanel();
+  }
 }
 function deriveMaterialRows(){
   return (state.campaigns || []).flatMap(c=>{
@@ -1215,11 +1871,135 @@ function materialDetailAvailable(campaign) {
   );
 }
 
+function materialRiskKey(campaign) {
+  const shortQty = num(campaign?.shortage_qty);
+  const convertQty = num(campaign?.make_convert_qty);
+  const status = String(campaign?.material_status || campaign?.release_status || '').toUpperCase();
+  if (shortQty > 0) return 'short';
+  if (status.includes('HOLD')) return 'held';
+  if (convertQty > 0 || status.includes('PARTIAL') || status.includes('LOW') || status.includes('CONVERT')) return 'convert';
+  return 'ready';
+}
+
+function materialRiskRank(campaign) {
+  const ranks = { short: 0, held: 1, convert: 2, ready: 3 };
+  return ranks[materialRiskKey(campaign)] ?? 4;
+}
+
+function materialVerdictConfig(campaign) {
+  const riskKey = materialRiskKey(campaign);
+  if (riskKey === 'short') {
+    return {
+      tone: 'danger',
+      label: 'Release Blocked',
+      copy: 'Critical shortages remain. Resolve short items before this campaign can release.'
+    };
+  }
+  if (riskKey === 'held') {
+    return {
+      tone: 'warn',
+      label: 'Manual Hold',
+      copy: 'Material is not the only issue here. Clear the hold reason and confirm readiness before release.'
+    };
+  }
+  if (riskKey === 'convert') {
+    return {
+      tone: 'info',
+      label: 'Convert Before Release',
+      copy: 'Inventory is close, but make/convert work must complete before the campaign is truly ready.'
+    };
+  }
+  return {
+    tone: 'success',
+    label: 'Ready To Release',
+    copy: 'Coverage is in place. Final checks are operational, not material-blocking.'
+  };
+}
+
+function materialRecommendedActions(campaign, plants = []) {
+  const riskKey = materialRiskKey(campaign);
+  const shortQty = num(campaign?.shortage_qty);
+  const convertQty = num(campaign?.make_convert_qty);
+  const highestRiskPlant = [...plants]
+    .sort((a, b) => num(b.shortage_qty) - num(a.shortage_qty) || num(b.make_convert_qty) - num(a.make_convert_qty))[0];
+
+  if (riskKey === 'short') {
+    return [
+      {
+        title: 'Expedite short material',
+        meta: `${shortQty.toFixed(1)} MT still uncovered${highestRiskPlant ? ` · Focus ${highestRiskPlant.plant}` : ''}`,
+        icon: 'bolt',
+        tone: 'danger'
+      },
+      {
+        title: 'Check substitute route',
+        meta: 'Review alternate SKU or plant source before changing release date',
+        icon: 'right-left',
+        tone: 'warn'
+      },
+      {
+        title: 'Keep campaign on hold',
+        meta: 'Do not release until short items have a confirmed recovery path',
+        icon: 'hand',
+        tone: 'neutral'
+      }
+    ];
+  }
+
+  if (riskKey === 'held') {
+    return [
+      {
+        title: 'Resolve hold reason',
+        meta: 'Manual review is blocking release more than material availability',
+        icon: 'circle-exclamation',
+        tone: 'warn'
+      },
+      {
+        title: 'Reconfirm material reservation',
+        meta: 'Preserve covered stock while the hold is being cleared',
+        icon: 'boxes-stacked',
+        tone: 'info'
+      }
+    ];
+  }
+
+  if (riskKey === 'convert') {
+    return [
+      {
+        title: 'Launch make / convert task',
+        meta: `${convertQty.toFixed(1)} MT depends on conversion`,
+        icon: 'industry',
+        tone: 'info'
+      },
+      {
+        title: 'Stage downstream release',
+        meta: 'Queue release once convert confirmation is received',
+        icon: 'forward',
+        tone: 'success'
+      }
+    ];
+  }
+
+  return [
+    {
+      title: 'Reserve covered inventory',
+      meta: 'Lock the available stock to avoid cross-campaign contention',
+      icon: 'boxes-stacked',
+      tone: 'success'
+    },
+    {
+      title: 'Release campaign',
+      meta: 'Material position is clean; proceed with execution sequencing',
+      icon: 'play',
+      tone: 'success'
+    }
+  ];
+}
+
 function renderMaterial(){
   // state.material is {summary:{}, campaigns:[...]} — not an array
   const matPlan = (state.material && typeof state.material === 'object') ? state.material : {};
   let camps = matPlan.campaigns || [];
-  const summary = matPlan.summary || {};
 
   // Fallback: derive from state.campaigns if material plan not populated
   if(!camps.length){
@@ -1240,67 +2020,62 @@ function renderMaterial(){
     return;
   }
 
-  const withShortage = camps.filter(c=>num(c.shortage_qty)>0).length;
-  const withHold = camps.filter(c=>{
-    const status = String(c.material_status || c.release_status || '').toUpperCase();
-    return status.includes('HOLD');
-  }).length;
-  const withConvert = camps.filter(c=>{
-    const status = String(c.material_status || '').toUpperCase();
-    return num(c.shortage_qty) <= 0 &&
-      !status.includes('HOLD') &&
-      (num(c.make_convert_qty) > 0 || status.includes('PARTIAL') || status.includes('LOW') || status.includes('CONVERT'));
-  }).length;
-  const covered = camps.filter(c=>{
-    const status = String(c.material_status || c.release_status || '').toUpperCase();
-    return num(c.shortage_qty) <= 0 && !status.includes('HOLD') && num(c.make_convert_qty) <= 0;
-  }).length;
-  const totalRequiredQty = summary['Total Required Qty'];
-  const totalCoveredQty = summary['Inventory Covered Qty'];
-  const totalConvertQty = summary['Make / Convert Qty'];
-  const totalShortQty = summary['Shortage Qty'];
-  const hasMaterialSummary = Object.keys(summary).length > 0;
+  const riskTagged = camps.map(c => ({ ...c, _riskKey: materialRiskKey(c) }));
 
-  setText('matCampaigns', camps.length);
-  setText('matOk', covered);
-  setText('matLow', withConvert);
-  setText('matCrit', withShortage);
-  setText('matHeld', withHold);
-  setText('matReqQty', hasMaterialSummary ? fmtMaterialKpiQty(totalRequiredQty) : '—');
-  setText('matCoveredQty', hasMaterialSummary ? fmtMaterialKpiQty(totalCoveredQty) : '—');
-  setText('matConvertQty', hasMaterialSummary ? fmtMaterialKpiQty(totalConvertQty) : '—');
-  setText('matShortQtySub', hasMaterialSummary ? `Shortage: ${fmtMaterialKpiQty(totalShortQty)}` : 'Shortage: —');
-
-  buildMaterialTree(camps);
+  buildMaterialTree(riskTagged);
 }
 
 function buildMaterialTree(camps){
   state.materialCampaigns = [...camps].sort((a,b)=>
+    materialRiskRank(a) - materialRiskRank(b) ||
     num(b.shortage_qty) - num(a.shortage_qty) ||
     num(b.make_convert_qty) - num(a.make_convert_qty) ||
     num(b.required_qty) - num(a.required_qty)
   );
   const tree = qs('materialTree');
-  tree.innerHTML = state.materialCampaigns.map((camp, idx)=>{
-    const shortQty = num(camp.shortage_qty);
-    const convertQty = num(camp.make_convert_qty);
-    const isHold   = String(camp.material_status||'').toUpperCase().includes('HOLD');
-    const isConvert = !isHold && shortQty <= 0 && convertQty > 0;
-    const icon     = shortQty > 0 ? '!' : isHold ? 'H' : isConvert ? '~' : '✓';
-    const iconColor= shortQty > 0 ? 'var(--danger)' : (isHold || isConvert) ? 'var(--warning)' : 'var(--success)';
-    const label    = shortQty > 0 ? shortQty.toFixed(1)+' MT short' : isHold ? 'On hold' : isConvert ? convertQty.toFixed(1)+' MT convert' : 'Ready';
-    const cid      = camp.campaign_id || camp.id || '';
-    const qty      = num(camp.required_qty).toFixed(0);
-    return '<div class="tree-item">'+
-      '<div class="tree-node campaign" onclick="selectMaterialCampaign(this,'+idx+')" data-campaign="'+escapeHtml(cid)+'">'+
-        '<div class="tree-toggle leaf"></div>'+
-        '<div class="tree-node-icon" style="color:'+iconColor+'">'+icon+'</div>'+
-        '<div class="material-tree-copy">'+
-          '<div class="material-tree-title">'+escapeHtml(cid)+'</div>'+
-          '<div class="material-tree-meta">'+escapeHtml(camp.grade||'—')+' · '+qty+' MT · '+label+'</div>'+
+  const riskGroups = [
+    { key: 'short', label: 'Short', icon: '!', color: 'var(--danger)' },
+    { key: 'held', label: 'Held', icon: 'H', color: 'var(--warning)' },
+    { key: 'convert', label: 'Needs Convert', icon: '~', color: 'var(--warning)' },
+    { key: 'ready', label: 'Ready', icon: '✓', color: 'var(--success)' }
+  ];
+
+  const indexed = state.materialCampaigns.map((camp, idx) => ({ camp, idx }));
+  const grouped = riskGroups.map(group => ({
+    ...group,
+    items: indexed.filter(item => materialRiskKey(item.camp) === group.key)
+  })).filter(group => group.items.length > 0);
+
+  tree.innerHTML = grouped.map(group => {
+    const rows = group.items.map(({ camp, idx }) => {
+      const shortQty = num(camp.shortage_qty);
+      const convertQty = num(camp.make_convert_qty);
+      const label = group.key === 'short'
+        ? `${shortQty.toFixed(1)} MT short`
+        : (group.key === 'held'
+          ? 'On hold'
+          : (group.key === 'convert' ? `${convertQty.toFixed(1)} MT convert` : 'Ready'));
+      const cid = camp.campaign_id || camp.id || '';
+      const qty = num(camp.required_qty).toFixed(0);
+      return '<div class="tree-item">'+
+        '<div class="tree-node campaign" onclick="selectMaterialCampaign(this,'+idx+')" data-campaign="'+escapeHtml(cid)+'">'+
+          '<div class="tree-toggle leaf"></div>'+
+          '<div class="tree-node-icon" style="color:'+group.color+'">'+group.icon+'</div>'+
+          '<div class="material-tree-copy">'+
+            '<div class="material-tree-title">'+escapeHtml(cid)+'</div>'+
+            '<div class="material-tree-meta">'+escapeHtml(camp.grade||'—')+' · '+qty+' MT · '+label+'</div>'+
+          '</div>'+
         '</div>'+
-      '</div>'+
-    '</div>';
+      '</div>';
+    }).join('');
+
+    return `<div class="material-risk-group">
+      <div class="material-risk-head">
+        <span class="material-risk-title">${escapeHtml(group.label)}</span>
+        <span class="material-risk-count">${group.items.length}</span>
+      </div>
+      ${rows}
+    </div>`;
   }).join('');
 
   if(state.materialCampaigns.length > 0){
@@ -1361,6 +2136,37 @@ function renderMaterialDetail(campaign){
   const topMaterials = [...materials]
     .sort((a,b)=>num(b.required_qty || b.gross_required_qty) - num(a.required_qty || a.gross_required_qty))
     .slice(0, 6);
+  const riskKey = materialRiskKey(campaign);
+  const verdict = materialVerdictConfig(campaign);
+  const recommendedActions = materialRecommendedActions(campaign, plantCards);
+  const blockerRows = shortages.length
+    ? shortages.map(item => ({
+        sku: item.sku_id || item.material_sku || '—',
+        plant: item.plant || 'Multiple plants',
+        qty: num(item.qty || item.Required_Qty || item.required_qty || item.gross_required_qty),
+        note: 'Short'
+      }))
+    : materials
+        .filter(row => num(row.shortage_qty) > 0 || num(row.make_convert_qty) > 0)
+        .sort((a, b) => num(b.shortage_qty || b.make_convert_qty) - num(a.shortage_qty || a.make_convert_qty))
+        .slice(0, 6)
+        .map(row => ({
+          sku: row.material_sku || row.sku_id || '—',
+          plant: row.plant || '—',
+          qty: num(row.shortage_qty) || num(row.make_convert_qty),
+          note: num(row.shortage_qty) > 0 ? 'Short' : 'Convert'
+        }));
+  const blockerTable = blockerRows.length
+    ? blockerRows.map(row => `
+        <div class="material-blocker-row ${row.note === 'Short' ? 'danger' : 'warn'}">
+          <div>
+            <div class="material-blocker-sku">${escapeHtml(row.sku)}</div>
+            <div class="material-blocker-meta">${escapeHtml(row.plant)} · ${escapeHtml(row.note)}</div>
+          </div>
+          <div class="material-blocker-qty">${row.qty.toFixed(1)} MT</div>
+        </div>
+      `).join('')
+    : `<div class="material-blocker-empty">No immediate blockers. Material risk is currently clear.</div>`;
 
   const materialRows = materials.length ? materials.map(row => {
     const required = num(row.required_qty || row.gross_required_qty);
@@ -1385,49 +2191,90 @@ function renderMaterialDetail(campaign){
   }).join('') : `<tr><td colspan="10">${hasDetail ? 'No material rows available for this campaign.' : 'Detailed material line netting is not loaded for this campaign yet.'}</td></tr>`;
 
   let html = `<div class="material-detail-shell">
-    <div class="material-detail-hero">
-      <div class="material-detail-hero-copy">
-        <div class="material-detail-title">${escapeHtml(cid)}</div>
-        <div class="material-detail-subtitle">${escapeHtml(grade)} · ${escapeHtml(releaseStatus)} · ${escapeHtml(matStatus || 'OK')}</div>
-        <div class="material-detail-pills">
-          <span class="material-detail-pill">${materials.length} material SKU(s)</span>
-          <span class="material-detail-pill">${plantCards.length} plant bucket(s)</span>
-          <span class="material-detail-pill ${shortQty > 0 ? 'danger' : 'success'}">${shortQty > 0 ? `${shortQty.toFixed(1)} MT short` : 'Fully covered'}</span>
+    <div class="material-decision-grid">
+      <div class="material-decision-card material-decision-card--${verdict.tone}">
+        <div class="material-detail-hero">
+          <div class="material-detail-hero-copy">
+            <div class="material-detail-title">${escapeHtml(cid)}</div>
+            <div class="material-detail-subtitle">${escapeHtml(grade)} · ${escapeHtml(releaseStatus)} · ${escapeHtml(matStatus || 'OK')}</div>
+            <div class="material-detail-pills">
+              <span class="material-detail-pill">${materials.length} material SKU(s)</span>
+              <span class="material-detail-pill">${plantCards.length} plant bucket(s)</span>
+              <span class="material-detail-pill ${shortQty > 0 ? 'danger' : 'success'}">${shortQty > 0 ? `${shortQty.toFixed(1)} MT short` : 'Fully covered'}</span>
+            </div>
+          </div>
+          <div class="material-coverage-gauge">
+            <div class="material-coverage-value">${coveragePct.toFixed(0)}%</div>
+            <div class="material-coverage-label">coverage</div>
+          </div>
+        </div>
+        <div class="material-verdict-row">
+          <div>
+            <div class="material-verdict-kicker">Release Verdict</div>
+            <div class="material-verdict-title">${escapeHtml(verdict.label)}</div>
+            <div class="material-verdict-copy">${escapeHtml(verdict.copy)}</div>
+          </div>
+          <div class="material-summary-grid material-summary-grid--detail">
+            <div class="material-detail-stat tone-success">
+              <div class="material-detail-stat-label">Required</div>
+              <div class="material-detail-stat-value">${reqQty.toFixed(1)} MT</div>
+            </div>
+            <div class="material-detail-stat tone-info">
+              <div class="material-detail-stat-label">Stock Covered</div>
+              <div class="material-detail-stat-value">${coveredQty.toFixed(1)} MT</div>
+            </div>
+            <div class="material-detail-stat tone-warn">
+              <div class="material-detail-stat-label">Make / Convert</div>
+              <div class="material-detail-stat-value">${convertQty.toFixed(1)} MT</div>
+            </div>
+            <div class="material-detail-stat ${shortQty > 0 ? 'tone-danger' : 'tone-success'}">
+              <div class="material-detail-stat-label">Short</div>
+              <div class="material-detail-stat-value">${shortQty.toFixed(1)} MT</div>
+            </div>
+            <div class="material-detail-stat">
+              <div class="material-detail-stat-label">Status</div>
+              <div class="material-detail-stat-value material-detail-stat-text">${escapeHtml(matStatus || 'OK')}</div>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="material-coverage-gauge">
-        <div class="material-coverage-value">${coveragePct.toFixed(0)}%</div>
-        <div class="material-coverage-label">coverage</div>
-      </div>
-    </div>
-    <div class="material-summary-grid material-summary-grid--detail">
-      <div class="material-detail-stat tone-success">
-        <div class="material-detail-stat-label">Required</div>
-        <div class="material-detail-stat-value">${reqQty.toFixed(1)} MT</div>
-      </div>
-      <div class="material-detail-stat tone-info">
-        <div class="material-detail-stat-label">Stock Covered</div>
-        <div class="material-detail-stat-value">${coveredQty.toFixed(1)} MT</div>
-      </div>
-      <div class="material-detail-stat tone-warn">
-        <div class="material-detail-stat-label">Make / Convert</div>
-        <div class="material-detail-stat-value">${convertQty.toFixed(1)} MT</div>
-      </div>
-      <div class="material-detail-stat ${shortQty > 0 ? 'tone-danger' : 'tone-success'}">
-        <div class="material-detail-stat-label">Short</div>
-        <div class="material-detail-stat-value">${shortQty.toFixed(1)} MT</div>
-      </div>
-      <div class="material-detail-stat">
-        <div class="material-detail-stat-label">Status</div>
-        <div class="material-detail-stat-value material-detail-stat-text">${escapeHtml(matStatus || 'OK')}</div>
+      <div class="material-decision-card material-decision-card--action">
+        <div class="material-section-head">
+          <div>
+            <div class="material-section-title">Next Actions</div>
+            <div class="material-section-sub">The fastest moves to unblock or safely release this campaign.</div>
+          </div>
+        </div>
+        <div class="material-recommendation-list">
+          ${recommendedActions.map(action => `
+            <div class="material-recommendation-row tone-${escapeHtml(action.tone)}">
+              <div class="material-recommendation-icon"><i class="fa-solid fa-${escapeHtml(action.icon)}" aria-hidden="true"></i></div>
+              <div>
+                <div class="material-recommendation-title">${escapeHtml(action.title)}</div>
+                <div class="material-recommendation-meta">${escapeHtml(action.meta)}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
       </div>
     </div>
     <div class="material-detail-layout">
       <div class="material-detail-main">
         <div class="material-section">
           <div class="material-section-head">
-            <div class="material-section-title">Material Breakdown</div>
-            <div class="material-section-sub">Required, stock draw, conversion, and shortage by SKU</div>
+            <div>
+              <div class="material-section-title">Release Blockers</div>
+              <div class="material-section-sub">${blockerRows.length ? 'Resolve these first before worrying about the full material table.' : 'Nothing critical is blocking release from a material point of view.'}</div>
+            </div>
+          </div>
+          <div class="material-blocker-list">${blockerTable}</div>
+        </div>
+        <div class="material-section">
+          <div class="material-section-head">
+            <div>
+              <div class="material-section-title">Supporting Material Lines</div>
+              <div class="material-section-sub">Required, stock draw, conversion, and shortage by SKU.</div>
+            </div>
           </div>
           <div class="material-table-wrap">
             <table class="table material-detail-table">
@@ -1470,8 +2317,8 @@ function renderMaterialDetail(campaign){
         </div>
         <div class="material-section">
           <div class="material-section-head">
-            <div class="material-section-title">${shortages.length ? 'Shortage Actions' : 'Top Material Draw'}</div>
-            <div class="material-section-sub">${shortages.length ? 'Immediate gaps to resolve before release' : 'Largest requirements in this campaign'}</div>
+            <div class="material-section-title">${shortages.length ? 'Shortage Focus' : 'Top Material Draw'}</div>
+            <div class="material-section-sub">${shortages.length ? 'Immediate gaps to resolve before release' : 'Largest requirements driving this campaign'}</div>
           </div>
           <div class="material-side-list">${(shortages.length ? shortages : topMaterials).map(item => {
             const sku = item.sku_id || item.material_sku || '';
@@ -1770,8 +2617,7 @@ async function runCtp(){
   finally{ btn.innerHTML = old; btn.disabled = false; }
 }
 async function runBom() {
-  const activeId = document.activeElement?.id;
-  const btn = activeId === 'bomExplodeBtn' ? qs('bomExplodeBtn') : null;
+  const btn = qs('bomExplodeBtn');
   const old = btn ? btn.innerHTML : '';
 
   if (btn) {
@@ -1790,6 +2636,7 @@ async function runBom() {
 
     renderBomSummary();
     renderBomGrouped();
+    renderTopSummaryForPage(activePageKey());
   } catch (e) {
     const detail = qs('bomDetailContent');
     if (detail) {
@@ -1804,22 +2651,9 @@ async function runBom() {
 }
 function renderBomSummary(){
   if(!state.bomSummary) return;
-  const s = state.bomSummary;
-  setText('bomKpiLinesVal', String(s.total_sku_lines || 0));
-  setText('bomKpiShortVal', String(s.short_lines || 0));
-  setText('bomKpiPartialVal', String(s.partial_lines || 0));
-  setText('bomKpiCoveredVal', String(s.covered_lines || 0));
-  setText('bomKpiByproductVal', String(s.byproduct_lines || 0));
-  setText('bomKpiGrossVal', ((s.total_gross_req || 0) / 1000).toFixed(1) + 'k');
-  setText('bomKpiNetVal', ((s.total_net_req || 0) / 1000).toFixed(1) + 'k');
-  setText('bomKpiLinesVal2', String(s.total_sku_lines || 0));
-  setText('bomKpiCoveredVal2', String(s.covered_lines || 0));
-  setText('bomKpiShortVal2', String(s.short_lines || 0));
-  setText('bomKpiPartialVal2', String(s.partial_lines || 0));
-  setText('bomKpiGrossVal2', ((s.total_gross_req || 0) / 1000).toFixed(1) + 'k');
-  setText('bomKpiNetVal2', ((s.total_net_req || 0) / 1000).toFixed(1) + 'k');
-  if (qs('bomSummaryStrip')) qs('bomSummaryStrip').style.display = 'flex';
-  if (qs('bomSummaryStrip2')) qs('bomSummaryStrip2').style.display = 'flex';
+  if (activePageKey() === 'bom') {
+    renderTopSummaryForPage('bom');
+  }
 }
 
 function bomStatusBadgeClass(status){
@@ -1897,38 +2731,85 @@ function renderBomDetail(plant, materialType){
     return;
   }
 
-  const rows = materialType ? (materialType.rows || []) : [];
+  const allRows = materialType
+    ? (materialType.rows || [])
+    : (plantData.material_types || []).flatMap(mt => mt.rows || []);
   const totalGross = materialType ? (materialType.gross_req || 0) : (plantData.gross_req || 0);
   const totalNet = materialType ? (materialType.net_req || 0) : (plantData.net_req || 0);
   const totalProduced = materialType ? (materialType.produced_qty || 0) : (plantData.produced_qty || 0);
-  const covered = rows.filter(r=>r.status==='COVERED').length;
-  const short = rows.filter(r=>r.status==='SHORT').length;
-  const partial = rows.filter(r=>r.status==='PARTIAL SHORT').length;
+  const covered = allRows.filter(r => r.status === 'COVERED').length;
+  const short = allRows.filter(r => r.status === 'SHORT').length;
+  const partial = allRows.filter(r => r.status === 'PARTIAL SHORT').length;
+  const blockedMt = allRows
+    .filter(r => r.status === 'SHORT' || r.status === 'PARTIAL SHORT')
+    .reduce((sum, r) => sum + num(r.net_req || 0), 0);
+  const stageCount = (plantData.material_types || []).length;
 
-  let html = '<div class="bom-detail-header">'+
-    '<div class="bom-detail-title">'+escapeHtml(plant)+'</div>';
-  if(materialType) html += '<div class="bom-detail-subtitle">'+escapeHtml(materialType.material_type)+'</div>';
-  html += '</div>'+
-    '<div class="bom-detail-stats">'+
-      '<div class="bom-detail-stat"><div class="bom-detail-stat-label">Gross Req</div><div class="bom-detail-stat-value">'+totalGross.toFixed(1)+' MT</div></div>'+
-      '<div class="bom-detail-stat"><div class="bom-detail-stat-label">Produced</div><div class="bom-detail-stat-value">'+totalProduced.toFixed(1)+' MT</div></div>'+
-      '<div class="bom-detail-stat"><div class="bom-detail-stat-label">Net Req</div><div class="bom-detail-stat-value">'+totalNet.toFixed(1)+' MT</div></div>'+
-    '</div>';
+  let html = '<div class="bom-detail-shell">';
+  html += '<div class="bom-detail-header bom-detail-hero">';
+  html += '<div class="bom-detail-hero-copy">';
+  html += '<div class="bom-detail-title">'+escapeHtml(plant)+'</div>';
+  html += '<div class="bom-detail-subtitle">'+escapeHtml(materialType ? `${materialType.material_type} material stage` : 'Plant material overview')+'</div>';
+  html += '</div>';
+  html += '<div class="bom-detail-summary-bar">';
+  html += '<div class="bom-detail-pills bom-detail-pills--inline">';
+  html += '<span class="bom-detail-pill">'+escapeHtml(materialType ? `${allRows.length} items` : `${stageCount} stages`)+'</span>';
+  html += '<span class="bom-detail-pill success">'+escapeHtml(`${covered} covered`)+'</span>';
+  if (partial) html += '<span class="bom-detail-pill warn">'+escapeHtml(`${partial} partial`)+'</span>';
+  if (short) html += '<span class="bom-detail-pill danger">'+escapeHtml(`${short} short`)+'</span>';
+  html += '</div>';
+  html += '<div class="bom-detail-stats bom-detail-stats--inline">'+
+    '<div class="bom-detail-stat"><div class="bom-detail-stat-label">Gross Req</div><div class="bom-detail-stat-value">'+totalGross.toFixed(1)+' MT</div></div>'+
+    '<div class="bom-detail-stat"><div class="bom-detail-stat-label">Produced</div><div class="bom-detail-stat-value">'+totalProduced.toFixed(1)+' MT</div></div>'+
+    '<div class="bom-detail-stat"><div class="bom-detail-stat-label">Net Req</div><div class="bom-detail-stat-value">'+totalNet.toFixed(1)+' MT</div></div>'+
+    '<div class="bom-detail-stat"><div class="bom-detail-stat-label">'+escapeHtml(materialType ? 'Blocked MT' : 'At Risk MT')+'</div><div class="bom-detail-stat-value">'+blockedMt.toFixed(1)+' MT</div></div>'+
+  '</div>';
+  html += '</div></div>';
 
   if(!materialType) {
-    html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.75rem">'+
-      plantData.material_types.map(mt=>'<div class="bom-section-title" style="grid-column:span 1;margin:0;cursor:pointer;background:var(--panel);border:1px solid var(--border);border-left:3px solid #7c3aed" onclick="selectBomMaterialType(this,'+escapeHtml(JSON.stringify({plant:plant,materialType:mt}).replace(/'/g,"&#39;"))+')" data-plant="'+escapeHtml(plant)+'" data-type="'+escapeHtml(mt.material_type)+'" style="grid-column:span 1">'+escapeHtml(mt.material_type)+'<br><span style="font-size:.65rem;font-weight:400;color:var(--text-faint)">'+mt.row_count+' items</span></div>').join('')+
-    '</div>';
+    html += '<div class="bom-detail-section">';
+    html += '<div class="bom-detail-section-head"><div><div class="bom-detail-section-title">Material stages</div><div class="bom-detail-section-sub">Choose a stage to inspect covered, partial, and short lines with condensed material cards.</div></div></div>';
+    html += '<div class="bom-stage-grid">'+
+      (plantData.material_types || []).map(mt => {
+        const mtRows = mt.rows || [];
+        const mtCovered = mtRows.filter(r => r.status === 'COVERED').length;
+        const mtShort = mtRows.filter(r => r.status === 'SHORT').length;
+        const mtPartial = mtRows.filter(r => r.status === 'PARTIAL SHORT').length;
+        return '<button type="button" class="bom-stage-card '+(mtShort ? 'danger' : mtPartial ? 'warn' : 'success')+'" onclick="selectBomMaterialType(this,'+escapeHtml(JSON.stringify({plant:plant,materialType:mt}).replace(/'/g,"&#39;"))+')" data-plant="'+escapeHtml(plant)+'" data-type="'+escapeHtml(mt.material_type)+'">'+
+          '<div class="bom-stage-card-top"><div><div class="bom-stage-card-title">'+escapeHtml(mt.material_type)+'</div><div class="bom-stage-card-sub">'+escapeHtml(`${mt.row_count || mtRows.length} items`)+'</div></div><span class="bom-item-badge '+(mtShort ? 'short' : mtPartial ? 'partial' : 'covered')+'">'+escapeHtml(mtShort ? 'Short' : mtPartial ? 'Partial' : 'Covered')+'</span></div>'+
+          '<div class="bom-stage-card-stats">'+
+            '<div><span class="bom-stage-stat-label">Gross</span><span class="bom-stage-stat-value">'+num(mt.gross_req || 0).toFixed(1)+' MT</span></div>'+
+            '<div><span class="bom-stage-stat-label">Net</span><span class="bom-stage-stat-value">'+num(mt.net_req || 0).toFixed(1)+' MT</span></div>'+
+            '<div><span class="bom-stage-stat-label">Mix</span><span class="bom-stage-stat-value">'+escapeHtml(`${mtCovered}/${mtPartial}/${mtShort}`)+'</span></div>'+
+          '</div>'+
+        '</button>';
+      }).join('')+
+    '</div></div>';
   } else {
-    html += '<div class="bom-items-list">'+
-      rows.map(r=>'<div class="bom-item">'+
-        '<div class="bom-item-row"><div><div class="bom-item-label">SKU</div><div class="bom-item-value">'+escapeHtml(r.sku_id)+'</div></div><div><div class="bom-item-label">Parent</div><div class="bom-item-value">'+escapeHtml(r.parent_skus)+'</div></div></div>'+
-        '<div class="bom-item-row"><div><div class="bom-item-label">Gross Req</div><div class="bom-item-value">'+r.gross_req.toFixed(1)+' MT</div></div><div><div class="bom-item-label">Available</div><div class="bom-item-value">'+r.available_before.toFixed(1)+' MT</div></div></div>'+
-        '<div class="bom-item-row-last"><div><div class="bom-item-label">Net Req</div><div class="bom-item-value">'+r.net_req.toFixed(1)+' MT</div></div><div><span class="bom-item-badge '+bomStatusBadgeClass(r.status)+'">'+escapeHtml(r.status)+'</span></div><div><span class="bom-item-badge '+r.flow_type.toLowerCase()+'">'+escapeHtml(r.flow_type)+'</span></div></div>'+
+    const sortedRows = allRows.slice().sort((a, b) => {
+      const rank = row => row.status === 'SHORT' ? 0 : row.status === 'PARTIAL SHORT' ? 1 : row.status === 'COVERED' ? 2 : 3;
+      const toneDiff = rank(a) - rank(b);
+      if (toneDiff) return toneDiff;
+      return num(b.net_req || 0) - num(a.net_req || 0);
+    });
+    html += '<div class="bom-detail-section">';
+    html += '<div class="bom-detail-section-head"><div><div class="bom-detail-section-title">'+escapeHtml(materialType.material_type)+' item detail</div><div class="bom-detail-section-sub">Condensed cards highlight where coverage is complete versus where net requirement remains exposed.</div></div></div>';
+    html += '<div class="bom-item-grid">'+
+      sortedRows.map(r => '<div class="bom-item-card '+(r.status === 'SHORT' ? 'danger' : r.status === 'PARTIAL SHORT' ? 'warn' : 'success')+'">'+
+        '<div class="bom-item-card-top">'+
+          '<div><div class="bom-item-card-title">'+escapeHtml(r.sku_id)+'</div><div class="bom-item-card-sub">'+escapeHtml(r.parent_skus || 'No parent mapping')+'</div></div>'+
+          '<div class="bom-item-card-badges"><span class="bom-item-badge '+bomStatusBadgeClass(r.status)+'">'+escapeHtml(r.status)+'</span><span class="bom-item-badge '+String(r.flow_type || '').toLowerCase()+'">'+escapeHtml(r.flow_type || 'INPUT')+'</span></div>'+
+        '</div>'+
+        '<div class="bom-item-card-metrics">'+
+          '<div><div class="bom-item-label">Gross Req</div><div class="bom-item-value">'+num(r.gross_req || 0).toFixed(1)+' MT</div></div>'+
+          '<div><div class="bom-item-label">Available</div><div class="bom-item-value">'+num(r.available_before || 0).toFixed(1)+' MT</div></div>'+
+          '<div><div class="bom-item-label">Net Req</div><div class="bom-item-value">'+num(r.net_req || 0).toFixed(1)+' MT</div></div>'+
+        '</div>'+
       '</div>').join('')+
-    '</div>';
+    '</div></div>';
   }
 
+  html += '</div>';
   qs('bomDetailContent').innerHTML = html;
 }
 
@@ -2085,7 +2966,7 @@ qs('masterForm').addEventListener('submit', submitMasterForm);
 qs('patchJobBtn').addEventListener('click', patchJob);
 qs('horizonSelect').addEventListener('change', (e)=>{
   state.horizon = Number(e.target.value);
-  setText('summaryMtSub', state.horizon + '-day horizon');
+  renderTopSummaryForPage(activePageKey());
   const d = new Date(Date.now() + state.horizon*86400000);
   qs('ctpDate').value = d.toISOString().slice(0,10);
 });
@@ -2632,43 +3513,34 @@ function renderHeatBuilder(){
 }
 
 // SO Due Date Gantt - based on due dates (no schedule simulation needed)
+function modalDayWidth(base){
+  return Math.max(56, Math.round(base * getZoomValue('modal', 1)));
+}
+
 function renderSODueGantt(soList){
   if(!soList || !soList.length) return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No SOs selected.</div>';
 
-  let minTime = Infinity, maxTime = -Infinity;
   const bySO = {};
-  const plantColor = {BF: '#3b82f6', SMS: '#f97316', RM: '#8b5cf6'};
+  const dueStarts = [];
+  const dueEnds = [];
 
   soList.forEach(so => {
     const soId = so.so_id;
-    const dueDate = new Date(so.due_date);
+    const dueDate = parseDate(so.due_date);
 
-    if(isNaN(dueDate)) return;
+    if(Number.isNaN(dueDate.getTime())) return;
 
     if(!bySO[soId]) bySO[soId] = so;
-
-    minTime = Math.min(minTime, dueDate.getTime());
-    maxTime = Math.max(maxTime, dueDate.getTime());
+    dueStarts.push(dueDate.getTime() - 86400000);
+    dueEnds.push(dueDate.getTime() + 86400000);
   });
 
-  if(minTime === Infinity || Object.keys(bySO).length === 0)
+  if(!dueStarts.length || Object.keys(bySO).length === 0)
     return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No valid due dates.</div>';
 
-  // Extend range 3 days before earliest and 7 days after latest
-  minTime -= 3 * 86400000;
-  maxTime += 7 * 86400000;
-
-  const span = maxTime - minTime || 86400000;
+  const scale = buildTimelineScale(dueStarts, dueEnds, getZoomValue('modal', 1), 10, 1080);
   const soIds = Object.keys(bySO).sort();
-  const dayWidth = 120;
-  const totalDays = Math.ceil(span / 86400000);
-  const ganttWidth = dayWidth * (totalDays + 1);
-
-  const dateLabels = [];
-  for(let i = 0; i <= totalDays; i++){
-    const d = new Date(minTime + i * 86400000);
-    dateLabels.push(d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}));
-  }
+  const ganttWidth = scale.contentWidth;
 
   let html = `
     <div style="border:1px solid var(--border);border-radius:.3rem;overflow:hidden;background:var(--panel);font-size:.75rem">
@@ -2676,7 +3548,7 @@ function renderSODueGantt(soList){
       <div style="display:flex;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--panel);z-index:11;box-shadow:0 2px 4px rgba(0,0,0,.08)">
         <div style="width:11rem;flex-shrink:0;padding:.5rem;font-weight:600;border-right:1px solid var(--border)">SO | SKU | Qty</div>
         <div style="display:flex;width:${ganttWidth}px;background:var(--panel)">
-          ${dateLabels.map(d => `<div style="width:${dayWidth}px;padding:.3rem;text-align:center;font-size:.7rem;border-right:1px solid var(--border-soft);color:var(--text-soft);background:var(--panel)">${d}</div>`).join('')}
+          ${scale.buckets.map(bucket => `<div style="width:${scale.bucketPx}px;min-width:${scale.bucketPx}px;padding:.28rem;text-align:center;font-size:.68rem;border-right:1px solid var(--border-soft);color:var(--text-soft);background:var(--panel);line-height:1.2"><div style="font-weight:700;color:var(--text)">${bucket.label.primary}</div><div>${bucket.label.secondary}</div></div>`).join('')}
         </div>
       </div>
 
@@ -2692,10 +3564,11 @@ function renderSODueGantt(soList){
             <div style="padding:.4rem;background:${priorityColor};color:#fff;font-weight:600;font-size:.8rem">${priority}</div>
             ${sosInPriority.map(soId => {
               const so = bySO[soId];
-              const dueDate = new Date(so.due_date).getTime();
-              const dueLeft = Math.max(0, (dueDate - minTime) / span * 100);
+              const dueDate = parseDate(so.due_date).getTime();
+              const dueLeft = Math.max(0, ((dueDate - scale.startMs) / scale.bucketMs) * scale.bucketPx);
               const qty = num(so.qty_mt || 0).toFixed(0);
               const skuId = so.sku_id ? escapeHtml(so.sku_id.substring(0, 12)) : '—';
+              const markerWidth = Math.max(40, scale.bucketPx * 0.72);
 
               return `
                 <div style="display:flex;border-bottom:1px solid var(--border-soft);align-items:center">
@@ -2705,8 +3578,8 @@ function renderSODueGantt(soList){
                     <div style="font-size:.7rem;color:var(--text-soft)">${qty}MT</div>
                   </div>
                   <div style="position:relative;width:${ganttWidth}px;height:2.4rem">
-                    ${dateLabels.map((d,i) => `<div style="position:absolute;left:${i*dayWidth}px;width:${dayWidth}px;height:100%;border-right:1px solid var(--border-soft);opacity:.1"></div>`).join('')}
-                    <div style="position:absolute;left:${dueLeft}%;width:2.5rem;top:.5rem;bottom:.5rem;background:${priorityColor};opacity:.85;border-radius:.2rem;border:2px solid ${priorityColor};display:flex;align-items:center;justify-content:center;font-size:.65rem;color:#fff;font-weight:700;white-space:nowrap;padding:0 .2rem" title="${so.due_date}">DUE</div>
+                    ${scale.buckets.map(bucket => `<div style="position:absolute;left:${bucket.left}px;width:${scale.bucketPx}px;height:100%;border-right:1px solid var(--border-soft);opacity:.12"></div>`).join('')}
+                    <div style="position:absolute;left:${dueLeft.toFixed(1)}px;width:${markerWidth.toFixed(1)}px;top:.5rem;bottom:.5rem;background:${priorityColor};opacity:.85;border-radius:.2rem;border:2px solid ${priorityColor};display:flex;align-items:center;justify-content:center;font-size:.65rem;color:#fff;font-weight:700;white-space:nowrap;padding:0 .2rem" title="${so.due_date}">DUE</div>
                   </div>
                 </div>
               `;
@@ -2724,9 +3597,10 @@ function renderSODueGantt(soList){
 function renderSOGantt(scheduleRows){
   if(!scheduleRows || !scheduleRows.length) return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No schedule data.</div>';
 
-  let minTime = Infinity, maxTime = -Infinity;
   const bySO = {};
   const plantColor = {BF: '#3b82f6', SMS: '#f97316', RM: '#8b5cf6'};
+  const starts = [];
+  const ends = [];
 
   scheduleRows.forEach(row => {
     const campaign = row.Campaign || '';
@@ -2739,25 +3613,16 @@ function renderSOGantt(scheduleRows){
 
     const start = new Date(row.Planned_Start);
     const end = new Date(row.Planned_End);
-    if(!isNaN(start)) minTime = Math.min(minTime, start.getTime());
-    if(!isNaN(end)) maxTime = Math.max(maxTime, end.getTime());
+    if(!isNaN(start)) starts.push(start.getTime());
+    if(!isNaN(end)) ends.push(end.getTime());
   });
 
-  if(minTime === Infinity || Object.keys(bySO).length === 0)
+  if(!starts.length || Object.keys(bySO).length === 0)
     return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No valid schedule data.</div>';
 
-  const span = maxTime - minTime || 86400000;
+  const scale = buildTimelineScale(starts, ends, getZoomValue('modal', 1), 7, 980);
   const soList = Object.keys(bySO).sort();
-  const dayWidth = 120;
-  const totalDays = Math.ceil(span / 86400000);
-  const ganttWidth = dayWidth * (totalDays + 1);
-
-  // Date headers - JUST DATES
-  const dateLabels = [];
-  for(let i = 0; i <= totalDays; i++){
-    const d = new Date(minTime + i * 86400000);
-    dateLabels.push(d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}));
-  }
+  const ganttWidth = scale.contentWidth;
 
   let html = `
     <div style="border:1px solid var(--border);border-radius:.3rem;overflow:hidden;background:var(--panel);font-size:.75rem">
@@ -2765,31 +3630,29 @@ function renderSOGantt(scheduleRows){
       <div style="display:flex;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--panel);z-index:10">
         <div style="width:8rem;flex-shrink:0;padding:.5rem;font-weight:600;border-right:1px solid var(--border)">SO</div>
         <div style="display:flex;width:${ganttWidth}px">
-          ${dateLabels.map(d => `<div style="width:${dayWidth}px;padding:.3rem;text-align:center;font-size:.7rem;border-right:1px solid var(--border-soft);color:var(--text-soft)">${d}</div>`).join('')}
+          ${scale.buckets.map(bucket => `<div style="width:${scale.bucketPx}px;min-width:${scale.bucketPx}px;padding:.28rem;text-align:center;font-size:.68rem;border-right:1px solid var(--border-soft);color:var(--text-soft);line-height:1.2"><div style="font-weight:700;color:var(--text)">${bucket.label.primary}</div><div>${bucket.label.secondary}</div></div>`).join('')}
         </div>
       </div>
 
       <!-- SO rows by plant -->
       ${['BF', 'SMS', 'RM'].map(plant => {
-        const sosInPlant = soList.filter(so => bySO[so].some(o => (o.Plant || 'SMS') === plant));
+        const sosInPlant = soList.filter(so => bySO[so].some(o => plantForJob(o) === plant));
         if(sosInPlant.length === 0) return '';
 
         return `
           <div style="border-bottom:1px solid var(--border)">
             <div style="padding:.4rem;background:${plantColor[plant]};color:#fff;font-weight:600;font-size:.8rem">${plant}</div>
             ${sosInPlant.map(so => {
-              const ops = bySO[so].filter(o => (o.Plant || 'SMS') === plant);
+              const ops = bySO[so].filter(o => plantForJob(o) === plant);
               return `
                 <div style="display:flex;border-bottom:1px solid var(--border-soft)">
                   <div style="width:8rem;flex-shrink:0;padding:.5rem;border-right:1px solid var(--border);font-weight:600">${so}</div>
                   <div style="position:relative;width:${ganttWidth}px;height:1.8rem">
-                    ${dateLabels.map((d,i) => `<div style="position:absolute;left:${i*dayWidth}px;width:${dayWidth}px;height:100%;border-right:1px solid var(--border-soft);opacity:.1"></div>`).join('')}
+                    ${scale.buckets.map(bucket => `<div style="position:absolute;left:${bucket.left}px;width:${scale.bucketPx}px;height:100%;border-right:1px solid var(--border-soft);opacity:.1"></div>`).join('')}
                     ${ops.map(op => {
-                      const opStart = new Date(op.Planned_Start).getTime();
-                      const opEnd = new Date(op.Planned_End).getTime();
-                      const opLeft = Math.max(0, (opStart - minTime) / span * 100);
-                      const opWidth = Math.max(1.5, (opEnd - opStart) / span * 100);
-                      return `<div style="position:absolute;left:${opLeft}%;width:${opWidth}%;top:.3rem;bottom:.3rem;background:${plantColor[plant]};opacity:.85;border-radius:.2rem;border:1px solid ${plantColor[plant]};display:flex;align-items:center;justify-content:center;font-size:.6rem;color:#fff;font-weight:600" title="${(opEnd-opStart)/3600000|0}h"></div>`;
+                      const metrics = timelineBarMetrics(op.Planned_Start, op.Planned_End, scale, 8);
+                      if (!metrics) return '';
+                      return `<div style="position:absolute;left:${metrics.left.toFixed(1)}px;width:${metrics.width.toFixed(1)}px;top:.3rem;bottom:.3rem;background:${plantColor[plant]};opacity:.85;border-radius:.2rem;border:1px solid ${plantColor[plant]};display:flex;align-items:center;justify-content:center;font-size:.6rem;color:#fff;font-weight:600" title="${fmtDateTime(op.Planned_Start)} → ${fmtDateTime(op.Planned_End)}"></div>`;
                     }).join('')}
                   </div>
                 </div>
@@ -2808,7 +3671,6 @@ function renderSOGantt(scheduleRows){
 function renderPOGantt(scheduleRows){
   if(!scheduleRows || !scheduleRows.length) return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No schedule data.</div>';
 
-  let minTime = Infinity, maxTime = -Infinity;
   const byPO = {};
   const opPalette = {
     BF:  { fill: '#3b82f6', text: '#ffffff' },
@@ -2821,6 +3683,8 @@ function renderPOGantt(scheduleRows){
   };
   const laneTop = { BF: 10, EAF: 10, LRF: 34, VD: 34, CCM: 58, RM: 58 };
   const rowHeight = 96;
+  const starts = [];
+  const ends = [];
 
   const fmtGanttDay = (ts) => {
     const d = parseDate(ts);
@@ -2843,32 +3707,25 @@ function renderPOGantt(scheduleRows){
 
     const start = parseDate(row.Planned_Start);
     const end = parseDate(row.Planned_End);
-    if(!Number.isNaN(start.getTime())) minTime = Math.min(minTime, start.getTime());
-    if(!Number.isNaN(end.getTime())) maxTime = Math.max(maxTime, end.getTime());
+    if(!Number.isNaN(start.getTime())) starts.push(start.getTime());
+    if(!Number.isNaN(end.getTime())) ends.push(end.getTime());
   });
 
-  if(minTime === Infinity) return '<div style="padding:1rem;color:var(--text-soft)">No valid time data.</div>';
+  if(!starts.length) return '<div style="padding:1rem;color:var(--text-soft)">No valid time data.</div>';
 
-  const span = maxTime - minTime || 86400000;
+  const scale = buildTimelineScale(starts, ends, getZoomValue('modal', 1), 7, 1040);
   const poList = Object.keys(byPO).sort();
-  const dayWidth = 112;
-  const totalDays = span / 86400000;
-  const ganttWidth = Math.max(980, dayWidth * (totalDays + 1));
-
-  const dateLabels = [];
-  for(let i = 0; i <= Math.ceil(totalDays); i++){
-    dateLabels.push(new Date(minTime + i * 86400000));
-  }
+  const ganttWidth = scale.contentWidth;
 
   let html = `
     <div style="border:1px solid var(--border);border-radius:.4rem;overflow:hidden;background:var(--panel)">
       <div style="display:flex;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--panel);z-index:2">
         <div style="width:14rem;flex-shrink:0;padding:.7rem .85rem;font-weight:800;border-right:1px solid var(--border);font-size:.76rem;background:#fbfcfe">Planning Order</div>
         <div style="display:flex;width:${ganttWidth}px">
-          ${dateLabels.map(d => `
-            <div style="width:${dayWidth}px;padding:.35rem .2rem;text-align:center;font-size:.69rem;border-right:1px solid var(--border-soft);color:var(--text-soft);line-height:1.25">
-              <div style="font-weight:700;color:var(--text)">${fmtGanttDay(d)}</div>
-              <div>${fmtGanttTick(d)}</div>
+          ${scale.buckets.map(bucket => `
+            <div style="width:${scale.bucketPx}px;min-width:${scale.bucketPx}px;padding:.35rem .2rem;text-align:center;font-size:.69rem;border-right:1px solid var(--border-soft);color:var(--text-soft);line-height:1.25">
+              <div style="font-weight:700;color:var(--text)">${fmtGanttDay(bucket.ts)}</div>
+              <div>${fmtGanttTick(bucket.ts)}</div>
             </div>
           `).join('')}
         </div>
@@ -2880,8 +3737,7 @@ function renderPOGantt(scheduleRows){
         const families = [...new Set(ops.map(o => _ridToOp(o.Resource_ID || o.resource_id)).filter(Boolean))];
         const poStart = Math.min(...ops.map(op => parseDate(op.Planned_Start).getTime()).filter(Number.isFinite));
         const poEnd = Math.max(...ops.map(op => parseDate(op.Planned_End).getTime()).filter(Number.isFinite));
-        const poLeft = Math.max(0, (poStart - minTime) / span * 100);
-        const poWidth = Math.max(0.8, (poEnd - poStart) / span * 100);
+        const poMetrics = timelineBarMetrics(poStart, poEnd, scale, 18);
         const familyChips = families.map(family => {
           const palette = opPalette[family] || opPalette.DEF;
           return `<span data-gantt-tooltip="${escapeAttr(`<strong>${family}</strong><br>Operation family used in this PO timeline.`)}" style="display:inline-flex;align-items:center;gap:.28rem;padding:.12rem .38rem;border-radius:.8rem;background:rgba(148,163,184,.08);font-size:.64rem;font-weight:700;color:var(--text-soft);cursor:help"><span style="width:.42rem;height:.42rem;border-radius:999px;background:${palette.fill};display:inline-block"></span>${family}</span>`;
@@ -2897,22 +3753,22 @@ function renderPOGantt(scheduleRows){
               <div style="font-size:.72rem;font-weight:700;color:var(--text)">${totalHours.toFixed(1)}h total</div>
             </div>
             <div style="position:relative;width:${ganttWidth}px;height:${rowHeight}px;background:linear-gradient(180deg,#fff,#fcfdff)">
-              ${dateLabels.map((d,i) => `<div style="position:absolute;left:${i*dayWidth}px;width:${dayWidth}px;height:100%;border-right:1px solid var(--border-soft);opacity:.18"></div>`).join('')}
+              ${scale.buckets.map(bucket => `<div style="position:absolute;left:${bucket.left}px;width:${scale.bucketPx}px;height:100%;border-right:1px solid var(--border-soft);opacity:.18"></div>`).join('')}
               <div style="position:absolute;left:0;right:0;top:28px;border-top:1px dashed rgba(148,163,184,.16)"></div>
               <div style="position:absolute;left:0;right:0;top:52px;border-top:1px dashed rgba(148,163,184,.16)"></div>
-              <div style="position:absolute;left:${poLeft}%;width:${poWidth}%;top:12px;height:66px;border-radius:.55rem;border:1px dashed rgba(15,23,42,.18);background:rgba(148,163,184,.08);box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)"></div>
+              <div style="position:absolute;left:${poMetrics.left.toFixed(1)}px;width:${poMetrics.width.toFixed(1)}px;top:12px;height:66px;border-radius:.55rem;border:1px dashed rgba(15,23,42,.18);background:rgba(148,163,184,.08);box-shadow:inset 0 0 0 1px rgba(255,255,255,.35)"></div>
               ${ops.map(op => {
                 const opStart = parseDate(op.Planned_Start);
                 const opEnd = parseDate(op.Planned_End);
-                const opLeft = Math.max(0, (opStart.getTime() - minTime) / span * 100);
-                const opWidth = Math.max(0.8, (opEnd.getTime() - opStart.getTime()) / span * 100);
+                const opMetrics = timelineBarMetrics(opStart, opEnd, scale, 8);
+                if (!opMetrics) return '';
                 const dur = num(op.Duration_Hrs || 0).toFixed(1);
                 const family = _ridToOp(op.Resource_ID || op.resource_id);
                 const palette = opPalette[family] || opPalette.DEF;
                 const top = laneTop[family] ?? 30;
-                const label = opWidth > 4.5 ? family : '';
+                const label = opMetrics.width > 44 ? family : '';
                 return `
-                  <div data-gantt-tooltip="${escapeAttr(`<strong>${po}</strong><br>${family} on ${escapeHtml(op.Resource_ID || '—')}<br>Duration: ${dur}h<br>Start: ${fmtDateTime(opStart)}<br>End: ${fmtDateTime(opEnd)}`)}" style="position:absolute;left:${opLeft}%;width:${opWidth}%;top:${top}px;height:20px;background:${palette.fill};opacity:.95;border-radius:.32rem;border:1px solid rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center;font-size:.62rem;color:${palette.text};font-weight:800;overflow:hidden;white-space:nowrap;padding:0 .24rem;box-shadow:0 1px 2px rgba(15,23,42,.12);cursor:pointer" title="">${label}</div>
+                  <div data-gantt-tooltip="${escapeAttr(`<strong>${po}</strong><br>${family} on ${escapeHtml(op.Resource_ID || '—')}<br>Duration: ${dur}h<br>Start: ${fmtDateTime(opStart)}<br>End: ${fmtDateTime(opEnd)}`)}" style="position:absolute;left:${opMetrics.left.toFixed(1)}px;width:${opMetrics.width.toFixed(1)}px;top:${top}px;height:20px;background:${palette.fill};opacity:.95;border-radius:.32rem;border:1px solid rgba(255,255,255,.5);display:flex;align-items:center;justify-content:center;font-size:.62rem;color:${palette.text};font-weight:800;overflow:hidden;white-space:nowrap;padding:0 .24rem;box-shadow:0 1px 2px rgba(15,23,42,.12);cursor:pointer" title="">${label}</div>
                 `;
               }).join('')}
             </div>
@@ -2922,10 +3778,10 @@ function renderPOGantt(scheduleRows){
     </div>
 
     <div style="margin-top:1rem;display:flex;gap:.65rem;flex-wrap:wrap;justify-content:center;font-size:.75rem">
-      <div style="padding:.45rem .7rem;border:1px solid var(--border);border-radius:.7rem;background:#fbfcfe"><span style="color:var(--text-soft)">Start:</span> <strong>${fmtDateTime(minTime)}</strong></div>
-      <div style="padding:.45rem .7rem;border:1px solid var(--border);border-radius:.7rem;background:#fbfcfe"><span style="color:var(--text-soft)">End:</span> <strong>${fmtDateTime(maxTime)}</strong></div>
+      <div style="padding:.45rem .7rem;border:1px solid var(--border);border-radius:.7rem;background:#fbfcfe"><span style="color:var(--text-soft)">Start:</span> <strong>${fmtDateTime(scale.startMs)}</strong></div>
+      <div style="padding:.45rem .7rem;border:1px solid var(--border);border-radius:.7rem;background:#fbfcfe"><span style="color:var(--text-soft)">End:</span> <strong>${fmtDateTime(scale.endMs)}</strong></div>
       <div style="padding:.45rem .7rem;border:1px solid var(--border);border-radius:.7rem;background:#fbfcfe"><span style="color:var(--text-soft)">Total POs:</span> <strong>${poList.length}</strong></div>
-      <div style="padding:.45rem .7rem;border:1px solid var(--border);border-radius:.7rem;background:#fbfcfe"><span style="color:var(--text-soft)">Legend:</span> <strong>EAF / LRF / VD / CCM / RM</strong></div>
+      <div style="padding:.45rem .7rem;border:1px solid var(--border);border-radius:.7rem;background:#fbfcfe"><span style="color:var(--text-soft)">Scale:</span> <strong>${scale.scaleLabel}</strong></div>
     </div>
   `;
 
@@ -2936,9 +3792,10 @@ function renderPOGantt(scheduleRows){
 function renderEquipmentGantt(scheduleRows){
   if(!scheduleRows || !scheduleRows.length) return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No schedule data.</div>';
 
-  let minTime = Infinity, maxTime = -Infinity;
   const byEquip = {};
   const plantColor = {BF: '#3b82f6', SMS: '#f97316', RM: '#8b5cf6'};
+  const starts = [];
+  const ends = [];
 
   scheduleRows.forEach(row => {
     const equip = row.Resource_ID || 'Unknown';
@@ -2947,22 +3804,14 @@ function renderEquipmentGantt(scheduleRows){
 
     const start = new Date(row.Planned_Start);
     const end = new Date(row.Planned_End);
-    if(!isNaN(start)) minTime = Math.min(minTime, start.getTime());
-    if(!isNaN(end)) maxTime = Math.max(maxTime, end.getTime());
+    if(!isNaN(start)) starts.push(start.getTime());
+    if(!isNaN(end)) ends.push(end.getTime());
   });
 
-  if(minTime === Infinity) return '<div style="padding:1rem;color:var(--text-soft)">No valid time data.</div>';
+  if(!starts.length) return '<div style="padding:1rem;color:var(--text-soft)">No valid time data.</div>';
 
-  const span = maxTime - minTime || 86400000;
-  const dayWidth = 100;
-  const totalDays = span / 86400000;
-  const ganttWidth = Math.max(900, dayWidth * (totalDays + 1));
-
-  const dateLabels = [];
-  for(let i = 0; i <= Math.ceil(totalDays); i++){
-    const d = new Date(minTime + i * 86400000);
-    dateLabels.push(fmtDate(d));
-  }
+  const scale = buildTimelineScale(starts, ends, getZoomValue('modal', 1), 7, 980);
+  const ganttWidth = scale.contentWidth;
 
   let html = `
     <div style="border:1px solid var(--border);border-radius:.3rem;overflow:hidden;background:var(--panel)">
@@ -2970,7 +3819,7 @@ function renderEquipmentGantt(scheduleRows){
       <div style="display:flex;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--panel)">
         <div style="width:9rem;flex-shrink:0;padding:.5rem;font-weight:600;border-right:1px solid var(--border);font-size:.75rem">Equipment | Plant</div>
         <div style="display:flex;width:${ganttWidth}px">
-          ${dateLabels.map(d => `<div style="width:${dayWidth}px;padding:.3rem;text-align:center;font-size:.7rem;border-right:1px solid var(--border-soft);color:var(--text-soft)">${d}</div>`).join('')}
+          ${scale.buckets.map(bucket => `<div style="width:${scale.bucketPx}px;min-width:${scale.bucketPx}px;padding:.28rem;text-align:center;font-size:.68rem;border-right:1px solid var(--border-soft);color:var(--text-soft);line-height:1.2"><div style="font-weight:700;color:var(--text)">${bucket.label.primary}</div><div>${bucket.label.secondary}</div></div>`).join('')}
         </div>
       </div>
 
@@ -2981,7 +3830,7 @@ function renderEquipmentGantt(scheduleRows){
 
         plantOrder.forEach(plant => {
           const equipInPlant = Object.keys(byEquip).filter(equip => {
-            return byEquip[equip].some(o => (o.Plant || 'SMS') === plant);
+            return byEquip[equip].some(o => plantForJob(o) === plant);
           }).sort();
 
           if(equipInPlant.length === 0) return;
@@ -2989,9 +3838,9 @@ function renderEquipmentGantt(scheduleRows){
           html += `<div style="padding:.4rem;background:${plantColor[plant]};color:#fff;font-weight:600;font-size:.8rem;border-bottom:2px solid var(--border)">${plant} Plant</div>`;
 
           equipInPlant.forEach(equip => {
-            const ops = byEquip[equip].filter(o => (o.Plant || 'SMS') === plant);
+            const ops = byEquip[equip].filter(o => plantForJob(o) === plant);
             const color = plantColor[plant];
-            const utilization = (ops.reduce((sum, o) => sum + (num(o.Duration_Hrs) || 0), 0) / (totalDays * 24) * 100).toFixed(0);
+            const utilization = (ops.reduce((sum, o) => sum + (num(o.Duration_Hrs) || 0), 0) / Math.max((scale.spanMs / 3600000), 1) * 100).toFixed(0);
 
             html += `
               <div style="display:flex;border-bottom:1px solid var(--border-soft)">
@@ -3001,17 +3850,15 @@ function renderEquipmentGantt(scheduleRows){
                 </div>
                 <div style="position:relative;width:${ganttWidth}px;height:2rem">
                   <!-- Grid -->
-                  ${dateLabels.map((d,i) => `<div style="position:absolute;left:${i*dayWidth}px;width:${dayWidth}px;height:100%;border-right:1px solid var(--border-soft);opacity:.15"></div>`).join('')}
+                  ${scale.buckets.map(bucket => `<div style="position:absolute;left:${bucket.left}px;width:${scale.bucketPx}px;height:100%;border-right:1px solid var(--border-soft);opacity:.15"></div>`).join('')}
 
                   <!-- Bars -->
                   ${ops.map(op => {
-                    const opStart = new Date(op.Planned_Start);
-                    const opEnd = new Date(op.Planned_End);
-                    const opLeft = Math.max(0, (opStart.getTime() - minTime) / span * 100);
-                    const opWidth = Math.max(1, (opEnd.getTime() - opStart.getTime()) / span * 100);
+                    const metrics = timelineBarMetrics(op.Planned_Start, op.Planned_End, scale, 8);
+                    if (!metrics) return '';
                     const campaign = (op.Campaign || '').substring(0, 10);
                     return `
-                      <div style="position:absolute;left:${opLeft}%;width:${opWidth}%;top:.3rem;bottom:.3rem;background:${color};opacity:.8;border-radius:.2rem;border:1px solid ${color};display:flex;align-items:center;justify-content:center;font-size:.65rem;color:#fff;font-weight:600;overflow:hidden" title="${campaign}">${campaign}</div>
+                      <div style="position:absolute;left:${metrics.left.toFixed(1)}px;width:${metrics.width.toFixed(1)}px;top:.3rem;bottom:.3rem;background:${color};opacity:.8;border-radius:.2rem;border:1px solid ${color};display:flex;align-items:center;justify-content:center;font-size:.65rem;color:#fff;font-weight:600;overflow:hidden" title="${campaign}">${campaign}</div>
                     `;
                   }).join('')}
                 </div>
@@ -3025,13 +3872,86 @@ function renderEquipmentGantt(scheduleRows){
     </div>
 
     <div style="margin-top:1rem;display:flex;gap:1rem;font-size:.75rem">
-      <div><span style="color:var(--text-soft)">Start:</span> <strong>${fmtDateTime(minTime).substring(0, 16)}</strong></div>
-      <div><span style="color:var(--text-soft)">End:</span> <strong>${fmtDateTime(maxTime).substring(0, 16)}</strong></div>
+      <div><span style="color:var(--text-soft)">Start:</span> <strong>${fmtDateTime(scale.startMs).substring(0, 16)}</strong></div>
+      <div><span style="color:var(--text-soft)">End:</span> <strong>${fmtDateTime(scale.endMs).substring(0, 16)}</strong></div>
       <div><span style="color:var(--text-soft)">Total Equipment:</span> <strong>${Object.keys(byEquip).length}</strong></div>
     </div>
   `;
 
   return html;
+}
+
+function renderGlobalGantt(scheduleRows){
+  if(!scheduleRows || !scheduleRows.length) return '<div style="padding:2rem;text-align:center;color:var(--text-soft)">No schedule data.</div>';
+
+  const grouped = {};
+  const plantColor = { BF: '#3b82f6', SMS: '#f97316', RM: '#8b5cf6', SHARED: '#64748b' };
+  const starts = [];
+  const ends = [];
+
+  scheduleRows.forEach(row => {
+    const plant = plantForJob(row);
+    const campaign = String(row.Campaign || 'Unknown');
+    const key = `${plant}::${campaign}`;
+    if(!grouped[key]){
+      grouped[key] = { plant, campaign, ops: 0, resources: new Set(), minStart: Infinity, maxEnd: -Infinity };
+    }
+    const start = parseDate(row.Planned_Start).getTime();
+    const end = parseDate(row.Planned_End).getTime();
+    if(!Number.isFinite(start) || !Number.isFinite(end)) return;
+    grouped[key].ops += 1;
+    grouped[key].resources.add(String(row.Resource_ID || ''));
+    grouped[key].minStart = Math.min(grouped[key].minStart, start);
+    grouped[key].maxEnd = Math.max(grouped[key].maxEnd, end);
+    starts.push(start);
+    ends.push(end);
+  });
+
+  if(!starts.length) return '<div style="padding:1rem;color:var(--text-soft)">No valid time data.</div>';
+
+  const scale = buildTimelineScale(starts, ends, getZoomValue('modal', 1), 7, 1040);
+  const ganttWidth = scale.contentWidth;
+
+  const rows = Object.values(grouped)
+    .filter(row => Number.isFinite(row.minStart) && Number.isFinite(row.maxEnd))
+    .sort((a, b) => {
+      const order = ['BF', 'SMS', 'RM', 'SHARED'];
+      const ia = order.indexOf(a.plant);
+      const ib = order.indexOf(b.plant);
+      const sa = ia === -1 ? 999 : ia;
+      const sb = ib === -1 ? 999 : ib;
+      if(sa !== sb) return sa - sb;
+      return a.campaign.localeCompare(b.campaign);
+    });
+
+  return `
+    <div style="border:1px solid var(--border);border-radius:.4rem;overflow:hidden;background:var(--panel);font-size:.75rem">
+      <div style="display:flex;border-bottom:2px solid var(--border);position:sticky;top:0;background:var(--panel);z-index:3">
+        <div style="width:14rem;flex-shrink:0;padding:.6rem .75rem;font-weight:800;border-right:1px solid var(--border)">Plant / Campaign</div>
+        <div style="display:flex;width:${ganttWidth}px">
+          ${scale.buckets.map(bucket => `<div style="width:${scale.bucketPx}px;min-width:${scale.bucketPx}px;padding:.28rem;text-align:center;font-size:.68rem;border-right:1px solid var(--border-soft);color:var(--text-soft);line-height:1.2"><div style="font-weight:700;color:var(--text)">${bucket.label.primary}</div><div>${bucket.label.secondary}</div></div>`).join('')}
+        </div>
+      </div>
+      ${rows.map((row, idx) => {
+        const metrics = timelineBarMetrics(row.minStart, row.maxEnd, scale, 16);
+        const color = plantColor[row.plant] || plantColor.SHARED;
+        const bg = idx % 2 ? '#fcfdff' : '#ffffff';
+        return `
+          <div style="display:flex;border-bottom:1px solid var(--border-soft);background:${bg}">
+            <div style="width:14rem;flex-shrink:0;padding:.55rem .75rem;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:.18rem">
+              <div style="font-weight:800">${escapeHtml(row.plant)}</div>
+              <div style="font-size:.72rem">${escapeHtml(row.campaign)}</div>
+              <div style="font-size:.66rem;color:var(--text-soft)">${row.ops} ops · ${row.resources.size} resources</div>
+            </div>
+            <div style="position:relative;width:${ganttWidth}px;height:2.3rem">
+              ${scale.buckets.map(bucket => `<div style="position:absolute;left:${bucket.left}px;width:${scale.bucketPx}px;height:100%;border-right:1px solid var(--border-soft);opacity:.16"></div>`).join('')}
+              <div style="position:absolute;left:${metrics.left.toFixed(1)}px;width:${metrics.width.toFixed(1)}px;top:.38rem;bottom:.38rem;background:${color};opacity:.84;border-radius:.24rem;border:1px solid ${color}"></div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
 }
 
 // Show gantt for selected SOs in pool
@@ -3052,30 +3972,61 @@ function showGanttModal(title, data, type = 'so'){
   const modal = document.createElement('div');
   modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.0);display:flex;align-items:center;justify-content:center;z-index:9999;padding:.5rem;backdrop-filter:none';
 
-  let ganttContent = '';
-  if(type === 'so') ganttContent = renderSOGantt(data);
-  else if(type === 'so-due') ganttContent = renderSODueGantt(data);
-  else if(type === 'po') ganttContent = renderPOGantt(data);
-  else if(type === 'heat') ganttContent = renderEquipmentGantt(data);
-
   const content = document.createElement('div');
   content.style.cssText = 'background:var(--page-bg);border:1px solid var(--border);border-radius:.4rem;box-shadow:0 10px 40px rgba(0,0,0,.2);width:95%;height:92vh;overflow:auto;padding:1.25rem;display:flex;flex-direction:column';
+  const modalZoom = getZoomValue('modal', 1);
+  const modalScale = getTimelineScalePreset(modalZoom);
   content.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-shrink:0;border-bottom:1px solid var(--border);padding-bottom:.8rem">
       <h3 style="margin:0;font-size:1rem;font-weight:600">${escapeHtml(title)}</h3>
-      <button style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-soft);flex-shrink:0;padding:0;width:2rem;height:2rem;display:flex;align-items:center;justify-content:center">✕</button>
+      <div style="display:flex;align-items:center;gap:.4rem">
+        <button type="button" class="btn ghost btn-compact" data-modal-zoom="-">-</button>
+        <span id="modalZoomLabel" style="min-width:3.2rem;text-align:center;font-size:.75rem;color:var(--text-soft);font-weight:700">${Math.round(modalZoom * 100)}%</span>
+        <span id="modalScaleLabel" style="display:inline-flex;align-items:center;height:1.5rem;padding:0 .55rem;border-radius:999px;background:var(--panel-soft);border:1px solid var(--border-soft);font-size:.68rem;color:var(--text-soft);font-weight:700">${modalScale.scaleLabel}</span>
+        <button type="button" class="btn ghost btn-compact" data-modal-zoom="+">+</button>
+        <button style="background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-soft);flex-shrink:0;padding:0;width:2rem;height:2rem;display:flex;align-items:center;justify-content:center">✕</button>
+      </div>
     </div>
-    <div style="flex:1;overflow:auto;min-height:0">
-      ${ganttContent}
-    </div>
+    <div style="flex:1;overflow:auto;min-height:0" id="modalGanttBody"></div>
   `;
 
-  const closeBtn = content.querySelector('button');
+  const renderBody = () => {
+    const body = content.querySelector('#modalGanttBody');
+    if(!body) return;
+    let ganttContent = '';
+    if(type === 'so') ganttContent = renderSOGantt(data);
+    else if(type === 'so-due') ganttContent = renderSODueGantt(data);
+    else if(type === 'po') ganttContent = renderPOGantt(data);
+    else if(type === 'heat') ganttContent = renderEquipmentGantt(data);
+    else if(type === 'global') ganttContent = renderGlobalGantt(data);
+    body.innerHTML = ganttContent;
+    initGanttTooltips(body);
+    const z = content.querySelector('#modalZoomLabel');
+    if(z) z.textContent = `${Math.round(getZoomValue('modal', 1) * 100)}%`;
+    const s = content.querySelector('#modalScaleLabel');
+    if(s) s.textContent = getTimelineScalePreset(getZoomValue('modal', 1)).scaleLabel;
+  };
+
+  const closeBtn = content.querySelector('button:last-of-type');
   closeBtn.addEventListener('click', () => modal.remove());
+  const zoomOutBtn = content.querySelector('[data-modal-zoom="-"]');
+  const zoomInBtn = content.querySelector('[data-modal-zoom="+"]');
+  if(zoomOutBtn){
+    zoomOutBtn.addEventListener('click', () => {
+      state.ganttZoom.modal = clampZoomValue(getZoomValue('modal', 1) - 0.2);
+      renderBody();
+    });
+  }
+  if(zoomInBtn){
+    zoomInBtn.addEventListener('click', () => {
+      state.ganttZoom.modal = clampZoomValue(getZoomValue('modal', 1) + 0.2);
+      renderBody();
+    });
+  }
 
   modal.appendChild(content);
   document.body.appendChild(modal);
-  initGanttTooltips(content);
+  renderBody();
 
   modal.addEventListener('click', (e) => {
     if(e.target === modal) modal.remove();
@@ -4293,6 +5244,7 @@ async function refreshMaterialPlan(){
     const material = await apiFetch('/api/aps/material/plan');
     state.material = material || { summary: {}, campaigns: [] };
     renderMaterial();
+    renderTopSummaryForPage(activePageKey());
     qs('chipPipelineText').textContent = '✓ Material status refreshed';
     qs('chipPipeline').className = 'chip success';
   } catch (e) {
