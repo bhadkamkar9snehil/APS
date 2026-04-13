@@ -170,7 +170,7 @@ button, input, select, textarea { font: inherit; }
 }
 
 .top-summary {
-  padding: 0.75rem 0.75rem 0.28rem;
+  padding: 0.65rem 0.75rem 0.56rem;
   flex-shrink: 0;
   overflow: hidden;
   display: flex;
@@ -259,7 +259,7 @@ button, input, select, textarea { font: inherit; }
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: linear-gradient(180deg, #ffffff, #fbfcff);
-  padding: 0.34rem 0.56rem 0.32rem;
+  padding: 0.48rem 0.56rem;
   min-width: 0;
   min-height: var(--height-metric);
   display: grid;
@@ -268,7 +268,7 @@ button, input, select, textarea { font: inherit; }
     "label value"
     "sub sub";
   column-gap: 0.42rem;
-  row-gap: 0.08rem;
+  row-gap: 0.14rem;
   align-items: center;
   box-shadow: var(--shadow-soft);
   transition: transform 0.2s, box-shadow 0.2s;
@@ -281,23 +281,24 @@ button, input, select, textarea { font: inherit; }
 
 .metric-label {
   grid-area: label;
-  font-size: 0.58rem;
+  font-size: 0.62rem;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-weight: 750;
+  letter-spacing: 0.045em;
+  font-weight: 700;
   color: var(--text-soft);
   margin: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1;
 }
 
 .metric-value {
   grid-area: value;
   justify-self: end;
   text-align: right;
-  font-size: 1.15rem;
-  font-weight: 900;
+  font-size: 1.2rem;
+  font-weight: 800;
   line-height: 1;
   color: var(--text);
   white-space: nowrap;
@@ -307,8 +308,8 @@ button, input, select, textarea { font: inherit; }
 
 .metric-sub {
   grid-area: sub;
-  font-size: 0.64rem;
-  line-height: 1.1;
+  font-size: 0.66rem;
+  line-height: 1.15;
   color: var(--text-soft);
   margin: 0;
   white-space: nowrap;
