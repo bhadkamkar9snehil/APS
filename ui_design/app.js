@@ -3697,6 +3697,8 @@ function renderMaster(){
 }
 async function loadApplicationState(options = {}){
   const { deferHeavy = false } = options;
+  // Ensure material mode preference is restored before any data fetches
+  restoreMaterialModePreference();
   const [overview, campaigns, releaseQueue, gantt, capacity, material, dispatch, planningOrders] = await Promise.all([
     apiFetch('/api/aps/dashboard/overview').catch(()=>null),
     apiFetch('/api/aps/campaigns/list').catch(()=>({items:[]})),
