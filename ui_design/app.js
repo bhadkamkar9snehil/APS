@@ -4144,23 +4144,11 @@ function renderBomDetail(plant, materialType){
     )+'</div>'+
     '<div style="margin-top: 0.25rem; color: var(--text-faint);">BOM reports total-plan requirement; release blockers live in the Material tab.</div>'+
   '</div>';
-  html += '<div class="bom-detail-stats" style="margin-top: 1rem; margin-bottom: 0;">'+
-    '<div class="bom-detail-stat">'+
-      '<div class="bom-detail-stat-label">Gross Req</div>'+
-      '<div class="bom-detail-stat-value">'+totalGross.toFixed(1)+' MT</div>'+
-    '</div>'+
-    '<div class="bom-detail-stat">'+
-      '<div class="bom-detail-stat-label">Produced</div>'+
-      '<div class="bom-detail-stat-value">'+totalProduced.toFixed(1)+' MT</div>'+
-    '</div>'+
-    '<div class="bom-detail-stat">'+
-      '<div class="bom-detail-stat-label">Net Req</div>'+
-      '<div class="bom-detail-stat-value">'+totalNet.toFixed(1)+' MT</div>'+
-    '</div>'+
-    '<div class="bom-detail-stat">'+
-      '<div class="bom-detail-stat-label">'+(materialType ? 'Blocked' : 'At Risk')+'</div>'+
-      '<div class="bom-detail-stat-value">'+blockedMt.toFixed(1)+' MT</div>'+
-    '</div>'+
+  html += '<div style="display: flex; gap: 2rem; margin-top: 1rem; flex-wrap: wrap; align-items: baseline;">'+
+    '<div><div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.045em; font-weight: 600; color: var(--text-faint); margin-bottom: 0.25rem;">Gross Req</div><div style="font-size: 1.3rem; font-weight: 700; color: var(--text);">'+totalGross.toFixed(1)+'<span style="font-size: 0.85rem; font-weight: 500; margin-left: 0.3rem;">MT</span></div></div>'+
+    '<div><div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.045em; font-weight: 600; color: var(--text-faint); margin-bottom: 0.25rem;">Produced</div><div style="font-size: 1.3rem; font-weight: 700; color: var(--text);">'+totalProduced.toFixed(1)+'<span style="font-size: 0.85rem; font-weight: 500; margin-left: 0.3rem;">MT</span></div></div>'+
+    '<div><div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.045em; font-weight: 600; color: var(--text-faint); margin-bottom: 0.25rem;">Net Req</div><div style="font-size: 1.3rem; font-weight: 700; color: var(--text);">'+totalNet.toFixed(1)+'<span style="font-size: 0.85rem; font-weight: 500; margin-left: 0.3rem;">MT</span></div></div>'+
+    '<div><div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.045em; font-weight: 600; color: var(--text-faint); margin-bottom: 0.25rem;">'+(materialType ? 'Blocked' : 'At Risk')+'</div><div style="font-size: 1.3rem; font-weight: 700; color: var(--text);">'+blockedMt.toFixed(1)+'<span style="font-size: 0.85rem; font-weight: 500; margin-left: 0.3rem;">MT</span></div></div>'+
   '</div>';
   html += '</div></div>';
 
