@@ -3,10 +3,49 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>X-APS iframe application</title>
+<title>X-APS</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+<!-- PRIMARY: IBM Plex Sans - Technical, professional, excellent for dense data UIs -->
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- ALTERNATIVES (comment out IBM Plex Sans above and uncomment one below to test) -->
+<!-- Option 1: Roboto - Clean, versatile, widely used in enterprise -->
+<!-- <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap" rel="stylesheet"> -->
+
+<!-- Option 2: Source Sans Pro - Adobe font, professional, excellent readability -->
+<!-- <link href="https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@400;600;700&display=swap" rel="stylesheet"> -->
+
+<!-- Option 3: Fira Sans - Technical feel, modern, Firefox's design font -->
+<!-- <link href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"> -->
+
+<!-- Option 4: Work Sans - Modern, geometric, popular in SaaS -->
+<!-- <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"> -->
+
+<!-- Option 5: Poppins - Friendly geometric, modern appearance -->
+<!-- <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"> -->
+
+<!-- Option 6: DM Sans - Geometric sans, contemporary design -->
+<!-- <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"> -->
+
+<!-- Option 7: Outfit - Geometric, warm, versatile -->
+<!-- <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet"> -->
+
+<!-- Option 8: PT Sans - Russian TypeCare foundry, excellent metrics, professional -->
+<!-- <link href="https://fonts.googleapis.com/css2?family=PT+Sans:wght@400;700&display=swap" rel="stylesheet"> -->
+
+<!-- Option 9: Open Sans - Extremely readable, optimized for web -->
+<!-- <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"> -->
+
+<!-- Option 10: Nunito - Rounded sans, approachable yet professional -->
+<!-- <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700&display=swap" rel="stylesheet"> -->
+
+<!-- Option 11: Inter - Original choice, modern and minimal (keeping for reference) -->
+<!-- <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"> -->
+
+<!-- Option 12: Space Mono - Monospace alternative for technical focus -->
+<!-- <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"> -->
 <link rel="stylesheet" href="styles.css">
 <!-- Font Awesome is optional here; labels remain visible if CDN fails. -->
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
@@ -273,7 +312,6 @@
           <div>
             <div class="page-title">Planning Pipeline</div>
             <div class="page-sub">Select window, propose lots, derive heats, simulate, release.</div>
-            <div class="page-note">Entity flow: Sales Order → Planning Order → Heat Batch → finite schedule/campaign. API runs use live run artifacts unless explicitly exported.</div>
           </div>
           <div class="page-actions page-actions--tight">
             <div id="pipelineStatusBadge" class="pipeline-status-badge">Idle</div>

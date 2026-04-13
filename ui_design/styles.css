@@ -89,7 +89,7 @@ html, body { height: 100%; }
 
 body {
   margin: 0;
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--text);
   background:
     radial-gradient(circle at top right, rgba(124, 58, 237, 0.08), transparent 28%),
