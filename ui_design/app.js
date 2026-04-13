@@ -4734,7 +4734,7 @@ function renderPlanningBoard(){
       <td>${po.heats_required || 0}</td>
       <td><span class="table-pill table-pill--rolling ${po.rolling_mode === 'HOT' ? 'is-hot' : 'is-cold'}">${escapeHtml(po.rolling_mode || 'HOT')}</span></td>
       <td><span class="badge ${statusBadgeClass(po.planner_status)}">${escapeHtml(po.planner_status)}</span></td>
-      <td class="table-action-cell table-action-cell--inline" onclick="event.stopPropagation()"><button class="btn ghost ps-action btn-xs" onclick="freezePO('${escapeHtml(po.po_id)}')" ${isReleased ? 'disabled' : ''}>Freeze</button><button class="btn ghost ps-action btn-xs" onclick="checkMaterialForPO('${escapeHtml(po.po_id)}')">Mat</button></td>
+      <td class="table-action-cell table-action-cell--inline" onclick="event.stopPropagation()"><button class="btn ghost ps-action btn-xs" onclick="toggleFreezePO('${escapeHtml(po.po_id)}')" ${isReleased ? 'disabled' : ''} title="${po.planner_status === 'FROZEN' ? 'Click to unfreeze' : 'Click to freeze'}">${po.planner_status === 'FROZEN' ? 'Unfreeze' : 'Freeze'}</button><button class="btn ghost ps-action btn-xs" onclick="checkMaterialForPO('${escapeHtml(po.po_id)}')">Mat</button></td>
     </tr>
     <tr class="po-detail-row" id="po-detail-${escapeHtml(po.po_id)}" style="display:none">
       <td colspan="11">
@@ -6028,11 +6028,15 @@ function togglePODetail(poId) {
   }
 }
 
-async function freezePO(poId) {
+async function toggleFreezePO(poId) {
+  const po = state.planningOrders?.find(p => p.po_id === poId);
+  if (!po) return;
+  const isFrozen = po.planner_status === 'FROZEN';
+  const action = isFrozen ? 'unfreeze' : 'freeze';
   try {
     const data = await apiFetch('/api/aps/planning/orders/update', {
       method: 'POST',
-      body: JSON.stringify({action: 'freeze', po_id: poId})
+      body: JSON.stringify({action: action, po_id: poId})
     });
     if (data && data.planning_orders) {
       state.planningOrders = data.planning_orders;
@@ -6041,8 +6045,13 @@ async function freezePO(poId) {
       updatePOToolbarButtons();
     }
   } catch (e) {
-    alert('Failed to freeze PO: ' + e.message);
+    alert('Failed to ' + action + ' PO: ' + e.message);
   }
+}
+
+async function freezePO(poId) {
+  // Legacy function - now calls toggleFreezePO for backward compatibility
+  return toggleFreezePO(poId);
 }
 
 async function freezeSelectedPOs() {
