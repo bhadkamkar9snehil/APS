@@ -62,11 +62,31 @@ DEFAULT_MACHINE_GROUPS = {
 }
 # Queue violation weight now config-driven (from Algorithm_Config)
 # Legacy constant for backward compatibility
-QUEUE_VIOLATION_WEIGHT = 500
+QUEUE_VIOLATION_WEIGHT = 120
 
 def _get_queue_violation_weight() -> int:
     """Get queue violation penalty weight from Algorithm_Config."""
-    return get_config().get_weight('OBJECTIVE_QUEUE_VIOLATION_WEIGHT', 500)
+    return get_config().get_weight('OBJECTIVE_QUEUE_VIOLATION_WEIGHT', 120)
+
+
+def _get_sms_lateness_multiplier() -> int:
+    """Relative weight for SMS-side lateness terms."""
+    return max(get_config().get_weight("OBJECTIVE_SMS_LATENESS_WEIGHT", 1), 1)
+
+
+def _get_rm_lateness_multiplier() -> int:
+    """Relative weight for RM-side lateness terms."""
+    return max(get_config().get_weight("OBJECTIVE_RM_LATENESS_WEIGHT", 2), 1)
+
+
+def _get_fragmentation_weight() -> int:
+    """Penalty for idle gaps between successive RM orders inside one campaign."""
+    return max(get_config().get_weight("OBJECTIVE_FRAGMENTATION_WEIGHT", 1), 0)
+
+
+def _get_makespan_weight() -> int:
+    """Light global pressure to finish earlier when multiple schedules tie on lateness."""
+    return max(get_config().get_weight("OBJECTIVE_MAKESPAN_WEIGHT", 1), 0)
 
 
 def _floor_hour(ts: datetime) -> datetime:
@@ -961,6 +981,9 @@ def schedule(
     }
     objective_terms: list[tuple[cp_model.IntVar, int]] = []
     rm_lateness_terms: list[tuple[cp_model.IntVar, int]] = []
+    sms_lateness_terms: list[tuple[cp_model.IntVar, int]] = []
+    sms_all_tasks: list[dict] = []
+    all_end_vars: list[cp_model.IntVar] = []
 
     if machine_down_resource and machine_down_hours and machine_down_resource in machine_intervals:
         down_minutes = max(int(float(machine_down_hours) * 60), 0)
@@ -1101,6 +1124,18 @@ def schedule(
                 sms_tasks[(cid, heat_idx, op)] = op_task
                 sms_queue_status[(cid, heat_idx, op)] = ""
                 sms_end_vars.append(op_task["end"])
+                all_end_vars.append(op_task["end"])
+                sms_all_tasks.append(
+                    {
+                        "campaign_id": cid,
+                        "heat_idx": heat_idx,
+                        "operation": op,
+                        "grade": grade,
+                        "start": op_task["start"],
+                        "end": op_task["end"],
+                        "choices": op_task.get("choices", {}),
+                    }
+                )
 
                 # Fix 4.1: Add soft preference cost for non-preferred resource selection
                 if op_task.get("fixed_machine") is None:  # Only if not frozen/fixed
@@ -1219,7 +1254,8 @@ def schedule(
             due_min = max(0, int((rm_due - t0).total_seconds() / 60))
             lateness = model.NewIntVar(0, max_time, f"late_{rm_job_id}")
             model.AddMaxEquality(lateness, [rm_task["end"] - due_min, model.NewConstant(0)])
-            weight = _priority_weight(int(rm_order.get("priority_rank", camp.get("priority_rank", 9))))
+            priority_weight = _priority_weight(int(rm_order.get("priority_rank", camp.get("priority_rank", 9))))
+            weight = max(priority_weight * _get_rm_lateness_multiplier(), 1)
             objective_terms.append((lateness, weight))
             rm_lateness_terms.append((lateness, weight))
 
@@ -1240,6 +1276,16 @@ def schedule(
             previous_rm_end = rm_task["end"]
             previous_section = section
             rm_end_vars.append(rm_task["end"])
+            all_end_vars.append(rm_task["end"])
+
+        frag_weight = _get_fragmentation_weight()
+        if frag_weight > 0 and len(rm_tasks[cid]) > 1:
+            for gap_idx in range(1, len(rm_tasks[cid])):
+                left = rm_tasks[cid][gap_idx - 1]
+                right = rm_tasks[cid][gap_idx]
+                rm_gap = model.NewIntVar(0, max_time, f"rm_gap_{cid}_{gap_idx}")
+                model.Add(rm_gap >= right["start"] - left["end"])
+                objective_terms.append((rm_gap, frag_weight))
 
         if ccm_end_vars:
             last_ccm_end = model.NewIntVar(0, max_time, f"campaign_ccm_end_{cid}")
@@ -1248,12 +1294,17 @@ def schedule(
             sms_due_min = max(due_min - estimated_rm_duration, 0)
             sms_lateness = model.NewIntVar(0, max_time, f"sms_late_{cid}")
             model.AddMaxEquality(sms_lateness, [last_ccm_end - sms_due_min, model.NewConstant(0)])
+            sms_weight = max(
+                _priority_weight(int(camp.get("priority_rank", 9))) * _get_sms_lateness_multiplier(),
+                1,
+            )
             objective_terms.append(
                 (
                     sms_lateness,
-                    max(1, math.ceil(_priority_weight(int(camp.get("priority_rank", 9))))),  # Fix 1.1: Removed 0.5x discount
+                    sms_weight,
                 )
             )
+            sms_lateness_terms.append((sms_lateness, sms_weight))
             completion_candidates = list(rm_end_vars) if rm_end_vars else [last_ccm_end]
             campaign_completion_end = model.NewIntVar(0, max_time, f"campaign_end_{cid}")
             model.AddMaxEquality(campaign_completion_end, completion_candidates)
@@ -1291,6 +1342,42 @@ def schedule(
                 model.Add(left_before + right_before <= 1)
                 model.Add(right["start"] >= left["end"] + change_lr).OnlyEnforceIf(left_before)
                 model.Add(left["start"] >= right["end"] + change_rl).OnlyEnforceIf(right_before)
+
+    for left_idx, left in enumerate(sms_all_tasks):
+        for right_idx in range(left_idx + 1, len(sms_all_tasks)):
+            right = sms_all_tasks[right_idx]
+            if left.get("operation") != right.get("operation"):
+                continue
+            shared_machines = set(left.get("choices", {})).intersection(right.get("choices", {}))
+            if not shared_machines:
+                continue
+            change_lr = _changeover_minutes(changeover_matrix, left.get("grade"), right.get("grade"))
+            change_rl = _changeover_minutes(changeover_matrix, right.get("grade"), left.get("grade"))
+            if change_lr <= 0 and change_rl <= 0:
+                continue
+            for machine in shared_machines:
+                left_lit = left["choices"][machine]
+                right_lit = right["choices"][machine]
+                left_before = model.NewBoolVar(
+                    f"sms_{left_idx}_before_{right_idx}_{left.get('operation')}_{machine}"
+                )
+                right_before = model.NewBoolVar(
+                    f"sms_{right_idx}_before_{left_idx}_{right.get('operation')}_{machine}"
+                )
+                model.Add(left_before <= left_lit)
+                model.Add(left_before <= right_lit)
+                model.Add(right_before <= left_lit)
+                model.Add(right_before <= right_lit)
+                model.Add(left_before + right_before >= left_lit + right_lit - 1)
+                model.Add(left_before + right_before <= 1)
+                model.Add(right["start"] >= left["end"] + change_lr).OnlyEnforceIf(left_before)
+                model.Add(left["start"] >= right["end"] + change_rl).OnlyEnforceIf(right_before)
+
+    makespan_weight = _get_makespan_weight()
+    if makespan_weight > 0 and all_end_vars:
+        overall_end = model.NewIntVar(0, max_time, "overall_schedule_end")
+        model.AddMaxEquality(overall_end, all_end_vars)
+        objective_terms.append((overall_end, makespan_weight))
 
     if objective_terms:
         model.Minimize(sum(var * weight for var, weight in objective_terms))
@@ -1494,7 +1581,9 @@ def schedule(
         campaign_df = campaign_df.sort_values(["Campaign_ID", "_sort_eaf_start"]).reset_index(drop=True)
         campaign_df = campaign_df.drop(columns=["_sort_eaf_start"])
 
-    weighted_lateness_minutes = sum(solver.Value(var) * weight for var, weight in rm_lateness_terms)
+    weighted_rm_lateness_minutes = sum(solver.Value(var) * weight for var, weight in rm_lateness_terms)
+    weighted_sms_lateness_minutes = sum(solver.Value(var) * weight for var, weight in sms_lateness_terms)
+    weighted_lateness_minutes = weighted_rm_lateness_minutes + weighted_sms_lateness_minutes
     return {
         "heat_schedule": schedule_df,
         "campaign_schedule": campaign_df,
@@ -1505,6 +1594,8 @@ def schedule(
         "allow_default_masters": allow_default_masters,
         "planning_start": t0,
         "planning_horizon_days": planning_horizon_days,
+        "weighted_rm_lateness_hours": round(weighted_rm_lateness_minutes / 60.0, 2),
+        "weighted_sms_lateness_hours": round(weighted_sms_lateness_minutes / 60.0, 2),
         "weighted_lateness_hours": round(weighted_lateness_minutes / 60.0, 2),
     }
 
@@ -1886,5 +1977,7 @@ def _greedy_fallback(
         "allow_default_masters": allow_default_masters,
         "planning_start": t0,
         "planning_horizon_days": max(int(planning_horizon_days or 14), 1),
+        "weighted_rm_lateness_hours": round(weighted_lateness_minutes / 60.0, 2),
+        "weighted_sms_lateness_hours": 0.0,
         "weighted_lateness_hours": round(weighted_lateness_minutes / 60.0, 2),
     }

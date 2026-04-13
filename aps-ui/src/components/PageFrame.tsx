@@ -76,19 +76,19 @@ export function MetricTile({
   return (
     <div
       className={cn(
-        "flex min-h-[3.2rem] min-w-0 flex-col justify-center rounded-[0.3rem] border border-[var(--aps-border)] bg-white px-3 py-2 shadow-[0_1px_3px_rgba(0,0,0,0.02)] transition-all hover:-translate-y-px hover:shadow-[var(--aps-shadow-soft)]",
+        "flex min-h-[2.8rem] min-w-0 flex-col justify-center rounded-[0.3rem] border border-[var(--aps-border)] bg-white px-2.5 py-1.5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] transition-all hover:-translate-y-px hover:shadow-[var(--aps-shadow-soft)]",
         tone === "success" &&
           "border-emerald-200/80 bg-[var(--aps-success-soft)]",
         tone === "warn" && "border-amber-200/80 bg-[var(--aps-warning-soft)]",
         tone === "danger" && "border-red-200/80 bg-[var(--aps-danger-soft)]"
       )}
     >
-      <div className="truncate text-[0.65rem] font-bold tracking-wider text-[var(--aps-text-faint)] uppercase">
+      <div className="truncate text-[0.6rem] font-bold tracking-wider text-[var(--aps-text-faint)] uppercase">
         {label}
       </div>
       <div
         className={cn(
-          "mt-0.5 truncate text-[1.1rem] font-black text-[var(--aps-text)]",
+          "mt-0.25 truncate text-[1rem] font-black text-[var(--aps-text)]",
           tone === "success" && "text-[var(--aps-success)]",
           tone === "warn" && "text-[var(--aps-warning)]",
           tone === "danger" && "text-[var(--aps-danger)]"
@@ -97,7 +97,7 @@ export function MetricTile({
         {value}
       </div>
       {sub ? (
-        <div className="mt-0.5 truncate text-[0.65rem] text-[var(--aps-text-soft)]">
+        <div className="mt-0.25 truncate text-[0.6rem] text-[var(--aps-text-soft)]">
           {sub}
         </div>
       ) : null}

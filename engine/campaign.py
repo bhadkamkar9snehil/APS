@@ -614,6 +614,191 @@ def _campaign_sort_key(campaign: dict):
     )
 
 
+def _is_urgent_order(priority: str, priority_rank_value: int) -> bool:
+    priority_text = str(priority or "").strip().upper()
+    if priority_text in {"URGENT", "HIGH"}:
+        return True
+    return int(priority_rank_value or 9) <= 2
+
+
+def _urgent_split_target_mt(max_campaign_mt: float, config: dict | None = None) -> float:
+    max_mt = max(float(max_campaign_mt or 0.0), 1.0)
+    configured = resolve_config_float(config, "Urgent_Split_Target_MT", max_mt * 0.6)
+    floor_mt = max(resolve_config_float(config, "Urgent_Split_Min_MT", 0.0), 0.0)
+    target = float(configured if configured and configured > 0 else max_mt * 0.6)
+    return min(max(target, floor_mt), max_mt)
+
+
+def _alloc_qty_with_urgency(
+    *,
+    remaining_qty: float,
+    available_slot: float,
+    current_total: float,
+    priority: str,
+    priority_rank_value: int,
+    group_max_campaign_mt: float,
+    config: dict | None = None,
+) -> float:
+    alloc = min(float(remaining_qty or 0.0), float(available_slot or 0.0))
+    if alloc <= 1e-6:
+        return 0.0
+    if not _is_urgent_order(priority, priority_rank_value):
+        return alloc
+
+    target_mt = _urgent_split_target_mt(group_max_campaign_mt, config=config)
+    if float(current_total or 0.0) <= 1e-6 and remaining_qty > target_mt + 1e-6:
+        return min(alloc, target_mt)
+    return alloc
+
+
+def _campaign_merge_key(campaign: dict) -> tuple:
+    return (
+        str(campaign.get("campaign_group", "")).strip(),
+        str(campaign.get("grade", "")).strip(),
+        str(campaign.get("billet_family", "")).strip(),
+        bool(campaign.get("needs_vd", False)),
+        str(campaign.get("manual_campaign_id", "")).strip(),
+    )
+
+
+def _merge_campaign_pair(
+    base: dict,
+    addon: dict,
+    *,
+    bom: pd.DataFrame | None,
+    config: dict | None,
+    batch_size_mt: float,
+) -> dict:
+    merged = dict(base)
+    combined_orders = _ordered_production_orders(base) + _ordered_production_orders(addon)
+    combined_orders = sorted(
+        combined_orders,
+        key=lambda line: (
+            int(line.get("priority_rank", 9)),
+            pd.to_datetime(line.get("due_date")),
+            pd.to_numeric(pd.Series([line.get("section_mm")]), errors="coerce").fillna(999).iloc[0],
+            str(line.get("production_order_id", "")),
+        ),
+    )
+    merged["production_orders"] = combined_orders
+
+    total_coil_mt = round(float(base.get("total_coil_mt", 0.0) or 0.0) + float(addon.get("total_coil_mt", 0.0) or 0.0), 1)
+    merged["total_coil_mt"] = total_coil_mt
+
+    so_ids = []
+    for so_id in list(base.get("so_ids", []) or []) + list(addon.get("so_ids", []) or []):
+        so_text = str(so_id or "").strip()
+        if so_text and so_text not in so_ids:
+            so_ids.append(so_text)
+    merged["so_ids"] = so_ids
+    merged["order_count"] = len(so_ids)
+
+    merged["due_date"] = min(
+        pd.to_datetime(base.get("due_date"), errors="coerce"),
+        pd.to_datetime(addon.get("due_date"), errors="coerce"),
+    )
+    merged["priority_rank"] = min(int(base.get("priority_rank", 9) or 9), int(addon.get("priority_rank", 9) or 9))
+    priority_candidates = sorted(
+        (
+            (int(order.get("priority_rank", 9) or 9), pd.to_datetime(order.get("due_date"), errors="coerce"), str(order.get("priority", "NORMAL")))
+            for order in combined_orders
+        ),
+        key=lambda item: (item[0], item[1]),
+    )
+    if priority_candidates:
+        merged["priority"] = priority_candidates[0][2]
+
+    sections = sorted(
+        pd.to_numeric(
+            pd.Series([order.get("section_mm") for order in combined_orders]),
+            errors="coerce",
+        ).dropna().astype(float).unique().tolist()
+    )
+    merged["section_mm"] = sections[0] if len(sections) == 1 else "MIX"
+    merged["sections_covered"] = ", ".join(f"{section:g}" for section in sections) if sections else ""
+
+    heats_info = _heats_needed_from_lines(
+        combined_orders,
+        bom=bom,
+        config=config,
+        yield_loss_pct=float(merged.get("yield_loss_pct", 0.0) or 0.0),
+        batch_size_mt=batch_size_mt,
+        return_details=True,
+    )
+    merged["heats"] = int(heats_info.get("heats", 1) or 1)
+    merged["heats_trace_valid"] = bool(heats_info.get("heats_trace_valid", True))
+    merged["heats_calc_warnings"] = heats_info.get("warnings", [])
+    merged["heats_calc_errors"] = heats_info.get("errors", [])
+    merged["heats_calc_method"] = (
+        "LEGACY_DIAGNOSTIC_ONLY"
+        if heats_info.get("used_legacy_estimate")
+        else "LEGACY_BLOCKED"
+        if heats_info.get("blocked_legacy_estimate")
+        else "BOM_TRACE"
+    )
+
+    min_mt = max(float(base.get("campaign_min_mt", 0.0) or 0.0), float(addon.get("campaign_min_mt", 0.0) or 0.0))
+    max_mt = max(float(base.get("campaign_max_mt", 0.0) or 0.0), float(addon.get("campaign_max_mt", 0.0) or 0.0))
+    merged["campaign_min_mt"] = min_mt
+    merged["campaign_max_mt"] = max_mt
+    merged["below_min_campaign"] = total_coil_mt < min_mt
+    merged["manual_campaign_split"] = bool(base.get("manual_campaign_split") or addon.get("manual_campaign_split"))
+    merged["utilization_merge_applied"] = True
+    return merged
+
+
+def _merge_underfilled_campaigns(
+    campaigns: list,
+    *,
+    bom: pd.DataFrame | None = None,
+    config: dict | None = None,
+    batch_size_mt: float = 50.0,
+) -> list:
+    if not campaigns:
+        return []
+    if len(campaigns) == 1:
+        return campaigns
+
+    merged_campaigns: list[dict] = []
+    for campaign in campaigns:
+        if not merged_campaigns:
+            merged_campaigns.append(campaign)
+            continue
+
+        previous = merged_campaigns[-1]
+        previous_manual_id = str(previous.get("manual_campaign_id", "")).strip()
+        current_manual_id = str(campaign.get("manual_campaign_id", "")).strip()
+        previous_group_mode = str(previous.get("manual_campaign_grouping_mode", "")).strip().upper()
+        current_group_mode = str(campaign.get("manual_campaign_grouping_mode", "")).strip().upper()
+        manual_locked = (
+            (previous_manual_id and previous_group_mode == "PRESERVE_EXACT")
+            or (current_manual_id and current_group_mode == "PRESERVE_EXACT")
+        )
+
+        same_key = _campaign_merge_key(previous) == _campaign_merge_key(campaign)
+        underfilled = bool(previous.get("below_min_campaign")) or bool(campaign.get("below_min_campaign"))
+        prev_max = float(previous.get("campaign_max_mt", 0.0) or 0.0)
+        curr_max = float(campaign.get("campaign_max_mt", 0.0) or 0.0)
+        positive_limits = [value for value in [prev_max, curr_max] if value > 0]
+        combined_max = min(positive_limits) if positive_limits else max(prev_max, curr_max, 1.0)
+        combined_mt = float(previous.get("total_coil_mt", 0.0) or 0.0) + float(campaign.get("total_coil_mt", 0.0) or 0.0)
+        can_fit = combined_mt <= combined_max + 1e-6
+
+        if same_key and underfilled and can_fit and not manual_locked:
+            merged_campaigns[-1] = _merge_campaign_pair(
+                previous,
+                campaign,
+                bom=bom,
+                config=config,
+                batch_size_mt=batch_size_mt,
+            )
+            continue
+
+        merged_campaigns.append(campaign)
+
+    return merged_campaigns
+
+
 def _ordered_production_orders(campaign: dict) -> list:
     return sorted(
         campaign.get("production_orders", []),
@@ -630,6 +815,7 @@ def _finalize_campaign(
     campaign_lines: list,
     campaign_num: int,
     min_campaign_mt: float,
+    max_campaign_mt: float | None = None,
     bom: pd.DataFrame | None = None,
     config: dict | None = None,
     campaign_config: pd.DataFrame | None = None,
@@ -698,6 +884,8 @@ def _finalize_campaign(
         "inventory_after": {},
         "yield_loss_pct": float(yield_loss_pct or 0.0),
         "below_min_campaign": total_coil_mt < float(min_campaign_mt or 0.0),
+        "campaign_min_mt": float(min_campaign_mt or 0.0),
+        "campaign_max_mt": float(max_campaign_mt or 0.0),
         "heats_calc_method": (
             "LEGACY_DIAGNOSTIC_ONLY"
             if heats_info["used_legacy_estimate"]
@@ -835,6 +1023,7 @@ def build_campaigns(
                             manual_lines,
                             campaign_num,
                             group_min_campaign_mt,
+                            max_campaign_mt=group_max_campaign_mt,
                             bom=bom,
                             config=config,
                             campaign_config=campaign_config,
@@ -864,6 +1053,7 @@ def build_campaigns(
                         lines,
                         campaign_num,
                         group_min_campaign_mt,
+                        max_campaign_mt=group_max_campaign_mt,
                         bom=bom,
                         config=config,
                         campaign_config=campaign_config,
@@ -885,7 +1075,15 @@ def build_campaigns(
                     if available_slot <= 1e-6:
                         _flush_manual()
                         available_slot = group_max_campaign_mt
-                    alloc_qty = min(remaining_qty, available_slot)
+                    alloc_qty = _alloc_qty_with_urgency(
+                        remaining_qty=remaining_qty,
+                        available_slot=available_slot,
+                        current_total=current_total,
+                        priority=str(order["Priority"]),
+                        priority_rank_value=int(order["Priority_Rank"]),
+                        group_max_campaign_mt=group_max_campaign_mt,
+                        config=config,
+                    )
                     current_lines.append({
                         "so_id": str(order["SO_ID"]),
                         "sku_id": str(order["SKU_ID"]),
@@ -951,6 +1149,7 @@ def build_campaigns(
                     current_lines,
                     campaign_num,
                     group_min_campaign_mt,
+                    max_campaign_mt=group_max_campaign_mt,
                     bom=bom,
                     config=config,
                     campaign_config=campaign_config,
@@ -970,7 +1169,15 @@ def build_campaigns(
                     flush_campaign()
                     available_slot = group_max_campaign_mt
 
-                alloc_qty = min(remaining_qty, available_slot)
+                alloc_qty = _alloc_qty_with_urgency(
+                    remaining_qty=remaining_qty,
+                    available_slot=available_slot,
+                    current_total=current_total,
+                    priority=str(order["Priority"]),
+                    priority_rank_value=int(order["Priority_Rank"]),
+                    group_max_campaign_mt=group_max_campaign_mt,
+                    config=config,
+                )
                 current_lines.append(
                     {
                         "so_id": str(order["SO_ID"]),
@@ -995,6 +1202,13 @@ def build_campaigns(
         flush_campaign()
 
     campaigns = sorted(campaigns, key=_campaign_sort_key)
+    if _config_flag(config, "Enable_Underfilled_Campaign_Merge", default=True):
+        campaigns = _merge_underfilled_campaigns(
+            campaigns,
+            bom=bom,
+            config=config,
+            batch_size_mt=batch_size_mt,
+        )
 
     # Check for missing BOM - can't verify material constraints, must hold
     if bom is None or getattr(bom, "empty", True):

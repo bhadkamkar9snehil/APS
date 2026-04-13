@@ -10,15 +10,15 @@ import { cn } from "@/lib/utils"
 
 const TABS = [
   { code: "DB", label: "Dashboard", path: "/" },
-  { code: "CP", label: "Campaigns", path: "/campaigns" },
-  { code: "GS", label: "Schedule", path: "/schedule" },
-  { code: "SO", label: "Sales Orders", path: "/orders" },
-  { code: "EQ", label: "Dispatch", path: "/dispatch" },
+  { code: "CP", label: "Planning", path: "/campaigns" },
+  { code: "BM", label: "BOM", path: "/bom" },
   { code: "MT", label: "Material", path: "/material" },
+  { code: "GS", label: "Schedule", path: "/schedule" },
+  { code: "SO", label: "Orders", path: "/orders" },
+  { code: "EQ", label: "Dispatch", path: "/dispatch" },
   { code: "CM", label: "Capacity", path: "/capacity" },
-  { code: "WF", label: "Scenarios", path: "/scenarios" },
   { code: "CT", label: "CTP", path: "/ctp" },
-  { code: "BM", label: "BOM Explosion", path: "/bom" },
+  { code: "WF", label: "Scenarios", path: "/scenarios" },
   { code: "MD", label: "Master Data", path: "/master-data" },
 ] as const
 

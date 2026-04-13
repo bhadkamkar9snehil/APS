@@ -1418,15 +1418,45 @@ def _scenario_is_on_time(scenario: dict | None) -> bool:
     return bool(scenario.get("exact_requested_qty_feasible")) and bool(scenario.get("exact_requested_date_feasible"))
 
 
+def _inventory_lineage_rank(status: str) -> int:
+    status_key = _safe_str(status).upper()
+    if status_key in {"AUTHORITATIVE_SNAPSHOT_CHAIN", "NO_COMMITTED_CAMPAIGNS"}:
+        return 0
+    if status_key == "RECOMPUTED_FROM_CONSUMPTION":
+        return 1
+    if status_key == "CONSERVATIVE_BLEND":
+        return 2
+    return 3
+
+
 def _scenario_rank_key(scenario: dict | None, config: dict | None = None) -> tuple:
     scenario = scenario or {}
     decision_class = _safe_str(scenario.get("decision_class"))
     precedence = _decision_precedence_lookup(config).get(decision_class, 999)
-    promised_qty = -float(scenario.get("promised_qty_mt", 0.0) or 0.0)
+    promised_qty = float(scenario.get("promised_qty_mt", 0.0) or 0.0)
     promised_date = _coerce_timestamp(scenario.get("promised_completion_date")) or pd.Timestamp.max
     confidence_rank = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}.get(_safe_str(scenario.get("promise_confidence")).upper(), 9)
+    feasible_rank = 0 if bool(scenario.get("exact_requested_qty_feasible")) else 1
+    on_time_rank = 0 if bool(scenario.get("exact_requested_date_feasible")) else 1
+    lineage_rank = _inventory_lineage_rank(scenario.get("inventory_lineage_status"))
+    shortage_penalty = int(len(scenario.get("material_gaps", []) or []))
+    lateness_days = float(scenario.get("lateness_days", 0.0) or 0.0)
+    # Prefer merge alternatives only as a late tie-breaker so feasibility and confidence dominate.
     merge_penalty = 0 if scenario.get("merged_campaign_ids") else 1
-    return (precedence, promised_date, promised_qty, confidence_rank, merge_penalty)
+    # Higher promised quantity is better, so rank uses negative quantity after feasibility/confidence.
+    qty_rank = -promised_qty
+    return (
+        precedence,
+        feasible_rank,
+        on_time_rank,
+        confidence_rank,
+        lineage_rank,
+        shortage_penalty,
+        round(lateness_days, 3),
+        promised_date,
+        qty_rank,
+        merge_penalty,
+    )
 
 
 def _find_max_qty_by_date(

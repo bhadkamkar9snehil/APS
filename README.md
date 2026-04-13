@@ -37,6 +37,27 @@ The main planning model is:
 
 The workbook is both input source and persistence layer. The API reads workbook sheets, runs planning logic, and writes planning outputs back into workbook-backed artifacts.
 
+### Entity Model Alignment (Planner Mental Model)
+
+- `Sales Order (SO)` is the demand input.
+- `Planning Order (PO)` is the planner-controlled lot candidate generated from selected SOs.
+- `Heat Batch` is the SMS execution batch derived from Planning Orders.
+- `Campaign` is the schedule/material aggregation container used by scheduler/material/CTP internals.
+
+Tab usage intent:
+
+- `Planning` is SO → PO → Heat orchestration.
+- `Material` can be viewed by Campaign / Planning Order / Heat, but the decision is still release-readiness.
+- `BOM` is total-plan requirement analysis, not release-readiness.
+- `Execution` is released schedule/dispatch tracking.
+
+### API vs Workbook Expectations (Very Important)
+
+- REST runs (`/api/aps/schedule/run`, planning simulate/release flows, CTP checks) primarily update active in-memory run artifacts used by the UI.
+- The workbook remains the master data source, but not every API action immediately rewrites every workbook output tab.
+- If API and workbook sheets appear different right after a run, the API-backed UI state is usually newer.
+- Treat workbook writeback/export as an explicit step, not an implicit side-effect of every UI action.
+
 ## How The Software Works Internally
 
 The system is workbook-first, not database-first.

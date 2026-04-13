@@ -455,7 +455,9 @@ def _load_all() -> dict:
         & so_raw["Delivery_Date"].notna()
     ].copy()
 
-    open_mask = so_raw["Status"].astype(str).str.strip().str.upper().isin({"OPEN", "CONFIRMED", "PLANNED", ""})
+    campaign_group = so_raw.get("Campaign_Group", "").fillna("").astype(str).str.strip().str.upper()
+    aps_released = campaign_group.eq("APS_RELEASED")
+    open_mask = so_raw["Status"].astype(str).str.strip().str.upper().isin({"OPEN", "CONFIRMED", "PLANNED", ""}) & ~aps_released
     open_so = so_raw[open_mask].copy()
     if open_so.empty:
         open_so = so_raw.copy()
@@ -574,6 +576,27 @@ def _set_active_run_artifact(run_id: str) -> bool:
         _active_run_id = run_id
         return True
     return False
+
+
+def _invalidate_active_run_cache(*, clear_simulation: bool = False) -> None:
+    """Clear run artifact/cache snapshots after planning-state mutations."""
+    global _active_run_id
+    _active_run_id = None
+    _run_artifacts.clear()
+    _state["run_id"] = None
+    _state["campaigns"] = []
+    _state["heat_schedule"] = pd.DataFrame()
+    _state["camp_schedule"] = pd.DataFrame()
+    _state["capacity"] = pd.DataFrame()
+    _state["material_plan_data"] = None
+    _state["bom_explosion"] = None
+    _state["solver_status"] = "NOT RUN"
+    _state["solver_detail"] = "Planning state changed. Re-run simulation/schedule."
+
+    if clear_simulation:
+        aps_planning_simulate._last_result = None
+        aps_planning_simulate._scheduler_inputs = []
+        aps_planning_simulate._heat_batches = []
 
 
 # ----- Active run reader utilities -----
@@ -799,21 +822,324 @@ def _schedule_rows() -> List[Dict[str, Any]]:
     return _df_to_records(_active_run_heat_schedule())
 
 
+def _infer_operation_group(resource_id: str, resources_df: pd.DataFrame | None = None) -> str:
+    rid = str(resource_id or "").strip()
+    if not rid:
+        return ""
+    rid_upper = rid.upper()
+    if resources_df is not None and not getattr(resources_df, "empty", True):
+        if "Resource_ID" in resources_df.columns and "Operation_Group" in resources_df.columns:
+            rows = resources_df.copy()
+            rows["Resource_ID"] = rows["Resource_ID"].astype(str).str.strip().str.upper()
+            rows["Operation_Group"] = rows["Operation_Group"].astype(str).str.strip().str.upper()
+            match = rows.loc[rows["Resource_ID"] == rid_upper, "Operation_Group"]
+            if not match.empty and str(match.iloc[0]).strip():
+                return str(match.iloc[0]).strip().upper()
+
+    if rid_upper.startswith("EAF"):
+        return "EAF"
+    if rid_upper.startswith("LRF"):
+        return "LRF"
+    if rid_upper.startswith("VD"):
+        return "VD"
+    if rid_upper.startswith("CCM"):
+        return "CCM"
+    if rid_upper.startswith("RM"):
+        return "RM"
+    return ""
+
+
+def _derive_capacity_status(util_pct: float) -> str:
+    if util_pct > 100.0:
+        return "OVERLOADED"
+    if util_pct < 60.0:
+        return "UNDERUTILISED"
+    if util_pct > 85.0:
+        return "HIGH"
+    return "OK"
+
+
 def _capacity_rows() -> List[Dict[str, Any]]:
-    return _df_to_records(_active_run_capacity())
+    rows = _df_to_records(_active_run_capacity())
+    if not rows:
+        return []
+
+    resources_df = None
+    try:
+        resources_df = _load_all().get("resources")
+    except Exception:
+        resources_df = None
+
+    enriched: List[Dict[str, Any]] = []
+    for row in rows:
+        normalized = dict(row or {})
+        rid = str(
+            normalized.get("Resource_ID")
+            or normalized.get("resource_id")
+            or ""
+        ).strip()
+
+        demand_hrs = float(normalized.get("Demand_Hrs") or normalized.get("demand_hrs") or 0.0)
+        process_hrs = float(normalized.get("Process_Hrs") or normalized.get("process_hrs") or 0.0)
+        setup_hrs = float(normalized.get("Setup_Hrs") or normalized.get("setup_hrs") or 0.0)
+        changeover_hrs = float(normalized.get("Changeover_Hrs") or normalized.get("changeover_hrs") or 0.0)
+        task_count = int(float(normalized.get("Task_Count") or normalized.get("task_count") or 0))
+
+        avail_hrs = float(
+            normalized.get("Avail_Hrs_14d")
+            or normalized.get("avail_hrs")
+            or normalized.get("Avail_Hours")
+            or 0.0
+        )
+        if avail_hrs <= 0:
+            avail_day = float(normalized.get("Avail_Hours_Day") or normalized.get("avail_hours_day") or 0.0)
+            if avail_day > 0:
+                avail_hrs = avail_day * 14.0
+
+        util_pct = float(normalized.get("Utilisation_%") or normalized.get("utilisation") or 0.0)
+        if avail_hrs > 0 and util_pct <= 0:
+            util_pct = (demand_hrs / avail_hrs) * 100.0
+
+        idle_hrs = float(normalized.get("Idle_Hrs") or max(avail_hrs - demand_hrs, 0.0))
+        overload_hrs = float(normalized.get("Overload_Hrs") or max(demand_hrs - avail_hrs, 0.0))
+        operation_group = str(
+            normalized.get("Operation_Group")
+            or normalized.get("Operation")
+            or _infer_operation_group(rid, resources_df=resources_df)
+        ).strip()
+        status = str(normalized.get("Status") or _derive_capacity_status(util_pct)).strip().upper()
+
+        normalized.update(
+            {
+                "Resource_ID": rid,
+                "Operation_Group": operation_group,
+                "Demand_Hrs": round(demand_hrs, 2),
+                "Process_Hrs": round(process_hrs, 2),
+                "Setup_Hrs": round(setup_hrs, 2),
+                "Changeover_Hrs": round(changeover_hrs, 2),
+                "Task_Count": task_count,
+                "Avail_Hrs_14d": round(avail_hrs, 2),
+                "Idle_Hrs": round(idle_hrs, 2),
+                "Overload_Hrs": round(overload_hrs, 2),
+                "Utilisation_%": round(util_pct, 1),
+                "Status": status,
+            }
+        )
+        enriched.append(normalized)
+
+    return enriched
 
 
-def _material_plan_payload() -> Dict[str, Any]:
+def _masterdata_health_summary(audit_payload: Dict[str, Any]) -> Dict[str, Any]:
+    checks: List[Dict[str, Any]] = []
+
+    def add_check(level: str, code: str, title: str, count: int, detail: str) -> None:
+        checks.append(
+            {
+                "level": str(level).lower(),
+                "code": str(code).upper(),
+                "title": title,
+                "count": int(max(count, 0)),
+                "detail": detail,
+            }
+        )
+
+    master_sheets = audit_payload.get("master_sheets", {}) if isinstance(audit_payload, dict) else {}
+    missing_sheets = [name for name, report in master_sheets.items() if not bool((report or {}).get("exists"))]
+    if missing_sheets:
+        add_check(
+            "critical",
+            "MISSING_MASTER_SHEETS",
+            "Missing master-data sheets",
+            len(missing_sheets),
+            f"Missing: {', '.join(sorted(missing_sheets)[:8])}",
+        )
+    else:
+        add_check("ok", "MASTER_SHEETS_PRESENT", "All expected master-data sheets present", 0, "No missing sheets.")
+
+    missing_columns: List[str] = []
+    for sheet_name, report in (master_sheets or {}).items():
+        for col in (report or {}).get("used_columns_missing", []) or []:
+            missing_columns.append(f"{sheet_name}.{col}")
+    if missing_columns:
+        add_check(
+            "critical",
+            "MISSING_USED_COLUMNS",
+            "Required columns missing",
+            len(missing_columns),
+            ", ".join(missing_columns[:8]),
+        )
+    else:
+        add_check("ok", "MASTER_COLUMNS_OK", "Required master columns are present", 0, "No required-column gaps.")
+
+    config_dupes = (audit_payload or {}).get("config_duplicates", {}) if isinstance(audit_payload, dict) else {}
+    conflict_count = int(len((config_dupes or {}).get("conflicts", []) or []))
+    if conflict_count > 0:
+        add_check(
+            "warning",
+            "CONFIG_CONFLICTS",
+            "Config value conflicts",
+            conflict_count,
+            "Algorithm_Config and Config contain conflicting keys. Review merged runtime config.",
+        )
+    else:
+        add_check("ok", "CONFIG_CONFLICT_FREE", "No config conflicts detected", 0, "Config sheets are aligned.")
+
+    try:
+        data = _load_all()
+        resources = data.get("resources", pd.DataFrame())
+        routing = data.get("routing", pd.DataFrame())
+        queue_times = data.get("queue_times", {}) or {}
+        all_orders = data.get("all_orders", pd.DataFrame())
+
+        inactive_count = 0
+        stale_capacity_count = 0
+        resource_ops: set[str] = set()
+        if resources is not None and not getattr(resources, "empty", True):
+            if "Status" in resources.columns:
+                status = resources["Status"].fillna("").astype(str).str.strip().str.upper()
+                inactive_count = int(status.isin({"INACTIVE", "DOWN", "DISABLED"}).sum())
+            if "Avail_Hours_Day" in resources.columns:
+                avail = pd.to_numeric(resources["Avail_Hours_Day"], errors="coerce").fillna(0.0)
+                stale_capacity_count = int((avail <= 0).sum())
+            if "Operation_Group" in resources.columns:
+                resource_ops = {
+                    str(op).strip().upper()
+                    for op in resources["Operation_Group"].fillna("").astype(str)
+                    if str(op).strip()
+                }
+        if inactive_count > 0 or stale_capacity_count > 0:
+            add_check(
+                "warning",
+                "RESOURCE_HEALTH_WARN",
+                "Inactive or stale resources detected",
+                inactive_count + stale_capacity_count,
+                f"Inactive/Down={inactive_count}, non-positive available hours={stale_capacity_count}.",
+            )
+        else:
+            add_check("ok", "RESOURCE_HEALTH_OK", "Resource master health is clean", 0, "No stale/inactive resource issues.")
+
+        routing_ops: set[str] = set()
+        setup_missing_ops: List[str] = []
+        if routing is not None and not getattr(routing, "empty", True):
+            if "Operation" in routing.columns:
+                routing_ops = {
+                    str(op).strip().upper()
+                    for op in routing["Operation"].fillna("").astype(str)
+                    if str(op).strip()
+                }
+            if {"Operation", "Setup_Time_Min"}.issubset(set(routing.columns)):
+                rt = routing.copy()
+                rt["Operation"] = rt["Operation"].fillna("").astype(str).str.strip().str.upper()
+                rt["Setup_Time_Min"] = pd.to_numeric(rt["Setup_Time_Min"], errors="coerce").fillna(0.0)
+                for op, grp in rt.groupby("Operation", sort=False):
+                    if op and float(grp["Setup_Time_Min"].max()) <= 0.0:
+                        setup_missing_ops.append(op)
+
+        required_ops = {"EAF", "LRF", "CCM", "RM"}
+        if all_orders is not None and not getattr(all_orders, "empty", True):
+            so = all_orders.copy()
+            route_variant = so.get("Route_Variant")
+            needs_vd = so.get("Needs_VD")
+            needs_vd_flag = False
+            if route_variant is not None:
+                rv = route_variant.fillna("").astype(str).str.strip().str.upper()
+                needs_vd_flag = bool(rv.eq("Y").any())
+            if not needs_vd_flag and needs_vd is not None:
+                nv = needs_vd.fillna("").astype(str).str.strip().str.upper()
+                needs_vd_flag = bool(nv.isin({"Y", "YES", "TRUE", "1", "ON"}).any())
+            if needs_vd_flag:
+                required_ops.add("VD")
+
+        missing_in_routing = sorted(op for op in required_ops if op not in routing_ops)
+        missing_in_resources = sorted(op for op in required_ops if op not in resource_ops)
+        if missing_in_routing or missing_in_resources:
+            add_check(
+                "critical",
+                "ROUTING_RESOURCE_GAPS",
+                "Routing/resource operation coverage gaps",
+                len(missing_in_routing) + len(missing_in_resources),
+                f"Missing in Routing={missing_in_routing or ['None']}; missing in Resource_Master={missing_in_resources or ['None']}.",
+            )
+        else:
+            add_check(
+                "ok",
+                "ROUTING_RESOURCE_COVERAGE_OK",
+                "Routing and resources cover required operations",
+                0,
+                "Required operation coverage is complete.",
+            )
+
+        if setup_missing_ops:
+            add_check(
+                "warning",
+                "SETUP_TIME_MISSING",
+                "Required setup-time warnings",
+                len(setup_missing_ops),
+                f"Operations with zero setup defaults: {', '.join(setup_missing_ops[:8])}",
+            )
+        else:
+            add_check("ok", "SETUP_TIME_OK", "Setup-time defaults are present", 0, "No setup-time gaps found.")
+
+        expected_pairs = [("EAF", "LRF"), ("CCM", "RM")]
+        if "VD" in required_ops:
+            expected_pairs.extend([("LRF", "VD"), ("VD", "CCM")])
+        else:
+            expected_pairs.append(("LRF", "CCM"))
+
+        missing_queue_pairs = [pair for pair in expected_pairs if pair not in queue_times]
+        invalid_queue_rules = []
+        for pair, rule in queue_times.items():
+            try:
+                min_q = float((rule or {}).get("min", 0) or 0)
+                max_q = float((rule or {}).get("max", 9999) or 9999)
+                if max_q < min_q:
+                    invalid_queue_rules.append((pair, f"min {min_q:g} > max {max_q:g}"))
+            except Exception:
+                invalid_queue_rules.append((pair, "rule parse error"))
+
+        if missing_queue_pairs or invalid_queue_rules:
+            add_check(
+                "warning",
+                "QUEUE_TIME_WARN",
+                "Queue-time coverage/validity warnings",
+                len(missing_queue_pairs) + len(invalid_queue_rules),
+                f"Missing pairs={missing_queue_pairs[:4]}; invalid rules={invalid_queue_rules[:4]}",
+            )
+        else:
+            add_check("ok", "QUEUE_TIME_OK", "Queue-time rules look valid", 0, "No queue-time gaps detected.")
+
+    except Exception as exc:
+        add_check(
+            "warning",
+            "HEALTH_CHECK_PARTIAL",
+            "Master-data runtime health checks partially unavailable",
+            1,
+            f"Runtime checks could not complete: {exc}",
+        )
+
+    critical_count = sum(1 for item in checks if item.get("level") == "critical")
+    warning_count = sum(1 for item in checks if item.get("level") == "warning")
+    ok_count = sum(1 for item in checks if item.get("level") == "ok")
+    return {
+        "critical_count": critical_count,
+        "warning_count": warning_count,
+        "ok_count": ok_count,
+        "checks": checks,
+        "generated_at": datetime.now().isoformat(),
+    }
+
+
+def _material_plan_payload(detail_level: str = "campaign") -> Dict[str, Any]:
+    requested_level = _normalize_material_detail_level(detail_level)
     payload = _active_run_material()
-    if payload and (payload.get("campaigns") or payload.get("summary")):
-        return payload
-    if _state.get("material_plan_data"):
-        return _state["material_plan_data"]
-    return _workbook_material_plan_payload()
+    if not payload or not (payload.get("campaigns") or payload.get("summary")):
+        payload = _state.get("material_plan_data") or _workbook_material_plan_payload()
+    return _material_plan_for_detail_level(payload or {}, requested_level)
 
 
 def _material_holds_payload() -> List[Dict[str, Any]]:
-    payload = _material_plan_payload()
+    payload = _material_plan_payload(detail_level="campaign")
     items: List[Dict[str, Any]] = []
     for camp in payload.get("campaigns", []):
         shortage_qty = float(camp.get("shortage_qty", 0.0) or 0.0)
@@ -821,6 +1147,50 @@ def _material_holds_payload() -> List[Dict[str, Any]]:
         if shortage_qty > 1e-9 or material_status not in {"", "OK", "READY"}:
             items.append(camp)
     return items
+
+
+def _planning_orders_release_signature(planning_orders: List[Dict[str, Any]]) -> str:
+    """Build a stable signature for schedule-affecting planning-order content."""
+    canonical: List[Dict[str, Any]] = []
+    for po in (planning_orders or []):
+        po_id = str(po.get("po_id", "")).strip()
+        if not po_id:
+            continue
+
+        raw_so_ids = po.get("selected_so_ids") or []
+        if isinstance(raw_so_ids, str):
+            raw_so_ids = [x.strip() for x in raw_so_ids.split(",") if str(x).strip()]
+        so_ids = sorted({
+            str(so_id).strip()
+            for so_id in raw_so_ids
+            if str(so_id).strip()
+        })
+        due_window = po.get("due_window") or ("", "")
+        if isinstance(due_window, list):
+            due_window = tuple(due_window)
+        if not isinstance(due_window, tuple) or len(due_window) < 2:
+            due_window = ("", "")
+
+        canonical.append(
+            {
+                "po_id": po_id,
+                "selected_so_ids": so_ids,
+                "total_qty_mt": round(float(po.get("total_qty_mt", 0) or 0), 3),
+                "grade_family": str(po.get("grade_family", "")).strip(),
+                "size_family": str(po.get("size_family", "")).strip(),
+                "due_start": str(due_window[0] or "").strip(),
+                "due_end": str(due_window[1] or "").strip(),
+                "route_family": str(po.get("route_family", "SMS→RM")).strip() or "SMS→RM",
+                "heats_required": int(po.get("heats_required", 0) or 0),
+                "frozen_flag": bool(po.get("frozen_flag", False)),
+                "order_type": str(po.get("order_type", "MTO")).strip().upper() or "MTO",
+                "rolling_mode": str(po.get("rolling_mode", "HOT")).strip().upper() or "HOT",
+                "priority": str(po.get("priority", "NORMAL")).strip().upper() or "NORMAL",
+            }
+        )
+
+    canonical.sort(key=lambda row: row["po_id"])
+    return json.dumps(canonical, sort_keys=True, separators=(",", ":"))
 
 
 def _dispatch_rows() -> List[Dict[str, Any]]:
@@ -1846,6 +2216,533 @@ def _calculate_material_plan(
             "run_id": run_id,
         }
 
+
+def _normalize_material_detail_level(value: Any) -> str:
+    level = str(value or "campaign").strip().lower()
+    if level in {"campaign", "campaigns"}:
+        return "campaign"
+    if level in {"po", "planning_order", "planning-order", "planning_orders", "planning-orders"}:
+        return "po"
+    if level in {"heat", "heats"}:
+        return "heat"
+    return "campaign"
+
+
+def _material_float(value: Any, default: float = 0.0) -> float:
+    try:
+        parsed = pd.to_numeric(pd.Series([value]), errors="coerce").fillna(default).iloc[0]
+        return float(parsed)
+    except Exception:
+        return float(default)
+
+
+def _material_rows_from_entity(entity: Dict[str, Any]) -> List[Dict[str, Any]]:
+    rows = list(entity.get("materials") or [])
+    if rows:
+        normalized = []
+        for row in rows:
+            sku_id = str(row.get("material_sku") or row.get("sku_id") or "").strip()
+            if not sku_id:
+                continue
+            gross_required_qty = _material_float(row.get("gross_required_qty") or row.get("required_qty") or 0.0)
+            available_before = _material_float(row.get("available_before") or 0.0)
+            inventory_covered_qty = _material_float(
+                row.get("inventory_covered_qty")
+                if row.get("inventory_covered_qty") is not None
+                else max(min(gross_required_qty, available_before), 0.0)
+            )
+            shortage_qty = _material_float(row.get("shortage_qty") or 0.0)
+            make_convert_qty = _material_float(
+                row.get("make_convert_qty")
+                if row.get("make_convert_qty") is not None
+                else max(gross_required_qty - inventory_covered_qty - shortage_qty, 0.0)
+            )
+            consumed_qty = _material_float(row.get("consumed_qty") or row.get("consumed") or 0.0)
+            remaining_after = _material_float(row.get("remaining_after") or 0.0)
+            material_type = str(row.get("material_type") or "Material")
+            plant = str(row.get("plant") or "Unassigned")
+            status = str(row.get("status") or row.get("type") or "COVERED")
+
+            normalized.append(
+                {
+                    "material_sku": sku_id,
+                    "material_name": str(row.get("material_name") or sku_id),
+                    "material_category": str(row.get("material_category") or ""),
+                    "material_type": material_type,
+                    "plant": plant,
+                    "stage": str(row.get("stage") or _stage_for_sku(sku_id, material_type)),
+                    "gross_required_qty": round(gross_required_qty, 3),
+                    "required_qty": round(gross_required_qty, 3),
+                    "available_before": round(available_before, 3),
+                    "inventory_covered_qty": round(inventory_covered_qty, 3),
+                    "make_convert_qty": round(make_convert_qty, 3),
+                    "consumed_qty": round(consumed_qty, 3),
+                    "consumed": round(consumed_qty, 3),
+                    "shortage_qty": round(shortage_qty, 3),
+                    "remaining_after": round(remaining_after, 3),
+                    "status": status,
+                }
+            )
+        return normalized
+
+    detail_rows = list(entity.get("detail_rows") or [])
+    normalized = []
+    for row in detail_rows:
+        sku_id = str(row.get("sku_id") or row.get("material_sku") or "").strip()
+        if not sku_id:
+            continue
+        gross_required_qty = _material_float(row.get("required_qty") or row.get("gross_required_qty") or 0.0)
+        available_before = _material_float(row.get("available_before") or 0.0)
+        inventory_covered_qty = _material_float(
+            row.get("inventory_covered_qty")
+            if row.get("inventory_covered_qty") is not None
+            else max(min(gross_required_qty, available_before), 0.0)
+        )
+        shortage_qty = _material_float(row.get("shortage_qty") or 0.0)
+        make_convert_qty = _material_float(
+            row.get("make_convert_qty")
+            if row.get("make_convert_qty") is not None
+            else max(gross_required_qty - inventory_covered_qty - shortage_qty, 0.0)
+        )
+        consumed_qty = _material_float(row.get("consumed_qty") or row.get("consumed") or 0.0)
+        remaining_after = _material_float(row.get("remaining_after") or 0.0)
+        material_type = str(row.get("material_type") or "Material")
+        plant = str(row.get("plant") or "Unassigned")
+        status = str(row.get("status") or row.get("type") or "COVERED")
+
+        normalized.append(
+            {
+                "material_sku": sku_id,
+                "material_name": str(row.get("material_name") or sku_id),
+                "material_category": str(row.get("material_category") or ""),
+                "material_type": material_type,
+                "plant": plant,
+                "stage": str(row.get("stage") or _stage_for_sku(sku_id, material_type)),
+                "gross_required_qty": round(gross_required_qty, 3),
+                "required_qty": round(gross_required_qty, 3),
+                "available_before": round(available_before, 3),
+                "inventory_covered_qty": round(inventory_covered_qty, 3),
+                "make_convert_qty": round(make_convert_qty, 3),
+                "consumed_qty": round(consumed_qty, 3),
+                "consumed": round(consumed_qty, 3),
+                "shortage_qty": round(shortage_qty, 3),
+                "remaining_after": round(remaining_after, 3),
+                "status": status,
+            }
+        )
+    return normalized
+
+
+def _material_rows_to_plants(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    by_plant: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        plant = str(row.get("plant") or "Unassigned")
+        bucket = by_plant.setdefault(
+            plant,
+            {
+                "plant": plant,
+                "required_qty": 0.0,
+                "inventory_covered_qty": 0.0,
+                "make_convert_qty": 0.0,
+                "shortage_qty": 0.0,
+                "rows": [],
+            },
+        )
+        bucket["required_qty"] += _material_float(row.get("gross_required_qty", 0.0) or 0.0)
+        bucket["inventory_covered_qty"] += _material_float(row.get("inventory_covered_qty", 0.0) or 0.0)
+        bucket["make_convert_qty"] += _material_float(row.get("make_convert_qty", 0.0) or 0.0)
+        bucket["shortage_qty"] += _material_float(row.get("shortage_qty", 0.0) or 0.0)
+        bucket["rows"].append(row)
+
+    plants: List[Dict[str, Any]] = []
+    for plant_name in sorted(by_plant.keys(), key=lambda p: _PLANT_SORT_ORDER.get(p, 99)):
+        bucket = by_plant[plant_name]
+        plants.append(
+            {
+                "plant": plant_name,
+                "required_qty": round(_material_float(bucket["required_qty"]), 3),
+                "inventory_covered_qty": round(_material_float(bucket["inventory_covered_qty"]), 3),
+                "make_convert_qty": round(_material_float(bucket["make_convert_qty"]), 3),
+                "shortage_qty": round(_material_float(bucket["shortage_qty"]), 3),
+                "rows": sorted(
+                    bucket["rows"],
+                    key=lambda r: (
+                        _MAT_TYPE_SORT_ORDER.get(str(r.get("material_type", "Material")), 99),
+                        str(r.get("material_sku", "")),
+                    ),
+                ),
+            }
+        )
+    return plants
+
+
+def _material_rows_to_detail_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [
+        {
+            "sku_id": str(r.get("material_sku") or ""),
+            "material_name": str(r.get("material_name") or r.get("material_sku") or ""),
+            "material_type": str(r.get("material_type") or "Material"),
+            "plant": str(r.get("plant") or "Unassigned"),
+            "required_qty": round(_material_float(r.get("gross_required_qty", 0.0) or 0.0), 3),
+            "available_before": round(_material_float(r.get("available_before", 0.0) or 0.0), 3),
+            "inventory_covered_qty": round(_material_float(r.get("inventory_covered_qty", 0.0) or 0.0), 3),
+            "make_convert_qty": round(_material_float(r.get("make_convert_qty", 0.0) or 0.0), 3),
+            "consumed_qty": round(_material_float(r.get("consumed_qty", 0.0) or 0.0), 3),
+            "shortage_qty": round(_material_float(r.get("shortage_qty", 0.0) or 0.0), 3),
+            "remaining_after": round(_material_float(r.get("remaining_after", 0.0) or 0.0), 3),
+            "status": str(r.get("status") or "COVERED"),
+            "type": str(r.get("status") or "COVERED"),
+        }
+        for r in rows
+    ]
+
+
+def _scaled_material_rows(rows: List[Dict[str, Any]], ratio: float) -> List[Dict[str, Any]]:
+    ratio = max(_material_float(ratio, 0.0), 0.0)
+    scaled: List[Dict[str, Any]] = []
+    for row in rows:
+        gross_required_qty = _material_float(row.get("gross_required_qty", 0.0) or 0.0) * ratio
+        available_before = _material_float(row.get("available_before", 0.0) or 0.0) * ratio
+        inventory_covered_qty = _material_float(row.get("inventory_covered_qty", 0.0) or 0.0) * ratio
+        make_convert_qty = _material_float(row.get("make_convert_qty", 0.0) or 0.0) * ratio
+        consumed_qty = _material_float(row.get("consumed_qty", 0.0) or 0.0) * ratio
+        shortage_qty = _material_float(row.get("shortage_qty", 0.0) or 0.0) * ratio
+        remaining_after = _material_float(row.get("remaining_after", 0.0) or 0.0) * ratio
+
+        if shortage_qty > 1e-6:
+            status = "SHORTAGE"
+        elif make_convert_qty > 1e-6 and inventory_covered_qty > 1e-6:
+            status = "PARTIAL COVER"
+        elif inventory_covered_qty > 1e-6 and make_convert_qty <= 1e-6:
+            status = "DRAWN FROM STOCK"
+        elif make_convert_qty > 1e-6:
+            status = "MAKE / CONVERT"
+        else:
+            status = "COVERED"
+
+        scaled.append(
+            {
+                **row,
+                "gross_required_qty": round(gross_required_qty, 3),
+                "required_qty": round(gross_required_qty, 3),
+                "available_before": round(available_before, 3),
+                "inventory_covered_qty": round(inventory_covered_qty, 3),
+                "make_convert_qty": round(make_convert_qty, 3),
+                "consumed_qty": round(consumed_qty, 3),
+                "consumed": round(consumed_qty, 3),
+                "shortage_qty": round(shortage_qty, 3),
+                "remaining_after": round(remaining_after, 3),
+                "status": status,
+            }
+        )
+    return scaled
+
+
+def _material_summary_from_entities(entities: List[Dict[str, Any]], detail_level: str) -> Dict[str, Any]:
+    entity_label = {
+        "campaign": "Campaigns",
+        "po": "Planning Orders",
+        "heat": "Heats",
+    }.get(detail_level, "Campaigns")
+
+    total_required = sum(_material_float(x.get("required_qty", 0.0) or 0.0) for x in entities)
+    total_shortages = sum(_material_float(x.get("shortage_qty", 0.0) or 0.0) for x in entities)
+    total_inventory_covered = sum(_material_float(x.get("inventory_covered_qty", 0.0) or 0.0) for x in entities)
+    total_make_convert = sum(_material_float(x.get("make_convert_qty", 0.0) or 0.0) for x in entities)
+    released_count = sum(1 for x in entities if "RELEASED" in str(x.get("release_status", "")).upper())
+    held_count = sum(1 for x in entities if "HOLD" in str(x.get("release_status", "")).upper())
+    shortage_count = sum(1 for x in entities if _material_float(x.get("shortage_qty", 0.0) or 0.0) > 1e-6)
+    error_count = sum(1 for x in entities if not bool(x.get("feasible", True)))
+
+    return {
+        entity_label: len(entities),
+        "Released": released_count,
+        "Held": held_count,
+        "Shortage Lines": shortage_count,
+        "BOM Structure Errors": error_count,
+        "Total Required Qty": round(total_required, 3),
+        "Inventory Covered Qty": round(total_inventory_covered, 3),
+        "Shortage Qty": round(total_shortages, 3),
+        "Make / Convert Qty": round(total_make_convert, 3),
+    }
+
+
+def _material_plan_for_detail_level(base_payload: Dict[str, Any], detail_level: str) -> Dict[str, Any]:
+    requested_level = _normalize_material_detail_level(detail_level)
+    base_campaigns = list(base_payload.get("campaigns") or [])
+    run_id = base_payload.get("run_id")
+
+    if requested_level == "campaign":
+        payload = dict(base_payload)
+        payload["detail_level"] = "campaign"
+        payload["entity_type"] = "campaign"
+        payload["entities"] = list(payload.get("campaigns") or [])
+        return payload
+
+    campaign_map = {
+        str(c.get("campaign_id") or "").strip(): dict(c)
+        for c in base_campaigns
+        if str(c.get("campaign_id") or "").strip()
+    }
+    planning_orders = list(getattr(aps_planning_orders_propose, "_planning_orders", []) or [])
+    po_map = {
+        str(po.get("po_id") or "").strip(): dict(po)
+        for po in planning_orders
+        if str(po.get("po_id") or "").strip()
+    }
+
+    def _material_due_fields(source: Dict[str, Any]) -> tuple[str, str, List[str]]:
+        raw_window = source.get("due_window") or ("", "")
+        if isinstance(raw_window, list):
+            raw_window = tuple(raw_window)
+        if not isinstance(raw_window, tuple):
+            raw_window = ("", "")
+        due_start = str(raw_window[0] if len(raw_window) >= 1 else "").strip()
+        due_end = str(raw_window[1] if len(raw_window) >= 2 else "").strip()
+        fallback_due = str(source.get("due_end") or source.get("due_date") or source.get("Due_Date") or "").strip()
+        if not due_end and fallback_due:
+            due_end = fallback_due
+        if not due_start and due_end:
+            due_start = due_end
+        return due_start, due_end, [due_start, due_end]
+
+    po_entities: List[Dict[str, Any]] = []
+    if planning_orders:
+        for po in planning_orders:
+            po_id = str(po.get("po_id") or "").strip()
+            if not po_id:
+                continue
+            base_entity = dict(campaign_map.get(po_id) or {})
+            planner_status = str(po.get("planner_status") or "PROPOSED").strip().upper()
+            release_status = base_entity.get("release_status")
+            if not release_status:
+                release_status = "RELEASED" if planner_status == "RELEASED" else "PLANNED"
+
+            required_qty = _material_float(base_entity.get("required_qty") or po.get("total_qty_mt") or 0.0)
+            materials = _material_rows_from_entity(base_entity)
+            plants = list(base_entity.get("plants") or _material_rows_to_plants(materials))
+            detail_rows = list(base_entity.get("detail_rows") or _material_rows_to_detail_rows(materials))
+            due_start, due_end, due_window = _material_due_fields(po)
+            if not due_start and not due_end:
+                due_start, due_end, due_window = _material_due_fields(base_entity)
+            priority = str(
+                po.get("priority")
+                or po.get("Priority")
+                or base_entity.get("priority")
+                or base_entity.get("Priority")
+                or "NORMAL"
+            ).strip().upper() or "NORMAL"
+
+            entity = {
+                "entity_id": po_id,
+                "planning_order_id": po_id,
+                "campaign_id": str(base_entity.get("campaign_id") or po_id),
+                "grade": str(base_entity.get("grade") or po.get("grade_family") or ""),
+                "release_status": str(release_status),
+                "required_qty": round(required_qty, 3),
+                "shortage_qty": round(_material_float(base_entity.get("shortage_qty") or 0.0), 3),
+                "inventory_covered_qty": round(_material_float(base_entity.get("inventory_covered_qty") or 0.0), 3),
+                "make_convert_qty": round(_material_float(base_entity.get("make_convert_qty") or 0.0), 3),
+                "material_status": str(base_entity.get("material_status") or "UNREVIEWED"),
+                "feasible": bool(base_entity.get("feasible", True)),
+                "material_structure_errors": list(base_entity.get("material_structure_errors") or []),
+                "material_shortages": dict(base_entity.get("material_shortages") or {}),
+                "material_consumed": dict(base_entity.get("material_consumed") or {}),
+                "material_gross_requirements": dict(base_entity.get("material_gross_requirements") or {}),
+                "inventory_before": dict(base_entity.get("inventory_before") or {}),
+                "inventory_after": dict(base_entity.get("inventory_after") or {}),
+                "materials": materials,
+                "plants": plants,
+                "detail_rows": detail_rows,
+                "selected_so_ids": list(po.get("selected_so_ids") or []),
+                "heats_required": int(po.get("heats_required") or 0),
+                "planner_status": planner_status,
+                "priority": priority,
+                "due_start": due_start,
+                "due_end": due_end,
+                "due_window": due_window,
+            }
+            po_entities.append(entity)
+    else:
+        for camp in base_campaigns:
+            cid = str(camp.get("campaign_id") or "").strip()
+            if not cid:
+                continue
+            entity = dict(camp)
+            due_start, due_end, due_window = _material_due_fields(entity)
+            entity["priority"] = str(entity.get("priority") or entity.get("Priority") or "NORMAL").strip().upper() or "NORMAL"
+            entity["due_start"] = due_start
+            entity["due_end"] = due_end
+            entity["due_window"] = due_window
+            entity["entity_id"] = cid
+            entity["planning_order_id"] = cid
+            po_entities.append(entity)
+
+    if requested_level == "po":
+        return {
+            "campaigns": po_entities,
+            "entities": po_entities,
+            "detail_level": "po",
+            "entity_type": "planning_order",
+            "summary": _material_summary_from_entities(po_entities, "po"),
+            "run_id": run_id,
+            "source_detail_level": "campaign",
+        }
+
+    # requested_level == "heat"
+    heat_batches = list(getattr(aps_planning_simulate, "_heat_batches", []) or [])
+    normalized_heats: List[Dict[str, Any]] = []
+    for heat in heat_batches:
+        heat_id = str(heat.get("heat_id") or heat.get("Heat_ID") or "").strip()
+        po_id = str(heat.get("planning_order_id") or heat.get("po_id") or "").strip()
+        if not heat_id or not po_id:
+            continue
+        normalized_heats.append(
+            {
+                "heat_id": heat_id,
+                "planning_order_id": po_id,
+                "qty_mt": _material_float(heat.get("qty_mt") or 0.0),
+                "grade": str(heat.get("grade") or ""),
+                "heat_number_seq": int(heat.get("heat_number_seq") or 0),
+                "upstream_route": str(heat.get("upstream_route") or ""),
+                "expected_duration_hours": _material_float(heat.get("expected_duration_hours") or 0.0),
+            }
+        )
+
+    if not normalized_heats and planning_orders:
+        for po in planning_orders:
+            po_id = str(po.get("po_id") or "").strip()
+            if not po_id:
+                continue
+            heats_required = max(int(po.get("heats_required") or 0), 1)
+            total_qty = _material_float(po.get("total_qty_mt") or 0.0)
+            per_heat_qty = total_qty / heats_required if heats_required > 0 else total_qty
+            for idx in range(heats_required):
+                normalized_heats.append(
+                    {
+                        "heat_id": f"{po_id}-H{idx + 1:02d}",
+                        "planning_order_id": po_id,
+                        "qty_mt": round(per_heat_qty, 3),
+                        "grade": str(po.get("grade_family") or ""),
+                        "heat_number_seq": idx + 1,
+                        "upstream_route": str(po.get("route_family") or "SMS→RM"),
+                        "expected_duration_hours": 2.0,
+                    }
+                )
+
+    if not normalized_heats:
+        for camp in base_campaigns:
+            cid = str(camp.get("campaign_id") or "").strip()
+            if not cid:
+                continue
+            normalized_heats.append(
+                {
+                    "heat_id": f"{cid}-H01",
+                    "planning_order_id": cid,
+                    "qty_mt": _material_float(camp.get("required_qty") or 0.0),
+                    "grade": str(camp.get("grade") or ""),
+                    "heat_number_seq": 1,
+                    "upstream_route": "SMS→RM",
+                    "expected_duration_hours": 2.0,
+                }
+            )
+
+    po_entity_map = {
+        str(entity.get("planning_order_id") or entity.get("entity_id") or "").strip(): entity
+        for entity in po_entities
+        if str(entity.get("planning_order_id") or entity.get("entity_id") or "").strip()
+    }
+    heat_count_by_po: Dict[str, int] = {}
+    for heat in normalized_heats:
+        po_id = str(heat.get("planning_order_id") or "").strip()
+        if not po_id:
+            continue
+        heat_count_by_po[po_id] = heat_count_by_po.get(po_id, 0) + 1
+
+    heat_entities: List[Dict[str, Any]] = []
+    for heat in normalized_heats:
+        heat_id = str(heat.get("heat_id") or "").strip()
+        po_id = str(heat.get("planning_order_id") or "").strip()
+        if not heat_id or not po_id:
+            continue
+
+        base_entity = dict(po_entity_map.get(po_id) or campaign_map.get(po_id) or {})
+        po_source = dict(po_map.get(po_id) or {})
+        base_rows = _material_rows_from_entity(base_entity)
+        heat_qty = _material_float(heat.get("qty_mt") or 0.0)
+        po_total = _material_float(base_entity.get("required_qty") or po_map.get(po_id, {}).get("total_qty_mt") or 0.0)
+        if po_total > 1e-9 and heat_qty > 1e-9:
+            ratio = heat_qty / po_total
+        else:
+            ratio = 1.0 / max(heat_count_by_po.get(po_id, 1), 1)
+
+        rows = _scaled_material_rows(base_rows, ratio)
+        plants = _material_rows_to_plants(rows)
+        detail_rows = _material_rows_to_detail_rows(rows)
+
+        required_qty = round(sum(_material_float(r.get("gross_required_qty", 0.0) or 0.0) for r in rows), 3)
+        inventory_covered_qty = round(sum(_material_float(r.get("inventory_covered_qty", 0.0) or 0.0) for r in rows), 3)
+        make_convert_qty = round(sum(_material_float(r.get("make_convert_qty", 0.0) or 0.0) for r in rows), 3)
+        shortage_qty = round(sum(_material_float(r.get("shortage_qty", 0.0) or 0.0) for r in rows), 3)
+        material_status = "SHORTAGE" if shortage_qty > 1e-6 else ("MAKE / CONVERT" if make_convert_qty > 1e-6 else "READY")
+        due_start, due_end, due_window = _material_due_fields(po_source)
+        if not due_start and not due_end:
+            due_start, due_end, due_window = _material_due_fields(base_entity)
+        priority = str(
+            po_source.get("priority")
+            or po_source.get("Priority")
+            or base_entity.get("priority")
+            or base_entity.get("Priority")
+            or "NORMAL"
+        ).strip().upper() or "NORMAL"
+
+        heat_entities.append(
+            {
+                "entity_id": heat_id,
+                "heat_id": heat_id,
+                "planning_order_id": po_id,
+                "campaign_id": str(base_entity.get("campaign_id") or po_id),
+                "grade": str(heat.get("grade") or base_entity.get("grade") or ""),
+                "release_status": str(base_entity.get("release_status") or "PLANNED"),
+                "required_qty": required_qty if required_qty > 0 else round(heat_qty, 3),
+                "shortage_qty": shortage_qty,
+                "inventory_covered_qty": inventory_covered_qty,
+                "make_convert_qty": make_convert_qty,
+                "material_status": material_status,
+                "feasible": shortage_qty <= 1e-6,
+                "material_structure_errors": list(base_entity.get("material_structure_errors") or []),
+                "material_shortages": {},
+                "material_consumed": {},
+                "material_gross_requirements": {},
+                "inventory_before": {},
+                "inventory_after": {},
+                "materials": rows,
+                "plants": plants,
+                "detail_rows": detail_rows,
+                "selected_so_ids": list(base_entity.get("selected_so_ids") or []),
+                "heats_required": int(base_entity.get("heats_required") or heat_count_by_po.get(po_id, 1)),
+                "planner_status": str(base_entity.get("planner_status") or ""),
+                "heat_number_seq": int(heat.get("heat_number_seq") or 0),
+                "upstream_route": str(heat.get("upstream_route") or ""),
+                "expected_duration_hours": _material_float(heat.get("expected_duration_hours") or 0.0),
+                "qty_mt": round(heat_qty, 3),
+                "priority": priority,
+                "due_start": due_start,
+                "due_end": due_end,
+                "due_window": due_window,
+            }
+        )
+
+    return {
+        "campaigns": heat_entities,
+        "entities": heat_entities,
+        "detail_level": "heat",
+        "entity_type": "heat",
+        "summary": _material_summary_from_entities(heat_entities, "heat"),
+        "run_id": run_id,
+        "source_detail_level": "campaign",
+    }
+
 def _store_compatibility_cache(
     *,
     run_id: str,
@@ -1869,6 +2766,72 @@ def _store_compatibility_cache(
     _state['error'] = None
 
 
+def _publish_planning_snapshot(
+    *,
+    campaigns: List[Dict[str, Any]],
+    skus: list | pd.DataFrame | None,
+    heat_df: pd.DataFrame | None = None,
+    camp_df: pd.DataFrame | None = None,
+    cap_df: pd.DataFrame | None = None,
+    solver_status: str | None = None,
+    solver_detail: str | None = None,
+) -> Dict[str, Any]:
+    """Publish planning-scoped state for dashboard/campaign/material readers."""
+    material_payload = _calculate_material_plan(
+        campaigns,
+        detail_level="campaign",
+        run_id=None,
+        skus=skus,
+    )
+
+    _state["last_run"] = datetime.now().isoformat()
+    _state["run_id"] = None
+    _state["campaigns"] = campaigns
+    _state["heat_schedule"] = (
+        heat_df.copy()
+        if isinstance(heat_df, pd.DataFrame)
+        else pd.DataFrame()
+    )
+    _state["camp_schedule"] = (
+        camp_df.copy()
+        if isinstance(camp_df, pd.DataFrame)
+        else pd.DataFrame()
+    )
+    _state["capacity"] = (
+        cap_df.copy()
+        if isinstance(cap_df, pd.DataFrame)
+        else pd.DataFrame()
+    )
+    _state["material_plan_data"] = material_payload
+    if solver_status is not None:
+        _state["solver_status"] = str(solver_status)
+    if solver_detail is not None:
+        _state["solver_detail"] = str(solver_detail)
+    _state["error"] = None
+    return material_payload
+
+
+def _publish_planning_orders_snapshot(
+    planning_orders: List[Dict[str, Any]],
+    *,
+    workbook_data: Dict[str, Any] | None = None,
+    solver_detail: str = "Planning state updated. Derive heats and run Feasibility Check.",
+) -> Dict[str, Any]:
+    """Publish planning-order scoped campaigns/material for cross-tab freshness."""
+    d = workbook_data or _load_all()
+    campaigns = _planning_orders_to_scheduler_campaigns(
+        planning_orders=list(planning_orders or []),
+        all_orders_df=d.get("all_orders", pd.DataFrame()),
+        config=d.get("config", {}),
+    )
+    return _publish_planning_snapshot(
+        campaigns=campaigns,
+        skus=d.get("skus"),
+        solver_status="PLANNING READY",
+        solver_detail=solver_detail,
+    )
+
+
 @app.route('/api/run/schedule', methods=['POST'])
 def run_schedule():
     return run_schedule_api()
@@ -1882,7 +2845,7 @@ def run_schedule_api():
         sec_lim = float(config.get("Default_Solver_Limit_Sec", 30.0) or 30.0)
 
         body = request.get_json(silent=True) or {}
-        horizon = int(body.get("horizon", horizon))
+        horizon = int(body.get("horizon", body.get("horizon_days", horizon)))
         sec_lim = float(body.get("solver_sec", body.get("time_limit", sec_lim)))
 
         released_pos = _released_sales_orders_to_planning_orders(d)
@@ -2052,6 +3015,36 @@ def run_ctp_api():
             changeover_matrix=d["changeover_matrix"],
             frozen_jobs=frozen_jobs,
         )
+        decision_class = str(res.get("decision_class") or "").strip().upper()
+        lineage_status = str(res.get("inventory_lineage_status") or "").strip().upper()
+        lineage_label_map = {
+            "AUTHORITATIVE_SNAPSHOT_CHAIN": "Authoritative",
+            "NO_COMMITTED_CAMPAIGNS": "Authoritative",
+            "RECOMPUTED_FROM_CONSUMPTION": "Recomputed",
+            "CONSERVATIVE_BLEND": "Conservative Blend",
+        }
+        res["lineage_trust_level"] = lineage_label_map.get(lineage_status, "Unknown")
+        res["decision_family"] = (
+            "Confirmed"
+            if decision_class.startswith("PROMISE_CONFIRMED")
+            else "Split"
+            if decision_class == "PROMISE_SPLIT_REQUIRED"
+            else "Later Date"
+            if decision_class == "PROMISE_LATER_DATE"
+            else "Material Block"
+            if decision_class == "CANNOT_PROMISE_MATERIAL"
+            else "Capacity Block"
+            if decision_class == "CANNOT_PROMISE_CAPACITY"
+            else "Policy Block"
+            if decision_class == "CANNOT_PROMISE_POLICY_ONLY"
+            else "Inventory Trust Block"
+            if decision_class == "CANNOT_PROMISE_INVENTORY_TRUST"
+            else "Master Data Block"
+            if decision_class == "CANNOT_PROMISE_MASTER_DATA"
+            else "Mixed Blocker"
+            if decision_class == "CANNOT_PROMISE_MIXED_BLOCKERS"
+            else "Unclassified"
+        )
         return _jsonify({k: _safe(v) for k, v in res.items()})
     except Exception as e:
         return _error_response(
@@ -2129,7 +3122,9 @@ def aps_dashboard_overview():
 
 @app.route('/api/masterdata/audit')
 def masterdata_audit():
-    return _jsonify(audit_workbook_masterdata(WORKBOOK))
+    payload = audit_workbook_masterdata(WORKBOOK)
+    payload["health_summary"] = _masterdata_health_summary(payload)
+    return _jsonify(payload)
 
 
 @app.route('/api/aps/orders/list')
@@ -2260,7 +3255,8 @@ def aps_capacity_bottlenecks():
 
 @app.route('/api/aps/material/plan')
 def aps_material_plan():
-    return _jsonify(_material_plan_payload())
+    detail_level = request.args.get("detail_level", "campaign")
+    return _jsonify(_material_plan_payload(detail_level=detail_level))
 
 
 @app.route('/api/aps/material/holds')
@@ -2361,7 +3357,7 @@ def aps_bom_tree():
             )[0]
 
         netted = net_requirements(gross_bom_df, d.get('inventory'))
-        _, bom_summary = _build_bom_grouped_view(netted, d.get('skus'), d.get('bom'))
+        grouped_bom_data, bom_summary = _build_bom_grouped_view(netted, d.get('skus'), d.get('bom'))
 
         return _jsonify({
             'roots': [
@@ -2373,6 +3369,7 @@ def aps_bom_tree():
             ],
             'gross_bom': _df_to_records(gross_bom_df),
             'net_bom': _df_to_records(netted),
+            'grouped_bom': grouped_bom_data,
             'summary': bom_summary,
             'structure_errors': structure_errors,
             'feasible': feasible,
@@ -2799,10 +3796,13 @@ def aps_planning_orders_propose():
     try:
         payload = request.get_json(silent=True) or {}
         window_days = int(payload.get("days", 7) or 7)
-        selected_so_ids = payload.get("so_ids", []) or []
+        selected_so_ids_raw = payload.get("so_ids", []) if isinstance(payload, dict) else []
+        selected_so_ids = selected_so_ids_raw or []
         if selected_so_ids and not isinstance(selected_so_ids, list):
             selected_so_ids = [selected_so_ids]
         selected_so_ids = [str(x).strip() for x in selected_so_ids if x]
+        if isinstance(selected_so_ids_raw, list) and len(selected_so_ids_raw) == 0:
+            return _jsonify({"error": "Select at least one Sales Order before proposing Planning Orders."}, 400)
 
         d = _load_all()
         all_sos = []
@@ -2851,6 +3851,15 @@ def aps_planning_orders_propose():
         validation = planner.validate_planning_orders(pos)
 
         aps_planning_orders_propose._planning_orders = [po.to_dict() for po in pos]
+        _invalidate_active_run_cache(clear_simulation=True)
+        _publish_planning_orders_snapshot(
+            aps_planning_orders_propose._planning_orders,
+            workbook_data=d,
+            solver_detail=(
+                f"{len(aps_planning_orders_propose._planning_orders)} planning orders proposed. "
+                "Derive heats and run Feasibility Check."
+            ),
+        )
 
         return _jsonify({
             "window_days": window_days,
@@ -2944,6 +3953,14 @@ def aps_planning_orders_update():
                 }, 400)
 
             aps_planning_orders_propose._planning_orders = updated_orders
+            _invalidate_active_run_cache(clear_simulation=True)
+            _publish_planning_orders_snapshot(
+                updated_orders,
+                solver_detail=(
+                    f"Planning orders replaced ({len(updated_orders)} rows). "
+                    "Re-run Derive and Feasibility Check."
+                ),
+            )
             return _jsonify({
                 "updated": True,
                 "mode": "replace",
@@ -3123,6 +4140,14 @@ def aps_planning_orders_update():
             }, 400)
 
         aps_planning_orders_propose._planning_orders = updated_orders
+        _invalidate_active_run_cache(clear_simulation=True)
+        _publish_planning_orders_snapshot(
+            updated_orders,
+            solver_detail=(
+                f"Planning orders updated via '{action}' ({len(updated_orders)} rows). "
+                "Re-run Derive and Feasibility Check."
+            ),
+        )
 
         return _jsonify({
             "updated": True,
@@ -3164,13 +4189,29 @@ def aps_planning_heats_derive():
 
         runtime_config = load_workbook_config_snapshot(WORKBOOK, reload_algorithm=True).runtime_config
         planner = APSPlanner(runtime_config)
+        heat_size_mt = payload.get("heat_size_mt")
+        if heat_size_mt is None:
+            heat_size_mt = get_config(WORKBOOK, reload=True).get("HEAT_SIZE_MT", 50)
+        heat_size_mt = float(heat_size_mt or 50)
+        if heat_size_mt <= 0:
+            heat_size_mt = 50.0
         heats = planner.derive_heat_batches(
             pos,
-            heat_size_mt=float(get_config(WORKBOOK, reload=True).get("HEAT_SIZE_MT", 50) or 50),
+            heat_size_mt=heat_size_mt,
         )
 
         aps_planning_orders_propose._planning_orders = [po.to_dict() for po in pos]
         aps_planning_simulate._heat_batches = [h.to_dict() for h in heats]
+        _invalidate_active_run_cache(clear_simulation=False)
+        aps_planning_simulate._last_result = None
+        aps_planning_simulate._scheduler_inputs = []
+        _publish_planning_orders_snapshot(
+            aps_planning_orders_propose._planning_orders,
+            solver_detail=(
+                f"Derived {len(heats)} heat batches from {len(aps_planning_orders_propose._planning_orders)} planning orders. "
+                "Run Feasibility Check to validate finite capacity."
+            ),
+        )
 
         return _jsonify({
             "total_heats": len(heats),
@@ -3302,6 +4343,7 @@ def aps_planning_simulate():
             sys.stdout = old_stdout
 
         heat_df = result.get("heat_schedule", pd.DataFrame())
+        camp_df = result.get("campaign_schedule", pd.DataFrame())
         solver_status = result.get("solver_status", "UNKNOWN")
         solver_detail = result.get("solver_detail", "")
 
@@ -3361,6 +4403,32 @@ def aps_planning_simulate():
         hot_count = sum(1 for campaign in scheduler_inputs if campaign.get("hot_charging", True))
         cold_count = len(scheduler_inputs) - hot_count
 
+        allow_defaults = bool(result.get("allow_default_masters", False)) or _config_flag(
+            d.get("config"), "Allow_Scheduler_Default_Masters", "N"
+        )
+        try:
+            demand_hrs = compute_demand_hours(
+                scheduler_inputs,
+                resources_df,
+                routing=d["routing"],
+                changeover_matrix=d["changeover_matrix"],
+                allow_defaults=allow_defaults,
+            )
+            cap_df = capacity_map(demand_hrs, resources_df, horizon_days=horizon_days)
+        except Exception:
+            cap_df = pd.DataFrame()
+
+        _publish_planning_snapshot(
+            campaigns=scheduler_inputs,
+            skus=d.get("skus"),
+            heat_df=heat_df,
+            camp_df=camp_df,
+            cap_df=cap_df,
+            solver_status="HORIZON EXCEEDED" if horizon_exceeded else solver_status,
+            solver_detail=message,
+        )
+
+        planning_signature = _planning_orders_release_signature(planning_orders_data)
         aps_planning_simulate._last_result = {
             "authoritative": True,
             "feasible": feasible,
@@ -3371,6 +4439,7 @@ def aps_planning_simulate():
             "horizon_exceeded": horizon_exceeded,
             "total_duration_hours": total_duration_hours,
             "message": message,
+            "planning_signature": planning_signature,
         }
         _state["solver_status"] = "HORIZON EXCEEDED" if horizon_exceeded else solver_status
         _state["solver_detail"] = message
@@ -3437,11 +4506,21 @@ def aps_planning_release():
             }, 404)
 
         sim_result = getattr(aps_planning_simulate, "_last_result", None)
-        if sim_result is not None:
-            if not bool(sim_result.get("authoritative", False)):
-                return _jsonify({"error": "Planning simulation is not authoritative. Re-run simulation before release."}, 400)
-            if not bool(sim_result.get("feasible", False)):
-                return _jsonify({"error": "Cannot release planning orders because the current simulation is infeasible."}, 400)
+        if sim_result is None:
+            return _jsonify({"error": "Run Planning Simulation before release."}, 400)
+        if not bool(sim_result.get("authoritative", False)):
+            return _jsonify({"error": "Planning simulation is not authoritative. Re-run simulation before release."}, 400)
+        if not bool(sim_result.get("feasible", False)):
+            return _jsonify({"error": "Cannot release planning orders because the current simulation is infeasible."}, 400)
+
+        current_signature = _planning_orders_release_signature(planning_orders)
+        simulated_signature = str(sim_result.get("planning_signature") or "").strip()
+        if not simulated_signature:
+            return _jsonify({"error": "Planning simulation is stale. Re-run simulation before release."}, 400)
+        if simulated_signature != current_signature:
+            return _jsonify({
+                "error": "Planning orders changed after simulation. Re-run simulation before release.",
+            }, 409)
 
         released_orders = [po_map[po_id] for po_id in po_ids]
 
@@ -3510,9 +4589,43 @@ def aps_planning_release():
                 po["released_at"] = datetime.now().isoformat()
             refreshed_orders.append(po)
 
+        existing_heat_df = (
+            _state.get("heat_schedule").copy()
+            if isinstance(_state.get("heat_schedule"), pd.DataFrame)
+            else pd.DataFrame()
+        )
+        existing_camp_df = (
+            _state.get("camp_schedule").copy()
+            if isinstance(_state.get("camp_schedule"), pd.DataFrame)
+            else pd.DataFrame()
+        )
+        existing_cap_df = (
+            _state.get("capacity").copy()
+            if isinstance(_state.get("capacity"), pd.DataFrame)
+            else pd.DataFrame()
+        )
+        previous_solver_status = str(_state.get("solver_status", "NOT RUN"))
+        previous_solver_detail = str(_state.get("solver_detail", ""))
+
         aps_planning_orders_propose._planning_orders = refreshed_orders
         aps_planning_release._released_po_ids = po_ids
         aps_planning_release._released_sales_orders = list(so_to_po.keys())
+        _invalidate_active_run_cache(clear_simulation=False)
+        d = _load_all()
+        planning_campaigns = _planning_orders_to_scheduler_campaigns(
+            planning_orders=refreshed_orders,
+            all_orders_df=d["all_orders"],
+            config=d["config"],
+        )
+        _publish_planning_snapshot(
+            campaigns=planning_campaigns,
+            skus=d.get("skus"),
+            heat_df=existing_heat_df,
+            camp_df=existing_camp_df,
+            cap_df=existing_cap_df,
+            solver_status=previous_solver_status,
+            solver_detail=previous_solver_detail,
+        )
 
         total_mt = round(sum(float(po.get("total_qty_mt", 0) or 0) for po in released_orders), 3)
         total_heats = int(sum(int(po.get("heats_required", 0) or 0) for po in released_orders))
@@ -3651,6 +4764,24 @@ def aps_planning_unrelease():
                 po["unreleased_at"] = datetime.now().isoformat()
             refreshed_orders.append(po)
 
+        existing_heat_df = (
+            _state.get("heat_schedule").copy()
+            if isinstance(_state.get("heat_schedule"), pd.DataFrame)
+            else pd.DataFrame()
+        )
+        existing_camp_df = (
+            _state.get("camp_schedule").copy()
+            if isinstance(_state.get("camp_schedule"), pd.DataFrame)
+            else pd.DataFrame()
+        )
+        existing_cap_df = (
+            _state.get("capacity").copy()
+            if isinstance(_state.get("capacity"), pd.DataFrame)
+            else pd.DataFrame()
+        )
+        previous_solver_status = str(_state.get("solver_status", "NOT RUN"))
+        previous_solver_detail = str(_state.get("solver_detail", ""))
+
         aps_planning_orders_propose._planning_orders = refreshed_orders
         aps_planning_release._released_po_ids = [
             str(po.get("po_id", "")).strip()
@@ -3664,6 +4795,22 @@ def aps_planning_unrelease():
             for so_id in (po.get("selected_so_ids") or [])
             if str(so_id).strip()
         ]
+        _invalidate_active_run_cache(clear_simulation=False)
+        d = _load_all()
+        planning_campaigns = _planning_orders_to_scheduler_campaigns(
+            planning_orders=refreshed_orders,
+            all_orders_df=d["all_orders"],
+            config=d["config"],
+        )
+        _publish_planning_snapshot(
+            campaigns=planning_campaigns,
+            skus=d.get("skus"),
+            heat_df=existing_heat_df,
+            camp_df=existing_camp_df,
+            cap_df=existing_cap_df,
+            solver_status=previous_solver_status,
+            solver_detail=previous_solver_detail,
+        )
 
         total_mt = round(sum(float(po_map[po_id].get("total_qty_mt", 0) or 0) for po_id in po_ids), 3)
         total_heats = int(sum(int(po_map[po_id].get("heats_required", 0) or 0) for po_id in po_ids))

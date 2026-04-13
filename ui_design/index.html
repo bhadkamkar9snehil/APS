@@ -58,32 +58,48 @@
         </div>
         <div class="navbar-context" id="navbarContextSlot" aria-live="polite">
           <div class="tab-context-actions ctx-execution">
-            <button type="button" class="btn ghost btn-compact" id="clearCampaignBtn" style="display:none" onclick="clearCampaignSelection()"><i class="fa-solid fa-filter-circle-xmark" aria-hidden="true"></i><span>Clear Filter</span></button>
-            <button type="button" class="btn primary btn-compact" id="campaignRerunBtn"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>Re-run Schedule</span></button>
+            <button type="button" class="btn ghost btn-compact" id="clearCampaignBtn" style="display:none" onclick="clearCampaignSelection()"><i class="fa-solid fa-filter-circle-xmark" aria-hidden="true"></i><span>Clear</span></button>
+            <button type="button" class="btn primary btn-compact" id="campaignRerunBtn"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>Re-run</span></button>
           </div>
           <div class="tab-context-actions ctx-bom">
-            <button type="button" class="btn primary btn-compact" id="bomExplodeBtn"><i class="fa-solid fa-sitemap" aria-hidden="true"></i><span>Run BOM Explosion</span></button>
+            <button type="button" class="btn primary btn-compact" id="bomExplodeBtn"><i class="fa-solid fa-sitemap" aria-hidden="true"></i><span>Explode</span></button>
           </div>
           <div class="tab-context-actions ctx-material">
-            <button type="button" class="btn primary btn-compact" id="materialRefreshBtn"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i><span>Refresh Material Status</span></button>
+            <select class="sel sel-compact" id="materialModeSelect" aria-label="Material view mode">
+              <option value="campaign">Campaigns</option>
+              <option value="po">Planning Orders</option>
+              <option value="heat">Heats</option>
+            </select>
+            <button type="button" class="btn primary btn-compact" id="materialRefreshBtn"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i><span>Refresh</span></button>
           </div>
           <div class="tab-context-actions ctx-ctp">
-            <button type="button" class="btn primary btn-compact" id="ctpRunBtn"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i><span>Run CTP</span></button>
+            <button type="button" class="btn primary btn-compact" id="ctpRunBtn"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i><span>Check</span></button>
+          </div>
+          <div class="tab-context-actions ctx-scenarios">
+            <button type="button" class="btn ghost btn-compact" id="scenariosRefreshBtn"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>Refresh</span></button>
+            <button type="button" class="btn success btn-compact" id="newScenarioBtn"><i class="fa-solid fa-plus" aria-hidden="true"></i><span>Add</span></button>
+          </div>
+          <div class="tab-context-actions ctx-master">
+            <button type="button" class="btn ghost btn-compact" id="masterRefreshBtn"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>Refresh</span></button>
+            <button type="button" class="btn success btn-compact" id="masterAddBtn"><i class="fa-solid fa-plus" aria-hidden="true"></i><span>Add</span></button>
+            <button type="button" class="btn ghost btn-compact" id="masterEditBtn"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span>Edit</span></button>
+            <button type="button" class="btn danger btn-compact" id="masterDeleteBtn"><i class="fa-solid fa-trash" aria-hidden="true"></i><span>Delete</span></button>
+            <button type="button" class="btn warn btn-compact" id="masterBulkBtn"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i><span>Bulk</span></button>
           </div>
         </div>
+        <button type="button" class="top-summary-toggle" id="topSummaryToggle" aria-expanded="true" aria-label="Collapse KPI row" title="Collapse KPI row" onclick="toggleTopSummary()"><i class="fa-solid fa-chevron-up" aria-hidden="true"></i></button>
       </div>
     </div>
 
     <div class="top">
       <div class="top-summary" id="topSummary">
-        <button type="button" class="top-summary-toggle" id="topSummaryToggle" aria-expanded="true" aria-label="Collapse KPI row" title="Collapse KPI row" onclick="toggleTopSummary()"><i class="fa-solid fa-chevron-up" aria-hidden="true"></i></button>
         <div class="brand-row">
           <div class="summary-grid" id="summaryGrid">
-            <div class="metric" id="summaryCard1"><div class="metric-label" id="summaryLabel1">Planning Orders</div><div class="metric-value" id="summaryValue1">—</div><div class="metric-sub" id="summarySub1">Loading…</div></div>
-            <div class="metric success" id="summaryCard2"><div class="metric-label" id="summaryLabel2">Heats Planned</div><div class="metric-value" id="summaryValue2">—</div><div class="metric-sub" id="summarySub2">—</div></div>
-            <div class="metric" id="summaryCard3"><div class="metric-label" id="summaryLabel3">MT Planned</div><div class="metric-value" id="summaryValue3">—</div><div class="metric-sub" id="summarySub3">in heats</div></div>
-            <div class="metric warn" id="summaryCard4"><div class="metric-label" id="summaryLabel4">On-Time</div><div class="metric-value" id="summaryValue4">—</div><div class="metric-sub" id="summarySub4">delivery rate</div></div>
-            <div class="metric info" id="summaryCard5"><div class="metric-label" id="summaryLabel5">Plan Status</div><div class="metric-value" id="summaryValue5">—</div><div class="metric-sub" id="summarySub5">Feasibility not run</div></div>
+            <div class="kpi-card kpi-card--summary metric" id="summaryCard1"><div class="kpi-label metric-label" id="summaryLabel1">Planning Orders</div><div class="kpi-value metric-value" id="summaryValue1">—</div><div class="kpi-sub metric-sub" id="summarySub1">Loading…</div></div>
+            <div class="kpi-card kpi-card--summary metric success" id="summaryCard2"><div class="kpi-label metric-label" id="summaryLabel2">Heats Planned</div><div class="kpi-value metric-value" id="summaryValue2">—</div><div class="kpi-sub metric-sub" id="summarySub2">—</div></div>
+            <div class="kpi-card kpi-card--summary metric" id="summaryCard3"><div class="kpi-label metric-label" id="summaryLabel3">MT Planned</div><div class="kpi-value metric-value" id="summaryValue3">—</div><div class="kpi-sub metric-sub" id="summarySub3">in heats</div></div>
+            <div class="kpi-card kpi-card--summary metric warn" id="summaryCard4"><div class="kpi-label metric-label" id="summaryLabel4">On-Time</div><div class="kpi-value metric-value" id="summaryValue4">—</div><div class="kpi-sub metric-sub" id="summarySub4">delivery rate</div></div>
+            <div class="kpi-card kpi-card--summary metric info" id="summaryCard5"><div class="kpi-label metric-label" id="summaryLabel5">Plan Status</div><div class="kpi-value metric-value" id="summaryValue5">—</div><div class="kpi-sub metric-sub" id="summarySub5">Feasibility not run</div></div>
           </div>
         </div>
       </div>
@@ -96,13 +112,17 @@
         <div class="dashboard-layout">
 
           <!-- ── COL 1: Planning Status + Alerts ── -->
-          <div class="dashboard-column">
+          <div class="dashboard-column dashboard-column--left">
 
             <!-- Planning Status -->
-            <div class="dash-card dashboard-panel dashboard-panel--planning">
+            <div class="panel dash-card dashboard-panel dashboard-panel--planning">
               <div class="dash-card-hd">
-                <span class="dash-card-title">Planning Status</span>
-                <button type="button" class="btn ghost dashboard-panel-action" onclick="activatePage('planning')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> Open</span></button>
+                <div class="dashboard-panel-head-main">
+                  <span class="dash-card-title">Planning Status</span>
+                </div>
+                <div class="dashboard-panel-head-meta">
+                  <button type="button" class="btn ghost dashboard-panel-action" onclick="activatePage('planning')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> Open</span></button>
+                </div>
               </div>
               <div class="dashboard-panel-body dashboard-panel-body--tight" id="dashboardPipelineBody">
                 <div class="dashboard-empty dashboard-empty--spacious">Run the Planning Pipeline to see status here.</div>
@@ -110,10 +130,14 @@
             </div>
 
             <!-- Alerts & Insights -->
-            <div class="dash-card dashboard-panel dashboard-panel--secondary">
+            <div class="panel dash-card dashboard-panel dashboard-panel--secondary">
               <div class="dash-card-hd">
-                <span class="dash-card-title">Alerts &amp; Insights</span>
-                <span id="dashAlertCount" class="dashboard-alert-count" style="display:none">0</span>
+                <div class="dashboard-panel-head-main">
+                  <span class="dash-card-title">Alerts &amp; Insights</span>
+                </div>
+                <div class="dashboard-panel-head-meta">
+                  <span id="dashAlertCount" class="dashboard-alert-count" style="display:none">0</span>
+                </div>
               </div>
               <div class="dashboard-panel-body dashboard-panel-body--compact" id="dashAlertsList">
                 <div class="dashboard-empty">No alerts. System nominal.</div>
@@ -123,21 +147,40 @@
           </div>
 
           <!-- ── COL 2: Capacity + Delivery ── -->
-          <div class="dashboard-column">
+          <div class="dashboard-column dashboard-column--center">
 
             <!-- Capacity Utilisation -->
-            <div class="dash-card dashboard-panel dashboard-panel--capacity">
+            <div class="panel dash-card dashboard-panel dashboard-panel--capacity">
               <div class="dash-card-hd">
-                <span class="dash-card-title">Capacity Utilisation</span>
-                <span id="bottleneckPeak" class="dashboard-inline-meta">—</span>
+                <div class="dashboard-panel-head-main">
+                  <span class="dash-card-title">Capacity Utilisation</span>
+                </div>
+                <div class="dashboard-panel-head-meta">
+                  <span id="bottleneckPeak" class="dashboard-inline-meta">—</span>
+                </div>
               </div>
               <div class="dashboard-panel-body dashboard-panel-body--regular" id="bottleneckList">
                 <div class="dashboard-empty">—</div>
               </div>
             </div>
 
+            <!-- Constraint Pressure -->
+            <div class="panel dash-card dashboard-panel dashboard-panel--constraints">
+              <div class="dash-card-hd">
+                <div class="dashboard-panel-head-main">
+                  <span class="dash-card-title">Constraint Pressure</span>
+                </div>
+                <div class="dashboard-panel-head-meta">
+                  <span id="dashboardConstraintMeta" class="dashboard-inline-meta">—</span>
+                </div>
+              </div>
+              <div class="dashboard-panel-body dashboard-panel-body--compact" id="dashboardConstraintBody">
+                <div class="dashboard-empty">Run planning flow to see pressure distribution.</div>
+              </div>
+            </div>
+
             <!-- Delivery Performance -->
-            <div class="dash-card dashboard-panel dashboard-panel--secondary">
+            <div class="panel dash-card dashboard-panel dashboard-panel--secondary">
               <div class="dash-card-hd"><span class="dash-card-title">Delivery Performance</span></div>
               <div class="dashboard-performance">
                 <!-- On-time gauge row -->
@@ -154,17 +197,17 @@
                 </div>
                 <!-- Late breakdown -->
                 <div class="dashboard-mini-grid">
-                  <div class="dash-mini-stat">
-                    <div class="dms-label">Late Orders</div>
-                    <div class="dms-value dashboard-value-danger" id="perfLate">—</div>
+                  <div class="kpi-card kpi-card--sub dash-mini-stat">
+                    <div class="kpi-label dms-label">Late Orders</div>
+                    <div class="kpi-value dms-value dashboard-value-danger" id="perfLate">—</div>
                   </div>
-                  <div class="dash-mini-stat">
-                    <div class="dms-label">Plan Gap</div>
-                    <div class="dms-value" id="perfAvgLate">—</div>
+                  <div class="kpi-card kpi-card--sub dash-mini-stat">
+                    <div class="kpi-label dms-label">Plan Gap</div>
+                    <div class="kpi-value dms-value" id="perfAvgLate">—</div>
                   </div>
-                  <div class="dash-mini-stat">
-                    <div class="dms-label">On Hold</div>
-                    <div class="dms-value dashboard-value-warn" id="execHolds">—</div>
+                  <div class="kpi-card kpi-card--sub dash-mini-stat">
+                    <div class="kpi-label dms-label">On Hold</div>
+                    <div class="kpi-value dms-value dashboard-value-warn" id="execHolds">—</div>
                   </div>
                 </div>
                 <!-- This week -->
@@ -188,13 +231,17 @@
           </div>
 
           <!-- ── COL 3: Material Health + PO Summary ── -->
-          <div class="dashboard-column">
+          <div class="dashboard-column dashboard-column--right">
 
             <!-- Material Health -->
-            <div class="dash-card dashboard-panel dashboard-panel--material">
+            <div class="panel dash-card dashboard-panel dashboard-panel--material">
               <div class="dash-card-hd">
-                <span class="dash-card-title">Material Health</span>
-                <button type="button" class="btn ghost dashboard-panel-action" onclick="activatePage('material')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> View</span></button>
+                <div class="dashboard-panel-head-main">
+                  <span class="dash-card-title">Material Health</span>
+                </div>
+                <div class="dashboard-panel-head-meta">
+                  <button type="button" class="btn ghost dashboard-panel-action" onclick="activatePage('material')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> View</span></button>
+                </div>
               </div>
               <div class="dashboard-panel-body dashboard-panel-body--regular" id="dashboardInventoryBody">
                 <div class="dashboard-empty">—</div>
@@ -202,10 +249,14 @@
             </div>
 
             <!-- Active POs summary -->
-            <div class="dash-card dashboard-panel dashboard-panel--secondary">
+            <div class="panel dash-card dashboard-panel dashboard-panel--secondary">
               <div class="dash-card-hd">
-                <span class="dash-card-title">Active Planning Orders</span>
-                <button type="button" class="btn ghost dashboard-panel-action" onclick="activatePage('planning')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> Plan</span></button>
+                <div class="dashboard-panel-head-main">
+                  <span class="dash-card-title">Active Planning Orders</span>
+                </div>
+                <div class="dashboard-panel-head-meta">
+                  <button type="button" class="btn ghost dashboard-panel-action" onclick="activatePage('planning')"><i class="fa-solid fa-arrow-right" aria-hidden="true"></i><span> Plan</span></button>
+                </div>
               </div>
               <div class="dashboard-panel-body dashboard-panel-body--compact" id="dashActivePOs">
                 <div class="dashboard-empty">No POs yet.</div>
@@ -222,9 +273,17 @@
           <div>
             <div class="page-title">Planning Pipeline</div>
             <div class="page-sub">Select window, propose lots, derive heats, simulate, release.</div>
+            <div class="page-note">Entity flow: Sales Order → Planning Order → Heat Batch → finite schedule/campaign. API runs use live run artifacts unless explicitly exported.</div>
           </div>
           <div class="page-actions page-actions--tight">
             <div id="pipelineStatusBadge" class="pipeline-status-badge">Idle</div>
+          </div>
+        </div>
+        <div class="planning-workflow-strip panel panel--muted" id="planningWorkflowStrip" aria-live="polite">
+          <div class="planning-workflow-track" id="planningWorkflowTrack"></div>
+          <div class="planning-workflow-next">
+            <span class="planning-workflow-next-label">Next</span>
+            <span class="planning-workflow-next-copy" id="planningWorkflowNext">Load open sales orders to start the planning flow.</span>
           </div>
         </div>
         <div class="planning-shell">
@@ -232,7 +291,7 @@
           <div class="planning-main">
 
           <!-- STAGE 1: ORDER POOL -->
-          <div class="pipeline-stage" id="ps-pool">
+          <div class="panel pipeline-stage" id="ps-pool">
             <div class="ps-header" onclick="toggleStage('ps-pool')">
               <div class="ps-num">1</div>
               <div class="ps-info">
@@ -240,11 +299,17 @@
                 <div class="ps-meta" id="ps-pool-meta">Load all open sales orders</div>
               </div>
               <div class="ps-kpis" id="ps-pool-kpis"></div>
-              <div class="ps-badge" id="ps-pool-badge">READY</div>
+              <div class="ps-badge status-token status-success" id="ps-pool-badge">READY</div>
               <div class="ps-chevron" id="ps-pool-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></div>
             </div>
             <div class="ps-body" id="ps-pool-body">
               <div class="ps-body-inner">
+                <div class="grid-4 planning-summary-grid planning-summary-grid--pool">
+                  <div class="metric"><div class="metric-label">Pool SOs</div><div class="metric-value" id="poolTotalCount">—</div></div>
+                  <div class="metric"><div class="metric-label">Urgent</div><div class="metric-value" id="poolUrgentCount">—</div></div>
+                  <div class="metric"><div class="metric-label">Held</div><div class="metric-value" id="poolHeldCount">—</div></div>
+                  <div class="metric"><div class="metric-label">Selected</div><div class="metric-value" id="poolSelectedCount">—</div></div>
+                </div>
                 <div class="filters planning-stage-filters">
                   <input class="inp" id="poolSearch" placeholder="Search SO / Grade / Customer…" aria-label="Search order pool" />
                   <select class="sel" id="poolGrade" aria-label="Filter order pool by grade"><option value="">All grades</option></select>
@@ -253,12 +318,12 @@
                   <select class="sel" id="poolRollingMode" aria-label="Filter by rolling mode"><option value="">All modes</option><option>HOT</option><option>COLD</option></select>
                 </div>
                 <div class="toolbar planning-toolbar planning-toolbar--wide">
-                  <button type="button" class="btn ghost planning-toolbar-btn" id="poolSelectAllBtn"><i class="fa-solid fa-check-double" aria-hidden="true"></i><span> Select All</span></button>
-                  <button type="button" class="btn ghost planning-toolbar-btn" id="poolClearAllBtn"><i class="fa-solid fa-eraser" aria-hidden="true"></i><span> Clear All</span></button>
+                  <button type="button" class="btn ghost planning-toolbar-btn" id="poolSelectAllBtn"><i class="fa-solid fa-check-double" aria-hidden="true"></i><span> Select</span></button>
+                  <button type="button" class="btn ghost planning-toolbar-btn" id="poolClearAllBtn"><i class="fa-solid fa-eraser" aria-hidden="true"></i><span> Clear</span></button>
                   <div class="planning-selection-count" id="poolSelectionCount">0 selected</div>
                   <div class="planning-toolbar-spacer"></div>
                   <button type="button" class="btn ghost planning-toolbar-btn planning-toolbar-btn--accent" onclick="showPoolSOGantt()" title="View timeline for selected SOs (plant-based)"><i class="fa-regular fa-calendar-days" aria-hidden="true"></i><span> Gantt</span></button>
-                  <button type="button" class="btn ghost planning-toolbar-btn planning-toolbar-btn--accent" onclick="showFullBOMForSelectedSOs()" title="View material requirements for selected SOs in side panel"><i class="fa-solid fa-diagram-project" aria-hidden="true"></i><span> Full BOM</span></button>
+                  <button type="button" class="btn ghost planning-toolbar-btn planning-toolbar-btn--accent" onclick="showFullBOMForSelectedSOs()" title="View material requirements for selected SOs in side panel"><i class="fa-solid fa-diagram-project" aria-hidden="true"></i><span> BOM</span></button>
                 </div>
                 <div class="planning-table-wrap planning-table-wrap--pool">
                   <table class="table">
@@ -271,7 +336,7 @@
           </div>
 
           <!-- STAGE 2: PROPOSE ORDERS (window select to POs) -->
-          <div class="pipeline-stage" id="ps-propose">
+          <div class="panel pipeline-stage" id="ps-propose">
             <div class="ps-header" onclick="toggleStage('ps-propose')">
               <div class="ps-num">2</div>
               <div class="ps-info">
@@ -279,7 +344,7 @@
                 <div class="ps-meta" id="ps-propose-meta">Group candidates into manufacturing lots</div>
               </div>
               <div class="ps-kpis" id="ps-propose-kpis"></div>
-              <div class="ps-badge pending" id="ps-propose-badge">PENDING</div>
+              <div class="ps-badge pending status-token status-neutral" id="ps-propose-badge">PENDING</div>
               <button type="button" class="btn primary ps-action" id="planningProposeBtn" onclick="event.stopPropagation();proposePlanningOrders()"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><span> Propose</span></button>
               <div class="ps-chevron collapsed" id="ps-propose-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></div>
             </div>
@@ -292,9 +357,9 @@
                   <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="planningTotalMT">—</div></div>
                 </div>
                 <div class="toolbar planning-toolbar">
-                  <button type="button" class="btn ghost planning-toolbar-btn" id="mergeSelectedBtn" disabled onclick="mergeSelectedPOs()"><i class="fa-solid fa-code-merge" aria-hidden="true"></i><span> Merge Selected</span></button>
-                  <button type="button" class="btn ghost planning-toolbar-btn" id="freezeSelectedBtn" disabled onclick="freezeSelectedPOs()"><i class="fa-regular fa-snowflake" aria-hidden="true"></i><span> Freeze Selected</span></button>
-                  <button type="button" class="btn ghost planning-toolbar-btn" onclick="proposePlanningOrders()"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span> Re-propose</span></button>
+                  <button type="button" class="btn ghost planning-toolbar-btn" id="mergeSelectedBtn" disabled onclick="mergeSelectedPOs()"><i class="fa-solid fa-code-merge" aria-hidden="true"></i><span> Merge</span></button>
+                  <button type="button" class="btn ghost planning-toolbar-btn" id="freezeSelectedBtn" disabled onclick="freezeSelectedPOs()"><i class="fa-regular fa-snowflake" aria-hidden="true"></i><span> Freeze</span></button>
+                  <button type="button" class="btn ghost planning-toolbar-btn" onclick="proposePlanningOrders()"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span> Re-run</span></button>
                   <div class="planning-selection-count" id="poSelectionCount">0 selected</div>
                   <select class="sel planning-toolbar-select" id="poRollingMode" aria-label="Filter planning orders by rolling mode"><option value="">All modes</option><option>HOT</option><option>COLD</option></select>
                   <button type="button" class="btn ghost planning-toolbar-btn planning-toolbar-btn--push" onclick="state.lastScheduleRows ? showGanttModal('Planning Orders - Production Timeline', state.lastScheduleRows, 'po') : alert('Run Feasibility Check first')" title="View timeline for proposed POs"><i class="fa-regular fa-calendar-days" aria-hidden="true"></i><span> Gantt</span></button>
@@ -310,7 +375,7 @@
           </div>
 
           <!-- STAGE 3: HEAT BATCHES -->
-          <div class="pipeline-stage" id="ps-heats">
+          <div class="panel pipeline-stage" id="ps-heats">
             <div class="ps-header" onclick="toggleStage('ps-heats')">
               <div class="ps-num">3</div>
               <div class="ps-info">
@@ -318,7 +383,7 @@
                 <div class="ps-meta" id="ps-heats-meta">Derive SMS production heats from planning lots</div>
               </div>
               <div class="ps-kpis" id="ps-heats-kpis"></div>
-              <div class="ps-badge pending" id="ps-heats-badge">PENDING</div>
+              <div class="ps-badge pending status-token status-neutral" id="ps-heats-badge">PENDING</div>
               <button type="button" class="btn primary ps-action" id="heatDeriveBtn" onclick="event.stopPropagation();deriveHeatBatches()"><i class="fa-solid fa-fire" aria-hidden="true"></i><span> Derive</span></button>
               <div class="ps-chevron collapsed" id="ps-heats-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></div>
             </div>
@@ -349,7 +414,7 @@
           </div>
 
           <!-- STAGE 4: SCHEDULE FEASIBILITY -->
-          <div class="pipeline-stage" id="ps-schedule">
+          <div class="panel pipeline-stage" id="ps-schedule">
             <div class="ps-header" onclick="toggleStage('ps-schedule')">
               <div class="ps-num">4</div>
               <div class="ps-info">
@@ -357,7 +422,7 @@
                 <div class="ps-meta" id="ps-schedule-meta">Verify heats fit within planning horizon</div>
               </div>
               <div class="ps-kpis" id="ps-schedule-kpis"></div>
-              <div class="ps-badge pending" id="ps-schedule-badge">PENDING</div>
+              <div class="ps-badge pending status-token status-neutral" id="ps-schedule-badge">PENDING</div>
               <button type="button" class="btn primary ps-action" id="schedulerSimulateBtn" onclick="event.stopPropagation();simulateSchedule()"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span> Simulate</span></button>
               <div class="ps-chevron collapsed" id="ps-schedule-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></div>
             </div>
@@ -442,7 +507,7 @@
           </div>
 
           <!-- STAGE 5: RELEASE -->
-          <div class="pipeline-stage" id="ps-release">
+          <div class="panel pipeline-stage" id="ps-release">
             <div class="ps-header" onclick="toggleStage('ps-release')">
               <div class="ps-num">5</div>
               <div class="ps-info">
@@ -450,7 +515,7 @@
                 <div class="ps-meta" id="ps-release-meta">Approve and send planning orders to operations</div>
               </div>
               <div class="ps-kpis" id="ps-release-kpis"></div>
-              <div class="ps-badge pending" id="ps-release-badge">PENDING</div>
+              <div class="ps-badge pending status-token status-neutral" id="ps-release-badge">PENDING</div>
               <button type="button" class="btn success ps-action" id="releaseApproveBtn" onclick="event.stopPropagation();releaseSelectedPOs()" disabled><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span> Release</span></button>
               <div class="ps-chevron collapsed" id="ps-release-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></div>
             </div>
@@ -463,9 +528,9 @@
                   <div class="metric"><div class="metric-label">Status</div><div class="metric-value" id="releaseStatus">—</div></div>
                 </div>
                 <div class="planning-release-actions">
-                  <button type="button" class="btn primary planning-release-btn" id="releaseSelectAllBtn" onclick="releaseSelectAll()"><i class="fa-solid fa-check-double" aria-hidden="true"></i><span> Select All</span></button>
-                  <button type="button" class="btn primary planning-release-btn" id="releaseClearAllBtn" onclick="releaseClearAll()"><i class="fa-solid fa-eraser" aria-hidden="true"></i><span> Clear All</span></button>
-                  <button type="button" class="btn success planning-release-btn" id="releaseAllBtn" onclick="releaseAllSelected()"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span> Release All</span></button>
+                  <button type="button" class="btn primary planning-release-btn" id="releaseSelectAllBtn" onclick="releaseSelectAll()"><i class="fa-solid fa-check-double" aria-hidden="true"></i><span> Select</span></button>
+                  <button type="button" class="btn primary planning-release-btn" id="releaseClearAllBtn" onclick="releaseClearAll()"><i class="fa-solid fa-eraser" aria-hidden="true"></i><span> Clear</span></button>
+                  <button type="button" class="btn success planning-release-btn" id="releaseAllBtn" onclick="releaseAllSelected()"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span> Release</span></button>
                 </div>
                 <div class="planning-table-wrap">
                   <table class="table">
@@ -485,12 +550,12 @@
               <div class="planning-material-panel__title" id="materialCheckTitle">Material Requirements</div>
               <button type="button" class="btn ghost planning-material-panel__close" onclick="closeMaterialPanel()" aria-label="Close material requirements panel"><i class="fa-solid fa-xmark" aria-hidden="true"></i><span> Close</span></button>
             </div>
-            <div class="bom-tree-panel planning-material-panel__tree">
+            <div class="panel bom-tree-panel planning-material-panel__tree">
               <div class="bom-tree-header">Materials Needed</div>
               <div class="bom-tree" id="planningBomTree"></div>
             </div>
             <div class="bom-split-divider planning-material-panel__divider"></div>
-            <div class="bom-detail-panel planning-material-panel__detail">
+            <div class="panel bom-detail-panel planning-material-panel__detail">
               <div id="planningBomDetail"></div>
             </div>
           </div>
@@ -518,11 +583,34 @@
           </div>
           <div class="execution-topbar-note">
             <div class="execution-topbar-tools">
+              <button type="button" class="subtab execution-action-pill" onclick="openExecutionGanttMode('plant')">Plant Timeline</button>
               <button type="button" class="subtab execution-action-pill" onclick="openExecutionGanttMode('so')">SO Timeline</button>
               <button type="button" class="subtab execution-action-pill" onclick="openExecutionGanttMode('po')">PO Timeline</button>
               <button type="button" class="subtab execution-action-pill" onclick="openExecutionGanttMode('global')">Global Timeline</button>
             </div>
             <span class="execution-topbar-copy" id="executionTopbarCopy">Execution surface ready.</span>
+          </div>
+        </div>
+        <div class="execution-kpi-strip" id="executionKpiStrip" aria-label="Execution KPI summary">
+          <div class="kpi-card kpi-card--sub metric" id="executionKpiCard1">
+            <div class="kpi-label metric-label" id="executionKpiLabel1">Released Lots</div>
+            <div class="kpi-value metric-value" id="executionKpiValue1">—</div>
+            <div class="kpi-sub metric-sub" id="executionKpiSub1">—</div>
+          </div>
+          <div class="kpi-card kpi-card--sub metric info" id="executionKpiCard2">
+            <div class="kpi-label metric-label" id="executionKpiLabel2">In Flight Ops</div>
+            <div class="kpi-value metric-value" id="executionKpiValue2">—</div>
+            <div class="kpi-sub metric-sub" id="executionKpiSub2">—</div>
+          </div>
+          <div class="kpi-card kpi-card--sub metric" id="executionKpiCard3">
+            <div class="kpi-label metric-label" id="executionKpiLabel3">Exceptions</div>
+            <div class="kpi-value metric-value" id="executionKpiValue3">—</div>
+            <div class="kpi-sub metric-sub" id="executionKpiSub3">—</div>
+          </div>
+          <div class="kpi-card kpi-card--sub metric" id="executionKpiCard4">
+            <div class="kpi-label metric-label" id="executionKpiLabel4">Bottleneck</div>
+            <div class="kpi-value metric-value" id="executionKpiValue4">—</div>
+            <div class="kpi-sub metric-sub" id="executionKpiSub4">—</div>
           </div>
         </div>
 
@@ -539,7 +627,7 @@
             </select>
           </div>
           <div class="execution-main-shell">
-            <div class="card execution-board-card">
+            <div class="panel card execution-board-card">
               <div class="card-header execution-board-header">
                 <div>
                   <div class="card-title">Equipment Timeline</div>
@@ -547,12 +635,12 @@
                 </div>
                 <div class="execution-board-meta execution-board-meta--status">
                 <div class="execution-zoom-controls" aria-label="Equipment timeline zoom">
-                  <button type="button" class="btn ghost btn-compact" title="Zoom out" onclick="stepExecutionZoom('timeline', -0.2)">-</button>
+                  <button type="button" class="btn ghost btn-compact" data-exec-zoom-target="timeline" data-exec-zoom-dir="out" title="Zoom out" onclick="stepExecutionZoom('timeline', -0.2)">-</button>
                   <span class="execution-zoom-value" id="timelineZoomLabel">100%</span>
                   <span class="execution-board-meta-item" id="timelineScaleLabel">1 day buckets</span>
-                  <button type="button" class="btn ghost btn-compact" title="Zoom in" onclick="stepExecutionZoom('timeline', 0.2)">+</button>
+                  <button type="button" class="btn ghost btn-compact" data-exec-zoom-target="timeline" data-exec-zoom-dir="in" title="Zoom in" onclick="stepExecutionZoom('timeline', 0.2)">+</button>
                 </div>
-                <span class="execution-board-status" id="executionBoardStatus">Awaiting schedule data</span>
+                <span class="execution-board-status status-token status-info" id="executionBoardStatus">Awaiting schedule data</span>
                 <span class="execution-board-meta-item" id="executionMetaPlantLoad">Load —</span>
                 <span class="execution-board-meta-item" id="executionMetaBottleneck">Bottleneck —</span>
                 <button type="button" class="btn ghost btn-compact" id="execDetailToggle" onclick="toggleExecutionDetailPanel()">Show Detail</button>
@@ -566,7 +654,7 @@
         </div>
 
         <div id="exec-view-campaigns" aria-labelledby="exec-tab-campaigns" class="exec-view execution-view" role="tabpanel">
-          <div class="card execution-list-card">
+            <div class="panel card execution-list-card">
             <div class="card-header execution-list-header">
               <div>
                 <div class="card-title">Released Lots</div>
@@ -586,7 +674,7 @@
         </div>
 
         <div id="exec-view-gantt" aria-labelledby="exec-tab-gantt" class="exec-view execution-view" role="tabpanel">
-          <div class="card execution-gantt-card">
+          <div class="panel card execution-gantt-card">
             <div class="card-header execution-gantt-header">
               <div>
                 <div class="card-title">Plant Timeline</div>
@@ -594,10 +682,10 @@
               </div>
               <div class="execution-gantt-actions">
                 <div class="execution-zoom-controls" aria-label="Plant gantt zoom">
-                  <button type="button" class="btn ghost btn-compact" title="Zoom out" onclick="stepExecutionZoom('plant', -0.2)">-</button>
+                  <button type="button" class="btn ghost btn-compact" data-exec-zoom-target="plant" data-exec-zoom-dir="out" title="Zoom out" onclick="stepExecutionZoom('plant', -0.2)">-</button>
                   <span class="execution-zoom-value" id="plantZoomLabel">100%</span>
                   <span class="execution-board-meta-item" id="plantScaleLabel">1 day buckets</span>
-                  <button type="button" class="btn ghost btn-compact" title="Zoom in" onclick="stepExecutionZoom('plant', 0.2)">+</button>
+                  <button type="button" class="btn ghost btn-compact" data-exec-zoom-target="plant" data-exec-zoom-dir="in" title="Zoom in" onclick="stepExecutionZoom('plant', 0.2)">+</button>
                 </div>
                 <button type="button" class="btn ghost execution-patch-btn" id="patchJobBtn"><i class="fa-solid fa-wrench" aria-hidden="true"></i><span>Patch Job</span></button>
               </div>
@@ -634,12 +722,12 @@
         </div>
         <!-- Split layout: tree left, detail right -->
         <div class="material-split-container material-page-layout">
-          <div class="material-tree-panel">
-            <div class="material-tree-header">Campaign Material Risk</div>
+          <div class="panel material-tree-panel">
+            <div class="material-tree-header" id="materialTreeHeader">Campaign Material Risk</div>
             <div class="material-tree" id="materialTree"></div>
           </div>
           <div class="material-split-divider" id="materialDivider"></div>
-          <div class="material-detail-panel">
+          <div class="panel material-detail-panel">
             <!-- BOM tree is also here when available -->
             <div id="materialDetailContent"></div>
 
@@ -650,43 +738,81 @@
 
       <section class="page" id="page-capacity" role="tabpanel" aria-labelledby="tab-capacity">
         <div class="page-header">
-          <div><div class="page-title">Capacity</div><div class="page-sub">Resource loading, bottlenecks, and utilisation by equipment.</div></div>
+          <div><div class="page-title">Capacity</div><div class="page-sub">Resource loading and bottlenecks aligned with Execution timeline decisions.</div></div>
         </div>
-        <!-- KPI strip -->
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:.75rem;flex-shrink:0">
-          <div class="metric danger"><div class="metric-label">Bottleneck</div><div class="metric-value" id="capBottleneck">—</div><div class="metric-sub" id="capBottleneckSub">Most constrained</div></div>
-          <div class="metric"><div class="metric-label">Avg utilisation</div><div class="metric-value" id="capAvg">—</div><div class="metric-sub">All resources</div></div>
-          <div class="metric warn"><div class="metric-label">Overloaded</div><div class="metric-value" id="capOverloaded">—</div><div class="metric-sub">Above 100%</div></div>
-          <div class="metric success"><div class="metric-label">Available slack</div><div class="metric-value" id="capSlack">—</div><div class="metric-sub">Below 60%</div></div>
-        </div>
-        <!-- Scrollable content area -->
-        <div style="flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:.75rem">
+        <div class="page-scroll-shell">
+          <div class="page-scroll-pane">
+          <div class="capacity-diagnostic-strip" id="capacityDiagnosticStrip" aria-label="Capacity diagnostics">
+            <div class="kpi-card kpi-card--sub metric" id="capacityDiagCard1">
+              <div class="kpi-label metric-label" id="capacityDiagLabel1">Peak Resource</div>
+              <div class="kpi-value metric-value" id="capacityDiagValue1">—</div>
+              <div class="kpi-sub metric-sub" id="capacityDiagSub1">—</div>
+            </div>
+            <div class="kpi-card kpi-card--sub metric" id="capacityDiagCard2">
+              <div class="kpi-label metric-label" id="capacityDiagLabel2">Overloaded</div>
+              <div class="kpi-value metric-value" id="capacityDiagValue2">—</div>
+              <div class="kpi-sub metric-sub" id="capacityDiagSub2">—</div>
+            </div>
+            <div class="kpi-card kpi-card--sub metric" id="capacityDiagCard3">
+              <div class="kpi-label metric-label" id="capacityDiagLabel3">High Utilisation</div>
+              <div class="kpi-value metric-value" id="capacityDiagValue3">—</div>
+              <div class="kpi-sub metric-sub" id="capacityDiagSub3">—</div>
+            </div>
+            <div class="kpi-card kpi-card--sub metric" id="capacityDiagCard4">
+              <div class="kpi-label metric-label" id="capacityDiagLabel4">Headroom</div>
+              <div class="kpi-value metric-value" id="capacityDiagValue4">—</div>
+              <div class="kpi-sub metric-sub" id="capacityDiagSub4">—</div>
+            </div>
+          </div>
+          <div class="notice" id="capacityNarrative">Run Schedule or Feasibility Check to load capacity diagnostics.</div>
+          <div class="panel card capacity-execution-link">
+            <div class="card-header">
+              <div>
+                <div class="card-title">Execution alignment</div>
+                <div class="card-sub" id="capacityExecutionMeta">No campaign pinned. Select a campaign in Execution to trace capacity impact here.</div>
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="capacity-execution-chips" id="capacityExecutionChips"></div>
+            </div>
+          </div>
           <!-- Resource bars -->
-          <div class="card">
+          <div class="panel card">
             <div class="card-header"><div class="card-title">Resource loading</div></div>
             <div class="card-body" style="padding:.75rem">
               <div id="capacityBars" style="display:flex;flex-direction:column;gap:.5rem"></div>
             </div>
           </div>
           <!-- Detail table -->
-          <div class="card" style="overflow:hidden;display:flex;flex-direction:column">
+          <div class="panel card" style="overflow:hidden;display:flex;flex-direction:column">
             <div class="card-header"><div class="card-title">Full capacity map</div></div>
             <div class="card-body" style="padding:0;overflow:auto;flex:1;min-height:0">
               <table class="table">
-                <thead><tr><th>Resource</th><th>Operation</th><th>Demand Hrs</th><th>Avail Hrs</th><th>Util %</th><th>Status</th></tr></thead>
+                <thead><tr><th>Resource</th><th>Operation</th><th>Demand</th><th>Process</th><th>Setup</th><th>Changeover</th><th>Tasks</th><th>Available</th><th>Util %</th><th>Status</th><th>Burden</th></tr></thead>
                 <tbody id="capacityBody"></tbody>
               </table>
             </div>
+          </div>
           </div>
         </div>
       </section>
 
       <section class="page" id="page-scenarios" role="tabpanel" aria-labelledby="tab-scenarios">
         <div class="page-header"><div><div class="page-title">Scenarios</div><div class="page-sub">Preview, create, update, delete, and apply scenarios.</div></div></div>
-        <div style="flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:.75rem">
+        <div class="page-scroll-shell">
+          <div class="page-scroll-pane">
           <div class="grid-3" id="scenarioCards"></div>
-          <div class="card" style="overflow:hidden;display:flex;flex-direction:column">
-            <div class="card-header"><div><div class="card-title">Scenario list</div><div class="card-sub">Workbook-backed scenario rows.</div></div><button type="button" class="btn success" id="newScenarioBtn"><i class="fa-solid fa-plus" aria-hidden="true"></i><span> Add Scenario</span></button></div>
+          <div class="panel card" style="overflow:hidden;display:flex;flex-direction:column">
+            <div class="card-header"><div><div class="card-title">Scenario delta comparison</div><div class="card-sub" id="scenarioBaselineNote">Comparing against current baseline.</div></div></div>
+            <div class="card-body" style="padding:0;overflow:auto;flex:1;min-height:0">
+              <table class="table">
+                <thead><tr><th>Scenario</th><th>Planned MT</th><th>Heats</th><th>On-Time %</th><th>Material Holds</th><th>Bottleneck</th><th>Release Ready %</th></tr></thead>
+                <tbody id="scenarioDeltaBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel card" style="overflow:hidden;display:flex;flex-direction:column">
+            <div class="card-header"><div><div class="card-title">Scenario list</div><div class="card-sub">Workbook-backed scenario rows.</div></div></div>
             <div class="card-body" style="padding:0;overflow:auto;flex:1;min-height:0">
               <table class="table">
                 <thead><tr><th>Key</th><th>Value</th><th>Actions</th></tr></thead>
@@ -694,14 +820,16 @@
               </table>
             </div>
           </div>
+          </div>
         </div>
       </section>
 
       <section class="page" id="page-ctp" role="tabpanel" aria-labelledby="tab-ctp">
         <div class="page-header"><div><div class="page-title">CTP</div><div class="page-sub">Capable-to-Promise check plus request/output history.</div></div></div>
-        <div style="flex:1;min-height:0;overflow:auto">
+        <div class="page-scroll-shell">
+          <div class="page-scroll-pane">
           <div class="grid-2">
-            <div class="card">
+            <div class="panel card">
               <div class="card-header"><div><div class="card-title">Run CTP check</div></div></div>
               <div class="card-body">
                 <div class="stack">
@@ -715,30 +843,31 @@
                 </div>
               </div>
             </div>
-            <div class="card">
+            <div class="panel card">
               <div class="card-header"><div><div class="card-title">Recent CTP activity</div><div class="card-sub">Merged request and output history.</div></div></div>
               <div class="card-body" style="padding:0">
                 <table class="table">
-                  <thead><tr><th>SKU</th><th>Qty</th><th>Requested</th><th>Earliest</th><th>Margin</th><th>Feasible</th></tr></thead>
+                  <thead><tr><th>SKU</th><th>Qty</th><th>Requested</th><th>Earliest</th><th>Margin</th><th>Decision</th><th>Lineage</th><th>Feasible</th></tr></thead>
                   <tbody id="ctpHistoryBody"></tbody>
                 </table>
               </div>
             </div>
           </div>
+          </div>
         </div>
       </section>
 
       <section class="page" id="page-bom" role="tabpanel" aria-labelledby="tab-bom">
-        <div class="page-header"><div><div class="page-title">BOM Explosion</div><div class="page-sub">Material requirements breakdown by production stage and finished goods.</div></div>
+        <div class="page-header"><div><div class="page-title">BOM Explosion</div><div class="page-sub">Total-plan material requirement model by stage and product family (distinct from release-readiness checks).</div></div>
           <div class="page-actions page-actions--empty" aria-hidden="true"></div>
         </div>
         <div class="bom-split-container">
-          <div class="bom-tree-panel">
+          <div class="panel bom-tree-panel">
             <div class="bom-tree-header">Production Stages</div>
             <div class="bom-tree" id="bomTree"></div>
           </div>
           <div class="bom-split-divider" id="bomDivider"></div>
-          <div class="bom-detail-panel">
+          <div class="panel bom-detail-panel">
             <div id="bomDetailContent"></div>
           </div>
         </div>
@@ -747,6 +876,29 @@
       <section class="page" id="page-master" role="tabpanel" aria-labelledby="tab-master">
         <div class="page-header"><div><div class="page-title">Master Data</div><div class="page-sub">All workbook sections surfaced through the application API.</div></div></div>
         <div class="page-content">
+          <div class="master-audit-strip">
+            <div class="kpi-card kpi-card--sub metric" id="masterAuditCard1">
+              <div class="kpi-label metric-label">Audit Health</div>
+              <div class="kpi-value metric-value" id="masterAuditValue1">—</div>
+              <div class="kpi-sub metric-sub" id="masterAuditSub1">—</div>
+            </div>
+            <div class="kpi-card kpi-card--sub metric" id="masterAuditCard2">
+              <div class="kpi-label metric-label">Critical</div>
+              <div class="kpi-value metric-value" id="masterAuditValue2">—</div>
+              <div class="kpi-sub metric-sub" id="masterAuditSub2">—</div>
+            </div>
+            <div class="kpi-card kpi-card--sub metric" id="masterAuditCard3">
+              <div class="kpi-label metric-label">Warnings</div>
+              <div class="kpi-value metric-value" id="masterAuditValue3">—</div>
+              <div class="kpi-sub metric-sub" id="masterAuditSub3">—</div>
+            </div>
+            <div class="kpi-card kpi-card--sub metric" id="masterAuditCard4">
+              <div class="kpi-label metric-label">Config Conflicts</div>
+              <div class="kpi-value metric-value" id="masterAuditValue4">—</div>
+              <div class="kpi-sub metric-sub" id="masterAuditSub4">—</div>
+            </div>
+          </div>
+          <div class="notice master-audit-notice" id="masterAuditIssues">Run refresh to load master-data audit checks.</div>
           <div class="toolbar">
             <select class="sel" id="masterSection" aria-label="Master data section">
               <option value="config">Config</option>
@@ -760,14 +912,9 @@
               <option value="campaign-config">Campaign Config</option>
               <option value="scenarios">Scenarios</option>
             </select>
-            <button type="button" class="btn ghost" id="masterRefreshBtn"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span> Refresh</span></button>
-            <button type="button" class="btn success" id="masterAddBtn"><i class="fa-solid fa-plus" aria-hidden="true"></i><span> Add Row</span></button>
-            <button type="button" class="btn ghost" id="masterEditBtn"><i class="fa-solid fa-pen-to-square" aria-hidden="true"></i><span> Patch Row</span></button>
-            <button type="button" class="btn danger" id="masterDeleteBtn"><i class="fa-solid fa-trash" aria-hidden="true"></i><span> Delete Row</span></button>
-            <button type="button" class="btn warn" id="masterBulkBtn"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i><span> Bulk Replace</span></button>
             <span class="master-toolbar-note" id="masterSelectionNote">No row selected.</span>
           </div>
-          <div class="card" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
+          <div class="panel card" style="flex:1;overflow:hidden;display:flex;flex-direction:column">
             <div class="card-header"><div><div class="card-title" id="masterTitle">Master Data</div><div class="card-sub">Section rows loaded from <code class="inline">/api/aps/masterdata</code>.</div></div></div>
             <div class="card-body" style="padding:0;overflow:auto;flex:1;min-height:0">
               <table class="table">
@@ -782,16 +929,17 @@
 
     <div class="status-footer">
       <div class="status-footer-progress" aria-hidden="true">
-        <div id="statusFooterProgressFill"></div>
+        <div id="statusFooterProgressFill" class="status-footer-progress-fill tone-info"></div>
       </div>
       <div class="status-footer-content">
-        <div class="status-group">
-          <div class="chip" id="chipApi"><span class="dot"></span><span id="chipApiText">API unknown</span></div>
-          <div class="chip success" id="chipSolver"><span class="dot"></span><span id="chipSolverText">Solver —</span></div>
-          <div class="chip" id="chipPipeline" style="display:none"><span class="dot"></span><span id="chipPipelineText">—</span></div>
-          <div class="chip warn"><span class="dot"></span><span id="chipHeld">— on hold</span></div>
-          <div class="chip danger"><span class="dot"></span><span id="chipLate">— late</span></div>
+        <div class="status-group status-group--global">
+          <div class="chip status-token status-neutral" id="chipApi"><span class="dot"></span><span id="chipApiText">API unknown</span></div>
+          <div class="chip success status-token status-success" id="chipSolver"><span class="dot"></span><span id="chipSolverText">Solver —</span></div>
+          <div class="chip status-token status-neutral" id="chipPipeline" style="display:none"><span class="dot"></span><span id="chipPipelineText">—</span></div>
+          <div class="chip warn status-token status-warning" id="chipHeld"><span class="dot"></span><span id="chipHeldText">Hold —</span></div>
+          <div class="chip danger status-token status-danger" id="chipLate"><span class="dot"></span><span id="chipLateText">Late —</span></div>
         </div>
+        <div class="status-group status-group--context" id="statusTabContext" aria-live="polite"></div>
       </div>
     </div>
   </div>
