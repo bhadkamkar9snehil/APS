@@ -2784,9 +2784,8 @@ code.inline,
   color: #9f1239;
 }
 .bom-detail-hero {
-  display: grid;
-  grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr);
-  align-items: start;
+  display: flex;
+  flex-direction: column;
   gap: 0.85rem;
 }
 .bom-detail-hero-copy {
