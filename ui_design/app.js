@@ -3952,7 +3952,42 @@ async function runBom() {
   try {
     const d = await apiFetch('/api/run/bom', { method: 'POST' });
 
-    state.bomGrouped = d.grouped_bom || [];
+    // Aggregate BOM rows by SKU_ID within each material_type
+    const aggregateBomData = (data) => data.map(plant => ({
+      ...plant,
+      material_types: (plant.material_types || []).map(mt => {
+        const aggregatedMap = new Map();
+        (mt.rows || []).forEach(row => {
+          const skuKey = row.sku_id;
+          if (!aggregatedMap.has(skuKey)) {
+            aggregatedMap.set(skuKey, {
+              ...row,
+              gross_req: num(row.gross_req || 0),
+              available_before: num(row.available_before || 0),
+              net_req: num(row.net_req || 0),
+              parent_skus: [row.parent_skus || 'No parent mapping']
+            });
+          } else {
+            const existing = aggregatedMap.get(skuKey);
+            existing.gross_req += num(row.gross_req || 0);
+            existing.available_before += num(row.available_before || 0);
+            existing.net_req += num(row.net_req || 0);
+            if (row.parent_skus && !existing.parent_skus.includes(row.parent_skus)) {
+              existing.parent_skus.push(row.parent_skus);
+            }
+            if (row.status === 'SHORT') existing.status = 'SHORT';
+            else if (row.status === 'PARTIAL SHORT' && existing.status !== 'SHORT') existing.status = 'PARTIAL SHORT';
+          }
+        });
+        return {
+          ...mt,
+          row_count: aggregatedMap.size,
+          rows: Array.from(aggregatedMap.values())
+        };
+      })
+    }));
+
+    state.bomGrouped = aggregateBomData(d.grouped_bom || []);
     state.bomSummary = d.summary || {};
     state.bomFlat = d.net_bom || [];
     state.bomGross = d.gross_bom || [];
@@ -4133,23 +4168,25 @@ function renderBomDetail(plant, materialType){
   let html = '<div class="bom-detail-shell">';
   html += renderBomStructureAlert();
   html += '<div class="bom-detail-header bom-detail-hero">';
-  html += '<div class="bom-detail-hero-copy">';
-  html += '<div class="bom-detail-title">'+escapeHtml(plant)+'</div>';
-  html += '<div class="bom-detail-subtitle">'+escapeHtml(materialType ? `${materialType.material_type} total-plan material stage` : 'Plant total-plan material overview')+'</div>';
-  html += '<div style="font-size: 0.75rem; color: var(--text-soft); margin-top: 0.5rem; line-height: 1.4;">'+
-    '<div>'+escapeHtml(
+  html += '<div style="display: flex; flex-direction: column; gap: 0.5rem; flex: 1; min-width: 0;">';
+  html += '<div style="display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap;">';
+  html += '<div class="bom-detail-title" style="margin: 0;">'+escapeHtml(plant)+'</div>';
+  html += '<div class="bom-detail-subtitle" style="margin: 0; font-weight: 400; color: var(--text-soft);">'+escapeHtml(materialType ? `${materialType.material_type}` : `Plant overview`)+'</div>';
+  html += '</div>';
+  html += '<div style="font-size: 0.75rem; color: var(--text-soft); line-height: 1.4;">'+
+    escapeHtml(
       materialType
         ? `${allRows.length} items · ${covered} covered · ${partial} partial · ${short} short`
         : `${stageCount} stages · ${allRows.length} items · ${covered} covered · ${partial} partial · ${short} short`
-    )+'</div>'+
-    '<div style="margin-top: 0.25rem; color: var(--text-faint);">BOM reports total-plan requirement; release blockers live in the Material tab.</div>'+
+    )+' · <span style="color: var(--text-faint);">BOM reports total-plan requirement; release blockers live in the Material tab.</span>'+
   '</div>';
-  html += '<div style="display: flex; gap: 2rem; margin-top: 1rem; flex-wrap: wrap; align-items: baseline;">'+
-    '<div><div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.045em; font-weight: 600; color: var(--text-faint); margin-bottom: 0.25rem;">Gross Req</div><div style="font-size: 1.3rem; font-weight: 700; color: var(--text);">'+totalGross.toFixed(1)+'<span style="font-size: 0.85rem; font-weight: 500; margin-left: 0.3rem;">MT</span></div></div>'+
-    '<div><div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.045em; font-weight: 600; color: var(--text-faint); margin-bottom: 0.25rem;">Produced</div><div style="font-size: 1.3rem; font-weight: 700; color: var(--text);">'+totalProduced.toFixed(1)+'<span style="font-size: 0.85rem; font-weight: 500; margin-left: 0.3rem;">MT</span></div></div>'+
-    '<div><div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.045em; font-weight: 600; color: var(--text-faint); margin-bottom: 0.25rem;">Net Req</div><div style="font-size: 1.3rem; font-weight: 700; color: var(--text);">'+totalNet.toFixed(1)+'<span style="font-size: 0.85rem; font-weight: 500; margin-left: 0.3rem;">MT</span></div></div>'+
-    '<div><div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.045em; font-weight: 600; color: var(--text-faint); margin-bottom: 0.25rem;">'+(materialType ? 'Blocked' : 'At Risk')+'</div><div style="font-size: 1.3rem; font-weight: 700; color: var(--text);">'+blockedMt.toFixed(1)+'<span style="font-size: 0.85rem; font-weight: 500; margin-left: 0.3rem;">MT</span></div></div>'+
-  '</div>';
+  html += '</div>';
+  html += '<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem 2rem; row-gap: 0.75rem; min-width: fit-content;">';
+  html += '<div><div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.045em; font-weight: 600; color: var(--text-faint); margin-bottom: 0.15rem;">Gross Req</div><div style="font-size: 1.2rem; font-weight: 700; color: var(--text);">'+totalGross.toFixed(1)+'<span style="font-size: 0.8rem; font-weight: 500; margin-left: 0.25rem;">MT</span></div></div>';
+  html += '<div><div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.045em; font-weight: 600; color: var(--text-faint); margin-bottom: 0.15rem;">Produced</div><div style="font-size: 1.2rem; font-weight: 700; color: var(--text);">'+totalProduced.toFixed(1)+'<span style="font-size: 0.8rem; font-weight: 500; margin-left: 0.25rem;">MT</span></div></div>';
+  html += '<div><div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.045em; font-weight: 600; color: var(--text-faint); margin-bottom: 0.15rem;">Net Req</div><div style="font-size: 1.2rem; font-weight: 700; color: var(--text);">'+totalNet.toFixed(1)+'<span style="font-size: 0.8rem; font-weight: 500; margin-left: 0.25rem;">MT</span></div></div>';
+  html += '<div><div style="font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.045em; font-weight: 600; color: var(--text-faint); margin-bottom: 0.15rem;">'+(materialType ? 'Blocked' : 'At Risk')+'</div><div style="font-size: 1.2rem; font-weight: 700; color: var(--text);">'+blockedMt.toFixed(1)+'<span style="font-size: 0.8rem; font-weight: 500; margin-left: 0.25rem;">MT</span></div></div>';
+  html += '</div>';
   html += '</div></div>';
 
   if(!materialType) {
@@ -4172,7 +4209,34 @@ function renderBomDetail(plant, materialType){
       }).join('')+
     '</div></div>';
   } else {
-    const sortedRows = allRows.slice().sort((a, b) => {
+    // Aggregate rows by SKU_ID to consolidate duplicate materials
+    const aggregatedMap = new Map();
+    allRows.forEach(row => {
+      const skuKey = row.sku_id;
+      if (!aggregatedMap.has(skuKey)) {
+        aggregatedMap.set(skuKey, {
+          ...row,
+          gross_req: num(row.gross_req || 0),
+          available_before: num(row.available_before || 0),
+          net_req: num(row.net_req || 0),
+          parent_skus: [row.parent_skus || 'No parent mapping']
+        });
+      } else {
+        const existing = aggregatedMap.get(skuKey);
+        existing.gross_req += num(row.gross_req || 0);
+        existing.available_before += num(row.available_before || 0);
+        existing.net_req += num(row.net_req || 0);
+        if (row.parent_skus && !existing.parent_skus.includes(row.parent_skus)) {
+          existing.parent_skus.push(row.parent_skus);
+        }
+        // Update status to reflect worst case
+        if (row.status === 'SHORT') existing.status = 'SHORT';
+        else if (row.status === 'PARTIAL SHORT' && existing.status !== 'SHORT') existing.status = 'PARTIAL SHORT';
+      }
+    });
+    const aggregatedRows = Array.from(aggregatedMap.values());
+
+    const sortedRows = aggregatedRows.slice().sort((a, b) => {
       const rank = row => row.status === 'SHORT' ? 0 : row.status === 'PARTIAL SHORT' ? 1 : row.status === 'COVERED' ? 2 : 3;
       const toneDiff = rank(a) - rank(b);
       if (toneDiff) return toneDiff;
@@ -4183,7 +4247,7 @@ function renderBomDetail(plant, materialType){
     html += '<div class="bom-item-grid">'+
       sortedRows.map(r => '<div class="bom-item-card '+(r.status === 'SHORT' ? 'danger' : r.status === 'PARTIAL SHORT' ? 'warn' : 'success')+'">'+
         '<div class="bom-item-card-top">'+
-          '<div><div class="bom-item-card-title">'+escapeHtml(r.sku_id)+'</div><div class="bom-item-card-sub">'+escapeHtml(r.parent_skus || 'No parent mapping')+'</div></div>'+
+          '<div><div class="bom-item-card-title">'+escapeHtml(r.sku_id)+'</div><div class="bom-item-card-sub">'+escapeHtml(Array.isArray(r.parent_skus) ? r.parent_skus.join(', ') : (r.parent_skus || 'No parent mapping'))+'</div></div>'+
           '<div class="bom-item-card-badges"><span class="bom-item-badge '+bomStatusBadgeClass(r.status)+'">'+escapeHtml(r.status)+'</span><span class="bom-item-badge '+String(r.flow_type || '').toLowerCase()+'">'+escapeHtml(r.flow_type || 'INPUT')+'</span></div>'+
         '</div>'+
         '<div class="bom-item-card-metrics">'+
@@ -4544,7 +4608,7 @@ function renderPlanningOrderPool() {
   poolBody.innerHTML = filtered.map((so) => {
     const isHeld = so._held;
     const rm = state.soRollingOverrides[so.so_id] || so.rolling_mode || 'HOT';
-    return `<tr class="pool-row ${isHeld ? 'is-held' : ''}" onclick="if(event.target.type !== 'checkbox' && !event.target.closest('button') && !event.target.closest('select')) checkMaterialForSO('${escapeHtml(so.so_id)}')">
+    return `<tr class="pool-row ${isHeld ? 'is-held' : ''}">
       <td><input type="checkbox" class="pool-so-check" data-so="${escapeHtml(so.so_id)}" ${isHeld ? '' : 'checked'} ${isHeld ? 'disabled' : ''} onclick="event.stopPropagation()"></td>
       <td>${escapeHtml(so.so_id)}</td>
       <td class="pool-sku-cell">${escapeHtml(so.sku_id || '—')}</td>
@@ -4563,7 +4627,7 @@ function renderPlanningOrderPool() {
       </td>
       <td>${isHeld ? '<span class="badge amber">HELD</span>' : escapeHtml(so.status)}</td>
       <td class="table-action-cell table-action-cell--inline">
-        <button class="btn ghost btn-xs" onclick="event.stopPropagation();checkMaterialForSO('${escapeHtml(so.so_id)}')">Mat</button>
+        <button class="btn ghost btn-xs" onclick="event.stopPropagation();checkMaterialForSO('${escapeHtml(so.so_id)}')" title="Check material availability"><i class="fa-solid fa-cube" aria-hidden="true"></i><span> Check Material</span></button>
         <button class="btn ${isHeld ? 'primary' : 'warn'} btn-xs" onclick="event.stopPropagation();toggleHoldSO('${escapeHtml(so.so_id)}')">${isHeld ? 'Unhold' : 'Hold'}</button>
       </td>
     </tr>`;
@@ -4734,7 +4798,7 @@ function renderPlanningBoard(){
       <td>${po.heats_required || 0}</td>
       <td><span class="table-pill table-pill--rolling ${po.rolling_mode === 'HOT' ? 'is-hot' : 'is-cold'}">${escapeHtml(po.rolling_mode || 'HOT')}</span></td>
       <td><span class="badge ${statusBadgeClass(po.planner_status)}">${escapeHtml(po.planner_status)}</span></td>
-      <td class="table-action-cell table-action-cell--inline" onclick="event.stopPropagation()"><button class="btn ghost ps-action btn-xs" onclick="toggleFreezePO('${escapeHtml(po.po_id)}')" ${isReleased ? 'disabled' : ''} title="${po.planner_status === 'FROZEN' ? 'Click to unfreeze' : 'Click to freeze'}">${po.planner_status === 'FROZEN' ? 'Unfreeze' : 'Freeze'}</button><button class="btn ghost ps-action btn-xs" onclick="checkMaterialForPO('${escapeHtml(po.po_id)}')">Mat</button></td>
+      <td class="table-action-cell table-action-cell--inline" onclick="event.stopPropagation()"><button class="btn ghost ps-action btn-xs" onclick="toggleFreezePO('${escapeHtml(po.po_id)}')" ${isReleased ? 'disabled' : ''} title="${po.planner_status === 'FROZEN' ? 'Click to unfreeze' : 'Click to freeze'}">${po.planner_status === 'FROZEN' ? 'Unfreeze' : 'Freeze'}</button><button class="btn ghost ps-action btn-xs" onclick="checkMaterialForPO('${escapeHtml(po.po_id)}')" title="Check material availability"><i class="fa-solid fa-cube" aria-hidden="true"></i><span> Check Material</span></button></td>
     </tr>
     <tr class="po-detail-row" id="po-detail-${escapeHtml(po.po_id)}" style="display:none">
       <td colspan="11">
