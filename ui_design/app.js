@@ -614,7 +614,7 @@ function setPipelineStageStatus(id, status, meta, kpis, options = {}){
   if(kpis && kpisEl){
     kpisEl.innerHTML = kpis.map(k=>`<span><strong>${k.v}</strong> ${k.l}</span>`).join('');
   }
-  if (!options.skipGuideRefresh) refreshPlanningWorkflowGuide();
+  // if (!options.skipGuideRefresh) refreshPlanningWorkflowGuide();
 }
 
 function stageExpand(id){ const b=qs(id+'-body'),c=qs(id+'-chevron'); b.classList.remove('collapsed'); c.classList.remove('collapsed'); }
@@ -710,58 +710,58 @@ function syncPlanningActionAvailability(snapshot = planningWorkflowSnapshot()) {
   );
 }
 
-function renderPlanningWorkflowGuide(snapshot = planningWorkflowSnapshot()) {
-  const trackEl = qs('planningWorkflowTrack');
-  const nextEl = qs('planningWorkflowNext');
-  if (trackEl) {
-    const stageRows = [
-      { key: 'pool', label: '1. Pool', meta: `${snapshot.poolCount} SOs` },
-      { key: 'propose', label: '2. Propose', meta: `${snapshot.poCount} POs` },
-      { key: 'heats', label: '3. Heats', meta: `${snapshot.heatCount} heats` },
-      { key: 'simulate', label: '4. Simulate', meta: snapshot.hasSim ? (snapshot.simFeasible ? 'Feasible' : 'Check') : 'Pending' },
-      { key: 'release', label: '5. Release', meta: `${snapshot.releasedCount} released` }
-    ];
-    trackEl.innerHTML = stageRows.map((stage) => {
-      const status = snapshot.stageStatus[stage.key] || 'pending';
-      const statusLabel = status === 'done'
-        ? 'Done'
-        : status === 'running'
-          ? 'Running'
-          : status === 'warn'
-            ? 'Check'
-            : status === 'blocked'
-              ? 'Blocked'
-              : 'Pending';
-      return `<div class="planning-workflow-step ${status}">
-        <span class="planning-workflow-dot" aria-hidden="true"></span>
-        <span class="planning-workflow-copy">
-          <span class="planning-workflow-step-label">${escapeHtml(stage.label)}</span>
-          <span class="planning-workflow-step-meta">${escapeHtml(statusLabel)} · ${escapeHtml(stage.meta)}</span>
-        </span>
-      </div>`;
-    }).join('');
-  }
-  if (nextEl) nextEl.textContent = snapshot.next;
-}
+// function renderPlanningWorkflowGuide(snapshot = planningWorkflowSnapshot()) {
+//   const trackEl = qs('planningWorkflowTrack');
+//   const nextEl = qs('planningWorkflowNext');
+//   if (trackEl) {
+//     const stageRows = [
+//       { key: 'pool', label: '1. Pool', meta: `${snapshot.poolCount} SOs` },
+//       { key: 'propose', label: '2. Propose', meta: `${snapshot.poCount} POs` },
+//       { key: 'heats', label: '3. Heats', meta: `${snapshot.heatCount} heats` },
+//       { key: 'simulate', label: '4. Simulate', meta: snapshot.hasSim ? (snapshot.simFeasible ? 'Feasible' : 'Check') : 'Pending' },
+//       { key: 'release', label: '5. Release', meta: `${snapshot.releasedCount} released` }
+//     ];
+//     trackEl.innerHTML = stageRows.map((stage) => {
+//       const status = snapshot.stageStatus[stage.key] || 'pending';
+//       const statusLabel = status === 'done'
+//         ? 'Done'
+//         : status === 'running'
+//           ? 'Running'
+//           : status === 'warn'
+//             ? 'Check'
+//             : status === 'blocked'
+//               ? 'Blocked'
+//               : 'Pending';
+//       return `<div class="planning-workflow-step ${status}">
+//         <span class="planning-workflow-dot" aria-hidden="true"></span>
+//         <span class="planning-workflow-copy">
+//           <span class="planning-workflow-step-label">${escapeHtml(stage.label)}</span>
+//           <span class="planning-workflow-step-meta">${escapeHtml(statusLabel)} · ${escapeHtml(stage.meta)}</span>
+//         </span>
+//       </div>`;
+//     }).join('');
+//   }
+//   if (nextEl) nextEl.textContent = snapshot.next;
+// }
 
-function refreshPlanningWorkflowGuide() {
-  const snapshot = planningWorkflowSnapshot();
-  const stageIdMap = {
-    pool: 'ps-pool',
-    propose: 'ps-propose',
-    heats: 'ps-heats',
-    simulate: 'ps-schedule',
-    release: 'ps-release'
-  };
-  Object.entries(stageIdMap).forEach(([key, stageId]) => {
-    const stageEl = qs(stageId);
-    if (!stageEl || stageEl.classList.contains('running')) return;
-    const status = snapshot.stageStatus[key] || 'pending';
-    setPipelineStageStatus(stageId, status, undefined, undefined, { skipGuideRefresh: true });
-  });
-  syncPlanningActionAvailability(snapshot);
-  renderPlanningWorkflowGuide(snapshot);
-}
+// function refreshPlanningWorkflowGuide() {
+//   const snapshot = planningWorkflowSnapshot();
+//   const stageIdMap = {
+//     pool: 'ps-pool',
+//     propose: 'ps-propose',
+//     heats: 'ps-heats',
+//     simulate: 'ps-schedule',
+//     release: 'ps-release'
+//   };
+//   Object.entries(stageIdMap).forEach(([key, stageId]) => {
+//     const stageEl = qs(stageId);
+//     if (!stageEl || stageEl.classList.contains('running')) return;
+//     const status = snapshot.stageStatus[key] || 'pending';
+//     setPipelineStageStatus(stageId, status, undefined, undefined, { skipGuideRefresh: true });
+//   });
+//   syncPlanningActionAvailability(snapshot);
+//   renderPlanningWorkflowGuide(snapshot);
+// }
 
 async function runFullPipeline(){
   const btn = qs('pipelineRunBtn');
@@ -824,7 +824,7 @@ async function runFullPipeline(){
 
   btn.textContent = '▶ Run Pipeline';
   btn.disabled = false;
-  refreshPlanningWorkflowGuide();
+  // refreshPlanningWorkflowGuide();
 }
 
 
@@ -4472,12 +4472,12 @@ async function loadPlanningOrderPool(){
       state.poolOrders.length + ' open SOs loaded',
       [{v: state.poolOrders.length, l:'orders'}, {v: urgentCount, l:'urgent'}]
     );
-    refreshPlanningWorkflowGuide();
+    // refreshPlanningWorkflowGuide();
   } catch(e) {
     console.error('Failed to load order pool:', e);
     setPipelineStageStatus('ps-pool', 'error', 'Load failed');
     qs('poolBody').innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-soft)">Error: ' + e.message + '</td></tr>';
-    refreshPlanningWorkflowGuide();
+    // refreshPlanningWorkflowGuide();
   }
 }
 
@@ -4761,7 +4761,7 @@ function renderPlanningBoard(){
   }
 
   qs('planningBoard').innerHTML = html || '<tr><td colspan="11" style="text-align:center;color:var(--text-soft)">No planning orders proposed yet. Next: select SOs in Stage 1 and run Propose.</td></tr>';
-  refreshPlanningWorkflowGuide();
+  // refreshPlanningWorkflowGuide();
 }
 
 
@@ -4914,7 +4914,7 @@ function renderHeatBuilder(){
       <td>${h.expected_duration_hours || 0}h</td>
     </tr>`;
   }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--text-soft)">No heats derived yet.</td></tr>';
-  refreshPlanningWorkflowGuide();
+  // refreshPlanningWorkflowGuide();
 }
 
 // SO Due Date Gantt - based on due dates (no schedule simulation needed)
@@ -5627,7 +5627,7 @@ async function simulateSchedule(config = {}){
       state.releaseReadyCount = 0;
       setText('releaseStatus', 'Blocked');
       qs('releaseApproveBtn').disabled = true;
-      refreshPlanningWorkflowGuide();
+      // refreshPlanningWorkflowGuide();
     }
 
     setText('schedulerSimulateBtn', 'Simulate');
@@ -5635,7 +5635,7 @@ async function simulateSchedule(config = {}){
     setPipelineStageStatus('ps-schedule', 'error', 'Simulation failed');
     state.releaseReadyCount = 0;
     qs('releaseApproveBtn').disabled = true;
-    refreshPlanningWorkflowGuide();
+    // refreshPlanningWorkflowGuide();
     setText('schedulerSimulateBtn', 'Simulate');
     throw e;
   }
@@ -5649,7 +5649,7 @@ async function loadReleaseBoard(){
     setText('releaseStatus', 'Pending');
     qs('releaseApproveBtn').disabled = true;
     setPipelineStageStatus('ps-release', 'pending', 'Complete stages 1-4 first');
-    refreshPlanningWorkflowGuide();
+    // refreshPlanningWorkflowGuide();
     return;
   }
 
@@ -5700,7 +5700,7 @@ async function loadReleaseBoard(){
       sim && sim.feasible ? 'No feasible POs in release queue' : 'Run Feasibility Check first',
       [{ v: 0, l: 'ready' }]
     );
-    refreshPlanningWorkflowGuide();
+    // refreshPlanningWorkflowGuide();
     return;
   }
 
@@ -5736,7 +5736,7 @@ async function loadReleaseBoard(){
     [{v: feasiblePos.length, l:'POs'}, {v: totalSOs, l:'SOs'}, {v: totalMT.toFixed(0)+'MT', l:'total'}]
   );
   stageExpand('ps-release');
-  refreshPlanningWorkflowGuide();
+  // refreshPlanningWorkflowGuide();
 }
 
 async function releaseSinglePO(poId){
@@ -6683,7 +6683,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   bar.style.width = '85%';
 
   await loadReleaseBoard();
-  refreshPlanningWorkflowGuide();
+  // refreshPlanningWorkflowGuide();
   bar.style.width = '100%';
 
   await healthPromise.catch(() => {});
@@ -6761,5 +6761,5 @@ async function refreshReleaseCycleState() {
   renderCampaigns();
   renderMaterial();
   await loadReleaseBoard();
-  refreshPlanningWorkflowGuide();
+  // refreshPlanningWorkflowGuide();
 }
