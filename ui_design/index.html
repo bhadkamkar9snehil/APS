@@ -304,12 +304,6 @@
             </div>
             <div class="ps-body" id="ps-pool-body">
               <div class="ps-body-inner">
-                <div class="grid-4 planning-summary-grid planning-summary-grid--pool">
-                  <div class="metric"><div class="metric-label">Pool SOs</div><div class="metric-value" id="poolTotalCount">—</div></div>
-                  <div class="metric"><div class="metric-label">Urgent</div><div class="metric-value" id="poolUrgentCount">—</div></div>
-                  <div class="metric"><div class="metric-label">Held</div><div class="metric-value" id="poolHeldCount">—</div></div>
-                  <div class="metric"><div class="metric-label">Selected</div><div class="metric-value" id="poolSelectedCount">—</div></div>
-                </div>
                 <div class="filters planning-stage-filters">
                   <input class="inp" id="poolSearch" placeholder="Search SO / Grade / Customer…" aria-label="Search order pool" />
                   <select class="sel" id="poolGrade" aria-label="Filter order pool by grade"><option value="">All grades</option></select>
@@ -591,28 +585,6 @@
             <span class="execution-topbar-copy" id="executionTopbarCopy">Execution surface ready.</span>
           </div>
         </div>
-        <div class="execution-kpi-strip" id="executionKpiStrip" aria-label="Execution KPI summary">
-          <div class="kpi-card kpi-card--sub metric" id="executionKpiCard1">
-            <div class="kpi-label metric-label" id="executionKpiLabel1">Released Lots</div>
-            <div class="kpi-value metric-value" id="executionKpiValue1">—</div>
-            <div class="kpi-sub metric-sub" id="executionKpiSub1">—</div>
-          </div>
-          <div class="kpi-card kpi-card--sub metric info" id="executionKpiCard2">
-            <div class="kpi-label metric-label" id="executionKpiLabel2">In Flight Ops</div>
-            <div class="kpi-value metric-value" id="executionKpiValue2">—</div>
-            <div class="kpi-sub metric-sub" id="executionKpiSub2">—</div>
-          </div>
-          <div class="kpi-card kpi-card--sub metric" id="executionKpiCard3">
-            <div class="kpi-label metric-label" id="executionKpiLabel3">Exceptions</div>
-            <div class="kpi-value metric-value" id="executionKpiValue3">—</div>
-            <div class="kpi-sub metric-sub" id="executionKpiSub3">—</div>
-          </div>
-          <div class="kpi-card kpi-card--sub metric" id="executionKpiCard4">
-            <div class="kpi-label metric-label" id="executionKpiLabel4">Bottleneck</div>
-            <div class="kpi-value metric-value" id="executionKpiValue4">—</div>
-            <div class="kpi-sub metric-sub" id="executionKpiSub4">—</div>
-          </div>
-        </div>
 
         <div id="exec-view-timeline" aria-labelledby="exec-tab-timeline" class="exec-view active-view execution-view" role="tabpanel">
           <div class="execution-filterbar">
@@ -742,28 +714,6 @@
         </div>
         <div class="page-scroll-shell">
           <div class="page-scroll-pane">
-          <div class="capacity-diagnostic-strip" id="capacityDiagnosticStrip" aria-label="Capacity diagnostics">
-            <div class="kpi-card kpi-card--sub metric" id="capacityDiagCard1">
-              <div class="kpi-label metric-label" id="capacityDiagLabel1">Peak Resource</div>
-              <div class="kpi-value metric-value" id="capacityDiagValue1">—</div>
-              <div class="kpi-sub metric-sub" id="capacityDiagSub1">—</div>
-            </div>
-            <div class="kpi-card kpi-card--sub metric" id="capacityDiagCard2">
-              <div class="kpi-label metric-label" id="capacityDiagLabel2">Overloaded</div>
-              <div class="kpi-value metric-value" id="capacityDiagValue2">—</div>
-              <div class="kpi-sub metric-sub" id="capacityDiagSub2">—</div>
-            </div>
-            <div class="kpi-card kpi-card--sub metric" id="capacityDiagCard3">
-              <div class="kpi-label metric-label" id="capacityDiagLabel3">High Utilisation</div>
-              <div class="kpi-value metric-value" id="capacityDiagValue3">—</div>
-              <div class="kpi-sub metric-sub" id="capacityDiagSub3">—</div>
-            </div>
-            <div class="kpi-card kpi-card--sub metric" id="capacityDiagCard4">
-              <div class="kpi-label metric-label" id="capacityDiagLabel4">Headroom</div>
-              <div class="kpi-value metric-value" id="capacityDiagValue4">—</div>
-              <div class="kpi-sub metric-sub" id="capacityDiagSub4">—</div>
-            </div>
-          </div>
           <div class="notice" id="capacityNarrative">Run Schedule or Feasibility Check to load capacity diagnostics.</div>
           <div class="panel card capacity-execution-link">
             <div class="card-header">
@@ -876,28 +826,6 @@
       <section class="page" id="page-master" role="tabpanel" aria-labelledby="tab-master">
         <div class="page-header"><div><div class="page-title">Master Data</div><div class="page-sub">All workbook sections surfaced through the application API.</div></div></div>
         <div class="page-content">
-          <div class="master-audit-strip">
-            <div class="kpi-card kpi-card--sub metric" id="masterAuditCard1">
-              <div class="kpi-label metric-label">Audit Health</div>
-              <div class="kpi-value metric-value" id="masterAuditValue1">—</div>
-              <div class="kpi-sub metric-sub" id="masterAuditSub1">—</div>
-            </div>
-            <div class="kpi-card kpi-card--sub metric" id="masterAuditCard2">
-              <div class="kpi-label metric-label">Critical</div>
-              <div class="kpi-value metric-value" id="masterAuditValue2">—</div>
-              <div class="kpi-sub metric-sub" id="masterAuditSub2">—</div>
-            </div>
-            <div class="kpi-card kpi-card--sub metric" id="masterAuditCard3">
-              <div class="kpi-label metric-label">Warnings</div>
-              <div class="kpi-value metric-value" id="masterAuditValue3">—</div>
-              <div class="kpi-sub metric-sub" id="masterAuditSub3">—</div>
-            </div>
-            <div class="kpi-card kpi-card--sub metric" id="masterAuditCard4">
-              <div class="kpi-label metric-label">Config Conflicts</div>
-              <div class="kpi-value metric-value" id="masterAuditValue4">—</div>
-              <div class="kpi-sub metric-sub" id="masterAuditSub4">—</div>
-            </div>
-          </div>
           <div class="notice master-audit-notice" id="masterAuditIssues">Run refresh to load master-data audit checks.</div>
           <div class="toolbar">
             <select class="sel" id="masterSection" aria-label="Master data section">

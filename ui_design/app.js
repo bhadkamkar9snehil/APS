@@ -2278,7 +2278,8 @@ function renderExecutionKpis() {
 }
 
 function refreshExecutionTopbarMeta(view = null) {
-  renderExecutionKpis();
+  // KPI rendering removed: only top summary strip shown per design rule
+  // renderExecutionKpis();
   const activeView = view || (document.querySelector('.exec-view.active-view')?.id || '').replace('exec-view-', '') || 'timeline';
   const sourceJobs = getExecutionJobs();
   const jobs = activeView === 'timeline' ? (state.executionLastFilteredJobs || sourceJobs) : sourceJobs;
@@ -3361,7 +3362,8 @@ function renderCapacity(){
   const rows = [...(state.capacity||[])].sort((a,b)=>num(b['Utilisation_%'] || b.utilisation) - num(a['Utilisation_%'] || a.utilisation));
   const body = qs('capacityBody');
   renderCapacityBars();
-  renderCapacityDiagnostics(rows);
+  // KPI rendering removed: only top summary strip shown per design rule
+  // renderCapacityDiagnostics(rows);
   renderCapacityExecutionContext(rows);
   if(!rows.length){ body.innerHTML = '<tr><td colspan="11">No capacity rows loaded. Run Feasibility Check to generate the map.</td></tr>'; return; }
   body.innerHTML = rows.map(r=>{
@@ -3663,7 +3665,8 @@ function renderMasterAudit(){
 }
 
 function renderMaster(){
-  renderMasterAudit();
+  // KPI rendering removed: only top summary strip shown per design rule
+  // renderMasterAudit();
   const section = qs('masterSection').value;
   const rows = state.master[section] || [];
   setText('masterTitle', MASTER_LABELS[section] || section);
@@ -4525,10 +4528,11 @@ function renderPlanningOrderPool() {
   const filteredUrgent = filtered.filter((so) => upper(so.priority) === 'URGENT').length;
   const filteredHeld = filtered.filter((so) => Boolean(so._held)).length;
   const defaultSelected = filtered.filter((so) => !so._held).length;
-  setText('poolTotalCount', String(filtered.length));
-  setText('poolUrgentCount', String(filteredUrgent));
-  setText('poolHeldCount', String(filteredHeld));
-  setText('poolSelectedCount', String(defaultSelected));
+  // KPI rendering removed: only top summary strip shown per design rule
+  // setText('poolTotalCount', String(filtered.length));
+  // setText('poolUrgentCount', String(filteredUrgent));
+  // setText('poolHeldCount', String(filteredHeld));
+  // setText('poolSelectedCount', String(defaultSelected));
 
   poolBody.innerHTML = filtered.map((so) => {
     const isHeld = so._held;
