@@ -859,16 +859,20 @@ def _derive_capacity_status(util_pct: float) -> str:
     return "OK"
 
 
+def _get_cached_resources_df() -> pd.DataFrame | None:
+    """Get resources DataFrame with caching to avoid repeated workbook reads."""
+    try:
+        return _load_all().get("resources")
+    except Exception:
+        return None
+
+
 def _capacity_rows() -> List[Dict[str, Any]]:
     rows = _df_to_records(_active_run_capacity())
     if not rows:
         return []
 
-    resources_df = None
-    try:
-        resources_df = _load_all().get("resources")
-    except Exception:
-        resources_df = None
+    resources_df = _get_cached_resources_df()
 
     enriched: List[Dict[str, Any]] = []
     for row in rows:

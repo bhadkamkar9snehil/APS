@@ -1343,35 +1343,43 @@ def schedule(
                 model.Add(right["start"] >= left["end"] + change_lr).OnlyEnforceIf(left_before)
                 model.Add(left["start"] >= right["end"] + change_rl).OnlyEnforceIf(right_before)
 
-    for left_idx, left in enumerate(sms_all_tasks):
-        for right_idx in range(left_idx + 1, len(sms_all_tasks)):
-            right = sms_all_tasks[right_idx]
-            if left.get("operation") != right.get("operation"):
-                continue
-            shared_machines = set(left.get("choices", {})).intersection(right.get("choices", {}))
-            if not shared_machines:
-                continue
-            change_lr = _changeover_minutes(changeover_matrix, left.get("grade"), right.get("grade"))
-            change_rl = _changeover_minutes(changeover_matrix, right.get("grade"), left.get("grade"))
-            if change_lr <= 0 and change_rl <= 0:
-                continue
-            for machine in shared_machines:
-                left_lit = left["choices"][machine]
-                right_lit = right["choices"][machine]
-                left_before = model.NewBoolVar(
-                    f"sms_{left_idx}_before_{right_idx}_{left.get('operation')}_{machine}"
-                )
-                right_before = model.NewBoolVar(
-                    f"sms_{right_idx}_before_{left_idx}_{right.get('operation')}_{machine}"
-                )
-                model.Add(left_before <= left_lit)
-                model.Add(left_before <= right_lit)
-                model.Add(right_before <= left_lit)
-                model.Add(right_before <= right_lit)
-                model.Add(left_before + right_before >= left_lit + right_lit - 1)
-                model.Add(left_before + right_before <= 1)
-                model.Add(right["start"] >= left["end"] + change_lr).OnlyEnforceIf(left_before)
-                model.Add(left["start"] >= right["end"] + change_rl).OnlyEnforceIf(right_before)
+    # Group SMS tasks by operation to avoid O(n²) all-pairs iteration
+    sms_by_operation = {}
+    for task_idx, task in enumerate(sms_all_tasks):
+        op = task.get("operation", "")
+        if op not in sms_by_operation:
+            sms_by_operation[op] = []
+        sms_by_operation[op].append((task_idx, task))
+
+    # Only pair tasks within the same operation
+    for operation, op_tasks in sms_by_operation.items():
+        for left_pair_idx, (left_idx, left) in enumerate(op_tasks):
+            for right_pair_idx in range(left_pair_idx + 1, len(op_tasks)):
+                right_idx, right = op_tasks[right_pair_idx]
+                shared_machines = set(left.get("choices", {})).intersection(right.get("choices", {}))
+                if not shared_machines:
+                    continue
+                change_lr = _changeover_minutes(changeover_matrix, left.get("grade"), right.get("grade"))
+                change_rl = _changeover_minutes(changeover_matrix, right.get("grade"), left.get("grade"))
+                if change_lr <= 0 and change_rl <= 0:
+                    continue
+                for machine in shared_machines:
+                    left_lit = left["choices"][machine]
+                    right_lit = right["choices"][machine]
+                    left_before = model.NewBoolVar(
+                        f"sms_{left_idx}_before_{right_idx}_{operation}_{machine}"
+                    )
+                    right_before = model.NewBoolVar(
+                        f"sms_{right_idx}_before_{left_idx}_{operation}_{machine}"
+                    )
+                    model.Add(left_before <= left_lit)
+                    model.Add(left_before <= right_lit)
+                    model.Add(right_before <= left_lit)
+                    model.Add(right_before <= right_lit)
+                    model.Add(left_before + right_before >= left_lit + right_lit - 1)
+                    model.Add(left_before + right_before <= 1)
+                    model.Add(right["start"] >= left["end"] + change_lr).OnlyEnforceIf(left_before)
+                    model.Add(left["start"] >= right["end"] + change_rl).OnlyEnforceIf(right_before)
 
     makespan_weight = _get_makespan_weight()
     if makespan_weight > 0 and all_end_vars:
