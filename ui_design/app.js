@@ -4136,15 +4136,32 @@ function renderBomDetail(plant, materialType){
   html += '<div class="bom-detail-hero-copy">';
   html += '<div class="bom-detail-title">'+escapeHtml(plant)+'</div>';
   html += '<div class="bom-detail-subtitle">'+escapeHtml(materialType ? `${materialType.material_type} total-plan material stage` : 'Plant total-plan material overview')+'</div>';
-  html += '<div class="bom-detail-subtitle">'+escapeHtml(
-    materialType
-      ? `${allRows.length} items · ${covered} covered · ${partial} partial · ${short} short`
-      : `${stageCount} stages · ${allRows.length} items · ${covered} covered · ${partial} partial · ${short} short`
-  )+'</div>';
-  html += '<div class="bom-detail-subtitle">BOM reports total-plan requirement; release blockers live in the Material tab.</div>';
-  html += '<div class="bom-detail-subtitle">'+escapeHtml(
-    `Gross ${totalGross.toFixed(1)} MT · Produced ${totalProduced.toFixed(1)} MT · Net ${totalNet.toFixed(1)} MT · ${materialType ? 'Blocked' : 'At risk'} ${blockedMt.toFixed(1)} MT`
-  )+'</div>';
+  html += '<div style="font-size: 0.75rem; color: var(--text-soft); margin-top: 0.5rem; line-height: 1.4;">'+
+    '<div>'+escapeHtml(
+      materialType
+        ? `${allRows.length} items · ${covered} covered · ${partial} partial · ${short} short`
+        : `${stageCount} stages · ${allRows.length} items · ${covered} covered · ${partial} partial · ${short} short`
+    )+'</div>'+
+    '<div style="margin-top: 0.25rem; color: var(--text-faint);">BOM reports total-plan requirement; release blockers live in the Material tab.</div>'+
+  '</div>';
+  html += '<div class="bom-detail-stats" style="margin-top: 1rem; margin-bottom: 0;">'+
+    '<div class="bom-detail-stat">'+
+      '<div class="bom-detail-stat-label">Gross Req</div>'+
+      '<div class="bom-detail-stat-value">'+totalGross.toFixed(1)+' MT</div>'+
+    '</div>'+
+    '<div class="bom-detail-stat">'+
+      '<div class="bom-detail-stat-label">Produced</div>'+
+      '<div class="bom-detail-stat-value">'+totalProduced.toFixed(1)+' MT</div>'+
+    '</div>'+
+    '<div class="bom-detail-stat">'+
+      '<div class="bom-detail-stat-label">Net Req</div>'+
+      '<div class="bom-detail-stat-value">'+totalNet.toFixed(1)+' MT</div>'+
+    '</div>'+
+    '<div class="bom-detail-stat">'+
+      '<div class="bom-detail-stat-label">'+(materialType ? 'Blocked' : 'At Risk')+'</div>'+
+      '<div class="bom-detail-stat-value">'+blockedMt.toFixed(1)+' MT</div>'+
+    '</div>'+
+  '</div>';
   html += '</div></div>';
 
   if(!materialType) {
