@@ -253,6 +253,17 @@ function activatePage(page) {
     el.tabIndex = active ? 0 : -1;
   });
 
+  // Overflow menu: mark ··· button active when one of its pages is open
+  const overflowPages = ['execution', 'ctp', 'scenarios', 'master'];
+  const tabMore = qs('tab-more');
+  const overflowMenu = qs('tabOverflowMenu');
+  if (tabMore) tabMore.classList.toggle('is-active', overflowPages.includes(page));
+  if (overflowMenu) {
+    overflowMenu.querySelectorAll('.tab-overflow-item').forEach(item => {
+      item.classList.toggle('is-active', item.dataset.page === page);
+    });
+  }
+
   setTopActionContext(page);
   syncMaterialModeControl();
   renderTopSummaryForPage(page);
@@ -261,6 +272,54 @@ function activatePage(page) {
   if (page === 'bom') initSplitResizer('bomDivider');
   if (page === 'capacity') renderCapacity();
   syncExecutionDetailPanel();
+}
+
+function activatePlanningSubTab(tab) {
+  const tabs = document.querySelectorAll('#planningSubtabBar .planning-subtab');
+  const pages = document.querySelectorAll('#page-planning .planning-subpage');
+  tabs.forEach(btn => {
+    const active = btn.dataset.pstab === tab;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  pages.forEach(panel => {
+    panel.classList.toggle('active', panel.id === `psp-${tab}`);
+  });
+  state._activePlanningSubTab = tab;
+}
+
+function initTabOverflowMenu() {
+  const tabMore = qs('tab-more');
+  const menu = qs('tabOverflowMenu');
+  if (!tabMore || !menu) return;
+
+  tabMore.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = !menu.hidden;
+    menu.hidden = isOpen;
+    tabMore.setAttribute('aria-expanded', String(!isOpen));
+    // Position dropdown to align with the ··· button
+    if (!isOpen) {
+      const rect = tabMore.getBoundingClientRect();
+      const navRect = tabMore.closest('.navbar').getBoundingClientRect();
+      menu.style.left = (rect.left - navRect.left) + 'px';
+    }
+  });
+
+  menu.querySelectorAll('.tab-overflow-item').forEach(item => {
+    item.addEventListener('click', () => {
+      activatePage(item.dataset.page);
+      menu.hidden = true;
+      tabMore.setAttribute('aria-expanded', 'false');
+    });
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!menu.hidden && !menu.contains(e.target) && e.target !== tabMore) {
+      menu.hidden = true;
+      tabMore.setAttribute('aria-expanded', 'false');
+    }
+  });
 }
 
 function switchExecView(view){
@@ -592,7 +651,6 @@ function setPipelineStageStatus(id, status, meta, kpis, options = {}){
   const badge = qs(id + '-badge');
   const metaEl = qs(id + '-meta');
   const kpisEl = qs(id + '-kpis');
-  const stage = qs(id);
   const labels = {pending:'PENDING',running:'RUNNING…',done:'DONE',warn:'CHECK',error:'ERROR',blocked:'BLOCKED'};
   const semantic = {
     pending: 'status-neutral',
@@ -603,22 +661,32 @@ function setPipelineStageStatus(id, status, meta, kpis, options = {}){
     blocked: 'status-neutral'
   };
   if (badge) {
-    badge.className = ['ps-badge', 'status-token', status, semantic[status] || 'status-neutral'].join(' ');
+    badge.className = ['pstab-badge', 'status-token', status, semantic[status] || 'status-neutral'].join(' ');
     badge.textContent = labels[status] || status.toUpperCase();
-  }
-  if (stage) {
-    stage.className = ['panel', 'pipeline-stage', status === 'pending' ? '' : status].filter(Boolean).join(' ');
-    stage.dataset.stageStatus = status;
   }
   if(meta && metaEl) metaEl.textContent = meta;
   if(kpis && kpisEl){
     kpisEl.innerHTML = kpis.map(k=>`<span><strong>${k.v}</strong> ${k.l}</span>`).join('');
   }
-  // if (!options.skipGuideRefresh) refreshPlanningWorkflowGuide();
+  // Update sub-tab button state
+  const stageToTab = { 'ps-pool':'pool', 'ps-propose':'propose', 'ps-heats':'heats', 'ps-schedule':'schedule', 'ps-release':'release' };
+  const tabKey = stageToTab[id];
+  if (tabKey) {
+    const subtab = qs(`pstab-${tabKey}`);
+    if (subtab) {
+      subtab.classList.remove('is-done','is-error','is-warn','is-running');
+      if (status === 'done') subtab.classList.add('is-done');
+      else if (status === 'error') subtab.classList.add('is-error');
+      else if (status === 'warn') subtab.classList.add('is-warn');
+      // Update count badge with kpis if available
+      const countEl = qs(`pstab-${tabKey}-count`);
+      if (countEl && kpis && kpis.length > 0) countEl.textContent = kpis[0].v;
+    }
+  }
 }
 
-function stageExpand(id){ const b=qs(id+'-body'),c=qs(id+'-chevron'); b.classList.remove('collapsed'); c.classList.remove('collapsed'); }
-function stageCollapse(id){ const b=qs(id+'-body'),c=qs(id+'-chevron'); b.classList.add('collapsed'); c.classList.add('collapsed'); }
+function stageExpand(id){ /* no-op: pipeline stages are now sub-tabs, always visible when active */ }
+function stageCollapse(id){ /* no-op: pipeline stages are now sub-tabs, always visible when active */ }
 
 function planningWorkflowSnapshot() {
   const sim = latestSimResult();
@@ -4734,7 +4802,7 @@ async function proposePlanningOrders() {
       ]
     );
 
-    stageExpand('ps-propose');
+    activatePlanningSubTab('propose');
   } catch (e) {
     setPipelineStageStatus('ps-propose', 'error', 'Proposal failed');
     throw e;
@@ -4923,7 +4991,7 @@ async function deriveHeatBatches() {
       ]
     );
 
-    stageExpand('ps-heats');
+    activatePlanningSubTab('schedule');
     setText('heatDeriveBtn', 'Derive');
   } catch (e) {
     setPipelineStageStatus('ps-heats', 'error', 'Derive failed');
@@ -5690,7 +5758,7 @@ async function simulateSchedule(config = {}){
         : data.message,
       [{v: duration+'h', l:'span'}, {v: horizonUse, l:'horizon use'}]
     );
-    stageExpand('ps-schedule');
+    if (feasible) activatePlanningSubTab('release');
 
     // Enable release if feasible
     if(feasible) await loadReleaseBoard();
@@ -6724,17 +6792,18 @@ async function openMaterialPanel(title, items) {
 
 qs('pipelineRunBtn')?.addEventListener('click', runFullPipeline);
 
-qs('pipelineExpandAllBtn')?.addEventListener('click', () => {
-  const ids = ['ps-pool', 'ps-propose', 'ps-heats', 'ps-schedule', 'ps-release'];
-  const anyCollapsed = ids.some((id) => qs(id + '-body')?.classList.contains('collapsed'));
-
-  ids.forEach((id) => {
-    if (anyCollapsed) stageExpand(id);
-    else stageCollapse(id);
-  });
-
-  qs('pipelineExpandAllBtn').textContent = anyCollapsed ? 'Collapse' : 'Expand';
+// Planning sub-tab bar click handler
+document.querySelector('#planningSubtabBar')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('.planning-subtab');
+  if (!btn || e.target.closest('.pstab-action')) return; // let action buttons bubble
+  activatePlanningSubTab(btn.dataset.pstab);
 });
+
+// Init overflow menu and activate first planning sub-tab on load
+initTabOverflowMenu();
+
+// Activate first sub-tab on load
+activatePlanningSubTab(state._activePlanningSubTab || 'pool');
 
 qs('heatDeriveBtn')?.addEventListener('click', deriveHeatBatches);
 qs('schedulerSimulateBtn')?.addEventListener('click', simulateSchedule);

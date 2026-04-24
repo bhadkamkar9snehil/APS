@@ -63,11 +63,16 @@
         <button type="button" class="tab" id="tab-planning" data-page="planning" role="tab" aria-selected="false" aria-controls="page-planning" tabindex="-1">Planning</button>
         <button type="button" class="tab" id="tab-bom" data-page="bom" role="tab" aria-selected="false" aria-controls="page-bom" tabindex="-1">BOM</button>
         <button type="button" class="tab" id="tab-material" data-page="material" role="tab" aria-selected="false" aria-controls="page-material" tabindex="-1">Material</button>
-        <button type="button" class="tab" id="tab-execution" data-page="execution" role="tab" aria-selected="false" aria-controls="page-execution" tabindex="-1">Execution</button>
         <button type="button" class="tab" id="tab-capacity" data-page="capacity" role="tab" aria-selected="false" aria-controls="page-capacity" tabindex="-1">Capacity</button>
-        <button type="button" class="tab" id="tab-ctp" data-page="ctp" role="tab" aria-selected="false" aria-controls="page-ctp" tabindex="-1">CTP</button>
-        <button type="button" class="tab" id="tab-scenarios" data-page="scenarios" role="tab" aria-selected="false" aria-controls="page-scenarios" tabindex="-1">Scenarios</button>
-        <button type="button" class="tab" id="tab-master" data-page="master" role="tab" aria-selected="false" aria-controls="page-master" tabindex="-1">Master Data</button>
+        <!-- Overflow trigger -->
+        <button type="button" class="tab tab--overflow" id="tab-more" aria-haspopup="true" aria-expanded="false" title="More pages" tabindex="-1"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></button>
+      </div>
+      <!-- Overflow dropdown menu -->
+      <div class="tab-overflow-menu" id="tabOverflowMenu" role="menu" hidden>
+        <button type="button" class="tab-overflow-item" data-page="execution" role="menuitem"><i class="fa-solid fa-industry" aria-hidden="true"></i><span>Execution</span></button>
+        <button type="button" class="tab-overflow-item" data-page="ctp" role="menuitem"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i><span>CTP</span></button>
+        <button type="button" class="tab-overflow-item" data-page="scenarios" role="menuitem"><i class="fa-solid fa-code-branch" aria-hidden="true"></i><span>Scenarios</span></button>
+        <button type="button" class="tab-overflow-item" data-page="master" role="menuitem"><i class="fa-solid fa-database" aria-hidden="true"></i><span>Master Data</span></button>
       </div>
       <div class="navbar-actions" aria-label="Page actions">
         <div class="control-group" id="ctrl-default">
@@ -92,7 +97,6 @@
             <option value="10">10 Days</option>
             <option value="14">14 Days</option>
           </select>
-          <button type="button" class="btn ghost btn-compact" id="pipelineExpandAllBtn" title="Expand or collapse all stages"><i class="fa-solid fa-up-down" aria-hidden="true"></i><span>Expand</span></button>
           <button type="button" class="btn primary btn-compact" id="pipelineRunBtn" title="Run Pipeline"><i class="fa-solid fa-play" aria-hidden="true"></i><span>Run</span></button>
         </div>
         <div class="navbar-context" id="navbarContextSlot" aria-live="polite">
@@ -321,20 +325,50 @@
           <!-- PIPELINE CONTAINER (LEFT) -->
           <div class="planning-main">
 
+          <!-- SUB-TAB NAV STRIP — navigation only, no action buttons here -->
+          <div class="planning-subtab-bar" id="planningSubtabBar" role="tablist">
+            <button type="button" class="planning-subtab active" id="pstab-pool" data-pstab="pool" role="tab" aria-selected="true" aria-controls="psp-pool">
+              <span class="pstab-step">1</span>
+              <span class="pstab-label">Pool</span>
+              <span class="pstab-count" id="pstab-pool-count">—</span>
+              <span class="pstab-badge status-token status-success" id="ps-pool-badge">READY</span>
+            </button>
+            <button type="button" class="planning-subtab" id="pstab-propose" data-pstab="propose" role="tab" aria-selected="false" aria-controls="psp-propose">
+              <span class="pstab-step">2</span>
+              <span class="pstab-label">Propose</span>
+              <span class="pstab-count" id="pstab-propose-count">—</span>
+              <span class="pstab-badge status-token status-neutral" id="ps-propose-badge">PENDING</span>
+            </button>
+            <button type="button" class="planning-subtab" id="pstab-heats" data-pstab="heats" role="tab" aria-selected="false" aria-controls="psp-heats">
+              <span class="pstab-step">3</span>
+              <span class="pstab-label">Heats</span>
+              <span class="pstab-count" id="pstab-heats-count">—</span>
+              <span class="pstab-badge status-token status-neutral" id="ps-heats-badge">PENDING</span>
+            </button>
+            <button type="button" class="planning-subtab" id="pstab-schedule" data-pstab="schedule" role="tab" aria-selected="false" aria-controls="psp-schedule">
+              <span class="pstab-step">4</span>
+              <span class="pstab-label">Feasibility</span>
+              <span class="pstab-count" id="pstab-schedule-count">—</span>
+              <span class="pstab-badge status-token status-neutral" id="ps-schedule-badge">PENDING</span>
+            </button>
+            <button type="button" class="planning-subtab" id="pstab-release" data-pstab="release" role="tab" aria-selected="false" aria-controls="psp-release">
+              <span class="pstab-step">5</span>
+              <span class="pstab-label">Release</span>
+              <span class="pstab-count" id="pstab-release-count">—</span>
+              <span class="pstab-badge status-token status-neutral" id="ps-release-badge">PENDING</span>
+            </button>
+          </div>
+
           <!-- STAGE 1: ORDER POOL -->
-          <div class="panel pipeline-stage" id="ps-pool">
-            <div class="ps-header" onclick="toggleStage('ps-pool')">
-              <div class="ps-num">1</div>
-              <div class="ps-info">
-                <div class="ps-title">Order Pool</div>
-                <div class="ps-meta" id="ps-pool-meta">Load all open sales orders</div>
-              </div>
-              <div class="ps-kpis" id="ps-pool-kpis"></div>
-              <div class="ps-badge status-token status-success" id="ps-pool-badge">READY</div>
-              <div class="ps-chevron" id="ps-pool-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></div>
-            </div>
+          <div class="planning-subpage active" id="psp-pool" role="tabpanel" aria-labelledby="pstab-pool">
             <div class="ps-body" id="ps-pool-body">
               <div class="ps-body-inner">
+                <div class="planning-panel-header">
+                  <div class="planning-panel-header__meta">
+                    <span class="planning-panel-header__title">Order Pool</span>
+                    <span class="planning-panel-header__sub" id="ps-pool-meta">Load all open sales orders</span>
+                  </div>
+                </div>
                 <div class="filters planning-stage-filters">
                   <input class="inp" id="poolSearch" placeholder="Search SO / Grade / Customer…" aria-label="Search order pool" />
                   <select class="sel" id="poolGrade" aria-label="Filter order pool by grade"><option value="">All grades</option></select>
@@ -360,21 +394,17 @@
             </div>
           </div>
 
-          <!-- STAGE 2: PROPOSE ORDERS (window select to POs) -->
-          <div class="panel pipeline-stage" id="ps-propose">
-            <div class="ps-header" onclick="toggleStage('ps-propose')">
-              <div class="ps-num">2</div>
-              <div class="ps-info">
-                <div class="ps-title">Propose Orders</div>
-                <div class="ps-meta" id="ps-propose-meta">Group candidates into manufacturing lots</div>
-              </div>
-              <div class="ps-kpis" id="ps-propose-kpis"></div>
-              <div class="ps-badge pending status-token status-neutral" id="ps-propose-badge">PENDING</div>
-              <button type="button" class="btn primary ps-action" id="planningProposeBtn" onclick="event.stopPropagation();proposePlanningOrders()"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><span> Propose</span></button>
-              <div class="ps-chevron collapsed" id="ps-propose-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></div>
-            </div>
-            <div class="ps-body collapsed" id="ps-propose-body">
+          <!-- STAGE 2: PROPOSE ORDERS -->
+          <div class="planning-subpage" id="psp-propose" role="tabpanel" aria-labelledby="pstab-propose">
+            <div class="ps-body" id="ps-propose-body">
               <div class="ps-body-inner">
+                <div class="planning-panel-header">
+                  <div class="planning-panel-header__meta">
+                    <span class="planning-panel-header__title">Propose Orders</span>
+                    <span class="planning-panel-header__sub" id="ps-propose-meta">Group candidates into manufacturing lots</span>
+                  </div>
+                  <button type="button" class="btn primary" id="planningProposeBtn" onclick="proposePlanningOrders()"><i class="fa-solid fa-layer-group" aria-hidden="true"></i><span> Propose</span></button>
+                </div>
                 <div class="grid-4 planning-summary-grid">
                   <div class="metric"><div class="metric-label">Window</div><div class="metric-value" id="planningWindowLabel">—</div></div>
                   <div class="metric"><div class="metric-label">Candidates</div><div class="metric-value" id="planningCandidates">—</div></div>
@@ -400,24 +430,20 @@
           </div>
 
           <!-- STAGE 3: HEAT BATCHES -->
-          <div class="panel pipeline-stage" id="ps-heats">
-            <div class="ps-header" onclick="toggleStage('ps-heats')">
-              <div class="ps-num">3</div>
-              <div class="ps-info">
-                <div class="ps-title">Heat Batches</div>
-                <div class="ps-meta" id="ps-heats-meta">Derive SMS production heats from planning lots</div>
-              </div>
-              <div class="ps-kpis" id="ps-heats-kpis"></div>
-              <div class="ps-badge pending status-token status-neutral" id="ps-heats-badge">PENDING</div>
-              <button type="button" class="btn primary ps-action" id="heatDeriveBtn" onclick="event.stopPropagation();deriveHeatBatches()"><i class="fa-solid fa-fire" aria-hidden="true"></i><span> Derive</span></button>
-              <div class="ps-chevron collapsed" id="ps-heats-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></div>
-            </div>
-            <div class="ps-body collapsed" id="ps-heats-body">
+          <div class="planning-subpage" id="psp-heats" role="tabpanel" aria-labelledby="pstab-heats">
+            <div class="ps-body" id="ps-heats-body">
               <div class="ps-body-inner">
-                <div class="toolbar planning-toolbar planning-toolbar--heat">
-                  <label for="heatSizeMt" class="planning-toolbar-label">Heat size:</label>
-                  <input class="inp planning-heat-input" id="heatSizeMt" type="number" value="50" min="10" max="200" step="5" title="MT per heat">
-                  <span class="planning-toolbar-note">MT / heat</span>
+                <div class="planning-panel-header">
+                  <div class="planning-panel-header__meta">
+                    <span class="planning-panel-header__title">Heat Batches</span>
+                    <span class="planning-panel-header__sub" id="ps-heats-meta">Derive SMS production heats from planning lots</span>
+                  </div>
+                  <div class="planning-panel-header__controls">
+                    <label for="heatSizeMt" class="planning-toolbar-label">Heat size</label>
+                    <input class="inp planning-heat-input" id="heatSizeMt" type="number" value="50" min="10" max="200" step="5" title="MT per heat" style="width:5rem">
+                    <span class="planning-toolbar-note">MT</span>
+                    <button type="button" class="btn primary" id="heatDeriveBtn"><i class="fa-solid fa-fire" aria-hidden="true"></i><span> Derive</span></button>
+                  </div>
                 </div>
                 <div class="grid-4 planning-summary-grid">
                   <div class="metric"><div class="metric-label">Total heats</div><div class="metric-value" id="heatTotal">—</div></div>
@@ -426,8 +452,6 @@
                   <div class="metric"><div class="metric-label">Est. duration</div><div class="metric-value" id="heatDuration">—</div></div>
                 </div>
                 <div class="toolbar planning-toolbar">
-                  <div class="planning-toolbar-spacer"></div>
-                </div>
                 <div class="planning-table-wrap">
                   <table class="table">
                     <thead><tr><th>Heat ID</th><th>PO ID</th><th>FG (Finished Good)</th><th>Grade</th><th>Materials</th><th>Qty MT</th><th>Seq</th><th>Route</th><th>Duration</th></tr></thead>
@@ -437,24 +461,20 @@
               </div>
             </div>
           </div>
+          </div>
 
-          <!-- STAGE 4: SCHEDULE FEASIBILITY -->
-          <div class="panel pipeline-stage" id="ps-schedule">
-            <div class="ps-header" onclick="toggleStage('ps-schedule')">
-              <div class="ps-num">4</div>
-              <div class="ps-info">
-                <div class="ps-title">Feasibility Check</div>
-                <div class="ps-meta" id="ps-schedule-meta">Verify heats fit within planning horizon</div>
-              </div>
-              <div class="ps-kpis" id="ps-schedule-kpis"></div>
-              <div class="ps-badge pending status-token status-neutral" id="ps-schedule-badge">PENDING</div>
-              <button type="button" class="btn primary ps-action" id="schedulerSimulateBtn" onclick="event.stopPropagation();simulateSchedule()"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span> Simulate</span></button>
-              <div class="ps-chevron collapsed" id="ps-schedule-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></div>
-            </div>
-            <div class="ps-body collapsed" id="ps-schedule-body">
+          <!-- STAGE 4: FEASIBILITY -->
+          <div class="planning-subpage" id="psp-schedule" role="tabpanel" aria-labelledby="pstab-schedule">
+            <div class="ps-body" id="ps-schedule-body">
               <div class="ps-body-inner">
-                <!-- SIMULATION CONFIGURATION PANEL (before simulate) -->
-                <!-- SIMULATION PARAMETERS (always visible, used for first run and what-if) -->
+                <div class="planning-panel-header">
+                  <div class="planning-panel-header__meta">
+                    <span class="planning-panel-header__title">Feasibility Check</span>
+                    <span class="planning-panel-header__sub" id="ps-schedule-meta">Verify heats fit within planning horizon</span>
+                  </div>
+                  <button type="button" class="btn primary" id="schedulerSimulateBtn"><i class="fa-solid fa-sliders" aria-hidden="true"></i><span id="simBtnText"> Simulate</span></button>
+                </div>
+                <!-- SIMULATION PARAMETERS -->
                 <div id="simParamsPanel" class="planning-sim-panel">
                   <div class="planning-sim-title">SIMULATION PARAMETERS</div>
                   <div class="planning-sim-grid">
@@ -512,9 +532,6 @@
                       </select>
                     </div>
                   </div>
-                  <button type="button" class="btn primary planning-sim-run" onclick="simulateSchedule()">
-                    <i class="fa-solid fa-play" aria-hidden="true"></i><span id="simBtnText"> Run Feasibility Check</span>
-                  </button>
                 </div>
 
                 <!-- SIMULATION RESULTS (shown after simulate) -->
@@ -532,30 +549,25 @@
           </div>
 
           <!-- STAGE 5: RELEASE -->
-          <div class="panel pipeline-stage" id="ps-release">
-            <div class="ps-header" onclick="toggleStage('ps-release')">
-              <div class="ps-num">5</div>
-              <div class="ps-info">
-                <div class="ps-title">Release to Execution</div>
-                <div class="ps-meta" id="ps-release-meta">Approve and send planning orders to operations</div>
-              </div>
-              <div class="ps-kpis" id="ps-release-kpis"></div>
-              <div class="ps-badge pending status-token status-neutral" id="ps-release-badge">PENDING</div>
-              <button type="button" class="btn success ps-action" id="releaseApproveBtn" onclick="event.stopPropagation();releaseSelectedPOs()" disabled><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span> Release</span></button>
-              <div class="ps-chevron collapsed" id="ps-release-chevron" aria-label="Toggle stage details"><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></div>
-            </div>
-            <div class="ps-body collapsed" id="ps-release-body">
+          <div class="planning-subpage" id="psp-release" role="tabpanel" aria-labelledby="pstab-release">
+            <div class="ps-body" id="ps-release-body">
               <div class="ps-body-inner">
+                <div class="planning-panel-header">
+                  <div class="planning-panel-header__meta">
+                    <span class="planning-panel-header__title">Release Orders</span>
+                    <span class="planning-panel-header__sub" id="ps-release-meta">Approve and release planning orders to execution</span>
+                  </div>
+                  <button type="button" class="btn success" id="releaseApproveBtn"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span> Release Selected</span></button>
+                </div>
                 <div class="grid-4 planning-summary-grid">
                   <div class="metric"><div class="metric-label">POs ready</div><div class="metric-value" id="releaseReady">—</div></div>
                   <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="releaseMT">—</div></div>
                   <div class="metric"><div class="metric-label">Total SOs</div><div class="metric-value" id="releaseSOs">—</div></div>
                   <div class="metric"><div class="metric-label">Status</div><div class="metric-value" id="releaseStatus">—</div></div>
                 </div>
-                <div class="planning-release-actions">
-                  <button type="button" class="btn primary planning-release-btn" id="releaseSelectAllBtn" onclick="releaseSelectAll()"><i class="fa-solid fa-check-double" aria-hidden="true"></i><span> Select</span></button>
-                  <button type="button" class="btn primary planning-release-btn" id="releaseClearAllBtn" onclick="releaseClearAll()"><i class="fa-solid fa-eraser" aria-hidden="true"></i><span> Clear</span></button>
-                  <button type="button" class="btn success planning-release-btn" id="releaseAllBtn" onclick="releaseAllSelected()"><i class="fa-solid fa-paper-plane" aria-hidden="true"></i><span> Release</span></button>
+                <div class="toolbar planning-toolbar">
+                  <button type="button" class="btn ghost planning-toolbar-btn" id="releaseSelectAllBtn" onclick="releaseSelectAll()"><i class="fa-solid fa-check-double" aria-hidden="true"></i><span> Select</span></button>
+                  <button type="button" class="btn ghost planning-toolbar-btn" id="releaseClearAllBtn" onclick="releaseClearAll()"><i class="fa-solid fa-eraser" aria-hidden="true"></i><span> Clear</span></button>
                 </div>
                 <div class="planning-table-wrap">
                   <table class="table">
