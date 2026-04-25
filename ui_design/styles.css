@@ -1759,6 +1759,63 @@ button, input, select, textarea { font: inherit; }
   font-size: 0.9rem;
 }
 
+/* ── Remediation panel (Stage 4 — infeasibility guidance) ── */
+.planning-remediation-panel {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  background: #fff5f5;
+  color: #7f1d1d;
+}
+
+.planning-remediation-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+}
+
+.planning-remediation-body {
+  font-size: 0.75rem;
+}
+
+.planning-remediation-hint {
+  margin: 0 0 0.5rem;
+  color: #991b1b;
+  line-height: 1.4;
+}
+
+.planning-remediation-grade-title {
+  font-weight: 600;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #b91c1c;
+  margin-bottom: 0.3rem;
+}
+
+.planning-remediation-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+/* ── Propose stage: note row ── */
+.planning-note-row {
+  font-size: 0.72rem;
+  color: var(--text-soft);
+  padding: 0.15rem 0 0.3rem;
+  min-height: 1.1rem;
+}
+
+/* ── Capacity diagnostic cards ── */
+.capacity-diag-grid {
+  margin-bottom: 0.75rem;
+}
+
 .planning-release-actions {
   display: flex;
   gap: 0.5rem;

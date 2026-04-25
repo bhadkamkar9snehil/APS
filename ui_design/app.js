@@ -3430,8 +3430,7 @@ function renderCapacity(){
   const rows = [...(state.capacity||[])].sort((a,b)=>num(b['Utilisation_%'] || b.utilisation) - num(a['Utilisation_%'] || a.utilisation));
   const body = qs('capacityBody');
   renderCapacityBars();
-  // KPI rendering removed: only top summary strip shown per design rule
-  // renderCapacityDiagnostics(rows);
+  renderCapacityDiagnostics(rows);
   renderCapacityExecutionContext(rows);
   if(!rows.length){ body.innerHTML = '<tr><td colspan="11">No capacity rows loaded. Run Feasibility Check to generate the map.</td></tr>'; return; }
   body.innerHTML = rows.map(r=>{

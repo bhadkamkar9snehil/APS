@@ -411,6 +411,7 @@
                   <div class="metric"><div class="metric-label">Proposed POs</div><div class="metric-value" id="planningProposedCount">—</div></div>
                   <div class="metric"><div class="metric-label">Total MT</div><div class="metric-value" id="planningTotalMT">—</div></div>
                 </div>
+                <div class="planning-note-row" id="planningNote"></div>
                 <div class="toolbar planning-toolbar">
                   <button type="button" class="btn ghost planning-toolbar-btn" id="mergeSelectedBtn" disabled onclick="mergeSelectedPOs()"><i class="fa-solid fa-code-merge" aria-hidden="true"></i><span> Merge</span></button>
                   <button type="button" class="btn ghost planning-toolbar-btn" id="freezeSelectedBtn" disabled onclick="freezeSelectedPOs()"><i class="fa-regular fa-snowflake" aria-hidden="true"></i><span> Freeze</span></button>
@@ -452,6 +453,10 @@
                   <div class="metric"><div class="metric-label">Est. duration</div><div class="metric-value" id="heatDuration">—</div></div>
                 </div>
                 <div class="toolbar planning-toolbar">
+                  <button type="button" class="btn ghost planning-toolbar-btn" onclick="deriveHeatBatches()"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span> Re-derive</span></button>
+                  <div class="planning-toolbar-spacer"></div>
+                  <button type="button" class="btn ghost planning-toolbar-btn planning-toolbar-btn--accent" onclick="state.lastScheduleRows ? showGanttModal('Heat Schedule — Production Timeline', state.lastScheduleRows, 'po') : alert('Run Feasibility Check first')" title="View heat schedule gantt"><i class="fa-regular fa-calendar-days" aria-hidden="true"></i><span> Gantt</span></button>
+                </div>
                 <div class="planning-table-wrap">
                   <table class="table">
                     <thead><tr><th>Heat ID</th><th>PO ID</th><th>FG (Finished Good)</th><th>Grade</th><th>Materials</th><th>Qty MT</th><th>Seq</th><th>Route</th><th>Duration</th></tr></thead>
@@ -543,6 +548,22 @@
                 </div>
                 <div id="schedulerContent" class="planning-results-note" style="display:none"></div>
 
+                <!-- REMEDIATION PANEL — shown when simulation result is infeasible -->
+                <div class="planning-remediation-panel" id="remediationPanel" style="display:none">
+                  <div class="planning-remediation-header">
+                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                    <span>Infeasible — suggested remediation actions:</span>
+                  </div>
+                  <div class="planning-remediation-body">
+                    <p class="planning-remediation-hint">
+                      Try narrowing the priority filter (URGENT+HIGH only), switching to HOT-only rolling mode,
+                      adding parallel SMS/RM lines, or extending the horizon. You can also remove the heaviest
+                      grade from this simulation run using the Grade filter above.
+                    </p>
+                    <div class="planning-remediation-grade-title">Grade heat breakdown (heaviest first):</div>
+                    <div class="planning-remediation-breakdown" id="remGradeBreakdown"></div>
+                  </div>
+                </div>
 
               </div>
             </div>
@@ -758,6 +779,29 @@
         <div class="page-scroll-shell">
           <div class="page-scroll-pane">
           <div class="notice" id="capacityNarrative">Run Schedule or Feasibility Check to load capacity diagnostics.</div>
+          <!-- Capacity diagnostic KPI cards — populated by renderCapacityDiagnostics() -->
+          <div class="grid-4 capacity-diag-grid">
+            <div class="kpi-card kpi-card--sub metric" id="capacityDiagCard1">
+              <div class="metric-label" id="capacityDiagLabel1">Peak Resource</div>
+              <div class="metric-value" id="capacityDiagValue1">—</div>
+              <div class="metric-sub" id="capacityDiagSub1">Run Feasibility Check</div>
+            </div>
+            <div class="kpi-card kpi-card--sub metric" id="capacityDiagCard2">
+              <div class="metric-label" id="capacityDiagLabel2">Overloaded</div>
+              <div class="metric-value" id="capacityDiagValue2">—</div>
+              <div class="metric-sub" id="capacityDiagSub2">Resources above 100%</div>
+            </div>
+            <div class="kpi-card kpi-card--sub metric" id="capacityDiagCard3">
+              <div class="metric-label" id="capacityDiagLabel3">Load Mix</div>
+              <div class="metric-value" id="capacityDiagValue3">—</div>
+              <div class="metric-sub" id="capacityDiagSub3">Process / Setup / Changeover</div>
+            </div>
+            <div class="kpi-card kpi-card--sub metric" id="capacityDiagCard4">
+              <div class="metric-label" id="capacityDiagLabel4">Headroom / Tasks</div>
+              <div class="metric-value" id="capacityDiagValue4">—</div>
+              <div class="metric-sub" id="capacityDiagSub4">Available hours surplus</div>
+            </div>
+          </div>
           <div class="panel card capacity-execution-link">
             <div class="card-header">
               <div>
