@@ -61,15 +61,17 @@
         <!-- Main Tabs -->
         <button type="button" class="tab active" id="tab-dashboard" data-page="dashboard" role="tab" aria-selected="true" aria-controls="page-dashboard" tabindex="0">Dashboard</button>
         <button type="button" class="tab" id="tab-planning" data-page="planning" role="tab" aria-selected="false" aria-controls="page-planning" tabindex="-1">Planning</button>
-        <button type="button" class="tab" id="tab-bom" data-page="bom" role="tab" aria-selected="false" aria-controls="page-bom" tabindex="-1">BOM</button>
+        <button type="button" class="tab" id="tab-orders" data-page="orders" role="tab" aria-selected="false" aria-controls="page-orders" tabindex="-1">Orders</button>
         <button type="button" class="tab" id="tab-material" data-page="material" role="tab" aria-selected="false" aria-controls="page-material" tabindex="-1">Material</button>
         <button type="button" class="tab" id="tab-capacity" data-page="capacity" role="tab" aria-selected="false" aria-controls="page-capacity" tabindex="-1">Capacity</button>
+        <button type="button" class="tab" id="tab-execution" data-page="execution" role="tab" aria-selected="false" aria-controls="page-execution" tabindex="-1">Execution</button>
         <!-- Overflow trigger -->
         <button type="button" class="tab tab--overflow" id="tab-more" aria-haspopup="true" aria-expanded="false" title="More pages" tabindex="-1"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i></button>
       </div>
       <!-- Overflow dropdown menu -->
       <div class="tab-overflow-menu" id="tabOverflowMenu" role="menu" hidden>
-        <button type="button" class="tab-overflow-item" data-page="execution" role="menuitem"><i class="fa-solid fa-industry" aria-hidden="true"></i><span>Execution</span></button>
+        <button type="button" class="tab-overflow-item" data-page="exceptions" role="menuitem"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span>Exceptions</span></button>
+        <button type="button" class="tab-overflow-item" data-page="bom" role="menuitem"><i class="fa-solid fa-sitemap" aria-hidden="true"></i><span>BOM</span></button>
         <button type="button" class="tab-overflow-item" data-page="ctp" role="menuitem"><i class="fa-solid fa-clipboard-check" aria-hidden="true"></i><span>CTP</span></button>
         <button type="button" class="tab-overflow-item" data-page="scenarios" role="menuitem"><i class="fa-solid fa-code-branch" aria-hidden="true"></i><span>Scenarios</span></button>
         <button type="button" class="tab-overflow-item" data-page="master" role="menuitem"><i class="fa-solid fa-database" aria-hidden="true"></i><span>Master Data</span></button>
@@ -100,6 +102,26 @@
           <button type="button" class="btn primary btn-compact" id="pipelineRunBtn" title="Run Pipeline"><i class="fa-solid fa-play" aria-hidden="true"></i><span>Run</span></button>
         </div>
         <div class="navbar-context" id="navbarContextSlot" aria-live="polite">
+          <div class="tab-context-actions ctx-orders">
+            <select class="sel sel-compact" id="ordersStatusFilter" aria-label="Filter by status">
+              <option value="">All Statuses</option>
+              <option value="OPEN">Open</option>
+              <option value="PLANNED">Planned</option>
+              <option value="RELEASED">Released</option>
+              <option value="HOLD">On Hold</option>
+              <option value="COMPLETE">Complete</option>
+            </select>
+            <select class="sel sel-compact" id="ordersPriorityFilter" aria-label="Filter by priority">
+              <option value="">All Priorities</option>
+              <option value="HIGH">High</option>
+              <option value="MEDIUM">Medium</option>
+              <option value="LOW">Low</option>
+            </select>
+            <button type="button" class="btn ghost btn-compact" id="ordersRefreshBtn"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>Refresh</span></button>
+          </div>
+          <div class="tab-context-actions ctx-exceptions">
+            <button type="button" class="btn ghost btn-compact" id="exceptionsRefreshBtn"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>Refresh</span></button>
+          </div>
           <div class="tab-context-actions ctx-execution">
             <button type="button" class="btn ghost btn-compact" id="clearCampaignBtn" style="display:none" onclick="clearCampaignSelection()"><i class="fa-solid fa-filter-circle-xmark" aria-hidden="true"></i><span>Clear</span></button>
             <button type="button" class="btn primary btn-compact" id="campaignRerunBtn"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i><span>Re-run</span></button>
@@ -772,6 +794,73 @@
 
       </section>
 
+      <!-- ===== ORDERS PAGE ===== -->
+      <section class="page" id="page-orders" role="tabpanel" aria-labelledby="tab-orders">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Orders</div>
+            <div class="page-sub">Sales orders with status, priority, quantity, and due dates. Manage order lifecycle from open through release.</div>
+          </div>
+        </div>
+        <div class="page-scroll-shell">
+          <div class="page-scroll-pane">
+            <div class="grid-4" style="margin-bottom:.75rem">
+              <div class="kpi-card kpi-card--sub metric" id="ordersKpiCard1">
+                <div class="metric-label" id="ordersKpiLabel1">Total Orders</div>
+                <div class="metric-value" id="ordersKpiValue1">—</div>
+                <div class="metric-sub" id="ordersKpiSub1">Loaded</div>
+              </div>
+              <div class="kpi-card kpi-card--sub metric warn" id="ordersKpiCard2">
+                <div class="metric-label" id="ordersKpiLabel2">On Hold</div>
+                <div class="metric-value" id="ordersKpiValue2">—</div>
+                <div class="metric-sub" id="ordersKpiSub2">Held orders</div>
+              </div>
+              <div class="kpi-card kpi-card--sub metric danger" id="ordersKpiCard3">
+                <div class="metric-label" id="ordersKpiLabel3">Late / Critical</div>
+                <div class="metric-value" id="ordersKpiValue3">—</div>
+                <div class="metric-sub" id="ordersKpiSub3">Past due date</div>
+              </div>
+              <div class="kpi-card kpi-card--sub metric success" id="ordersKpiCard4">
+                <div class="metric-label" id="ordersKpiLabel4">Released</div>
+                <div class="metric-value" id="ordersKpiValue4">—</div>
+                <div class="metric-sub" id="ordersKpiSub4">In execution</div>
+              </div>
+            </div>
+            <div class="notice" id="ordersNotice" style="display:none"></div>
+            <div class="panel card" style="overflow:hidden;display:flex;flex-direction:column;flex:1">
+              <div class="card-header">
+                <div>
+                  <div class="card-title">Sales Orders</div>
+                  <div class="card-sub" id="ordersTableMeta">Loading orders…</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:.4rem">
+                  <input type="search" class="sel sel-compact" id="ordersSearch" placeholder="Search order / SKU / grade…" aria-label="Search orders" style="width:13rem" oninput="renderOrdersFiltered()">
+                </div>
+              </div>
+              <div class="card-body" style="padding:0;overflow:auto;flex:1;min-height:0">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>SO ID</th>
+                      <th>SKU</th>
+                      <th>Grade</th>
+                      <th>Priority</th>
+                      <th>Qty (MT)</th>
+                      <th>Due Date</th>
+                      <th>Rolling Mode</th>
+                      <th>Status</th>
+                      <th>Campaign</th>
+                    </tr>
+                  </thead>
+                  <tbody id="ordersTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <!-- ===== END ORDERS PAGE ===== -->
+
       <section class="page" id="page-capacity" role="tabpanel" aria-labelledby="tab-capacity">
         <div class="page-header">
           <div><div class="page-title">Capacity</div><div class="page-sub">Resource loading and bottlenecks aligned with Execution timeline decisions.</div></div>
@@ -833,6 +922,82 @@
           </div>
         </div>
       </section>
+
+      <!-- ===== EXCEPTIONS PAGE ===== -->
+      <section class="page" id="page-exceptions" role="tabpanel" aria-labelledby="tab-exceptions">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Exceptions &amp; Blockers</div>
+            <div class="page-sub">Active material holds, overloaded resources, held campaigns, and late orders — all in one registry.</div>
+          </div>
+        </div>
+        <div class="page-scroll-shell">
+          <div class="page-scroll-pane">
+            <div class="grid-4" style="margin-bottom:.75rem">
+              <div class="kpi-card kpi-card--sub metric warn" id="excKpiCard1">
+                <div class="metric-label" id="excKpiLabel1">Material Holds</div>
+                <div class="metric-value" id="excKpiValue1">—</div>
+                <div class="metric-sub" id="excKpiSub1">Active holds</div>
+              </div>
+              <div class="kpi-card kpi-card--sub metric danger" id="excKpiCard2">
+                <div class="metric-label" id="excKpiLabel2">Overloaded Resources</div>
+                <div class="metric-value" id="excKpiValue2">—</div>
+                <div class="metric-sub" id="excKpiSub2">Util &gt; 100%</div>
+              </div>
+              <div class="kpi-card kpi-card--sub metric danger" id="excKpiCard3">
+                <div class="metric-label" id="excKpiLabel3">Held Campaigns</div>
+                <div class="metric-value" id="excKpiValue3">—</div>
+                <div class="metric-sub" id="excKpiSub3">Blocked lots</div>
+              </div>
+              <div class="kpi-card kpi-card--sub metric danger" id="excKpiCard4">
+                <div class="metric-label" id="excKpiLabel4">Late Orders</div>
+                <div class="metric-value" id="excKpiValue4">—</div>
+                <div class="metric-sub" id="excKpiSub4">Past due date</div>
+              </div>
+            </div>
+
+            <!-- Material Holds -->
+            <div class="panel card" style="overflow:hidden;display:flex;flex-direction:column;margin-bottom:.75rem">
+              <div class="card-header">
+                <div><div class="card-title">Material Holds</div><div class="card-sub">SKUs with active material holds blocking production.</div></div>
+              </div>
+              <div class="card-body" style="padding:0;overflow:auto;max-height:14rem">
+                <table class="table">
+                  <thead><tr><th>Hold ID</th><th>SKU</th><th>Grade</th><th>Qty (MT)</th><th>Reason</th><th>Raised</th><th>Status</th></tr></thead>
+                  <tbody id="excHoldsBody"><tr><td colspan="7" class="table-empty">Refresh to load holds.</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Overloaded Resources -->
+            <div class="panel card" style="overflow:hidden;display:flex;flex-direction:column;margin-bottom:.75rem">
+              <div class="card-header">
+                <div><div class="card-title">Overloaded Resources</div><div class="card-sub">Resources exceeding 100% utilisation in the current schedule.</div></div>
+              </div>
+              <div class="card-body" style="padding:0;overflow:auto;max-height:14rem">
+                <table class="table">
+                  <thead><tr><th>Resource</th><th>Operation</th><th>Demand (h)</th><th>Available (h)</th><th>Util %</th><th>Overload</th></tr></thead>
+                  <tbody id="excOverloadBody"><tr><td colspan="6" class="table-empty">Run schedule to see capacity overloads.</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Held / Late Campaigns -->
+            <div class="panel card" style="overflow:hidden;display:flex;flex-direction:column">
+              <div class="card-header">
+                <div><div class="card-title">Held &amp; Late Campaigns</div><div class="card-sub">Released lots that are on hold or past due.</div></div>
+              </div>
+              <div class="card-body" style="padding:0;overflow:auto;max-height:14rem">
+                <table class="table">
+                  <thead><tr><th>Campaign ID</th><th>Grade</th><th>Heats</th><th>MT</th><th>Due Date</th><th>Issue</th><th>Status</th></tr></thead>
+                  <tbody id="excCampaignsBody"><tr><td colspan="7" class="table-empty">No campaigns loaded.</td></tr></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <!-- ===== END EXCEPTIONS PAGE ===== -->
 
       <section class="page" id="page-scenarios" role="tabpanel" aria-labelledby="tab-scenarios">
         <div class="page-header"><div><div class="page-title">Scenarios</div><div class="page-sub">Preview, create, update, delete, and apply scenarios.</div></div></div>
@@ -959,6 +1124,45 @@
     </div>
   </div>
 </div>
+
+<!-- ===== PATCH JOB MODAL ===== -->
+<div class="master-form-modal" id="patchJobModal" role="dialog" aria-modal="true" aria-labelledby="patchJobModalTitle" aria-describedby="patchJobModalSub">
+  <div class="master-form-card" style="max-width:26rem">
+    <div class="master-form-head">
+      <div>
+        <div id="patchJobModalTitle" class="master-form-title">Reschedule Job</div>
+        <div id="patchJobModalSub" class="master-form-sub">Override planned start and end times for a schedule job.</div>
+      </div>
+      <button type="button" class="btn ghost" id="patchJobModalCloseBtn" aria-label="Close reschedule dialog"><i class="fa-solid fa-xmark" aria-hidden="true"></i><span> Close</span></button>
+    </div>
+    <div class="master-form-body">
+      <form id="patchJobForm">
+        <div class="master-form-grid" style="grid-template-columns:1fr">
+          <div class="master-form-field">
+            <label for="patchJobId">Job ID</label>
+            <input type="text" id="patchJobId" class="sel" placeholder="e.g. J-1042" autocomplete="off" required>
+          </div>
+          <div class="master-form-field">
+            <label for="patchJobStart">Planned Start</label>
+            <input type="datetime-local" id="patchJobStart" class="sel" required>
+          </div>
+          <div class="master-form-field">
+            <label for="patchJobEnd">Planned End</label>
+            <input type="datetime-local" id="patchJobEnd" class="sel" required>
+          </div>
+          <div class="master-form-field" id="patchJobErrorRow" style="display:none">
+            <span class="badge status-token status-danger" id="patchJobError"></span>
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="master-form-foot">
+      <button class="btn ghost" id="patchJobCancelBtn" type="button"><i class="fa-solid fa-ban" aria-hidden="true"></i><span> Cancel</span></button>
+      <button class="btn primary" id="patchJobSaveBtn" type="submit" form="patchJobForm"><i class="fa-solid fa-floppy-disk" aria-hidden="true"></i><span> Reschedule</span></button>
+    </div>
+  </div>
+</div>
+<!-- ===== END PATCH JOB MODAL ===== -->
 
 <div class="master-form-modal" id="masterModal" role="dialog" aria-modal="true" aria-labelledby="masterModalTitle" aria-describedby="masterModalSub">
   <div class="master-form-card">

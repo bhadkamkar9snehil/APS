@@ -1449,6 +1449,13 @@ button, input, select, textarea { font: inherit; }
 .table .btn { height: 2rem; padding: 0 0.8rem; font-size: 0.72rem; font-weight: 700; }
 .table .btn.ghost { padding: 0 0.6rem; margin: 0 0.15rem; }
 
+.table-empty {
+  text-align: center;
+  padding: 1.5rem 1rem;
+  color: var(--text-soft);
+  font-size: 0.78rem;
+}
+
 .table-action-cell {
   white-space: nowrap;
   text-align: right;

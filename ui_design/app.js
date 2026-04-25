@@ -3,7 +3,7 @@ const MASTER_KEYS = {config:'Key',resources:'Resource_ID',routing:'SKU_ID',queue
 const MASTER_LABELS = {config:'Config',resources:'Resource Master',routing:'Routing',queue:'Queue Times',changeover:'Changeover Matrix',skus:'SKU Master',bom:'BOM',inventory:'Inventory','campaign-config':'Campaign Config',scenarios:'Scenarios'};
 const state = {
   orders:[], campaigns:[], capacity:[], scenario_metrics:[], scenarios:[], bomGross:[], bomNet:[],
-  scenarioOutput:[], masterAudit:null,
+  scenarioOutput:[], masterAudit:null, materialHolds:[],
   ctpLastResult:null,
   bomStructureErrors:[], bomFeasible:true,
   routeManifest:null, selectedMasterKey:null, masterMode:'create',
@@ -198,6 +198,8 @@ function setTopActionContext(page) {
   const actionPatternByPage = {
     dashboard: { mode: 'default' },
     planning: { mode: 'planning' },
+    orders: { mode: 'context', contextClass: 'ctx-orders' },
+    exceptions: { mode: 'context', contextClass: 'ctx-exceptions' },
     bom: { mode: 'context', contextClass: 'ctx-bom' },
     material: { mode: 'context', contextClass: 'ctx-material' },
     execution: { mode: 'context', contextClass: 'ctx-execution' },
@@ -254,7 +256,7 @@ function activatePage(page) {
   });
 
   // Overflow menu: mark ··· button active when one of its pages is open
-  const overflowPages = ['execution', 'ctp', 'scenarios', 'master'];
+  const overflowPages = ['exceptions', 'bom', 'ctp', 'scenarios', 'master'];
   const tabMore = qs('tab-more');
   const overflowMenu = qs('tabOverflowMenu');
   if (tabMore) tabMore.classList.toggle('is-active', overflowPages.includes(page));
@@ -271,6 +273,8 @@ function activatePage(page) {
   if (page === 'material') initSplitResizer('materialDivider');
   if (page === 'bom') initSplitResizer('bomDivider');
   if (page === 'capacity') renderCapacity();
+  if (page === 'orders') renderOrders();
+  if (page === 'exceptions') renderExceptions();
   syncExecutionDetailPanel();
 }
 
@@ -3460,6 +3464,153 @@ function renderCapacity(){
   }).join('');
 }
 
+// ===== ORDERS PAGE =====
+function renderOrders() {
+  renderOrdersFiltered();
+  // KPI summary
+  const orders = state.orders || [];
+  const held = orders.filter(o => String(o.Status || o.status || '').toUpperCase().includes('HOLD'));
+  const late = orders.filter(o => {
+    const due = parseDate(o.Due_Date || o.due_date);
+    const s = String(o.Status || o.status || '').toUpperCase();
+    return !Number.isNaN(due.getTime()) && due < new Date() && !s.includes('COMPLETE') && !s.includes('RELEASED');
+  });
+  const released = orders.filter(o => String(o.Status || o.status || '').toUpperCase().includes('RELEASED') || String(o.Status || o.status || '').toUpperCase().includes('COMPLETE'));
+  setText('ordersKpiValue1', orders.length);
+  setText('ordersKpiValue2', held.length);
+  setText('ordersKpiValue3', late.length);
+  setText('ordersKpiValue4', released.length);
+  setText('ordersKpiSub1', orders.length === 1 ? '1 order' : `${orders.length} orders`);
+}
+
+function renderOrdersFiltered() {
+  const orders = state.orders || [];
+  const statusFilter = (qs('ordersStatusFilter')?.value || '').toUpperCase();
+  const priorityFilter = (qs('ordersPriorityFilter')?.value || '').toUpperCase();
+  const search = (qs('ordersSearch')?.value || '').toLowerCase();
+  const body = qs('ordersTableBody');
+  if (!body) return;
+
+  const filtered = orders.filter(o => {
+    const status = String(o.Status || o.status || '').toUpperCase();
+    const priority = String(o.Priority || o.priority || '').toUpperCase();
+    const soId = String(o.SO_ID || o.so_id || o.Order_ID || '');
+    const sku = String(o.SKU_ID || o.sku_id || o.SKU || '');
+    const grade = String(o.Grade || o.grade || '');
+    const searchStr = (soId + ' ' + sku + ' ' + grade).toLowerCase();
+    if (statusFilter && !status.includes(statusFilter)) return false;
+    if (priorityFilter && !priority.includes(priorityFilter)) return false;
+    if (search && !searchStr.includes(search)) return false;
+    return true;
+  });
+
+  const metaEl = qs('ordersTableMeta');
+  if (metaEl) metaEl.textContent = `${filtered.length} of ${orders.length} orders`;
+
+  if (!filtered.length) {
+    body.innerHTML = '<tr><td colspan="9" class="table-empty">No orders match the current filters.</td></tr>';
+    return;
+  }
+
+  body.innerHTML = filtered.map(o => {
+    const soId = escapeHtml(o.SO_ID || o.so_id || o.Order_ID || '—');
+    const sku = escapeHtml(o.SKU_ID || o.sku_id || o.SKU || '—');
+    const grade = escapeHtml(o.Grade || o.grade || '—');
+    const priority = escapeHtml(o.Priority || o.priority || '—');
+    const qty = num(o.Quantity_MT || o.quantity_mt || o.Qty || 0).toFixed(1);
+    const dueDate = fmtDate(o.Due_Date || o.due_date);
+    const rollingMode = escapeHtml(o.Rolling_Mode || o.rolling_mode || '—');
+    const status = o.Status || o.status || '';
+    const campaign = escapeHtml(o.Campaign_ID || o.campaign_id || '—');
+    return `<tr>
+      <td><strong>${soId}</strong></td>
+      <td>${sku}</td>
+      <td>${grade}</td>
+      <td>${priority}</td>
+      <td>${qty}</td>
+      <td>${dueDate}</td>
+      <td>${rollingMode}</td>
+      <td>${badgeForStatus(status)}</td>
+      <td>${campaign}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ===== EXCEPTIONS PAGE =====
+function renderExceptions() {
+  const holds = state.materialHolds || [];
+  const capacity = state.capacity || [];
+  const campaigns = state.campaigns || [];
+  const orders = state.orders || [];
+  const now = new Date();
+
+  // KPIs
+  setText('excKpiValue1', holds.length);
+  const overloaded = capacity.filter(r => num(r['Utilisation_%'] || r.utilisation) > 100);
+  setText('excKpiValue2', overloaded.length);
+  const heldCampaigns = campaigns.filter(c => {
+    const s = String(c.Status || c.status || '').toUpperCase();
+    return s.includes('HOLD') || s.includes('BLOCKED');
+  });
+  setText('excKpiValue3', heldCampaigns.length);
+  const lateOrders = orders.filter(o => {
+    const due = parseDate(o.Due_Date || o.due_date);
+    const s = String(o.Status || o.status || '').toUpperCase();
+    return !Number.isNaN(due.getTime()) && due < now && !s.includes('COMPLETE');
+  });
+  setText('excKpiValue4', lateOrders.length);
+
+  // Material holds table
+  const holdsBody = qs('excHoldsBody');
+  if (holdsBody) {
+    holdsBody.innerHTML = holds.length ? holds.map(h => {
+      const holdId = escapeHtml(h.Hold_ID || h.hold_id || '—');
+      const sku = escapeHtml(h.SKU_ID || h.sku_id || '—');
+      const grade = escapeHtml(h.Grade || h.grade || '—');
+      const qty = num(h.Quantity_MT || h.qty || 0).toFixed(1);
+      const reason = escapeHtml(h.Reason || h.reason || '—');
+      const raised = fmtDate(h.Raised_Date || h.raised || h.date);
+      const status = h.Status || h.status || 'HOLD';
+      return `<tr><td>${holdId}</td><td>${sku}</td><td>${grade}</td><td>${qty}</td><td>${reason}</td><td>${raised}</td><td>${badgeForStatus(status)}</td></tr>`;
+    }).join('') : '<tr><td colspan="7" class="table-empty">No material holds found.</td></tr>';
+  }
+
+  // Overloaded resources table
+  const overloadBody = qs('excOverloadBody');
+  if (overloadBody) {
+    overloadBody.innerHTML = overloaded.length ? overloaded.map(r => {
+      const rid = escapeHtml(r.Resource_ID || r.resource_id || '—');
+      const op = escapeHtml(r.Operation_Group || r.Operation || '—');
+      const demand = num(r.Demand_Hrs || r.demand_hrs).toFixed(1);
+      const avail = num(r.Avail_Hrs_14d || r.avail_hrs).toFixed(1);
+      const util = Math.round(num(r['Utilisation_%'] || r.utilisation));
+      const over = avail > 0 ? (num(r.Demand_Hrs || r.demand_hrs) - num(r.Avail_Hrs_14d || r.avail_hrs)).toFixed(1) : '—';
+      return `<tr><td><strong>${rid}</strong></td><td>${op}</td><td>${demand}h</td><td>${avail}h</td><td><span class="badge status-token status-danger red">${util}%</span></td><td>+${over}h</td></tr>`;
+    }).join('') : '<tr><td colspan="6" class="table-empty">No overloaded resources. Run Schedule to populate.</td></tr>';
+  }
+
+  // Held / late campaigns table
+  const campBody = qs('excCampaignsBody');
+  if (campBody) {
+    const badCampaigns = campaigns.filter(c => {
+      const s = String(c.Status || c.status || '').toUpperCase();
+      const due = parseDate(c.Due_Date || c.due_date || c.Planned_End);
+      const isLate = !Number.isNaN(due.getTime()) && due < now && !s.includes('COMPLETE');
+      return s.includes('HOLD') || s.includes('BLOCKED') || isLate;
+    });
+    campBody.innerHTML = badCampaigns.length ? badCampaigns.map(c => {
+      const cid = escapeHtml(c.Campaign_ID || c.campaign_id || '—');
+      const grade = escapeHtml(c.Grade || c.grade || '—');
+      const heats = num(c.Heat_Count || c.heat_count || c.Heats || 0);
+      const mt = num(c.Total_MT || c.total_mt || 0).toFixed(1);
+      const due = fmtDate(c.Due_Date || c.due_date || c.Planned_End);
+      const s = String(c.Status || c.status || '').toUpperCase();
+      const issue = s.includes('HOLD') ? 'Hold' : s.includes('BLOCKED') ? 'Blocked' : 'Late';
+      return `<tr><td><strong>${cid}</strong></td><td>${grade}</td><td>${heats}</td><td>${mt}</td><td>${due}</td><td><span class="badge status-token ${issue === 'Late' ? 'status-danger red' : 'status-warning amber'}">${issue}</span></td><td>${badgeForStatus(c.Status || c.status)}</td></tr>`;
+    }).join('') : '<tr><td colspan="7" class="table-empty">No held or late campaigns.</td></tr>';
+  }
+}
+
 function normalizeScenarioMetricRow(row) {
   const metrics = row || {};
   const scenario = String(
@@ -3799,13 +3950,14 @@ async function loadApplicationState(options = {}){
   renderCapacity();
 
   const loadDeferredData = async () => {
-    const [scenarios, scenarioOutput, ctpReqs, ctpOut, master, masterAudit] = await Promise.all([
+    const [scenarios, scenarioOutput, ctpReqs, ctpOut, master, masterAudit, materialHolds] = await Promise.all([
       apiFetch('/api/aps/scenarios/list').catch(()=>({items:[]})),
       apiFetch('/api/aps/scenarios/output').catch(()=>({items:[]})),
       apiFetch('/api/aps/ctp/requests').catch(()=>({items:[]})),
       apiFetch('/api/aps/ctp/output').catch(()=>({items:[]})),
       apiFetch('/api/aps/masterdata').catch(()=>({})),
-      apiFetch('/api/masterdata/audit').catch(()=>null)
+      apiFetch('/api/masterdata/audit').catch(()=>null),
+      apiFetch('/api/aps/material/holds').catch(()=>({items:[]}))
     ]);
 
     state.scenarios = scenarios.items || [];
@@ -3814,6 +3966,7 @@ async function loadApplicationState(options = {}){
     state.ctpOutput = ctpOut.items || [];
     state.master = master || {};
     state.masterAudit = masterAudit || null;
+    state.materialHolds = materialHolds.items || materialHolds.holds || [];
     if (!state.ctpLastResult && state.ctpOutput.length) {
       state.ctpLastResult = state.ctpOutput[0];
     }
@@ -3826,6 +3979,8 @@ async function loadApplicationState(options = {}){
     renderCtpResultPanel(state.ctpLastResult);
     renderCTPHistory();
     renderMaster();
+    if (qs('page-orders')?.classList.contains('active')) renderOrders();
+    if (qs('page-exceptions')?.classList.contains('active')) renderExceptions();
   };
 
   if (deferHeavy) {
@@ -4439,27 +4594,61 @@ async function deleteMasterRow(){
     await loadApplicationState();
   }catch(e){ alert('Delete failed: ' + e.message); }
 }
-async function patchJob() {
-  const jobId = prompt('Job_ID to patch');
-  if (!jobId) return;
+function openPatchJobModal(prefillJobId) {
+  const modal = qs('patchJobModal');
+  if (!modal) return;
+  qs('patchJobId').value = prefillJobId || '';
+  qs('patchJobStart').value = '';
+  qs('patchJobEnd').value = '';
+  const errRow = qs('patchJobErrorRow');
+  if (errRow) errRow.style.display = 'none';
+  modal.classList.add('show');
+  setTimeout(() => qs('patchJobId')?.focus(), 50);
+}
 
-  const payloadText = prompt(
-    'JSON patch',
-    '{"Planned_Start":"2026-04-04T08:00:00","Planned_End":"2026-04-04T12:00:00"}'
-  );
-  if (!payloadText) return;
+function closePatchJobModal() {
+  const modal = qs('patchJobModal');
+  if (modal) modal.classList.remove('show');
+}
+
+async function patchJob() {
+  openPatchJobModal();
+}
+
+async function submitPatchJob(e) {
+  if (e) e.preventDefault();
+  const jobId = (qs('patchJobId')?.value || '').trim();
+  const start = qs('patchJobStart')?.value;
+  const end = qs('patchJobEnd')?.value;
+  const errRow = qs('patchJobErrorRow');
+  const errEl = qs('patchJobError');
+
+  const showError = (msg) => {
+    if (errEl) errEl.textContent = msg;
+    if (errRow) errRow.style.display = '';
+  };
+
+  if (!jobId) { showError('Job ID is required.'); return; }
+  if (!start) { showError('Planned Start is required.'); return; }
+  if (!end) { showError('Planned End is required.'); return; }
+  if (new Date(end) <= new Date(start)) { showError('Planned End must be after Planned Start.'); return; }
+
+  const saveBtn = qs('patchJobSaveBtn');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
 
   try {
     await apiFetch(
       '/api/aps/schedule/jobs/' + encodeURIComponent(jobId) + '/reschedule',
-      { method: 'PATCH', body: JSON.stringify({ data: JSON.parse(payloadText) }) }
+      { method: 'PATCH', body: JSON.stringify({ data: { Planned_Start: start, Planned_End: end } }) }
     );
-
+    closePatchJobModal();
     await loadApplicationState();
     activatePage('execution');
     switchExecView('gantt');
-  } catch (e) {
-    alert('Job patch failed: ' + e.message);
+  } catch (err) {
+    showError('Reschedule failed: ' + err.message);
+  } finally {
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = '<i class="fa-solid fa-floppy-disk" aria-hidden="true"></i><span> Reschedule</span>'; }
   }
 }
 
@@ -4489,6 +4678,13 @@ qs('masterModalCancelBtn').addEventListener('click', closeMasterModal);
 qs('masterForm').addEventListener('submit', submitMasterForm);
 
 qs('patchJobBtn').addEventListener('click', patchJob);
+qs('patchJobModalCloseBtn')?.addEventListener('click', closePatchJobModal);
+qs('patchJobCancelBtn')?.addEventListener('click', closePatchJobModal);
+qs('patchJobForm')?.addEventListener('submit', submitPatchJob);
+qs('ordersRefreshBtn')?.addEventListener('click', async () => { await loadOrdersOnly(); renderOrders(); });
+qs('exceptionsRefreshBtn')?.addEventListener('click', async () => { await loadApplicationState(); renderExceptions(); });
+qs('ordersStatusFilter')?.addEventListener('change', renderOrdersFiltered);
+qs('ordersPriorityFilter')?.addEventListener('change', renderOrdersFiltered);
 qs('horizonSelect').addEventListener('change', (e)=>{
   state.horizon = Number(e.target.value);
   renderTopSummaryForPage(activePageKey());
