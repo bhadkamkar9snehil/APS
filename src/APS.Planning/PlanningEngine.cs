@@ -12,6 +12,8 @@ public sealed class PlanningEngine(
     {
         var createdOnUtc = DateTime.UtcNow;
         var planVersionId = Guid.NewGuid();
+        SteelOrderRequirementValidator.Validate(request.ProductionOrders, request.SteelGrades);
+
         var steelTopologyConfigured = request.Resources.Any(x => x.ProcessUnitType != ProcessUnitType.Unknown);
         var effectiveTransitionRules = TransitionRuleMaterializer.Materialize(
             request.TransitionRules,
@@ -105,6 +107,13 @@ public sealed class PlanningEngine(
             stabilityConstraints,
             request.SteelGrades));
 
+        var packagingUnits = PackagingProjectionService.Build(
+            request.ProductionOrders,
+            campaignPlan,
+            request.MaterialSpecifications,
+            request.PackagingSpecifications,
+            request.CrossSections);
+
         return new PlanningRunResult(
             planVersionId,
             createdOnUtc,
@@ -113,7 +122,8 @@ public sealed class PlanningEngine(
             finiteSchedule,
             finiteSchedule.IsFeasible,
             identities,
-            request.ReplanContext?.BaselinePlanVersionId);
+            request.ReplanContext?.BaselinePlanVersionId,
+            packagingUnits);
     }
 
     private static bool HasErrors(ProductionStructurePlanningResult structure) =>
@@ -127,15 +137,8 @@ public sealed class PlanningEngine(
         Guid? baselinePlanVersionId)
     {
         var schedule = new FiniteScheduleResult("StructureInvalid", false, 0, Array.Empty<FiniteScheduleAssignment>(), structure.Issues);
-        return new PlanningRunResult(
-            planVersionId,
-            createdOnUtc,
-            campaignPlan,
-            structure,
-            schedule,
-            false,
-            Array.Empty<PlanningTaskIdentity>(),
-            baselinePlanVersionId);
+        return new PlanningRunResult(planVersionId, createdOnUtc, campaignPlan, structure, schedule, false,
+            Array.Empty<PlanningTaskIdentity>(), baselinePlanVersionId);
     }
 
     private static IReadOnlyCollection<FiniteScheduleStabilityConstraint> BuildStabilityConstraints(
@@ -157,11 +160,9 @@ public sealed class PlanningEngine(
         {
             if (!baselineByKey.TryGetValue(identity.PlanningKey, out var baseline) || baseline.EndUtc <= context.ReferenceTimeUtc) continue;
             var minutesToStart = (baseline.StartUtc - context.ReferenceTimeUtc).TotalMinutes;
-            var zone = minutesToStart <= policy.FrozenMinutes
-                ? TimeFenceZone.Frozen
-                : minutesToStart <= policy.FrozenMinutes + policy.SlushyMinutes
-                    ? TimeFenceZone.Slushy
-                    : TimeFenceZone.Liquid;
+            var zone = minutesToStart <= policy.FrozenMinutes ? TimeFenceZone.Frozen
+                : minutesToStart <= policy.FrozenMinutes + policy.SlushyMinutes ? TimeFenceZone.Slushy
+                : TimeFenceZone.Liquid;
             if (zone == TimeFenceZone.Liquid) continue;
             constraints.Add(new FiniteScheduleStabilityConstraint(
                 identity.TaskId,
