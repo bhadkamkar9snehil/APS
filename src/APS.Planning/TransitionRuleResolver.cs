@@ -80,7 +80,7 @@ internal static class TransitionRuleResolver
         if (dimension == TransitionDimension.Grade)
         {
             if (grades is null || !grades.TryGetValue(fromCode, out var fromGrade) || !grades.TryGetValue(toCode, out var toGrade)) return false;
-            if (scope is TransitionRuleScope.Class or TransitionRuleScope.SequenceClass)
+            if (scope == TransitionRuleScope.SequenceClass)
             {
                 scopedFrom = fromGrade.SequenceClassCode;
                 scopedTo = toGrade.SequenceClassCode;
@@ -96,7 +96,7 @@ internal static class TransitionRuleResolver
         if (dimension == TransitionDimension.CrossSection)
         {
             if (sections is null || !sections.TryGetValue(fromCode, out var fromSection) || !sections.TryGetValue(toCode, out var toSection)) return false;
-            if (scope is TransitionRuleScope.Class or TransitionRuleScope.SequenceClass)
+            if (scope == TransitionRuleScope.SequenceClass)
             {
                 scopedFrom = SectionClass(fromSection, operation);
                 scopedTo = SectionClass(toSection, operation);
@@ -139,8 +139,8 @@ internal static class TransitionRuleResolver
     private static int ScopeRank(TransitionRuleScope scope) => scope switch
     {
         TransitionRuleScope.ExactCode => 400,
-        TransitionRuleScope.Class or TransitionRuleScope.SequenceClass => 300,
-        TransitionRuleScope.Family or TransitionRuleScope.GradeFamily => 200,
+        TransitionRuleScope.SequenceClass => 300,
+        TransitionRuleScope.GradeFamily => 200,
         _ => 100
     };
 
