@@ -7,6 +7,9 @@ public enum WorkOrderStatus { Planned = 1, Released = 2, Ready = 3, Running = 4,
 public enum WorkOrderType { Steelmaking = 1, Casting = 2, HotRolling = 3, ColdRolling = 4, Finishing = 5 }
 public enum ResourceType { Generic = 0, Furnace = 1, Refining = 2, Caster = 3, RollingMill = 4, FinishingLine = 5, Buffer = 6 }
 public enum MaterialLotStatus { Available = 1, Reserved = 2, Consumed = 3, Held = 4, Scrapped = 5 }
+public enum FlowCouplingType { Direct = 1, HotTransfer = 2, Buffered = 3, InventoryDecoupled = 4 }
+public enum TransitionDimension { Grade = 1, CrossSection = 2, ProductFamily = 3 }
+public enum LotAllocationStatus { Planned = 1, Reserved = 2, ConsumedForOrder = 3, Delivered = 4, Cancelled = 5 }
 
 public abstract class Entity
 {
@@ -33,9 +36,12 @@ public sealed class ProductionOrder : Entity
     public DemandSourceType DemandSource { get; set; }
     public required string MaterialCode { get; set; }
     public required string GradeCode { get; set; }
+    public string? GradeFamilyCode { get; set; }
+    public string? GradeSequenceClassCode { get; set; }
     public required string FinalCrossSectionCode { get; set; }
     public required string CasterSectionCode { get; set; }
     public required string RouteCode { get; set; }
+    public string? ProductFamilyCode { get; set; }
     public decimal PlannedQuantityMt { get; set; }
     public decimal RemainingQuantityMt { get; set; }
     public DateTime RequiredDate { get; set; }
@@ -45,7 +51,7 @@ public sealed class ProductionOrder : Entity
     public Guid? SalesOrderId { get; set; }
     public SalesOrder? SalesOrder { get; set; }
 
-    // Populated for APS-generated MTS production orders.
+    // Populated for APS-generated MTS Production Orders.
     public decimal? TargetStockMt { get; set; }
     public decimal? ProjectedAvailableStockMt { get; set; }
     public string? StockPolicyCode { get; set; }
@@ -54,7 +60,7 @@ public sealed class ProductionOrder : Entity
 public sealed class Campaign : Entity
 {
     public required string CampaignNumber { get; set; }
-    public required string GradeCode { get; set; }
+    public required string GradeSequenceClassCode { get; set; }
     public required string CasterSectionCode { get; set; }
     public required string RouteCode { get; set; }
     public decimal PlannedQuantityMt { get; set; }
@@ -63,6 +69,7 @@ public sealed class Campaign : Entity
     public DateTime CreatedOnUtc { get; set; } = DateTime.UtcNow;
 
     public ICollection<CampaignAllocation> Allocations { get; set; } = new List<CampaignAllocation>();
+    public ICollection<CampaignGradeSequence> GradeSequence { get; set; } = new List<CampaignGradeSequence>();
     public ICollection<CampaignHeat> Heats { get; set; } = new List<CampaignHeat>();
 }
 
@@ -75,14 +82,56 @@ public sealed class CampaignAllocation : Entity
     public decimal PlannedQuantityMt { get; set; }
 }
 
-public sealed class CampaignHeat : Entity
+public sealed class CampaignGradeSequence : Entity
 {
     public Guid CampaignId { get; set; }
     public Campaign? Campaign { get; set; }
     public int SequenceNumber { get; set; }
     public required string GradeCode { get; set; }
     public decimal PlannedQuantityMt { get; set; }
+}
+
+public sealed class CampaignHeat : Entity
+{
+    public Guid CampaignId { get; set; }
+    public Campaign? Campaign { get; set; }
+    public Guid CampaignGradeSequenceId { get; set; }
+    public CampaignGradeSequence? CampaignGradeSequence { get; set; }
+    public int SequenceNumber { get; set; }
+    public required string GradeCode { get; set; }
+    public decimal PlannedQuantityMt { get; set; }
     public Guid? PreferredCasterResourceId { get; set; }
+}
+
+public sealed class CastSequence : Entity
+{
+    public Guid CampaignId { get; set; }
+    public Guid CasterResourceId { get; set; }
+    public int SequenceNumber { get; set; }
+    public DateTime? PlannedStart { get; set; }
+    public DateTime? PlannedEnd { get; set; }
+    public ICollection<CastSequenceHeat> Heats { get; set; } = new List<CastSequenceHeat>();
+}
+
+public sealed class CastSequenceHeat : Entity
+{
+    public Guid CastSequenceId { get; set; }
+    public CastSequence? CastSequence { get; set; }
+    public Guid CampaignHeatId { get; set; }
+    public CampaignHeat? CampaignHeat { get; set; }
+    public int Position { get; set; }
+}
+
+public sealed class RollingPlan : Entity
+{
+    public Guid CampaignId { get; set; }
+    public Guid ProductionOrderId { get; set; }
+    public Guid? RollingMillResourceId { get; set; }
+    public int SequenceNumber { get; set; }
+    public required string GradeCode { get; set; }
+    public required string InputCrossSectionCode { get; set; }
+    public required string OutputCrossSectionCode { get; set; }
+    public decimal PlannedQuantityMt { get; set; }
 }
 
 public sealed class Plant : Entity
@@ -118,17 +167,40 @@ public sealed class ResourceCapability : Entity
     public string? InputCrossSectionCode { get; set; }
     public string? OutputCrossSectionCode { get; set; }
     public string? RouteCode { get; set; }
+    public string? ProductFamilyCode { get; set; }
     public decimal? ThroughputMtPerHour { get; set; }
+}
+
+public sealed class ResourceCalendar : Entity
+{
+    public Guid ResourceId { get; set; }
+    public DateTime Start { get; set; }
+    public DateTime End { get; set; }
+    public bool IsAvailable { get; set; }
+    public string? ReasonCode { get; set; }
 }
 
 public sealed class PlantFlowLink : Entity
 {
     public Guid FromResourceId { get; set; }
     public Guid ToResourceId { get; set; }
+    public FlowCouplingType CouplingType { get; set; }
     public TimeSpan MinimumTransferTime { get; set; }
     public TimeSpan? MaximumTransferTime { get; set; }
     public bool SupportsHotTransfer { get; set; }
     public bool IsEnabled { get; set; } = true;
+}
+
+public sealed class TransitionRule : Entity
+{
+    public Guid? ResourceId { get; set; }
+    public ResourceType? ResourceType { get; set; }
+    public TransitionDimension Dimension { get; set; }
+    public required string FromCode { get; set; }
+    public required string ToCode { get; set; }
+    public bool IsAllowed { get; set; } = true;
+    public int Penalty { get; set; }
+    public TimeSpan TransitionTime { get; set; }
 }
 
 public sealed class WorkOrder : Entity
@@ -184,11 +256,20 @@ public sealed class LotGenealogy : Entity
     public Guid? TransformationWorkOrderId { get; set; }
 }
 
+public sealed class MaterialLotAllocation : Entity
+{
+    public Guid MaterialLotId { get; set; }
+    public Guid ProductionOrderId { get; set; }
+    public decimal AllocatedQuantityMt { get; set; }
+    public LotAllocationStatus Status { get; set; } = LotAllocationStatus.Planned;
+}
+
 public sealed class InventoryPosition
 {
     public required string MaterialCode { get; init; }
     public required string GradeCode { get; init; }
     public required string CrossSectionCode { get; init; }
+    public string? LocationCode { get; init; }
     public decimal AvailableQuantityMt { get; init; }
     public decimal ReservedQuantityMt { get; init; }
     public decimal ConfirmedIncomingQuantityMt { get; init; }
