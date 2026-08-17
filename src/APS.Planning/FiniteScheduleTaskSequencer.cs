@@ -32,6 +32,16 @@ internal static class FiniteScheduleTaskSequencer
             {
                 var previous = sequence[i - 1];
                 var current = sequence[i];
+
+                if (current.SourceEntityId == previous.SourceEntityId)
+                {
+                    // Feed-block siblings split from the same upstream plan/route-operation already
+                    // carry their own dependency to their respective predecessor task, and their order
+                    // relative to each other is not meaningful. Chaining them by list-insertion order
+                    // would impose an unrelated, incorrect-lag edge alongside their real dependency.
+                    continue;
+                }
+
                 var setupMinutes = RequiredTransitionMinutes(previous, current, resource, transitionRules);
 
                 var dependencies = current.Dependencies.ToList();

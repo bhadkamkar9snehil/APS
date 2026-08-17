@@ -36,6 +36,9 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
     public DbSet<PlanInventoryAllocationSnapshot> PlanInventoryAllocationSnapshots => Set<PlanInventoryAllocationSnapshot>();
     public DbSet<PlanMaterialUnitSnapshot> PlanMaterialUnitSnapshots => Set<PlanMaterialUnitSnapshot>();
     public DbSet<ScheduledOperation> ScheduledOperations => Set<ScheduledOperation>();
+    public DbSet<ManufacturingRoute> ManufacturingRoutes => Set<ManufacturingRoute>();
+    public DbSet<ManufacturingRouteOperation> ManufacturingRouteOperations => Set<ManufacturingRouteOperation>();
+    public DbSet<RouteResourceCapability> RouteResourceCapabilities => Set<RouteResourceCapability>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -169,6 +172,12 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
             .HasForeignKey(x => x.PlanVersionId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        modelBuilder.Entity<ManufacturingRouteOperation>()
+            .HasOne(x => x.ManufacturingRoute)
+            .WithMany(x => x.Operations)
+            .HasForeignKey(x => x.ManufacturingRouteId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         modelBuilder.Entity<LotGenealogy>().HasIndex(x => new { x.ParentLotId, x.ChildLotId });
         modelBuilder.Entity<MaterialLotAllocation>().HasIndex(x => new { x.MaterialLotId, x.ProductionOrderId });
         modelBuilder.Entity<CampaignGradeSequence>().HasIndex(x => new { x.CampaignId, x.SequenceNumber }).IsUnique();
@@ -185,6 +194,9 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<PlanOperationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.PlanningKey }).IsUnique();
         modelBuilder.Entity<PlanInventoryAllocationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.ProductionOrderId, x.Stage });
         modelBuilder.Entity<PlanMaterialUnitSnapshot>().HasIndex(x => new { x.PlanVersionId, x.PlanningKey }).IsUnique();
+        modelBuilder.Entity<ManufacturingRoute>().HasIndex(x => x.RouteCode).IsUnique();
+        modelBuilder.Entity<ManufacturingRouteOperation>().HasIndex(x => new { x.RouteCode, x.SequenceNumber }).IsUnique();
+        modelBuilder.Entity<RouteResourceCapability>().HasIndex(x => new { x.RouteCode, x.ResourceId });
 
         foreach (var property in modelBuilder.Model.GetEntityTypes()
                      .SelectMany(t => t.GetProperties())

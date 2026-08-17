@@ -92,7 +92,7 @@ public sealed class ReplanningActualStateTests
 
         Assert.Contains(completedKey, state.CompletedPlanningKeys);
         Assert.DoesNotContain(state.BaselineOperations, x => x.PlanningKey == completedKey);
-        var running = Assert.Single(state.BaselineOperations.Where(x => x.PlanningKey == runningKey));
+        var running = Assert.Single(state.BaselineOperations, x => x.PlanningKey == runningKey);
         Assert.Equal(wo.ActualStart, running.StartUtc);
         Assert.Contains(runningKey, state.RunningPlanningKeys);
         Assert.Equal(48m, Assert.Single(state.Inventory).ProjectedAvailableQuantityMt);

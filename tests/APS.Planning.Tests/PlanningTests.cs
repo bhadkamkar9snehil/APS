@@ -208,7 +208,7 @@ public sealed class ProductionStructurePlanningServiceTests
         Assert.Equal(100m, rolling.PlannedQuantityMt);
         Assert.Single(rolling.Allocations);
 
-        var rollingTask = Assert.Single(result.SchedulingTasks.Where(t => t.TaskType == FiniteScheduleTaskType.HotRolling));
+        var rollingTask = Assert.Single(result.SchedulingTasks, t => t.TaskType == FiniteScheduleTaskType.HotRolling);
         Assert.NotEmpty(rollingTask.Dependencies);
     }
 
