@@ -44,6 +44,12 @@ public sealed class PlanningEngine(
                 false);
         }
 
+        var sequencedTasks = FiniteScheduleTaskSequencer.Apply(
+            structure.SchedulingTasks,
+            request.Resources,
+            request.TransitionRules);
+        structure = structure with { SchedulingTasks = sequencedTasks };
+
         var finiteSchedule = scheduleOptimizer.Solve(new FiniteScheduleRequest(
             request.HorizonStartUtc,
             request.HorizonEndUtc,
