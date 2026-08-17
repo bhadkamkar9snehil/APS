@@ -18,34 +18,38 @@ public sealed class ManufacturingRouteOperation : Entity
     public ProcessOperationType ProcessOperationType { get; set; }
     public WorkOrderType ReleaseWorkOrderType { get; set; }
 
-    // Temporary migration bridge for existing callers; ProcessOperationType is the canonical process semantic.
+    // Temporary source-compatibility bridge only. Never persisted; remove after callers migrate.
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
     public WorkOrderType OperationType
     {
         get => ReleaseWorkOrderType;
         set
         {
             ReleaseWorkOrderType = value;
-            if (ProcessOperationType == ProcessOperationType.Unknown)
+            if (ProcessOperationType == APS.Domain.ProcessOperationType.Unknown)
             {
                 ProcessOperationType = value switch
                 {
-                    WorkOrderType.Steelmaking => ProcessOperationType.Eaf,
-                    WorkOrderType.Casting => ProcessOperationType.Ccm,
-                    WorkOrderType.HotRolling => ProcessOperationType.HotRoll,
-                    WorkOrderType.ColdRolling => ProcessOperationType.ColdRoll,
-                    WorkOrderType.Finishing => ProcessOperationType.Finish,
-                    _ => ProcessOperationType.Unknown
+                    WorkOrderType.Steelmaking => APS.Domain.ProcessOperationType.Eaf,
+                    WorkOrderType.Casting => APS.Domain.ProcessOperationType.Ccm,
+                    WorkOrderType.HotRolling => APS.Domain.ProcessOperationType.HotRoll,
+                    WorkOrderType.ColdRolling => APS.Domain.ProcessOperationType.ColdRoll,
+                    WorkOrderType.Finishing => APS.Domain.ProcessOperationType.Finish,
+                    _ => APS.Domain.ProcessOperationType.Unknown
                 };
             }
         }
     }
 
     public RequirementDisposition Requirement { get; set; } = RequirementDisposition.Required;
+
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
     public bool IsOptional
     {
         get => Requirement == RequirementDisposition.Optional;
         set { if (value) Requirement = RequirementDisposition.Optional; }
     }
+
     public string? CapabilityClassCode { get; set; }
     public string? InputMaterialSpecificationCode { get; set; }
     public string? OutputMaterialSpecificationCode { get; set; }
@@ -64,25 +68,28 @@ public sealed class RouteResourceCapability : Entity
     public Guid ResourceId { get; set; }
     public required string RouteCode { get; set; }
     public ProcessOperationType ProcessOperationType { get; set; }
+
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
     public WorkOrderType OperationType
     {
         get => ProcessOperationType switch
         {
-            ProcessOperationType.Ccm => WorkOrderType.Casting,
-            ProcessOperationType.HotRoll => WorkOrderType.HotRolling,
-            ProcessOperationType.ColdRoll => WorkOrderType.ColdRolling,
-            ProcessOperationType.Tmt or ProcessOperationType.Cool or ProcessOperationType.Cut or ProcessOperationType.Bundle or ProcessOperationType.Coil or ProcessOperationType.Finish => WorkOrderType.Finishing,
+            APS.Domain.ProcessOperationType.Ccm => WorkOrderType.Casting,
+            APS.Domain.ProcessOperationType.HotRoll => WorkOrderType.HotRolling,
+            APS.Domain.ProcessOperationType.ColdRoll => WorkOrderType.ColdRolling,
+            APS.Domain.ProcessOperationType.Tmt or APS.Domain.ProcessOperationType.Cool or APS.Domain.ProcessOperationType.Cut or APS.Domain.ProcessOperationType.Bundle or APS.Domain.ProcessOperationType.Coil or APS.Domain.ProcessOperationType.Finish => WorkOrderType.Finishing,
             _ => WorkOrderType.Steelmaking
         };
         set => ProcessOperationType = value switch
         {
-            WorkOrderType.Casting => ProcessOperationType.Ccm,
-            WorkOrderType.HotRolling => ProcessOperationType.HotRoll,
-            WorkOrderType.ColdRolling => ProcessOperationType.ColdRoll,
-            WorkOrderType.Finishing => ProcessOperationType.Finish,
-            _ => ProcessOperationType.Eaf
+            WorkOrderType.Casting => APS.Domain.ProcessOperationType.Ccm,
+            WorkOrderType.HotRolling => APS.Domain.ProcessOperationType.HotRoll,
+            WorkOrderType.ColdRolling => APS.Domain.ProcessOperationType.ColdRoll,
+            WorkOrderType.Finishing => APS.Domain.ProcessOperationType.Finish,
+            _ => APS.Domain.ProcessOperationType.Eaf
         };
     }
+
     public string? CapabilityClassCode { get; set; }
     public string? GradeCode { get; set; }
     public string? GradeFamilyCode { get; set; }
@@ -105,25 +112,28 @@ public sealed class RouteOperationPlan : Entity
     public Guid UpstreamPlanId { get; set; }
     public ProcessOperationType ProcessOperationType { get; set; }
     public WorkOrderType ReleaseWorkOrderType { get; set; }
+
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
     public WorkOrderType OperationType
     {
         get => ReleaseWorkOrderType;
         set
         {
             ReleaseWorkOrderType = value;
-            if (ProcessOperationType == ProcessOperationType.Unknown)
+            if (ProcessOperationType == APS.Domain.ProcessOperationType.Unknown)
             {
                 ProcessOperationType = value switch
                 {
-                    WorkOrderType.Casting => ProcessOperationType.Ccm,
-                    WorkOrderType.HotRolling => ProcessOperationType.HotRoll,
-                    WorkOrderType.ColdRolling => ProcessOperationType.ColdRoll,
-                    WorkOrderType.Finishing => ProcessOperationType.Finish,
-                    _ => ProcessOperationType.Eaf
+                    WorkOrderType.Casting => APS.Domain.ProcessOperationType.Ccm,
+                    WorkOrderType.HotRolling => APS.Domain.ProcessOperationType.HotRoll,
+                    WorkOrderType.ColdRolling => APS.Domain.ProcessOperationType.ColdRoll,
+                    WorkOrderType.Finishing => APS.Domain.ProcessOperationType.Finish,
+                    _ => APS.Domain.ProcessOperationType.Eaf
                 };
             }
         }
     }
+
     public int SequenceNumber { get; set; }
     public Guid? ResourceId { get; set; }
     public required string GradeCode { get; set; }
