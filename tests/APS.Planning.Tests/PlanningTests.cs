@@ -103,6 +103,28 @@ public sealed class CampaignPlanningServiceTests
     }
 
     [Fact]
+    public void Expected_casting_yield_inflates_heat_input_inside_campaign_planning()
+    {
+        var po = NewPo("PO-YIELD", DemandSourceType.MakeToOrder, 100m, 1, "G1", "SEQ-A");
+
+        var campaign = Assert.Single(new CampaignPlanningService().FormCampaigns(new CampaignPlanningRequest(
+            new[] { po },
+            Array.Empty<InventoryPosition>(),
+            new CampaignPlanningPolicy(
+                50m,
+                40m,
+                55m,
+                250m,
+                300m,
+                ExpectedCastingYieldPct: 95m))).Campaigns);
+
+        Assert.Equal(100m, campaign.FreshSteelRequirementMt);
+        Assert.Equal(105.2632m, campaign.Heats.Sum(x => x.PlannedQuantityMt));
+        Assert.Equal(105.2632m, Assert.Single(campaign.GradeSequence).PlannedQuantityMt);
+        Assert.Equal(2, campaign.Heats.Count);
+    }
+
+    [Fact]
     public void Allows_multiple_exact_grades_in_one_campaign_only_through_shared_sequence_class()
     {
         var grade1 = NewPo("PO-1", DemandSourceType.MakeToOrder, 100m, 1, "G1", "SEQ-COMPAT");
@@ -181,6 +203,7 @@ public sealed class ProductionStructurePlanningServiceTests
         var cast = Assert.Single(result.CastSequences);
         Assert.Equal(2, cast.Heats.Count);
         Assert.Equal(2, result.PlannedBilletSupplies.Count);
+        Assert.Equal(100m, result.PlannedBilletSupplies.Sum(x => x.QuantityMt));
         var rolling = Assert.Single(result.RollingPlans);
         Assert.Equal(100m, rolling.PlannedQuantityMt);
         Assert.Single(rolling.Allocations);
