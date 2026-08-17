@@ -10,13 +10,16 @@ internal static class HeatLevelScheduleProjector
         IReadOnlyCollection<Resource> resources,
         IReadOnlyCollection<ResourceCapability> capabilities,
         IReadOnlyCollection<PlantFlowLink> flowLinks,
-        ProductionStructurePlanningPolicy policy)
+        ProductionStructurePlanningPolicy policy,
+        IReadOnlyCollection<CampaignHeatAllocation>? heatAllocations = null)
     {
         var issues = structure.Issues.ToList();
         var resourceById = resources.ToDictionary(x => x.Id);
-        var capabilitiesByResource = capabilities
-            .GroupBy(x => x.ResourceId)
+        var capabilitiesByResource = capabilities.GroupBy(x => x.ResourceId).ToDictionary(x => x.Key, x => x.ToArray());
+        var allocationsByHeat = (heatAllocations ?? Array.Empty<CampaignHeatAllocation>())
+            .GroupBy(x => x.CampaignHeatId)
             .ToDictionary(x => x.Key, x => x.ToArray());
+        var explicitSteelTopology = resources.Any(x => x.ProcessUnitType != ProcessUnitType.Unknown);
 
         var originalRollingTasks = structure.SchedulingTasks
             .Where(x => x.TaskType is FiniteScheduleTaskType.HotRolling or FiniteScheduleTaskType.ColdRolling)
@@ -26,9 +29,7 @@ internal static class HeatLevelScheduleProjector
         var heatTaskByHeatId = new Dictionary<Guid, FiniteScheduleTask>();
         var materialUnits = new List<PlannedStrandMaterialUnit>();
 
-        foreach (var sequence in structure.CastSequences
-                     .OrderBy(x => x.CasterResourceId)
-                     .ThenBy(x => x.SequenceNumber))
+        foreach (var sequence in structure.CastSequences.OrderBy(x => x.CasterResourceId).ThenBy(x => x.SequenceNumber))
         {
             if (!resourceById.TryGetValue(sequence.CasterResourceId, out var caster)) continue;
             var strands = Math.Max(1, caster.StrandCount ?? 1);
@@ -39,32 +40,19 @@ internal static class HeatLevelScheduleProjector
                 var heat = sequenceHeat.CampaignHeat;
                 var campaign = heat.Campaign;
                 if (campaign is null) continue;
-
-                var duration = HeatDurationMinutes(
-                    heat,
-                    campaign,
-                    sequence.CasterResourceId,
-                    capabilitiesByResource,
-                    policy.DefaultCastingMinutesPerHeat);
-
+                var duration = HeatDurationMinutes(heat, campaign, sequence.CasterResourceId, capabilitiesByResource, policy.DefaultCastingMinutesPerHeat);
                 var taskId = Guid.NewGuid();
-                var dependencies = previousTaskId.HasValue
-                    ? new[] { new FiniteScheduleDependency(previousTaskId.Value) }
-                    : Array.Empty<FiniteScheduleDependency>();
+                var dependencies = previousTaskId.HasValue ? new[] { new FiniteScheduleDependency(previousTaskId.Value) } : Array.Empty<FiniteScheduleDependency>();
 
-                var gradeAllocations = campaign.Allocations
-                    .Where(a => a.ProductionOrder is not null &&
-                                a.FreshSteelQuantityMt > 0m &&
-                                string.Equals(a.ProductionOrder.GradeCode, heat.GradeCode, StringComparison.OrdinalIgnoreCase))
-                    .ToArray();
-                var due = gradeAllocations
-                    .Select(a => a.ProductionOrder!.RequiredDate)
-                    .DefaultIfEmpty(campaign.RequiredDate)
-                    .Min();
-                var priority = gradeAllocations
-                    .Select(a => a.ProductionOrder!.Priority)
-                    .DefaultIfEmpty(0)
-                    .Max();
+                var exact = allocationsByHeat.TryGetValue(heat.Id, out var heatAllocationsForHeat)
+                    ? heatAllocationsForHeat.Where(x => x.ProductionOrder is not null).ToArray()
+                    : Array.Empty<CampaignHeatAllocation>();
+                var due = exact.Length > 0
+                    ? exact.Min(x => x.ProductionOrder!.RequiredDate)
+                    : campaign.RequiredDate;
+                var priority = exact.Length > 0
+                    ? exact.Max(x => x.ProductionOrder!.Priority)
+                    : campaign.Allocations.Where(x => x.ProductionOrder is not null && string.Equals(x.ProductionOrder.GradeCode, heat.GradeCode, StringComparison.OrdinalIgnoreCase)).Select(x => x.ProductionOrder!.Priority).DefaultIfEmpty(0).Max();
 
                 var task = new FiniteScheduleTask(
                     taskId,
@@ -78,64 +66,51 @@ internal static class HeatLevelScheduleProjector
                     due,
                     priority,
                     new[] { new FiniteScheduleResourceOption(sequence.CasterResourceId, duration) },
-                    dependencies);
+                    dependencies,
+                    ProcessOperationType.Ccm);
 
                 heatTasks.Add(task);
                 heatTaskByHeatId[heat.Id] = task;
                 previousTaskId = taskId;
 
-                var plannedOutput = structure.PlannedBilletSupplies
-                    .Where(x => x.CampaignHeatId == heat.Id)
-                    .Sum(x => x.QuantityMt);
+                var plannedOutput = exact.Length > 0
+                    ? exact.Sum(x => x.PlannedOutputQuantityMt)
+                    : structure.PlannedBilletSupplies.Where(x => x.CampaignHeatId == heat.Id).Sum(x => x.QuantityMt);
                 var strandQuantity = decimal.Round(plannedOutput / strands, 4, MidpointRounding.AwayFromZero);
                 var allocated = 0m;
-
                 for (var strand = 1; strand <= strands; strand++)
                 {
                     var quantity = strand == strands ? plannedOutput - allocated : strandQuantity;
                     allocated += quantity;
                     materialUnits.Add(new PlannedStrandMaterialUnit(
                         $"CAST:{campaign.CampaignNumber}:H{heat.SequenceNumber:00}:S{strand:00}",
-                        campaign.Id,
-                        heat.Id,
-                        sequence.Id,
-                        sequence.CasterResourceId,
-                        strand,
-                        1,
-                        heat.GradeCode,
-                        campaign.CasterSectionCode,
-                        quantity,
-                        taskId));
+                        campaign.Id, heat.Id, sequence.Id, sequence.CasterResourceId, strand, 1,
+                        heat.GradeCode, campaign.CasterSectionCode, quantity, taskId));
                 }
             }
         }
 
-        var remainingSupplyByHeat = structure.PlannedBilletSupplies
-            .GroupBy(x => x.CampaignHeatId)
-            .ToDictionary(x => x.Key, x => x.Sum(y => y.QuantityMt));
-        var supplyByHeat = structure.PlannedBilletSupplies
-            .GroupBy(x => x.CampaignHeatId)
-            .ToDictionary(x => x.Key, x => x.First());
+        var remainingSupplyByHeat = heatTasks.ToDictionary(
+            x => x.SourceEntityId,
+            x => allocationsByHeat.TryGetValue(x.SourceEntityId, out var exact)
+                ? exact.Sum(y => y.PlannedOutputQuantityMt)
+                : structure.PlannedBilletSupplies.Where(y => y.CampaignHeatId == x.SourceEntityId).Sum(y => y.QuantityMt));
 
         var rollingTasks = new List<FiniteScheduleTask>();
-        foreach (var plan in structure.RollingPlans
-                     .OrderBy(x => x.RollingMillResourceId)
-                     .ThenBy(x => x.SequenceNumber))
+        foreach (var plan in structure.RollingPlans.OrderBy(x => x.SequenceNumber))
         {
             if (!originalRollingTasks.TryGetValue(plan.Id, out var original)) continue;
-            if (!plan.RollingMillResourceId.HasValue || plan.FreshSteelQuantityMt <= 0m)
+            if (plan.FreshSteelQuantityMt <= 0m)
             {
-                rollingTasks.Add(original);
+                rollingTasks.Add(original with { ProcessOperationType = ProcessOperationType.HotRoll });
                 continue;
             }
 
-            var eligibleCampaigns = plan.Allocations
-                .Where(x => x.FreshSteelQuantityMt > 0m)
-                .Select(x => x.CampaignId)
-                .ToHashSet();
-            var candidateHeats = structure.PlannedBilletSupplies
-                .Where(x => eligibleCampaigns.Contains(x.CampaignId) &&
-                            string.Equals(x.GradeCode, plan.GradeCode, StringComparison.OrdinalIgnoreCase) &&
+            var eligibleCampaigns = plan.Allocations.Where(x => x.FreshSteelQuantityMt > 0m).Select(x => x.CampaignId).ToHashSet();
+            var candidateHeats = structure.CastSequences
+                .SelectMany(sequence => sequence.Heats)
+                .Where(x => eligibleCampaigns.Contains(x.CampaignHeat.CampaignId) &&
+                            string.Equals(x.CampaignHeat.GradeCode, plan.GradeCode, StringComparison.OrdinalIgnoreCase) &&
                             heatTaskByHeatId.ContainsKey(x.CampaignHeatId))
                 .Select(x => x.CampaignHeatId)
                 .Distinct()
@@ -148,7 +123,6 @@ internal static class HeatLevelScheduleProjector
             {
                 if (remainingRequirement <= 0m) break;
                 if (!remainingSupplyByHeat.TryGetValue(heatId, out var available) || available <= 0m) continue;
-                if (!supplyByHeat.TryGetValue(heatId, out var supply)) continue;
                 if (!heatTaskByHeatId.TryGetValue(heatId, out var predecessor)) continue;
 
                 var blockQuantity = Math.Min(remainingRequirement, available);
@@ -156,32 +130,42 @@ internal static class HeatLevelScheduleProjector
                 remainingSupplyByHeat[heatId] = available - blockQuantity;
                 feedBlock++;
 
-                var link = flowLinks.FirstOrDefault(x =>
-                    x.IsEnabled &&
-                    x.FromResourceId == supply.CasterResourceId &&
-                    x.ToResourceId == plan.RollingMillResourceId.Value);
-                var maxLag = link?.MaximumTransferTime is { } maximumTransfer
-                    ? Minutes(maximumTransfer)
-                    : (int?)null;
-                var dependency = new FiniteScheduleDependency(
-                    predecessor.TaskId,
-                    link is null ? 0 : Minutes(link.MinimumTransferTime),
-                    maxLag);
+                var options = original.ResourceOptions
+                    .Select(option => option with
+                    {
+                        DurationMinutes = Math.Max(1, (int)Math.Ceiling(option.DurationMinutes * (double)(blockQuantity / Math.Max(plan.PlannedQuantityMt, 0.0001m))))
+                    })
+                    .ToArray();
+                var pairs = new List<FiniteScheduleDependencyResourcePair>();
+                foreach (var option in options)
+                {
+                    var link = flowLinks.FirstOrDefault(x => x.IsEnabled && x.FromResourceId == predecessor.ResourceOptions.Single().ResourceId && x.ToResourceId == option.ResourceId);
+                    if (link is null) continue;
+                    pairs.Add(new FiniteScheduleDependencyResourcePair(
+                        predecessor.ResourceOptions.Single().ResourceId,
+                        option.ResourceId,
+                        Minutes(link.MinimumTransferTime),
+                        link.MaximumTransferTime.HasValue ? Minutes(link.MaximumTransferTime.Value) : null));
+                }
 
-                var baseOption = original.ResourceOptions.Single(x => x.ResourceId == plan.RollingMillResourceId.Value);
-                var blockDuration = Math.Max(1, (int)Math.Ceiling(
-                    baseOption.DurationMinutes * (double)(blockQuantity / Math.Max(plan.PlannedQuantityMt, 0.0001m))));
+                if (explicitSteelTopology && pairs.Count == 0)
+                {
+                    issues.Add(new PlanningIssue(PlanningIssueSeverity.Error, "CAST_TO_MILL_FLOW_MISSING", $"No enabled physical path can move heat {heatId} to an eligible hot rolling mill for plan {plan.Id}.", plan.Id));
+                    continue;
+                }
+
+                var dependency = pairs.Count > 0
+                    ? new FiniteScheduleDependency(predecessor.TaskId, 0, null, pairs)
+                    : new FiniteScheduleDependency(predecessor.TaskId);
 
                 rollingTasks.Add(original with
                 {
                     TaskId = Guid.NewGuid(),
                     Name = $"{original.Name} / Feed {feedBlock:00}",
                     QuantityMt = blockQuantity,
-                    ResourceOptions = new[]
-                    {
-                        baseOption with { DurationMinutes = blockDuration }
-                    },
-                    Dependencies = new[] { dependency }
+                    ResourceOptions = options,
+                    Dependencies = new[] { dependency },
+                    ProcessOperationType = ProcessOperationType.HotRoll
                 });
             }
 
@@ -210,30 +194,23 @@ internal static class HeatLevelScheduleProjector
         IReadOnlyDictionary<Guid, ResourceCapability[]> capabilitiesByResource,
         int fallbackMinutes)
     {
-        if (!capabilitiesByResource.TryGetValue(casterResourceId, out var capabilities))
-        {
-            return Math.Max(1, fallbackMinutes);
-        }
+        if (!capabilitiesByResource.TryGetValue(casterResourceId, out var capabilities)) return Math.Max(1, fallbackMinutes);
+        var fixedDuration = capabilities
+            .Where(x => (!x.ProcessOperationType.HasValue || x.ProcessOperationType == ProcessOperationType.Ccm) && Matches(x.RouteCode, campaign.RouteCode) && Matches(x.GradeCode, heat.GradeCode) && Matches(x.OutputCrossSectionCode, campaign.CasterSectionCode) && x.FixedDurationMinutes.HasValue)
+            .Select(x => x.FixedDurationMinutes!.Value)
+            .DefaultIfEmpty(0)
+            .Max();
+        if (fixedDuration > 0) return fixedDuration;
 
         var throughput = capabilities
-            .Where(x =>
-                Matches(x.RouteCode, campaign.RouteCode) &&
-                Matches(x.GradeCode, heat.GradeCode) &&
-                Matches(x.OutputCrossSectionCode, campaign.CasterSectionCode) &&
-                x.ThroughputMtPerHour.HasValue &&
-                x.ThroughputMtPerHour.Value > 0m)
+            .Where(x => (!x.ProcessOperationType.HasValue || x.ProcessOperationType == ProcessOperationType.Ccm) && Matches(x.RouteCode, campaign.RouteCode) && Matches(x.GradeCode, heat.GradeCode) && Matches(x.OutputCrossSectionCode, campaign.CasterSectionCode) && x.ThroughputMtPerHour.HasValue && x.ThroughputMtPerHour.Value > 0m)
             .Select(x => x.ThroughputMtPerHour!.Value)
             .DefaultIfEmpty(0m)
             .Max();
-
-        return throughput <= 0m
-            ? Math.Max(1, fallbackMinutes)
-            : Math.Max(1, (int)Math.Ceiling((double)(heat.PlannedQuantityMt / throughput * 60m)));
+        return throughput <= 0m ? Math.Max(1, fallbackMinutes) : Math.Max(1, (int)Math.Ceiling((double)(heat.PlannedQuantityMt / throughput * 60m)));
     }
 
     private static bool Matches(string? configured, string actual) =>
-        string.IsNullOrWhiteSpace(configured) ||
-        string.Equals(configured, actual, StringComparison.OrdinalIgnoreCase);
-
+        string.IsNullOrWhiteSpace(configured) || string.Equals(configured, actual, StringComparison.OrdinalIgnoreCase);
     private static int Minutes(TimeSpan value) => Math.Max(0, (int)Math.Ceiling(value.TotalMinutes));
 }
