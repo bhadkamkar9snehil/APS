@@ -82,3 +82,50 @@ public sealed record PlanRelease(
     Guid PlanVersionId,
     IReadOnlyCollection<WorkOrder> WorkOrders,
     IReadOnlyCollection<ScheduledOperation> Operations);
+
+public interface ITraceabilityService
+{
+    Task<WorkOrderTrace?> GetWorkOrderTraceAsync(Guid workOrderId, CancellationToken cancellationToken = default);
+    Task<MaterialLotTrace?> GetMaterialLotTraceAsync(Guid materialLotId, CancellationToken cancellationToken = default);
+}
+
+public sealed record WorkOrderTrace(
+    Guid WorkOrderId,
+    string WorkOrderNumber,
+    WorkOrderType WorkOrderType,
+    Guid? CampaignId,
+    decimal PlannedQuantityMt,
+    decimal ActualQuantityMt,
+    IReadOnlyCollection<ProductionOrderTrace> ProductionOrders,
+    IReadOnlyCollection<ProducedLotTrace> ProducedLots);
+
+public sealed record ProductionOrderTrace(
+    Guid ProductionOrderId,
+    string ProductionOrderNumber,
+    DemandSourceType DemandSource,
+    decimal AllocatedQuantityMt,
+    string? SalesOrderNumber,
+    string? SalesOrderItem,
+    Guid? SalesOrderId);
+
+public sealed record ProducedLotTrace(
+    Guid MaterialLotId,
+    string LotNumber,
+    decimal QuantityMt,
+    string GradeCode,
+    string CrossSectionCode);
+
+public sealed record MaterialLotTrace(
+    Guid MaterialLotId,
+    string LotNumber,
+    string MaterialCode,
+    string GradeCode,
+    string CrossSectionCode,
+    decimal QuantityMt,
+    Guid? ProducedByWorkOrderId,
+    IReadOnlyCollection<ProductionOrderTrace> AllocatedProductionOrders,
+    IReadOnlyCollection<MaterialLotParentTrace> ParentLots,
+    IReadOnlyCollection<MaterialLotChildTrace> ChildLots);
+
+public sealed record MaterialLotParentTrace(Guid MaterialLotId, string LotNumber, decimal QuantityMt);
+public sealed record MaterialLotChildTrace(Guid MaterialLotId, string LotNumber, decimal QuantityMt);
