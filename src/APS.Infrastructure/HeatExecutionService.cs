@@ -106,6 +106,7 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
                     MaterialCode = output.MaterialCode,
                     GradeCode = output.GradeCode,
                     CrossSectionCode = output.CrossSectionCode,
+                    Stage = InventoryStage.CastIntermediate,
                     QuantityMt = output.QuantityMt,
                     Status = MaterialLotStatus.Available,
                     LocationCode = output.LocationCode,
