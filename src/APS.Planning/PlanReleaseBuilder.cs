@@ -123,7 +123,7 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
                 .ToArray();
 
             assignmentsBySource.TryGetValue(rollingPlan.Id, out var assignments);
-            var assignment = assignments?.OrderBy(x => x.StartUtc).FirstOrDefault();
+            assignments ??= Array.Empty<FiniteScheduleAssignment>();
 
             var workOrder = new WorkOrder
             {
@@ -135,8 +135,8 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
                 GradeCode = rollingPlan.GradeCode,
                 CrossSectionCode = rollingPlan.OutputCrossSectionCode,
                 PlannedQuantityMt = rollingPlan.PlannedQuantityMt,
-                PlannedStart = assignment?.StartUtc,
-                PlannedEnd = assignment?.EndUtc,
+                PlannedStart = assignments.Length == 0 ? null : assignments.Min(x => x.StartUtc),
+                PlannedEnd = assignments.Length == 0 ? null : assignments.Max(x => x.EndUtc),
                 Status = WorkOrderStatus.Planned
             };
 
@@ -154,7 +154,7 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
 
             workOrders.Add(workOrder);
 
-            if (assignment is not null)
+            foreach (var assignment in assignments)
             {
                 scheduledOperations.Add(new ScheduledOperation
                 {
