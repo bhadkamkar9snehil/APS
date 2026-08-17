@@ -35,8 +35,8 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
                 if (gradeSequence.PlannedQuantityMt <= 0m) continue;
 
                 var matchingAllocations = campaign.Allocations
-                    .Where(a => a.ProductionOrder is not null &&
-                                string.Equals(a.ProductionOrder.GradeCode, gradeSequence.GradeCode, StringComparison.OrdinalIgnoreCase) &&
+                    .Where(a => a.ProductionOrder is { } po &&
+                                string.Equals(po.GradeCode, gradeSequence.GradeCode, StringComparison.OrdinalIgnoreCase) &&
                                 a.FreshSteelQuantityMt > 0m)
                     .ToArray();
 
