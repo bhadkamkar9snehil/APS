@@ -30,6 +30,7 @@ if (hasApsDatabase)
     builder.Services.AddDbContext<ApsDbContext>(options => options.UseSqlServer(apsConnection));
     builder.Services.AddScoped<ITraceabilityService, TraceabilityService>();
     builder.Services.AddScoped<IWorkOrderExecutionService, WorkOrderExecutionService>();
+    builder.Services.AddScoped<IHeatExecutionService, HeatExecutionService>();
     builder.Services.AddScoped<IPlanVersionRepository, PlanVersionRepository>();
     builder.Services.AddScoped<IPlanReleaseRepository, PlanReleaseRepository>();
 }
@@ -173,6 +174,28 @@ if (hasApsDatabase)
             return Results.Ok(snapshot);
         });
 
+    app.MapPost("/api/execution/heats",
+        async (ManualHeatExecutionRequest request, IHeatExecutionService execution, CancellationToken cancellationToken) =>
+        {
+            var snapshot = await execution.ApplyAsync(new HeatExecutionUpdate(
+                request.PlanVersionId,
+                request.PlanningKey,
+                request.Status,
+                request.ChangedOnUtc ?? DateTime.UtcNow,
+                ExecutionUpdateSource.Manual,
+                null,
+                request.ExternalHeatNumber,
+                request.ExternalCastNumber,
+                request.CasterResourceId,
+                request.ActualStartUtc,
+                request.ActualEndUtc,
+                request.ActualQuantityMt,
+                request.MaterialOutputs,
+                request.Comment,
+                request.IsCorrection), cancellationToken);
+            return Results.Ok(snapshot);
+        });
+
     app.MapPost("/api/integration/xstudio/execution-events",
         async (WorkOrderExecutionUpdate update, IWorkOrderExecutionService execution, CancellationToken cancellationToken) =>
         {
@@ -187,6 +210,20 @@ if (hasApsDatabase)
                 Source = ExecutionUpdateSource.MesApi
             }, cancellationToken);
             return Results.Ok(snapshot);
+        });
+
+    app.MapPost("/api/integration/xstudio/heat-events",
+        async (HeatExecutionUpdate update, IHeatExecutionService execution, CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(update.ExternalEventId))
+            {
+                return Results.BadRequest(new { message = "ExternalEventId is required for MES heat events." });
+            }
+
+            return Results.Ok(await execution.ApplyAsync(update with
+            {
+                Source = ExecutionUpdateSource.MesApi
+            }, cancellationToken));
         });
 
     app.MapGet("/api/traceability/work-orders/{workOrderId:guid}",
@@ -220,6 +257,21 @@ public sealed record ReplanApiRequest(
     DateTime? ReferenceTimeUtc = null,
     PlanTriggerType Trigger = PlanTriggerType.ExecutionFeedback,
     string? Reason = null);
+
+public sealed record ManualHeatExecutionRequest(
+    Guid PlanVersionId,
+    string PlanningKey,
+    HeatExecutionStatus Status,
+    string? ExternalHeatNumber = null,
+    string? ExternalCastNumber = null,
+    Guid? CasterResourceId = null,
+    DateTime? ActualStartUtc = null,
+    DateTime? ActualEndUtc = null,
+    decimal? ActualQuantityMt = null,
+    IReadOnlyCollection<StrandMaterialActualInput>? MaterialOutputs = null,
+    DateTime? ChangedOnUtc = null,
+    string? Comment = null,
+    bool IsCorrection = false);
 
 public sealed record ManualWorkOrderExecutionRequest(
     WorkOrderStatus Status,
