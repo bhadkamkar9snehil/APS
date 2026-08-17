@@ -12,6 +12,7 @@ internal static class HeatLevelScheduleProjector
         IReadOnlyCollection<PlantFlowLink> flowLinks,
         ProductionStructurePlanningPolicy policy)
     {
+        var issues = structure.Issues.ToList();
         var resourceById = resources.ToDictionary(x => x.Id);
         var capabilitiesByResource = capabilities
             .GroupBy(x => x.ResourceId)
@@ -111,54 +112,97 @@ internal static class HeatLevelScheduleProjector
             }
         }
 
+        var remainingSupplyByHeat = structure.PlannedBilletSupplies
+            .GroupBy(x => x.CampaignHeatId)
+            .ToDictionary(x => x.Key, x => x.Sum(y => y.QuantityMt));
+        var supplyByHeat = structure.PlannedBilletSupplies
+            .GroupBy(x => x.CampaignHeatId)
+            .ToDictionary(x => x.Key, x => x.First());
+
         var rollingTasks = new List<FiniteScheduleTask>();
-        foreach (var plan in structure.RollingPlans)
+        foreach (var plan in structure.RollingPlans
+                     .OrderBy(x => x.RollingMillResourceId)
+                     .ThenBy(x => x.SequenceNumber))
         {
             if (!originalRollingTasks.TryGetValue(plan.Id, out var original)) continue;
-            if (!plan.RollingMillResourceId.HasValue)
+            if (!plan.RollingMillResourceId.HasValue || plan.FreshSteelQuantityMt <= 0m)
             {
                 rollingTasks.Add(original);
                 continue;
             }
 
-            var dependencies = new List<FiniteScheduleDependency>();
-            foreach (var allocation in plan.Allocations.Where(x => x.FreshSteelQuantityMt > 0m))
+            var eligibleCampaigns = plan.Allocations
+                .Where(x => x.FreshSteelQuantityMt > 0m)
+                .Select(x => x.CampaignId)
+                .ToHashSet();
+            var candidateHeats = structure.PlannedBilletSupplies
+                .Where(x => eligibleCampaigns.Contains(x.CampaignId) &&
+                            string.Equals(x.GradeCode, plan.GradeCode, StringComparison.OrdinalIgnoreCase) &&
+                            heatTaskByHeatId.ContainsKey(x.CampaignHeatId))
+                .Select(x => x.CampaignHeatId)
+                .Distinct()
+                .OrderBy(heatId => heatTasks.FindIndex(t => t.SourceEntityId == heatId))
+                .ToArray();
+
+            var remainingRequirement = plan.FreshSteelQuantityMt;
+            var feedBlock = 0;
+            foreach (var heatId in candidateHeats)
             {
-                foreach (var sequence in structure.CastSequences)
+                if (remainingRequirement <= 0m) break;
+                if (!remainingSupplyByHeat.TryGetValue(heatId, out var available) || available <= 0m) continue;
+                if (!supplyByHeat.TryGetValue(heatId, out var supply)) continue;
+                if (!heatTaskByHeatId.TryGetValue(heatId, out var predecessor)) continue;
+                if (!heatCasterByTaskId.TryGetValue(predecessor.TaskId, out var casterId)) continue;
+
+                var blockQuantity = Math.Min(remainingRequirement, available);
+                remainingRequirement -= blockQuantity;
+                remainingSupplyByHeat[heatId] = available - blockQuantity;
+                feedBlock++;
+
+                var link = flowLinks.FirstOrDefault(x =>
+                    x.IsEnabled &&
+                    x.FromResourceId == casterId &&
+                    x.ToResourceId == plan.RollingMillResourceId.Value);
+                var maxLag = link?.MaximumTransferTime is { } maximumTransfer
+                    ? Minutes(maximumTransfer)
+                    : (int?)null;
+                var dependency = new FiniteScheduleDependency(
+                    predecessor.TaskId,
+                    link is null ? 0 : Minutes(link.MinimumTransferTime),
+                    maxLag);
+
+                var baseOption = original.ResourceOptions.Single(x => x.ResourceId == plan.RollingMillResourceId.Value);
+                var blockDuration = Math.Max(1, (int)Math.Ceiling(
+                    baseOption.DurationMinutes * (double)(blockQuantity / Math.Max(plan.PlannedQuantityMt, 0.0001m))));
+
+                rollingTasks.Add(original with
                 {
-                    foreach (var sequenceHeat in sequence.Heats.Where(x =>
-                                 x.CampaignHeat.CampaignId == allocation.CampaignId &&
-                                 string.Equals(x.CampaignHeat.GradeCode, plan.GradeCode, StringComparison.OrdinalIgnoreCase)))
+                    TaskId = Guid.NewGuid(),
+                    Name = $"{original.Name} / Feed {feedBlock:00}",
+                    QuantityMt = blockQuantity,
+                    ResourceOptions = new[]
                     {
-                        if (!heatTaskByHeatId.TryGetValue(sequenceHeat.CampaignHeatId, out var predecessor)) continue;
-                        if (!heatCasterByTaskId.TryGetValue(predecessor.TaskId, out var casterId)) continue;
-
-                        var link = flowLinks.FirstOrDefault(x =>
-                            x.IsEnabled &&
-                            x.FromResourceId == casterId &&
-                            x.ToResourceId == plan.RollingMillResourceId.Value);
-
-                        dependencies.Add(new FiniteScheduleDependency(
-                            predecessor.TaskId,
-                            link is null ? 0 : Minutes(link.MinimumTransferTime),
-                            link?.MaximumTransferTime is null ? null : Minutes(link.MaximumTransferTime.Value)));
-                    }
-                }
+                        baseOption with { DurationMinutes = blockDuration }
+                    },
+                    Dependencies = new[] { dependency }
+                });
             }
 
-            rollingTasks.Add(original with
+            if (remainingRequirement > 0.0001m)
             {
-                Dependencies = dependencies
-                    .GroupBy(x => x.PredecessorTaskId)
-                    .Select(g => g.OrderByDescending(x => x.MinimumLagMinutes).First())
-                    .ToArray()
-            });
+                issues.Add(new PlanningIssue(
+                    PlanningIssueSeverity.Error,
+                    "INSUFFICIENT_PLANNED_CAST_OUTPUT",
+                    $"Rolling plan {plan.Id} requires {plan.FreshSteelQuantityMt:0.####} MT fresh feed but only {plan.FreshSteelQuantityMt - remainingRequirement:0.####} MT planned cast output is available after yield and prior allocations.",
+                    plan.Id));
+            }
         }
 
         return structure with
         {
             SchedulingTasks = heatTasks.Concat(rollingTasks).ToArray(),
-            PlannedStrandMaterialUnits = materialUnits
+            PlannedStrandMaterialUnits = materialUnits,
+            Issues = issues
         };
     }
 
