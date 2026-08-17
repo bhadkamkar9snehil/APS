@@ -70,7 +70,12 @@ public sealed class PlanningEngine(
                 request.ExternalMaterialSupplies);
             if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId);
 
-            structure = MultiStageRouteProjector.Apply(structure, request.RoutePlanning, request.Resources, request.TransitionRules);
+            structure = MultiStageRouteProjector.Apply(
+                structure,
+                request.RoutePlanning,
+                request.Resources,
+                request.TransitionRules,
+                request.FlowLinks);
             if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId);
         }
 
