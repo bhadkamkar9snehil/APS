@@ -77,12 +77,6 @@ public sealed class PlanningEngine(
             }
         }
 
-        var sequencedTasks = FiniteScheduleTaskSequencer.Apply(
-            structure.SchedulingTasks,
-            request.Resources,
-            request.TransitionRules);
-        structure = structure with { SchedulingTasks = sequencedTasks };
-
         var identities = PlanningTaskIdentityService.Build(structure);
         var stabilityConstraints = BuildStabilityConstraints(request, structure.SchedulingTasks, identities);
 
