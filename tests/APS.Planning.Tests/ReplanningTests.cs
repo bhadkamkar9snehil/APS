@@ -17,8 +17,8 @@ public sealed class ReplanningTests
 
         Assert.True(result.IsFeasible, string.Join("; ", result.Schedule.Issues.Select(x => x.Message)));
         var heatCount = result.CampaignPlan.Campaigns.Sum(x => x.Heats.Count);
-        var units = Assert.IsAssignableFrom<IReadOnlyCollection<PlannedStrandMaterialUnit>>(
-            result.ProductionStructure.PlannedStrandMaterialUnits);
+        Assert.NotNull(result.ProductionStructure.PlannedStrandMaterialUnits);
+        var units = result.ProductionStructure.PlannedStrandMaterialUnits!;
 
         Assert.Equal(heatCount * 4, units.Count);
         Assert.All(units, unit => Assert.Contains(result.Schedule.Assignments, a => a.TaskId == unit.AvailabilityTaskId));
@@ -166,11 +166,11 @@ public sealed class ReplanningTests
         {
             new InventoryPosition
             {
-                MaterialCode = "FG-OTHER",
-                GradeCode = "G9",
-                CrossSectionCode = "99MM",
-                Stage = InventoryStage.FinishedGoods,
-                AvailableQuantityMt = 1m
+                MaterialCode = "BILLET-G1",
+                GradeCode = "G1",
+                CrossSectionCode = "150X150",
+                Stage = InventoryStage.CastIntermediate,
+                AvailableQuantityMt = 10m
             }
         };
         var request = new PlanningRunRequest(
