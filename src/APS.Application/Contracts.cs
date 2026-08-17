@@ -39,8 +39,10 @@ public sealed record CampaignPlanningRequest(
 
 public sealed record CampaignPlanningResult(
     IReadOnlyCollection<Campaign> Campaigns,
-    IReadOnlyCollection<ProductionOrder> FullyCoveredByInventory,
-    IReadOnlyDictionary<Guid, decimal> NettedRequirementsMt);
+    IReadOnlyCollection<ProductionOrder> FullyCoveredByFinishedGoods,
+    IReadOnlyDictionary<Guid, decimal> RollingRequirementsMt,
+    IReadOnlyDictionary<Guid, decimal> FreshSteelRequirementsMt,
+    IReadOnlyDictionary<Guid, decimal> IntermediateInventoryAllocatedMt);
 
 public interface IMtsProductionOrderService
 {
@@ -50,6 +52,106 @@ public interface IMtsProductionOrderService
 public interface ICampaignPlanningService
 {
     CampaignPlanningResult FormCampaigns(CampaignPlanningRequest request);
+}
+
+public sealed record ProductionStructurePlanningPolicy(
+    int MaximumHeatsPerCastSequence = 8,
+    int DefaultCastingMinutesPerHeat = 55,
+    int SequenceBreakPenalty = 500,
+    decimal CastingYieldPct = 100m,
+    int DefaultRollingMinutesPer100Mt = 120,
+    bool AllowCrossCampaignCastSequences = true,
+    bool AllowCrossCampaignRollingPlans = true);
+
+public sealed record ProductionStructurePlanningRequest(
+    IReadOnlyCollection<Campaign> Campaigns,
+    IReadOnlyCollection<Resource> Resources,
+    IReadOnlyCollection<ResourceCapability> Capabilities,
+    IReadOnlyCollection<TransitionRule> TransitionRules,
+    IReadOnlyCollection<PlantFlowLink> FlowLinks,
+    ProductionStructurePlanningPolicy Policy);
+
+public sealed record PlannedBilletSupply(
+    Guid CampaignId,
+    Guid CampaignHeatId,
+    Guid CastSequenceId,
+    Guid CasterResourceId,
+    string GradeCode,
+    string CrossSectionCode,
+    decimal QuantityMt);
+
+public enum PlanningIssueSeverity { Warning = 1, Error = 2 }
+
+public sealed record PlanningIssue(
+    PlanningIssueSeverity Severity,
+    string Code,
+    string Message,
+    Guid? SourceId = null);
+
+public sealed record ProductionStructurePlanningResult(
+    IReadOnlyCollection<CastSequence> CastSequences,
+    IReadOnlyCollection<RollingPlan> RollingPlans,
+    IReadOnlyCollection<PlannedBilletSupply> PlannedBilletSupplies,
+    IReadOnlyCollection<FiniteScheduleTask> SchedulingTasks,
+    IReadOnlyCollection<PlanningIssue> Issues);
+
+public interface IProductionStructurePlanningService
+{
+    ProductionStructurePlanningResult Build(ProductionStructurePlanningRequest request);
+}
+
+public enum FiniteScheduleTaskType { Casting = 1, HotRolling = 2, ColdRolling = 3, Finishing = 4 }
+
+public sealed record FiniteScheduleResourceOption(
+    Guid ResourceId,
+    int DurationMinutes,
+    int AssignmentPenalty = 0);
+
+public sealed record FiniteScheduleDependency(
+    Guid PredecessorTaskId,
+    int MinimumLagMinutes = 0,
+    int? MaximumLagMinutes = null);
+
+public sealed record FiniteScheduleTask(
+    Guid TaskId,
+    Guid SourceEntityId,
+    FiniteScheduleTaskType TaskType,
+    string Name,
+    string GradeCode,
+    string CrossSectionCode,
+    decimal QuantityMt,
+    DateTime? EarliestStartUtc,
+    DateTime? DueUtc,
+    int Priority,
+    IReadOnlyCollection<FiniteScheduleResourceOption> ResourceOptions,
+    IReadOnlyCollection<FiniteScheduleDependency> Dependencies);
+
+public sealed record FiniteScheduleRequest(
+    DateTime HorizonStartUtc,
+    DateTime HorizonEndUtc,
+    IReadOnlyCollection<FiniteScheduleTask> Tasks,
+    IReadOnlyCollection<Resource> Resources,
+    IReadOnlyCollection<ResourceCalendar> ResourceCalendars,
+    IReadOnlyCollection<TransitionRule> TransitionRules,
+    int MaxSolverSeconds = 20);
+
+public sealed record FiniteScheduleAssignment(
+    Guid TaskId,
+    Guid SourceEntityId,
+    Guid ResourceId,
+    DateTime StartUtc,
+    DateTime EndUtc);
+
+public sealed record FiniteScheduleResult(
+    string SolverStatus,
+    bool IsFeasible,
+    long ObjectiveValue,
+    IReadOnlyCollection<FiniteScheduleAssignment> Assignments,
+    IReadOnlyCollection<PlanningIssue> Issues);
+
+public interface IFiniteScheduleOptimizer
+{
+    FiniteScheduleResult Solve(FiniteScheduleRequest request);
 }
 
 public interface IInventorySnapshotProvider
