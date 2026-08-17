@@ -13,7 +13,8 @@ public sealed record StockPolicy(
     decimal MinimumReplenishmentMt,
     decimal MaximumReplenishmentMt,
     DateTime RequiredDate,
-    int Priority = 0);
+    int Priority = 0,
+    string? GradeSequenceClassCode = null);
 
 public sealed record MtsProductionOrderProposal(
     ProductionOrder? ProductionOrder,
@@ -26,7 +27,9 @@ public sealed record CampaignPlanningPolicy(
     decimal MinimumHeatSizeMt,
     decimal MaximumHeatSizeMt,
     decimal TargetCampaignQuantityMt,
-    decimal MaximumCampaignQuantityMt);
+    decimal MaximumCampaignQuantityMt,
+    bool AllowMtoMtsMixing = true,
+    bool AllowMixedGradesWithinSequenceClass = true);
 
 public sealed record CampaignPlanningRequest(
     IReadOnlyCollection<ProductionOrder> ProductionOrders,
