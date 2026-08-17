@@ -110,10 +110,12 @@ public sealed class PlanningEngineTests
 
         var firstPlan = result.ProductionStructure.RollingPlans.Single(p => p.SequenceNumber == 1);
         var secondPlan = result.ProductionStructure.RollingPlans.Single(p => p.SequenceNumber == 2);
-        var first = result.Schedule.Assignments.Single(a => a.SourceEntityId == firstPlan.Id);
-        var second = result.Schedule.Assignments.Single(a => a.SourceEntityId == secondPlan.Id);
+        var first = result.Schedule.Assignments.Where(a => a.SourceEntityId == firstPlan.Id).OrderBy(a => a.StartUtc).ToArray();
+        var second = result.Schedule.Assignments.Where(a => a.SourceEntityId == secondPlan.Id).OrderBy(a => a.StartUtc).ToArray();
 
-        Assert.True(second.StartUtc >= first.EndUtc.AddMinutes(15));
+        Assert.NotEmpty(first);
+        Assert.NotEmpty(second);
+        Assert.True(second[0].StartUtc >= first[^1].EndUtc.AddMinutes(15));
     }
 
     private static ProductionOrder NewPo(string number, string section, decimal quantity) => new()
