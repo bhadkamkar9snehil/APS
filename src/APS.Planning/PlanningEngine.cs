@@ -16,7 +16,11 @@ public sealed class PlanningEngine(
             request.ProductionOrders,
             request.Inventory,
             request.CampaignPolicy,
-            request.CampaignNumberPrefix));
+            request.CampaignNumberPrefix,
+            request.Resources,
+            request.Capabilities,
+            request.SteelGrades,
+            request.ExternalMaterialSupplies));
 
         var structureRequest = new ProductionStructurePlanningRequest(
             campaignPlan.Campaigns,
@@ -25,7 +29,10 @@ public sealed class PlanningEngine(
             request.TransitionRules,
             request.FlowLinks,
             request.StructurePolicy,
-            request.RoutePlanning);
+            request.RoutePlanning,
+            request.SteelGrades,
+            request.MaterialSpecifications,
+            request.ExternalMaterialSupplies);
 
         var structure = request.RoutePlanning is null
             ? structurePlanning.Build(structureRequest)
