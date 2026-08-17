@@ -13,9 +13,11 @@ builder.Services.AddScoped<IMtsProductionOrderService, MtsProductionOrderService
 builder.Services.AddScoped<ICampaignPlanningService, CampaignPlanningService>();
 
 var apsConnection = builder.Configuration.GetConnectionString("APS");
-if (!string.IsNullOrWhiteSpace(apsConnection))
+var hasApsDatabase = !string.IsNullOrWhiteSpace(apsConnection);
+if (hasApsDatabase)
 {
     builder.Services.AddDbContext<ApsDbContext>(options => options.UseSqlServer(apsConnection));
+    builder.Services.AddScoped<ITraceabilityService, TraceabilityService>();
 }
 
 var app = builder.Build();
@@ -27,6 +29,7 @@ app.MapGet("/api/health", () => Results.Ok(new
 {
     service = "APS.Service",
     status = "ok",
+    databaseConfigured = hasApsDatabase,
     utc = DateTime.UtcNow
 }));
 
@@ -45,6 +48,23 @@ app.MapPost("/api/integration/xstudio/execution-events",
         actual.ExternalWorkOrderId,
         actual.ChangedOnUtc
     }));
+
+if (hasApsDatabase)
+{
+    app.MapGet("/api/traceability/work-orders/{workOrderId:guid}",
+        async (Guid workOrderId, ITraceabilityService traceability, CancellationToken cancellationToken) =>
+        {
+            var trace = await traceability.GetWorkOrderTraceAsync(workOrderId, cancellationToken);
+            return trace is null ? Results.NotFound() : Results.Ok(trace);
+        });
+
+    app.MapGet("/api/traceability/material-lots/{materialLotId:guid}",
+        async (Guid materialLotId, ITraceabilityService traceability, CancellationToken cancellationToken) =>
+        {
+            var trace = await traceability.GetMaterialLotTraceAsync(materialLotId, cancellationToken);
+            return trace is null ? Results.NotFound() : Results.Ok(trace);
+        });
+}
 
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
