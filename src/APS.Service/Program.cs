@@ -59,14 +59,14 @@ app.MapPost("/api/planning/schedule/solve",
     });
 
 app.MapPost("/api/planning/release/build",
-    (PlanReleaseBuildRequest request, IPlanReleaseBuilder builder) =>
+    (PlanReleaseBuildRequest request, IPlanReleaseBuilder releaseBuilder) =>
     {
         if (!request.Schedule.IsFeasible)
         {
             return Results.UnprocessableEntity(new { message = "Cannot build Work Orders from an infeasible schedule." });
         }
 
-        return Results.Ok(builder.Build(request));
+        return Results.Ok(releaseBuilder.Build(request));
     });
 
 app.MapPost("/api/integration/xstudio/execution-events",
