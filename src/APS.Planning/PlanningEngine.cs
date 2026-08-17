@@ -41,14 +41,26 @@ public sealed class PlanningEngine(
                 campaignPlan,
                 structure,
                 schedule,
-                false);
+                false,
+                Array.Empty<PlanningTaskIdentity>(),
+                request.ReplanContext?.BaselinePlanVersionId);
         }
+
+        structure = HeatLevelScheduleProjector.Apply(
+            structure,
+            request.Resources,
+            request.Capabilities,
+            request.FlowLinks,
+            request.StructurePolicy);
 
         var sequencedTasks = FiniteScheduleTaskSequencer.Apply(
             structure.SchedulingTasks,
             request.Resources,
             request.TransitionRules);
         structure = structure with { SchedulingTasks = sequencedTasks };
+
+        var identities = PlanningTaskIdentityService.Build(structure);
+        var stabilityConstraints = BuildStabilityConstraints(request, structure.SchedulingTasks, identities);
 
         var finiteSchedule = scheduleOptimizer.Solve(new FiniteScheduleRequest(
             request.HorizonStartUtc,
@@ -57,7 +69,8 @@ public sealed class PlanningEngine(
             request.Resources,
             request.ResourceCalendars,
             request.TransitionRules,
-            request.MaxSolverSeconds));
+            request.MaxSolverSeconds,
+            stabilityConstraints));
 
         return new PlanningRunResult(
             planVersionId,
@@ -65,6 +78,52 @@ public sealed class PlanningEngine(
             campaignPlan,
             structure,
             finiteSchedule,
-            finiteSchedule.IsFeasible);
+            finiteSchedule.IsFeasible,
+            identities,
+            request.ReplanContext?.BaselinePlanVersionId);
+    }
+
+    private static IReadOnlyCollection<FiniteScheduleStabilityConstraint> BuildStabilityConstraints(
+        PlanningRunRequest request,
+        IReadOnlyCollection<FiniteScheduleTask> tasks,
+        IReadOnlyCollection<PlanningTaskIdentity> identities)
+    {
+        var context = request.ReplanContext;
+        if (context is null || context.BaselineOperations.Count == 0)
+        {
+            return Array.Empty<FiniteScheduleStabilityConstraint>();
+        }
+
+        var taskIds = tasks.Select(x => x.TaskId).ToHashSet();
+        var baselineByKey = context.BaselineOperations
+            .GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.OrderBy(y => y.StartUtc).First(), StringComparer.OrdinalIgnoreCase);
+        var policy = context.TimeFencePolicy;
+        var constraints = new List<FiniteScheduleStabilityConstraint>();
+
+        foreach (var identity in identities.Where(x => taskIds.Contains(x.TaskId)))
+        {
+            if (!baselineByKey.TryGetValue(identity.PlanningKey, out var baseline)) continue;
+            if (baseline.EndUtc <= context.ReferenceTimeUtc) continue;
+
+            var minutesToStart = (baseline.StartUtc - context.ReferenceTimeUtc).TotalMinutes;
+            var zone = minutesToStart <= policy.FrozenMinutes
+                ? TimeFenceZone.Frozen
+                : minutesToStart <= policy.FrozenMinutes + policy.SlushyMinutes
+                    ? TimeFenceZone.Slushy
+                    : TimeFenceZone.Liquid;
+
+            if (zone == TimeFenceZone.Liquid) continue;
+
+            constraints.Add(new FiniteScheduleStabilityConstraint(
+                identity.TaskId,
+                zone,
+                baseline.ResourceId,
+                baseline.StartUtc,
+                policy.SlushyMovementPenaltyPerMinute,
+                policy.SlushyResourceChangePenalty));
+        }
+
+        return constraints;
     }
 }
