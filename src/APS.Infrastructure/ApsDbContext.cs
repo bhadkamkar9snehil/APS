@@ -14,6 +14,7 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
     public DbSet<CampaignAllocation> CampaignAllocations => Set<CampaignAllocation>();
     public DbSet<CampaignGradeSequence> CampaignGradeSequences => Set<CampaignGradeSequence>();
     public DbSet<CampaignHeat> CampaignHeats => Set<CampaignHeat>();
+    public DbSet<CampaignHeatAllocation> CampaignHeatAllocations => Set<CampaignHeatAllocation>();
     public DbSet<CastSequence> CastSequences => Set<CastSequence>();
     public DbSet<CastSequenceHeat> CastSequenceHeats => Set<CastSequenceHeat>();
     public DbSet<RollingPlan> RollingPlans => Set<RollingPlan>();
@@ -152,6 +153,18 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
             .HasForeignKey(x => x.CampaignGradeSequenceId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        modelBuilder.Entity<CampaignHeatAllocation>()
+            .HasOne(x => x.CampaignHeat)
+            .WithMany()
+            .HasForeignKey(x => x.CampaignHeatId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<CampaignHeatAllocation>()
+            .HasOne(x => x.ProductionOrder)
+            .WithMany()
+            .HasForeignKey(x => x.ProductionOrderId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         modelBuilder.Entity<CastSequenceHeat>()
             .HasOne(x => x.CastSequence)
             .WithMany(x => x.Heats)
@@ -247,6 +260,7 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<GradeProcessRequirement>().HasIndex(x => new { x.SteelGradeId, x.ProcessOperationType }).IsUnique();
         modelBuilder.Entity<OrderChemistryRequirement>().HasIndex(x => new { x.ProductionOrderRequirementId, x.ElementCode }).IsUnique();
         modelBuilder.Entity<OrderProcessRequirement>().HasIndex(x => new { x.ProductionOrderRequirementId, x.ProcessOperationType, x.RequiredResourceId });
+        modelBuilder.Entity<CampaignHeatAllocation>().HasIndex(x => new { x.CampaignHeatId, x.ProductionOrderId });
         modelBuilder.Entity<LotGenealogy>().HasIndex(x => new { x.ParentLotId, x.ChildLotId });
         modelBuilder.Entity<MaterialLotAllocation>().HasIndex(x => new { x.MaterialLotId, x.ProductionOrderId });
         modelBuilder.Entity<CampaignGradeSequence>().HasIndex(x => new { x.CampaignId, x.SequenceNumber }).IsUnique();
