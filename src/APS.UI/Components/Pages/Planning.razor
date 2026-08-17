@@ -1,0 +1,320 @@
+@page "/planning"
+@using APS.UI.Sample
+@using APS.UI.Components.Shared
+@inject IPlanningEngine PlanningEngine
+@inject IPlanReleaseBuilder ReleaseBuilder
+
+<PageTitle>Planning Sandbox - APS Planner</PageTitle>
+
+<div class="aps-panel">
+    <h2>Planning Sandbox</h2>
+    <p style="color:var(--aps-muted); margin-top:-0.4rem;">
+        Runs the real campaign &rarr; caster/mill structure &rarr; CP-SAT finite schedule pipeline
+        (<code>IPlanningEngine</code>) against a built-in long-products sample scenario
+        (2 casters, 2 mills, rebar + structural grades). No database connection required.
+    </p>
+
+    <div class="aps-controls">
+        <div class="aps-field">
+            <label for="horizonDays">Horizon (days)</label>
+            <input id="horizonDays" type="number" min="1" max="21" @bind="horizonDays" />
+        </div>
+        <div class="aps-field">
+            <label for="solverSeconds">Max solver seconds</label>
+            <input id="solverSeconds" type="number" min="1" max="60" @bind="maxSolverSeconds" />
+        </div>
+        <div class="aps-checkbox">
+            <input id="infeasible" type="checkbox" @bind="includeInfeasibleOrder" />
+            <label for="infeasible">Include an order with no eligible resource (demonstrates issue reporting)</label>
+        </div>
+        <button class="aps-btn" @onclick="RunPlanningAsync" disabled="@isRunning">
+            @(isRunning ? "Running..." : "Run Planning")
+        </button>
+        @if (result is not null)
+        {
+            <button class="aps-btn secondary" @onclick="BuildReleaseAsync" disabled="@(isRunning || !result.IsFeasible)">
+                Build Release (Work Orders)
+            </button>
+        }
+    </div>
+
+    @if (isRunning)
+    {
+        <p class="aps-loading">Solving with CP-SAT&hellip;</p>
+    }
+    @if (errorMessage is not null)
+    {
+        <div class="aps-issue error">@errorMessage</div>
+    }
+</div>
+
+@if (result is not null)
+{
+    <div class="aps-panel">
+        <h2>
+            Plan result
+            <span class="aps-badge @(result.IsFeasible ? "feasible" : "infeasible")">
+                @(result.IsFeasible ? "Feasible" : "Infeasible")
+            </span>
+        </h2>
+        <p style="color:var(--aps-muted)">
+            Plan version @result.PlanVersionId &middot; solver status @result.Schedule.SolverStatus
+            &middot; objective @result.Schedule.ObjectiveValue &middot; generated @result.CreatedOnUtc.ToString("u")
+        </p>
+
+        @{
+            var allIssues = result.ProductionStructure.Issues.Concat(result.Schedule.Issues).ToArray();
+        }
+        @if (allIssues.Length > 0)
+        {
+            <h3>Issues</h3>
+            <ul class="aps-issue-list">
+                @foreach (var issue in allIssues)
+                {
+                    <li class="aps-issue @(issue.Severity == PlanningIssueSeverity.Error ? "error" : "warning")">
+                        <strong>@issue.Code</strong> &mdash; @issue.Message
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+
+    <div class="aps-panel">
+        <h3>Campaigns</h3>
+        @if (result.CampaignPlan.Campaigns.Count == 0)
+        {
+            <p class="aps-empty">No campaigns were formed.</p>
+        }
+        else
+        {
+            <table class="aps-table">
+                <thead>
+                    <tr>
+                        <th>Campaign</th><th>Sequence class</th><th>Caster section</th>
+                        <th>Planned MT</th><th>Fresh steel MT</th><th>From inventory MT</th>
+                        <th>Heats</th><th>Required by</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var campaign in result.CampaignPlan.Campaigns.OrderBy(c => c.CampaignNumber))
+                    {
+                        <tr>
+                            <td>@campaign.CampaignNumber</td>
+                            <td>@campaign.GradeSequenceClassCode</td>
+                            <td>@campaign.CasterSectionCode</td>
+                            <td>@campaign.PlannedQuantityMt.ToString("0.#")</td>
+                            <td>@campaign.FreshSteelRequirementMt.ToString("0.#")</td>
+                            <td>@campaign.ExistingIntermediateInventoryMt.ToString("0.#")</td>
+                            <td>@campaign.Heats.Count</td>
+                            <td>@campaign.RequiredDate.ToString("MMM dd")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        @if (result.CampaignPlan.FullyCoveredByFinishedGoods.Count > 0)
+        {
+            <p style="color:var(--aps-muted); font-size:0.85rem;">
+                Fully covered from finished-goods inventory (no new campaign needed):
+                @string.Join(", ", result.CampaignPlan.FullyCoveredByFinishedGoods.Select(p => p.ProductionOrderNumber))
+            </p>
+        }
+    </div>
+
+    <div class="aps-panel">
+        <h3>Cast sequences</h3>
+        @if (result.ProductionStructure.CastSequences.Count == 0)
+        {
+            <p class="aps-empty">No cast sequences were built.</p>
+        }
+        else
+        {
+            <table class="aps-table">
+                <thead><tr><th>Caster</th><th>Sequence #</th><th>Heats</th><th>Grades</th><th>Total MT</th></tr></thead>
+                <tbody>
+                    @foreach (var sequence in result.ProductionStructure.CastSequences.OrderBy(s => ResourceName(s.CasterResourceId)).ThenBy(s => s.SequenceNumber))
+                    {
+                        <tr>
+                            <td>@ResourceName(sequence.CasterResourceId)</td>
+                            <td>@sequence.SequenceNumber</td>
+                            <td>@sequence.Heats.Count</td>
+                            <td>@string.Join(", ", sequence.Heats.Select(h => h.CampaignHeat.GradeCode).Distinct())</td>
+                            <td>@sequence.Heats.Sum(h => h.CampaignHeat.PlannedQuantityMt).ToString("0.#")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+
+    <div class="aps-panel">
+        <h3>Rolling plans</h3>
+        @if (result.ProductionStructure.RollingPlans.Count == 0)
+        {
+            <p class="aps-empty">No rolling plans were built.</p>
+        }
+        else
+        {
+            <table class="aps-table">
+                <thead><tr><th>Mill</th><th>Grade</th><th>Input &rarr; Output</th><th>Planned MT</th><th>Fresh MT</th><th>Inventory MT</th></tr></thead>
+                <tbody>
+                    @foreach (var plan in result.ProductionStructure.RollingPlans.OrderBy(p => ResourceName(p.RollingMillResourceId)).ThenBy(p => p.SequenceNumber))
+                    {
+                        <tr>
+                            <td>@ResourceName(plan.RollingMillResourceId)</td>
+                            <td>@plan.GradeCode</td>
+                            <td>@plan.InputCrossSectionCode &rarr; @plan.OutputCrossSectionCode</td>
+                            <td>@plan.PlannedQuantityMt.ToString("0.#")</td>
+                            <td>@plan.FreshSteelQuantityMt.ToString("0.#")</td>
+                            <td>@plan.ExistingIntermediateInventoryMt.ToString("0.#")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+
+    <div class="aps-panel">
+        <h3>Finite schedule</h3>
+        @if (!result.IsFeasible || result.Schedule.Assignments.Count == 0)
+        {
+            <p class="aps-empty">No feasible schedule to display.</p>
+        }
+        else
+        {
+            <ScheduleGantt HorizonStartUtc="horizonStartUtc" HorizonEndUtc="horizonStartUtc.AddDays(horizonDays)" Rows="ganttRows" />
+        }
+    </div>
+}
+
+@if (release is not null)
+{
+    <div class="aps-panel">
+        <h3>Released work orders</h3>
+        <table class="aps-table">
+            <thead><tr><th>WO number</th><th>Type</th><th>Resource</th><th>Grade</th><th>Section</th><th>Planned MT</th><th>Start</th><th>End</th><th>Sources</th></tr></thead>
+            <tbody>
+                @foreach (var wo in release.WorkOrders.OrderBy(w => w.PlannedStart))
+                {
+                    <tr>
+                        <td>@wo.WorkOrderNumber</td>
+                        <td>@wo.WorkOrderType</td>
+                        <td>@(wo.ResourceId is Guid rid ? ResourceName(rid) : "multiple")</td>
+                        <td>@wo.GradeCode</td>
+                        <td>@wo.CrossSectionCode</td>
+                        <td>@wo.PlannedQuantityMt.ToString("0.#")</td>
+                        <td>@(wo.PlannedStart?.ToString("MMM dd HH:mm") ?? "-")</td>
+                        <td>@(wo.PlannedEnd?.ToString("MMM dd HH:mm") ?? "-")</td>
+                        <td>@string.Join(", ", wo.Allocations.Select(a => a.ProductionOrder?.ProductionOrderNumber).Where(n => n is not null))</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private int horizonDays = 7;
+    private int maxSolverSeconds = 10;
+    private bool includeInfeasibleOrder = false;
+    private bool isRunning = false;
+    private string? errorMessage;
+
+    private DateTime horizonStartUtc = DateTime.UtcNow.Date.AddHours(6);
+    private APS.Application.PlanningRunRequest? lastRequest;
+    private APS.Application.PlanningRunResult? result;
+    private APS.Application.PlanRelease? release;
+    private Dictionary<Guid, Resource> resourcesById = new();
+    private IReadOnlyList<ScheduleGantt.GanttRow> ganttRows = Array.Empty<ScheduleGantt.GanttRow>();
+
+    private string ResourceName(Guid? resourceId) =>
+        resourceId is Guid id && resourcesById.TryGetValue(id, out var resource) ? resource.Name : "-";
+
+    private async Task RunPlanningAsync()
+    {
+        isRunning = true;
+        errorMessage = null;
+        result = null;
+        release = null;
+        StateHasChanged();
+
+        try
+        {
+            horizonStartUtc = DateTime.UtcNow.Date.AddHours(6);
+            var request = SteelPlantSampleScenario.BuildRequest(horizonStartUtc, horizonDays, maxSolverSeconds, includeInfeasibleOrder);
+            lastRequest = request;
+            resourcesById = request.Resources.ToDictionary(r => r.Id);
+
+            result = await Task.Run(() => PlanningEngine.Run(request));
+            ganttRows = BuildGanttRows(result, request);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Planning run failed: {ex.Message}";
+        }
+        finally
+        {
+            isRunning = false;
+        }
+    }
+
+    private async Task BuildReleaseAsync()
+    {
+        if (result is null || lastRequest is null) return;
+        isRunning = true;
+        errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            var releaseRequest = new APS.Application.PlanReleaseBuildRequest(
+                result.PlanVersionId,
+                result.CampaignPlan.Campaigns,
+                result.ProductionStructure,
+                result.Schedule);
+            release = await Task.Run(() => ReleaseBuilder.Build(releaseRequest));
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Release build failed: {ex.Message}";
+        }
+        finally
+        {
+            isRunning = false;
+        }
+    }
+
+    private IReadOnlyList<ScheduleGantt.GanttRow> BuildGanttRows(APS.Application.PlanningRunResult planResult, APS.Application.PlanningRunRequest request)
+    {
+        if (!planResult.IsFeasible) return Array.Empty<ScheduleGantt.GanttRow>();
+
+        var taskById = planResult.ProductionStructure.SchedulingTasks.ToDictionary(t => t.TaskId);
+        var assignmentsByResource = planResult.Schedule.Assignments
+            .Where(a => taskById.ContainsKey(a.TaskId))
+            .GroupBy(a => a.ResourceId);
+        var downtimeByResource = request.ResourceCalendars
+            .Where(c => !c.IsAvailable)
+            .GroupBy(c => c.ResourceId);
+
+        var rows = new List<ScheduleGantt.GanttRow>();
+        foreach (var resource in request.Resources.Where(r => r.ResourceType is ResourceType.Caster or ResourceType.RollingMill).OrderBy(r => r.ResourceType).ThenBy(r => r.Code))
+        {
+            var blocks = assignmentsByResource.FirstOrDefault(g => g.Key == resource.Id)?
+                .OrderBy(a => a.StartUtc)
+                .Select(a =>
+                {
+                    var task = taskById[a.TaskId];
+                    return new ScheduleGantt.GanttBlock($"{task.Name} ({task.QuantityMt:0.#}mt)", task.TaskType, a.StartUtc, a.EndUtc);
+                })
+                .ToArray() ?? Array.Empty<ScheduleGantt.GanttBlock>();
+
+            var downtime = downtimeByResource.FirstOrDefault(g => g.Key == resource.Id)?
+                .Select(c => new ScheduleGantt.GanttDowntime(c.ReasonCode ?? "unavailable", c.Start, c.End))
+                .ToArray() ?? Array.Empty<ScheduleGantt.GanttDowntime>();
+
+            rows.Add(new ScheduleGantt.GanttRow(resource.Name, blocks, downtime));
+        }
+
+        return rows;
+    }
+}

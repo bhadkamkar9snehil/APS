@@ -1,0 +1,76 @@
+@using APS.Application
+
+<div class="aps-gantt-axis">
+    <div></div>
+    <div class="aps-gantt-axis-ticks">
+        @foreach (var tick in AxisTicks())
+        {
+            <span>@tick.ToString("ddd HH:mm")</span>
+        }
+    </div>
+</div>
+<div class="aps-gantt">
+    @foreach (var row in Rows)
+    {
+        <div class="aps-gantt-row">
+            <div class="aps-gantt-label" title="@row.ResourceName">@row.ResourceName</div>
+            <div class="aps-gantt-track">
+                @foreach (var block in row.Downtime)
+                {
+                    <div class="aps-gantt-block downtime" style="@BlockStyle(block.Start, block.End)" title="Downtime @block.Reason">
+                        &#8203;
+                    </div>
+                }
+                @foreach (var block in row.Blocks)
+                {
+                    <div class="aps-gantt-block @CssClass(block.TaskType)" style="@BlockStyle(block.StartUtc, block.EndUtc)" title="@block.Title">
+                        @block.Title
+                    </div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public DateTime HorizonStartUtc { get; set; }
+    [Parameter, EditorRequired] public DateTime HorizonEndUtc { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<GanttRow> Rows { get; set; } = Array.Empty<GanttRow>();
+
+    public sealed record GanttRow(string ResourceName, IReadOnlyList<GanttBlock> Blocks, IReadOnlyList<GanttDowntime> Downtime);
+    public sealed record GanttBlock(string Title, FiniteScheduleTaskType TaskType, DateTime StartUtc, DateTime EndUtc);
+    public sealed record GanttDowntime(string Reason, DateTime Start, DateTime End);
+
+    private IEnumerable<DateTime> AxisTicks()
+    {
+        var span = HorizonEndUtc - HorizonStartUtc;
+        var stepCount = 6;
+        var step = span / stepCount;
+        for (var i = 0; i <= stepCount; i++)
+        {
+            yield return HorizonStartUtc + step * i;
+        }
+    }
+
+    private string BlockStyle(DateTime start, DateTime end)
+    {
+        var horizonMinutes = Math.Max(1, (HorizonEndUtc - HorizonStartUtc).TotalMinutes);
+        var clampedStart = Clamp(start);
+        var clampedEnd = Clamp(end);
+        var leftPct = (clampedStart - HorizonStartUtc).TotalMinutes / horizonMinutes * 100;
+        var widthPct = Math.Max(0.3, (clampedEnd - clampedStart).TotalMinutes / horizonMinutes * 100);
+        return $"left:{leftPct.ToString(System.Globalization.CultureInfo.InvariantCulture)}%;width:{widthPct.ToString(System.Globalization.CultureInfo.InvariantCulture)}%;";
+    }
+
+    private DateTime Clamp(DateTime value) =>
+        value < HorizonStartUtc ? HorizonStartUtc : value > HorizonEndUtc ? HorizonEndUtc : value;
+
+    private static string CssClass(FiniteScheduleTaskType type) => type switch
+    {
+        FiniteScheduleTaskType.Casting => "casting",
+        FiniteScheduleTaskType.HotRolling => "hotrolling",
+        FiniteScheduleTaskType.ColdRolling => "coldrolling",
+        FiniteScheduleTaskType.Finishing => "finishing",
+        _ => "casting"
+    };
+}
