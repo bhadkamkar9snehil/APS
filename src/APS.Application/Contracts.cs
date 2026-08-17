@@ -87,7 +87,8 @@ public sealed record ProductionStructurePlanningRequest(
     IReadOnlyCollection<ResourceCapability> Capabilities,
     IReadOnlyCollection<TransitionRule> TransitionRules,
     IReadOnlyCollection<PlantFlowLink> FlowLinks,
-    ProductionStructurePlanningPolicy Policy);
+    ProductionStructurePlanningPolicy Policy,
+    RoutePlanningInput? RoutePlanning = null);
 
 public sealed record PlannedBilletSupply(
     Guid CampaignId,
@@ -125,7 +126,8 @@ public sealed record ProductionStructurePlanningResult(
     IReadOnlyCollection<PlannedBilletSupply> PlannedBilletSupplies,
     IReadOnlyCollection<FiniteScheduleTask> SchedulingTasks,
     IReadOnlyCollection<PlanningIssue> Issues,
-    IReadOnlyCollection<PlannedStrandMaterialUnit>? PlannedStrandMaterialUnits = null);
+    IReadOnlyCollection<PlannedStrandMaterialUnit>? PlannedStrandMaterialUnits = null,
+    IReadOnlyCollection<RouteOperationPlan>? RouteOperationPlans = null);
 
 public interface IProductionStructurePlanningService
 {
