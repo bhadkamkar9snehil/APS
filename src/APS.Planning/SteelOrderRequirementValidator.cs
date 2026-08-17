@@ -4,10 +4,23 @@ namespace APS.Planning;
 
 internal static class SteelOrderRequirementValidator
 {
-    public static void Validate(IReadOnlyCollection<ProductionOrder> productionOrders)
+    public static void Validate(
+        IReadOnlyCollection<ProductionOrder> productionOrders,
+        IReadOnlyCollection<SteelGrade>? steelGrades)
     {
+        var gradeByCode = (steelGrades ?? Array.Empty<SteelGrade>())
+            .ToDictionary(x => x.GradeCode, StringComparer.OrdinalIgnoreCase);
+
         foreach (var order in productionOrders)
         {
+            if (order.SteelGrade is null && gradeByCode.TryGetValue(order.GradeCode, out var resolved))
+            {
+                order.SteelGrade = resolved;
+                order.SteelGradeId = resolved.Id;
+                order.GradeFamilyCode ??= resolved.GradeFamilyCode;
+                order.GradeSequenceClassCode ??= resolved.SequenceClassCode;
+            }
+
             var grade = order.SteelGrade;
             var requirement = order.Requirement;
             if (grade is null || requirement is null) continue;
