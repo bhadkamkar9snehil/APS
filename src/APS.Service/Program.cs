@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using APS.Application;
 using APS.Infrastructure;
 using APS.Planning;
@@ -8,9 +9,13 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.ConfigureHttpJsonOptions(options =>
+    options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles);
 
 builder.Services.AddScoped<IMtsProductionOrderService, MtsProductionOrderService>();
 builder.Services.AddScoped<ICampaignPlanningService, CampaignPlanningService>();
+builder.Services.AddScoped<IProductionStructurePlanningService, ProductionStructurePlanningService>();
+builder.Services.AddScoped<IFiniteScheduleOptimizer, FiniteScheduleOptimizer>();
 
 var apsConnection = builder.Configuration.GetConnectionString("APS");
 var hasApsDatabase = !string.IsNullOrWhiteSpace(apsConnection);
@@ -40,6 +45,17 @@ app.MapPost("/api/planning/mts/production-order",
 app.MapPost("/api/planning/campaigns/form",
     (CampaignPlanningRequest request, ICampaignPlanningService service) =>
         Results.Ok(service.FormCampaigns(request)));
+
+app.MapPost("/api/planning/structure/build",
+    (ProductionStructurePlanningRequest request, IProductionStructurePlanningService service) =>
+        Results.Ok(service.Build(request)));
+
+app.MapPost("/api/planning/schedule/solve",
+    (FiniteScheduleRequest request, IFiniteScheduleOptimizer optimizer) =>
+    {
+        var result = optimizer.Solve(request);
+        return result.IsFeasible ? Results.Ok(result) : Results.UnprocessableEntity(result);
+    });
 
 app.MapPost("/api/integration/xstudio/execution-events",
     (ExecutionActual actual) => Results.Accepted(value: new
