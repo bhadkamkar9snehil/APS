@@ -142,6 +142,12 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
         }
 
         var objectiveTerms = new List<LinearExpr>();
+        ApplyResourceSequenceCircuits(request, horizonMinutes, model, taskVars, objectiveTerms, issues);
+        if (issues.Any(i => i.Severity == PlanningIssueSeverity.Error))
+        {
+            return new FiniteScheduleResult("InvalidInput", false, 0, Array.Empty<FiniteScheduleAssignment>(), issues);
+        }
+
         ApplyStabilityConstraints(request, horizonMinutes, model, taskVars, objectiveTerms, issues);
         if (issues.Any(i => i.Severity == PlanningIssueSeverity.Error))
         {
@@ -195,7 +201,7 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
                 PlanningIssueSeverity.Error,
                 status == CpSolverStatus.Infeasible ? "SCHEDULE_INFEASIBLE" : "SCHEDULE_NOT_SOLVED",
                 status == CpSolverStatus.Infeasible
-                    ? "No finite schedule satisfies the current resource, calendar, dependency and time-fence constraints."
+                    ? "No finite schedule satisfies the current resource, calendar, dependency, sequencing and time-fence constraints."
                     : $"CP-SAT returned {status}."));
             return new FiniteScheduleResult(status.ToString(), false, 0, Array.Empty<FiniteScheduleAssignment>(), issues);
         }
@@ -223,6 +229,189 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
             assignments.OrderBy(a => a.StartUtc).ToArray(),
             issues);
     }
+
+    private static void ApplyResourceSequenceCircuits(
+        FiniteScheduleRequest request,
+        int horizonMinutes,
+        CpModel model,
+        IReadOnlyDictionary<Guid, TaskVariables> taskVars,
+        ICollection<LinearExpr> objectiveTerms,
+        ICollection<PlanningIssue> issues)
+    {
+        var resources = request.Resources
+            .Where(resource => resource.IsActive)
+            .ToDictionary(resource => resource.Id);
+
+        // Phase 1 deliberately sequences only tasks whose physical resource is already fixed.
+        // Each ResourceId receives its own independent circuit. Resources of the same type are
+        // never pooled, so CCM-1/CCM-2 and RM-1/RM-2 remain independently schedulable in parallel.
+        var fixedTasksByResource = request.Tasks
+            .Where(task =>
+                task.ResourceOptions.Count == 1 &&
+                taskVars.ContainsKey(task.TaskId))
+            .GroupBy(task => task.ResourceOptions.Single().ResourceId);
+
+        foreach (var resourceTasks in fixedTasksByResource)
+        {
+            if (!resources.TryGetValue(resourceTasks.Key, out var resource))
+            {
+                continue;
+            }
+
+            var groups = new List<ResourceSequenceGroup>();
+            var sourceGroups = resourceTasks
+                .GroupBy(task => task.SourceEntityId)
+                .ToArray();
+
+            foreach (var sourceGroup in sourceGroups)
+            {
+                var tasks = sourceGroup.ToArray();
+                var gradeCodes = tasks
+                    .Select(task => task.GradeCode)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+                var sectionCodes = tasks
+                    .Select(task => task.CrossSectionCode)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                if (gradeCodes.Length != 1 || sectionCodes.Length != 1)
+                {
+                    issues.Add(new PlanningIssue(
+                        PlanningIssueSeverity.Error,
+                        "SEQUENCE_SOURCE_ATTRIBUTES_AMBIGUOUS",
+                        $"Source {sourceGroup.Key} has multiple grade/section identities on resource {resource.Code}; it cannot be represented as one sequencing node.",
+                        sourceGroup.Key));
+                    continue;
+                }
+
+                var groupStart = model.NewIntVar(
+                    0,
+                    horizonMinutes,
+                    $"seq_group_start_{resource.Id:N}_{sourceGroup.Key:N}");
+                var groupEnd = model.NewIntVar(
+                    0,
+                    horizonMinutes,
+                    $"seq_group_end_{resource.Id:N}_{sourceGroup.Key:N}");
+
+                model.AddMinEquality(groupStart, tasks.Select(task => taskVars[task.TaskId].Start));
+                model.AddMaxEquality(groupEnd, tasks.Select(task => taskVars[task.TaskId].End));
+
+                groups.Add(new ResourceSequenceGroup(
+                    groups.Count + 1,
+                    sourceGroup.Key,
+                    tasks[0],
+                    groupStart,
+                    groupEnd));
+            }
+
+            if (groups.Count <= 1)
+            {
+                continue;
+            }
+
+            var circuit = model.AddCircuit();
+
+            // Node 0 is a dummy depot. Arcs to/from it make the circuit represent a linear
+            // machine queue: exactly N-1 real plan-to-plan adjacencies are selected for N groups.
+            foreach (var group in groups)
+            {
+                var firstArc = model.NewBoolVar($"seq_{resource.Id:N}_0_{group.NodeIndex}");
+                var lastArc = model.NewBoolVar($"seq_{resource.Id:N}_{group.NodeIndex}_0");
+                circuit.AddArc(0, group.NodeIndex, firstArc);
+                circuit.AddArc(group.NodeIndex, 0, lastArc);
+            }
+
+            foreach (var previous in groups)
+            {
+                foreach (var current in groups)
+                {
+                    if (previous.NodeIndex == current.NodeIndex) continue;
+
+                    var transition = ResolveTransition(
+                        request.TransitionRules,
+                        resource,
+                        previous.RepresentativeTask,
+                        current.RepresentativeTask);
+                    if (!transition.IsAllowed)
+                    {
+                        // No arc means this directional adjacency cannot be selected.
+                        continue;
+                    }
+
+                    var adjacency = model.NewBoolVar(
+                        $"seq_{resource.Id:N}_{previous.NodeIndex}_{current.NodeIndex}");
+                    circuit.AddArc(previous.NodeIndex, current.NodeIndex, adjacency);
+
+                    model.Add(current.Start >= previous.End + transition.TransitionMinutes)
+                        .OnlyEnforceIf(adjacency);
+
+                    if (transition.Penalty > 0)
+                    {
+                        objectiveTerms.Add(adjacency * transition.Penalty);
+                    }
+                }
+            }
+        }
+    }
+
+    private static TransitionProfile ResolveTransition(
+        IReadOnlyCollection<TransitionRule> rules,
+        Resource resource,
+        FiniteScheduleTask previous,
+        FiniteScheduleTask current)
+    {
+        var matchedRules = new[]
+            {
+                FindTransitionRule(
+                    rules,
+                    resource,
+                    TransitionDimension.Grade,
+                    previous.GradeCode,
+                    current.GradeCode),
+                FindTransitionRule(
+                    rules,
+                    resource,
+                    TransitionDimension.CrossSection,
+                    previous.CrossSectionCode,
+                    current.CrossSectionCode)
+            }
+            .Where(rule => rule is not null)
+            .Cast<TransitionRule>()
+            .ToArray();
+
+        if (matchedRules.Any(rule => !rule.IsAllowed))
+        {
+            return new TransitionProfile(false, 0, 0);
+        }
+
+        var transitionMinutes = matchedRules
+            .Select(rule => Minutes(rule.TransitionTime))
+            .DefaultIfEmpty(0)
+            .Max();
+        var penalty = matchedRules.Sum(rule => Math.Max(0, rule.Penalty));
+
+        return new TransitionProfile(true, transitionMinutes, penalty);
+    }
+
+    private static TransitionRule? FindTransitionRule(
+        IReadOnlyCollection<TransitionRule> rules,
+        Resource resource,
+        TransitionDimension dimension,
+        string from,
+        string to) =>
+        rules
+            .Where(rule =>
+                rule.Dimension == dimension &&
+                string.Equals(rule.FromCode, from, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(rule.ToCode, to, StringComparison.OrdinalIgnoreCase))
+            .Where(rule =>
+                rule.ResourceId == resource.Id ||
+                rule.ResourceType == resource.ResourceType ||
+                (!rule.ResourceId.HasValue && !rule.ResourceType.HasValue))
+            .OrderByDescending(rule => rule.ResourceId == resource.Id)
+            .ThenByDescending(rule => rule.ResourceType == resource.ResourceType)
+            .FirstOrDefault();
 
     private static void ApplyStabilityConstraints(
         FiniteScheduleRequest request,
@@ -290,4 +479,16 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
         IntVar Start,
         IntVar End,
         IReadOnlyDictionary<Guid, BoolVar> Presence);
+
+    private sealed record ResourceSequenceGroup(
+        int NodeIndex,
+        Guid SourceEntityId,
+        FiniteScheduleTask RepresentativeTask,
+        IntVar Start,
+        IntVar End);
+
+    private sealed record TransitionProfile(
+        bool IsAllowed,
+        int TransitionMinutes,
+        int Penalty);
 }
