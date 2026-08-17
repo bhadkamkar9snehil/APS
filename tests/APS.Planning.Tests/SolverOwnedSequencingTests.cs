@@ -22,10 +22,10 @@ public sealed class SolverOwnedSequencingTests
             ScheduleTask(Guid.NewGuid(), ccm1.Id, FiniteScheduleTaskType.Casting, "G1", "150X150", 30),
             ScheduleTask(Guid.NewGuid(), ccm2.Id, FiniteScheduleTaskType.Casting, "G1", "150X150", 30),
             ScheduleTask(Guid.NewGuid(), ccm2.Id, FiniteScheduleTaskType.Casting, "G1", "150X150", 30),
-            ScheduleTask(Guid.NewGuid(), mill1.Id, FiniteScheduleTaskType.HotRolling, "G1", "16MM", 20),
-            ScheduleTask(Guid.NewGuid(), mill1.Id, FiniteScheduleTaskType.HotRolling, "G1", "16MM", 20),
-            ScheduleTask(Guid.NewGuid(), mill2.Id, FiniteScheduleTaskType.HotRolling, "G1", "16MM", 20),
-            ScheduleTask(Guid.NewGuid(), mill2.Id, FiniteScheduleTaskType.HotRolling, "G1", "16MM", 20)
+            ScheduleTask(Guid.NewGuid(), mill1.Id, FiniteScheduleTaskType.HotRolling, "G1", "16MM", 30),
+            ScheduleTask(Guid.NewGuid(), mill1.Id, FiniteScheduleTaskType.HotRolling, "G1", "16MM", 30),
+            ScheduleTask(Guid.NewGuid(), mill2.Id, FiniteScheduleTaskType.HotRolling, "G1", "16MM", 30),
+            ScheduleTask(Guid.NewGuid(), mill2.Id, FiniteScheduleTaskType.HotRolling, "G1", "16MM", 30)
         };
 
         var result = new FiniteScheduleOptimizer().Solve(new FiniteScheduleRequest(
