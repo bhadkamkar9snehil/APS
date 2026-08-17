@@ -161,17 +161,19 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
         Guid planVersionId,
         CancellationToken cancellationToken = default)
     {
-        return await db.PlanOperationSnapshots
+        var rows = await db.PlanOperationSnapshots
             .AsNoTracking()
             .Where(x => x.PlanVersionId == planVersionId)
             .OrderBy(x => x.StartUtc)
-            .Select(x => new BaselinePlanOperation(
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(x => new BaselinePlanOperation(
                 x.PlanningKey,
                 x.ResourceId,
                 x.StartUtc,
                 x.EndUtc,
                 MapTaskType(x.OperationType)))
-            .ToListAsync(cancellationToken);
+            .ToArray();
     }
 
     private static PlanOperationType MapOperationType(FiniteScheduleTaskType type) => type switch
