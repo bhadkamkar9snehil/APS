@@ -147,7 +147,6 @@ public sealed class ProductionStructurePlanningService : IProductionStructurePla
             state.LastGradeCode = heat.GradeCode;
             castDurations[currentSequence.Id] += selected.DurationMinutes;
 
-            var yield = Math.Clamp(request.Policy.CastingYieldPct, 0m, 100m) / 100m;
             billetSupplies.Add(new PlannedBilletSupply(
                 campaign.Id,
                 heat.Id,
@@ -155,7 +154,7 @@ public sealed class ProductionStructurePlanningService : IProductionStructurePla
                 state.Resource.Id,
                 heat.GradeCode,
                 campaign.CasterSectionCode,
-                decimal.Round(heat.PlannedQuantityMt * yield, 4)));
+                ExpectedCastOutputForHeat(campaign, heat)));
         }
     }
 
@@ -504,6 +503,37 @@ public sealed class ProductionStructurePlanningService : IProductionStructurePla
 
         if (throughput <= 0m) return Math.Max(1, fallbackMinutes);
         return Math.Max(1, (int)Math.Ceiling((double)(quantityMt / throughput * 60m)));
+    }
+
+    private static decimal ExpectedCastOutputForHeat(Campaign campaign, CampaignHeat heat)
+    {
+        var gradeHeats = campaign.Heats
+            .Where(x => string.Equals(x.GradeCode, heat.GradeCode, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x.SequenceNumber)
+            .ToArray();
+        var requiredOutput = campaign.Allocations
+            .Where(x => x.ProductionOrder is not null &&
+                        x.FreshSteelQuantityMt > 0m &&
+                        string.Equals(x.ProductionOrder.GradeCode, heat.GradeCode, StringComparison.OrdinalIgnoreCase))
+            .Sum(x => x.FreshSteelQuantityMt);
+        var totalInput = gradeHeats.Sum(x => x.PlannedQuantityMt);
+        if (requiredOutput <= 0m || totalInput <= 0m) return 0m;
+
+        var heatIndex = Array.FindIndex(gradeHeats, x => x.Id == heat.Id);
+        if (heatIndex < 0) return 0m;
+
+        if (heatIndex == gradeHeats.Length - 1)
+        {
+            var previousOutput = gradeHeats
+                .Take(heatIndex)
+                .Sum(x => decimal.Round(x.PlannedQuantityMt / totalInput * requiredOutput, 4, MidpointRounding.AwayFromZero));
+            return requiredOutput - previousOutput;
+        }
+
+        return decimal.Round(
+            heat.PlannedQuantityMt / totalInput * requiredOutput,
+            4,
+            MidpointRounding.AwayFromZero);
     }
 
     private static string? GradeFamilyFor(Campaign campaign, string gradeCode) =>
