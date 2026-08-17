@@ -153,6 +153,8 @@ Tasks with the same `SourceEntityId` are progressive/feed-block siblings belongi
 
 The former `FiniteScheduleTaskSequencer` has been removed. Existing explicit cast/material/route dependencies remain authoritative and coexist with the selected machine adjacency constraints.
 
+Focused regression tests have been added for per-resource parallelism, same-source feed-block interleaving, adjacency-only transition/setup charging and directional forbidden transitions. These current solver-owned-sequencing changes still require local `dotnet build APS.slnx` and `dotnet test` verification; the last locally verified green checkpoint predates this tranche.
+
 Infeasible plans return an explicit non-feasible result and are not silently converted to a heuristic schedule.
 
 ## Plan versions and replanning
