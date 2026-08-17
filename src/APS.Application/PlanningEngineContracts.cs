@@ -57,7 +57,8 @@ public sealed record PlanningRunResult(
     FiniteScheduleResult Schedule,
     bool IsFeasible,
     IReadOnlyCollection<PlanningTaskIdentity>? TaskIdentities = null,
-    Guid? BaselinePlanVersionId = null);
+    Guid? BaselinePlanVersionId = null,
+    IReadOnlyCollection<PlannedPackagingUnit>? PlannedPackagingUnits = null);
 
 public interface IPlanningEngine
 {
