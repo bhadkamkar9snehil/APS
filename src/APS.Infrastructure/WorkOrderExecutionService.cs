@@ -79,7 +79,9 @@ public sealed class WorkOrderExecutionService(ApsDbContext db) : IWorkOrderExecu
 
         workOrder.Status = update.Status;
 
-        if (previousStatus != update.Status || update.IsCorrection)
+        if (previousStatus != update.Status ||
+            update.IsCorrection ||
+            !string.IsNullOrWhiteSpace(update.ExternalEventId))
         {
             db.WorkOrderStatusHistory.Add(new WorkOrderStatusHistory
             {
