@@ -25,6 +25,8 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
     public DbSet<WorkOrderAllocation> WorkOrderAllocations => Set<WorkOrderAllocation>();
     public DbSet<WorkOrderStatusHistory> WorkOrderStatusHistory => Set<WorkOrderStatusHistory>();
+    public DbSet<HeatExecutionActual> HeatExecutionActuals => Set<HeatExecutionActual>();
+    public DbSet<StrandMaterialActual> StrandMaterialActuals => Set<StrandMaterialActual>();
     public DbSet<MaterialLot> MaterialLots => Set<MaterialLot>();
     public DbSet<LotGenealogy> LotGenealogy => Set<LotGenealogy>();
     public DbSet<MaterialLotAllocation> MaterialLotAllocations => Set<MaterialLotAllocation>();
@@ -125,6 +127,12 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
             .HasForeignKey(x => x.WorkOrderId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        modelBuilder.Entity<StrandMaterialActual>()
+            .HasOne(x => x.HeatExecutionActual)
+            .WithMany()
+            .HasForeignKey(x => x.HeatExecutionActualId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         modelBuilder.Entity<MaterialLotAllocation>()
             .HasOne<MaterialLot>()
             .WithMany()
@@ -170,6 +178,9 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<ResourceCalendar>().HasIndex(x => new { x.ResourceId, x.Start, x.End });
         modelBuilder.Entity<WorkOrderStatusHistory>().HasIndex(x => new { x.WorkOrderId, x.ChangedOnUtc });
         modelBuilder.Entity<WorkOrderStatusHistory>().HasIndex(x => new { x.Source, x.ExternalEventId });
+        modelBuilder.Entity<HeatExecutionActual>().HasIndex(x => new { x.PlanVersionId, x.PlanningKey, x.ChangedOnUtc });
+        modelBuilder.Entity<HeatExecutionActual>().HasIndex(x => new { x.Source, x.ExternalEventId }).IsUnique();
+        modelBuilder.Entity<StrandMaterialActual>().HasIndex(x => new { x.HeatExecutionActualId, x.StrandNumber, x.UnitSequence });
         modelBuilder.Entity<PlanVersionState>().HasIndex(x => x.PlanVersionId).IsUnique();
         modelBuilder.Entity<PlanOperationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.PlanningKey }).IsUnique();
         modelBuilder.Entity<PlanInventoryAllocationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.ProductionOrderId, x.Stage });
