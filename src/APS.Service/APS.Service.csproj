@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\APS.Application\APS.Application.csproj" />
+    <ProjectReference Include="..\APS.Planning\APS.Planning.csproj" />
+    <ProjectReference Include="..\APS.Infrastructure\APS.Infrastructure.csproj" />
+    <ProjectReference Include="..\APS.Integrations\APS.Integrations.csproj" />
+    <ProjectReference Include="..\APS.UI\APS.UI.csproj" />
+    <PackageReference Include="Serilog.AspNetCore" Version="9.0.0" />
+  </ItemGroup>
+</Project>
