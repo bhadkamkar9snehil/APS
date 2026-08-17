@@ -3,7 +3,7 @@ using APS.Application;
 using APS.Domain;
 using APS.Infrastructure;
 using APS.Planning;
-using APS.UI.Components;
+using APS.Service.Components;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -41,6 +41,7 @@ if (hasApsDatabase)
 var app = builder.Build();
 
 app.UseHttpsRedirection();
+app.MapStaticAssets();
 app.UseAntiforgery();
 
 app.MapGet("/api/health", () => Results.Ok(new
@@ -273,7 +274,9 @@ if (hasApsDatabase)
 }
 
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+    .AddInteractiveServerRenderMode()
+    .AddAdditionalAssemblies(typeof(APS.UI.Components.Layout.MainLayout).Assembly)
+    .WithStaticAssets();
 
 app.Run();
 

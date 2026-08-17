@@ -234,3 +234,10 @@ node_modules/
 __pycache__/
 
 archive/
+
+# .NET build output
+bin/
+obj/
+*.user
+*.suo
+.vs/

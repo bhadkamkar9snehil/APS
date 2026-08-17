@@ -1,10 +1,15 @@
 @inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Routing
 
 <div class="aps-shell">
     <header>
         <strong>APS Planner</strong>
         <span>Campaign · SMS · Casting · Rolling · Inventory</span>
     </header>
+    <nav class="aps-nav">
+        <NavLink href="/" Match="NavLinkMatch.All">Home</NavLink>
+        <NavLink href="/planning">Planning Sandbox</NavLink>
+    </nav>
     <main>
         @Body
     </main>
