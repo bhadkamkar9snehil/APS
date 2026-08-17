@@ -50,14 +50,22 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
     {
         ValidatePolicy(request.Policy);
 
-        var covered = new List<ProductionOrder>();
-        var netRequirements = new Dictionary<Guid, decimal>();
-        var inventoryPools = request.Inventory
-            .GroupBy(i => InventoryKey(i.MaterialCode, i.GradeCode, i.CrossSectionCode))
+        var coveredByFinishedGoods = new List<ProductionOrder>();
+        var rollingRequirements = new Dictionary<Guid, decimal>();
+        var freshSteelRequirements = new Dictionary<Guid, decimal>();
+        var intermediateAllocated = new Dictionary<Guid, decimal>();
+
+        var finishedGoodsPools = request.Inventory
+            .Where(i => i.Stage == InventoryStage.FinishedGoods)
+            .GroupBy(i => FinishedGoodsKey(i.MaterialCode, i.GradeCode, i.CrossSectionCode))
             .ToDictionary(g => g.Key, g => Math.Max(0m, g.Sum(x => x.ProjectedAvailableQuantityMt)));
 
-        // Inventory allocation is deterministic: committed MTO requirements are protected first,
-        // followed by MTS replenishment, while preserving due-date and priority order.
+        var intermediatePools = request.Inventory
+            .Where(i => i.Stage is InventoryStage.CastIntermediate or InventoryStage.OtherIntermediate)
+            .GroupBy(i => IntermediateKey(i.GradeCode, i.CrossSectionCode))
+            .ToDictionary(g => g.Key, g => Math.Max(0m, g.Sum(x => x.ProjectedAvailableQuantityMt)));
+
+        // MTO is protected before MTS. Within each class, higher priority and earlier requirement date win inventory.
         var ordered = request.ProductionOrders
             .Where(x => x.Status is ProductionOrderStatus.Planned or ProductionOrderStatus.Firmed)
             .OrderBy(x => x.DemandSource == DemandSourceType.MakeToOrder ? 0 : 1)
@@ -68,26 +76,37 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
 
         foreach (var po in ordered)
         {
-            var requirement = Math.Max(0m, po.RemainingQuantityMt);
-            var key = InventoryKey(po.MaterialCode, po.GradeCode, po.FinalCrossSectionCode);
-            inventoryPools.TryGetValue(key, out var available);
-            var consumed = Math.Min(requirement, available);
-            inventoryPools[key] = available - consumed;
-            requirement -= consumed;
-            netRequirements[po.Id] = requirement;
+            var remaining = Math.Max(0m, po.RemainingQuantityMt);
 
-            if (requirement <= 0m)
+            var fgKey = FinishedGoodsKey(po.MaterialCode, po.GradeCode, po.FinalCrossSectionCode);
+            finishedGoodsPools.TryGetValue(fgKey, out var fgAvailable);
+            var fgUsed = Math.Min(remaining, fgAvailable);
+            finishedGoodsPools[fgKey] = fgAvailable - fgUsed;
+
+            var rollingRequirement = remaining - fgUsed;
+            rollingRequirements[po.Id] = rollingRequirement;
+
+            if (rollingRequirement <= 0m)
             {
-                covered.Add(po);
+                coveredByFinishedGoods.Add(po);
+                freshSteelRequirements[po.Id] = 0m;
+                intermediateAllocated[po.Id] = 0m;
+                continue;
             }
+
+            // Existing compatible cast/intermediate stock can feed rolling without creating new heats.
+            var intermediateKey = IntermediateKey(po.GradeCode, po.CasterSectionCode);
+            intermediatePools.TryGetValue(intermediateKey, out var intermediateAvailable);
+            var intermediateUsed = Math.Min(rollingRequirement, intermediateAvailable);
+            intermediatePools[intermediateKey] = intermediateAvailable - intermediateUsed;
+
+            intermediateAllocated[po.Id] = intermediateUsed;
+            freshSteelRequirements[po.Id] = rollingRequirement - intermediateUsed;
         }
 
-        // GradeSequenceClassCode is the configurable compatibility envelope. Different exact
-        // grades may share a campaign only when master data places them in the same sequence class.
         var campaignInputs = ordered
-            .Where(po => netRequirements[po.Id] > 0m)
-            .GroupBy(po => new CampaignCompatibilityKey(
-                SequenceClass(po), po.CasterSectionCode, po.RouteCode))
+            .Where(po => rollingRequirements[po.Id] > 0m)
+            .GroupBy(po => CampaignKey(po, request.Policy))
             .OrderBy(g => g.Min(x => x.RequiredDate));
 
         var campaigns = new List<Campaign>();
@@ -100,14 +119,18 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
                 .ThenByDescending(x => x.Priority)
                 .ThenBy(x => x.RequiredDate)
                 .ThenBy(x => x.GradeCode)
+                .ThenBy(x => x.ProductionOrderNumber)
                 .ToArray();
 
             var current = NewCampaign(request.CampaignNumberPrefix, sequence++, group.Key, groupOrders.Min(x => x.RequiredDate));
 
             foreach (var po in groupOrders)
             {
-                var remaining = netRequirements[po.Id];
-                while (remaining > 0m)
+                var remainingRolling = rollingRequirements[po.Id];
+                var remainingIntermediate = intermediateAllocated[po.Id];
+                var remainingFresh = freshSteelRequirements[po.Id];
+
+                while (remainingRolling > 0m)
                 {
                     var capacity = request.Policy.MaximumCampaignQuantityMt - current.PlannedQuantityMt;
                     if (capacity <= 0m)
@@ -118,18 +141,37 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
                         capacity = request.Policy.MaximumCampaignQuantityMt;
                     }
 
-                    var allocationQty = Math.Min(remaining, capacity);
+                    var allocationQty = Math.Min(remainingRolling, capacity);
+                    var intermediateQty = Math.Min(remainingIntermediate, allocationQty);
+                    var freshQty = allocationQty - intermediateQty;
+
+                    // Fresh quantity is the residual after inventory; keep accounting defensive against rounding.
+                    freshQty = Math.Min(freshQty, remainingFresh);
+                    var accounted = intermediateQty + freshQty;
+                    if (accounted < allocationQty)
+                    {
+                        freshQty += allocationQty - accounted;
+                    }
+
                     current.Allocations.Add(new CampaignAllocation
                     {
                         CampaignId = current.Id,
                         Campaign = current,
                         ProductionOrderId = po.Id,
                         ProductionOrder = po,
-                        PlannedQuantityMt = allocationQty
+                        PlannedQuantityMt = allocationQty,
+                        ExistingIntermediateInventoryMt = intermediateQty,
+                        FreshSteelQuantityMt = freshQty
                     });
+
                     current.PlannedQuantityMt += allocationQty;
+                    current.ExistingIntermediateInventoryMt += intermediateQty;
+                    current.FreshSteelRequirementMt += freshQty;
                     current.RequiredDate = current.RequiredDate <= po.RequiredDate ? current.RequiredDate : po.RequiredDate;
-                    remaining -= allocationQty;
+
+                    remainingRolling -= allocationQty;
+                    remainingIntermediate = Math.Max(0m, remainingIntermediate - intermediateQty);
+                    remainingFresh = Math.Max(0m, remainingFresh - freshQty);
                 }
             }
 
@@ -140,7 +182,20 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
             }
         }
 
-        return new(campaigns, covered, netRequirements);
+        return new CampaignPlanningResult(
+            campaigns,
+            coveredByFinishedGoods,
+            rollingRequirements,
+            freshSteelRequirements,
+            intermediateAllocated);
+    }
+
+    private static CampaignCompatibilityKey CampaignKey(ProductionOrder po, CampaignPlanningPolicy policy)
+    {
+        var sequenceClass = SequenceClass(po);
+        var gradePartition = policy.AllowMixedGradesWithinSequenceClass ? "*" : po.GradeCode;
+        var demandPartition = policy.AllowMtoMtsMixing ? "*" : po.DemandSource.ToString();
+        return new(sequenceClass, po.CasterSectionCode, po.RouteCode, gradePartition, demandPartition);
     }
 
     private static Campaign NewCampaign(string prefix, int sequence, CampaignCompatibilityKey key, DateTime requiredDate) =>
@@ -151,6 +206,8 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
             CasterSectionCode = key.CasterSectionCode,
             RouteCode = key.RouteCode,
             PlannedQuantityMt = 0m,
+            FreshSteelRequirementMt = 0m,
+            ExistingIntermediateInventoryMt = 0m,
             RequiredDate = requiredDate,
             Status = CampaignStatus.Draft
         };
@@ -160,14 +217,15 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
         campaign.GradeSequence.Clear();
         campaign.Heats.Clear();
 
-        var gradeGroups = campaign.Allocations
-            .Where(a => a.ProductionOrder is not null)
+        var allocations = campaign.Allocations.ToList();
+        var gradeGroups = allocations
+            .Where(a => a.ProductionOrder is not null && a.FreshSteelQuantityMt > 0m)
             .GroupBy(a => a.ProductionOrder!.GradeCode)
             .Select(g => new
             {
                 GradeCode = g.Key,
-                QuantityMt = g.Sum(x => x.PlannedQuantityMt),
-                FirstIndex = campaign.Allocations.ToList().FindIndex(x => ReferenceEquals(x, g.First()))
+                QuantityMt = g.Sum(x => x.FreshSteelQuantityMt),
+                FirstIndex = allocations.FindIndex(x => ReferenceEquals(x, g.First()))
             })
             .OrderBy(x => x.FirstIndex)
             .ToArray();
@@ -244,6 +302,13 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
     private static string SequenceClass(ProductionOrder po) =>
         string.IsNullOrWhiteSpace(po.GradeSequenceClassCode) ? $"GRADE:{po.GradeCode}" : po.GradeSequenceClassCode;
 
-    private static string InventoryKey(string material, string grade, string section) => $"{material}|{grade}|{section}";
-    private sealed record CampaignCompatibilityKey(string GradeSequenceClassCode, string CasterSectionCode, string RouteCode);
+    private static string FinishedGoodsKey(string material, string grade, string section) => $"{material}|{grade}|{section}";
+    private static string IntermediateKey(string grade, string section) => $"{grade}|{section}";
+
+    private sealed record CampaignCompatibilityKey(
+        string GradeSequenceClassCode,
+        string CasterSectionCode,
+        string RouteCode,
+        string GradePartition,
+        string DemandPartition);
 }
