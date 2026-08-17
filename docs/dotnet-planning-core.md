@@ -73,6 +73,28 @@ Casters and mills are capability driven rather than hard-coded. Resource capabil
 
 Expected billet quantity for each heat is derived from the yield-aware campaign heat structure so the output across the grade sequence reconciles back to the fresh-steel requirement.
 
+## Configured multi-stage routes
+
+When `RoutePlanningInput` is supplied, APS uses the configured-route planning path instead of the legacy single-stage rolling path.
+
+`ConfiguredRouteProductionStructureBuilder` selects the hot-rolling stage against the route's configured hot-stage input/output sections and stage-specific `RouteResourceCapability` records. This avoids treating the Production Order's final section as though it were necessarily the hot-mill output.
+
+`MultiStageRouteProjector` then expands the hot-rolling plan through configured downstream operations such as ColdRolling and Finishing. Each downstream route stage:
+
+- validates section continuity from the upstream stage,
+- selects an eligible active resource from route-specific capability master data,
+- creates its own `RouteOperationPlan`,
+- preserves Production Order lineage,
+- creates one dependent finite-schedule task per upstream material/feed block,
+- enforces configured minimum/maximum queue time to its predecessor,
+- can be marked as an inventory-decoupling point.
+
+Optional route operations are skipped when their configured output is not required by the Production Order.
+
+The current route implementation deliberately rejects downstream stage yields other than 100% with `DOWNSTREAM_ROUTE_YIELD_NOT_YET_PROPAGATED`; backward quantity propagation through multi-stage routes is not implemented yet.
+
+Resource selection for caster, hot rolling and downstream route stages is still performed heuristically before CP-SAT. The selected resource is therefore normally presented to the finite scheduler as one fixed resource option even though `FiniteScheduleOptimizer` itself supports alternative-resource presence variables.
+
 ## Heat, strand and progressive rolling availability
 
 `HeatLevelScheduleProjector` projects each cast sequence into individual heat tasks. Each heat generates planned strand material units using the configured caster strand count.
@@ -93,13 +115,16 @@ Existing-intermediate-inventory rolling blocks have no fresh-cast predecessor.
 - precedence,
 - minimum transfer lag,
 - optional maximum transfer/hot-charge lag,
-- selected caster/mill sequence precedence,
 - transition/setup time between planned blocks,
 - weighted tardiness,
 - assignment penalties,
 - makespan minimization,
 - frozen-operation hard constraints,
 - slushy-zone movement and resource-change penalties.
+
+The optimizer already models one presence variable per `(task, resource option)` and `AddExactlyOne` over eligible options. At present, upstream production-structure builders normally collapse those options to one selected caster/mill/resource before solve, so the alternative-resource capability is largely unused by the end-to-end planning path.
+
+`FiniteScheduleTaskSequencer` currently adds same-resource/same-task-type ordering dependencies before CP-SAT. It deliberately does **not** chain adjacent tasks that share the same `SourceEntityId`: those are feed-block siblings from one upstream plan/route operation, and each already carries its own material/queue predecessor. Different source entities sharing a resource are still chained so configured changeover time remains enforced.
 
 Infeasible plans return an explicit non-feasible result and are not silently converted to a heuristic schedule.
 
@@ -155,7 +180,8 @@ An approved feasible plan is converted into Work Orders:
 
 - SMS Work Orders carry campaign/grade steelmaking input quantity and are timed from scheduled heats.
 - An SMS WO can contain multiple heat-level scheduled operations.
-- RM Work Orders carry rolling quantities and can contain multiple progressive feed-block operations.
+- Hot-rolling Work Orders carry rolling quantities and can contain multiple progressive feed-block operations.
+- Configured ColdRolling and Finishing route stages release as their own Work Orders.
 - Work Order allocations retain the Production Order contribution.
 - MTO Production Orders retain their Sales Order/item link.
 
@@ -192,6 +218,14 @@ Completed strand outputs are materialized as available `CastIntermediate` materi
 - controlled MES stored procedures/APIs for released plan writes,
 - read-only SQL reconciliation for bulk recovery and inventory/actual snapshots.
 
+## Blazor host and planning sandbox
+
+The Blazor application shell lives in `APS.Service`, while reusable layouts and feature pages live in `APS.UI`.
+
+`APS.Service` owns `App.razor` and `Routes.razor`, maps static assets, hosts `_framework/blazor.web.js`, and adds the `APS.UI` assembly to both Razor component endpoint discovery and the client `Router`. This is required for interactive-server behavior and for `@page` routes compiled into the class library to be discoverable.
+
+`/planning` is a working reference/demo page that runs `IPlanningEngine` end-to-end against the built-in long-products sample scenario and can build the corresponding release Work Orders. It is not yet the production planner workspace; DB-backed plan-history, replanning and execution-management pages remain to be built.
+
 ## Runtime
 
 - .NET 10
@@ -220,6 +254,16 @@ Current APIs include:
 - `POST /api/integration/xstudio/heat-events`
 - traceability endpoints for Work Orders and material lots
 
+`POST /api/planning/calculate` is **not** currently mapped by `APS.Service`; any higher-level 'load current master data and inventory, then solve' endpoint remains future service work.
+
 ## Current boundary / next refinements
 
-The next major solver work is to move more caster/mill sequence selection into the optimization model instead of selecting the structure heuristically first, model configured multi-stage routes through hot rolling/cold rolling/finishing, improve active-operation remaining-duration treatment, add richer infeasibility/relaxation explanations, and model individual billet-piece sizing/cut patterns when required rather than only aggregate strand material units.
+The highest-value next solver work is to move resource and sequence choice into CP-SAT instead of giving the optimizer a heuristic fait accompli:
+
+1. Move same-resource task ordering and sequence-dependent transition/setup selection into the optimization model while preserving feed-block sibling semantics and existing explicit material/queue dependencies.
+2. Expose multiple eligible mill/resource options from production-structure planning so the existing CP-SAT alternative-resource variables are actually used end-to-end.
+3. Extend the same alternative-resource treatment to caster assignment without breaking cast-sequence continuity and material-source identity.
+4. Propagate non-100% yields backward through configured downstream route stages.
+5. Improve active-operation remaining-duration treatment during replanning.
+6. Add richer infeasibility/relaxation explanations.
+7. Model individual billet-piece sizing/cut patterns where required rather than only aggregate strand material units.
