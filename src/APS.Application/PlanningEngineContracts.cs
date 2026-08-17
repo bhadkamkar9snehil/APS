@@ -41,7 +41,8 @@ public sealed record PlanningRunRequest(
     DateTime HorizonEndUtc,
     int MaxSolverSeconds = 20,
     string CampaignNumberPrefix = "CMP",
-    PlanningReplanContext? ReplanContext = null);
+    PlanningReplanContext? ReplanContext = null,
+    RoutePlanningInput? RoutePlanning = null);
 
 public sealed record PlanningRunResult(
     Guid PlanVersionId,
