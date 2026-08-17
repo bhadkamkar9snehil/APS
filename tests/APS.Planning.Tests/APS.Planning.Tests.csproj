@@ -8,6 +8,8 @@
     <ProjectReference Include="..\..\src\APS.Domain\APS.Domain.csproj" />
     <ProjectReference Include="..\..\src\APS.Application\APS.Application.csproj" />
     <ProjectReference Include="..\..\src\APS.Planning\APS.Planning.csproj" />
+    <ProjectReference Include="..\..\src\APS.Infrastructure\APS.Infrastructure.csproj" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.10" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4">
