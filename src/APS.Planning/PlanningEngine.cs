@@ -18,13 +18,18 @@ public sealed class PlanningEngine(
             request.CampaignPolicy,
             request.CampaignNumberPrefix));
 
-        var structure = structurePlanning.Build(new ProductionStructurePlanningRequest(
+        var structureRequest = new ProductionStructurePlanningRequest(
             campaignPlan.Campaigns,
             request.Resources,
             request.Capabilities,
             request.TransitionRules,
             request.FlowLinks,
-            request.StructurePolicy));
+            request.StructurePolicy,
+            request.RoutePlanning);
+
+        var structure = request.RoutePlanning is null
+            ? structurePlanning.Build(structureRequest)
+            : ConfiguredRouteProductionStructureBuilder.Build(structureRequest);
 
         if (HasErrors(structure))
         {
@@ -51,6 +56,25 @@ public sealed class PlanningEngine(
                 campaignPlan,
                 structure,
                 request.ReplanContext?.BaselinePlanVersionId);
+        }
+
+        if (request.RoutePlanning is not null)
+        {
+            structure = MultiStageRouteProjector.Apply(
+                structure,
+                request.RoutePlanning,
+                request.Resources,
+                request.TransitionRules);
+
+            if (HasErrors(structure))
+            {
+                return InvalidStructureResult(
+                    planVersionId,
+                    createdOnUtc,
+                    campaignPlan,
+                    structure,
+                    request.ReplanContext?.BaselinePlanVersionId);
+            }
         }
 
         var sequencedTasks = FiniteScheduleTaskSequencer.Apply(
