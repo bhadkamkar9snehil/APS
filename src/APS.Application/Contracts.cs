@@ -37,12 +37,29 @@ public sealed record CampaignPlanningRequest(
     CampaignPlanningPolicy Policy,
     string CampaignNumberPrefix = "CMP");
 
+public enum PlanningInventoryUse
+{
+    FinishedGoodsFulfilment = 1,
+    IntermediateFeed = 2
+}
+
+public sealed record PlanningInventoryAllocation(
+    Guid ProductionOrderId,
+    InventoryStage Stage,
+    string MaterialCode,
+    string GradeCode,
+    string CrossSectionCode,
+    string? LocationCode,
+    decimal QuantityMt,
+    PlanningInventoryUse Use);
+
 public sealed record CampaignPlanningResult(
     IReadOnlyCollection<Campaign> Campaigns,
     IReadOnlyCollection<ProductionOrder> FullyCoveredByFinishedGoods,
     IReadOnlyDictionary<Guid, decimal> RollingRequirementsMt,
     IReadOnlyDictionary<Guid, decimal> FreshSteelRequirementsMt,
-    IReadOnlyDictionary<Guid, decimal> IntermediateInventoryAllocatedMt);
+    IReadOnlyDictionary<Guid, decimal> IntermediateInventoryAllocatedMt,
+    IReadOnlyCollection<PlanningInventoryAllocation> InventoryAllocations);
 
 public interface IMtsProductionOrderService
 {
