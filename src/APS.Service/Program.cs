@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using APS.Application;
+using APS.Domain;
 using APS.Infrastructure;
 using APS.Planning;
 using APS.UI.Components;
@@ -10,7 +11,10 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.ConfigureHttpJsonOptions(options =>
-    options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles);
+{
+    options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+});
 
 builder.Services.AddScoped<IMtsProductionOrderService, MtsProductionOrderService>();
 builder.Services.AddScoped<ICampaignPlanningService, CampaignPlanningService>();
@@ -24,6 +28,7 @@ if (hasApsDatabase)
 {
     builder.Services.AddDbContext<ApsDbContext>(options => options.UseSqlServer(apsConnection));
     builder.Services.AddScoped<ITraceabilityService, TraceabilityService>();
+    builder.Services.AddScoped<IWorkOrderExecutionService, WorkOrderExecutionService>();
 }
 
 var app = builder.Build();
@@ -69,16 +74,42 @@ app.MapPost("/api/planning/release/build",
         return Results.Ok(releaseBuilder.Build(request));
     });
 
-app.MapPost("/api/integration/xstudio/execution-events",
-    (ExecutionActual actual) => Results.Accepted(value: new
-    {
-        received = true,
-        actual.ExternalWorkOrderId,
-        actual.ChangedOnUtc
-    }));
-
 if (hasApsDatabase)
 {
+    app.MapPost("/api/execution/work-orders/{workOrderId:guid}",
+        async (Guid workOrderId, ManualWorkOrderExecutionRequest request, IWorkOrderExecutionService execution, CancellationToken cancellationToken) =>
+        {
+            var snapshot = await execution.ApplyAsync(new WorkOrderExecutionUpdate(
+                workOrderId,
+                null,
+                request.Status,
+                request.ActualStart,
+                request.ActualEnd,
+                request.ActualQuantityMt,
+                request.ChangedOnUtc ?? DateTime.UtcNow,
+                ExecutionUpdateSource.Manual,
+                null,
+                request.Comment,
+                request.IsCorrection), cancellationToken);
+            return Results.Ok(snapshot);
+        });
+
+    app.MapPost("/api/integration/xstudio/execution-events",
+        async (WorkOrderExecutionUpdate update, IWorkOrderExecutionService execution, CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(update.ExternalExecutionId))
+            {
+                return Results.BadRequest(new { message = "ExternalExecutionId is required for MES execution events." });
+            }
+
+            var snapshot = await execution.ApplyAsync(update with
+            {
+                WorkOrderId = null,
+                Source = ExecutionUpdateSource.MesApi
+            }, cancellationToken);
+            return Results.Ok(snapshot);
+        });
+
     app.MapGet("/api/traceability/work-orders/{workOrderId:guid}",
         async (Guid workOrderId, ITraceabilityService traceability, CancellationToken cancellationToken) =>
         {
@@ -101,5 +132,14 @@ app.Run();
 
 public sealed record MtsProductionOrderRequest(
     StockPolicy Policy,
-    APS.Domain.InventoryPosition Inventory,
+    InventoryPosition Inventory,
     decimal AlreadyFirmedSupplyMt = 0m);
+
+public sealed record ManualWorkOrderExecutionRequest(
+    WorkOrderStatus Status,
+    DateTime? ActualStart = null,
+    DateTime? ActualEnd = null,
+    decimal? ActualQuantityMt = null,
+    DateTime? ChangedOnUtc = null,
+    string? Comment = null,
+    bool IsCorrection = false);
