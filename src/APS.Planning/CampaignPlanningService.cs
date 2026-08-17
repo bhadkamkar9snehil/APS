@@ -158,7 +158,6 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
                     var intermediateQty = Math.Min(remainingIntermediate, allocationQty);
                     var freshQty = allocationQty - intermediateQty;
 
-                    // Fresh quantity is the residual after inventory; keep accounting defensive against rounding.
                     freshQty = Math.Min(freshQty, remainingFresh);
                     var accounted = intermediateQty + freshQty;
                     if (accounted < allocationQty)
@@ -274,7 +273,7 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
             .Select(g => new
             {
                 GradeCode = g.Key,
-                QuantityMt = g.Sum(x => x.FreshSteelQuantityMt),
+                RequiredOutputQuantityMt = g.Sum(x => x.FreshSteelQuantityMt),
                 FirstIndex = allocations.FindIndex(x => ReferenceEquals(x, g.First()))
             })
             .OrderBy(x => x.FirstIndex)
@@ -282,20 +281,28 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
 
         var gradeSequenceNo = 1;
         var heatSequenceNo = 1;
+        var yield = policy.ExpectedCastingYieldPct / 100m;
 
         foreach (var grade in gradeGroups)
         {
+            // Heat quantity is steelmaking/casting input. The fresh-steel requirement is the
+            // expected usable cast output required by rolling after inventory allocation.
+            var plannedInputQuantity = decimal.Round(
+                grade.RequiredOutputQuantityMt / yield,
+                4,
+                MidpointRounding.AwayFromZero);
+
             var gradeSequence = new CampaignGradeSequence
             {
                 CampaignId = campaign.Id,
                 Campaign = campaign,
                 SequenceNumber = gradeSequenceNo++,
                 GradeCode = grade.GradeCode,
-                PlannedQuantityMt = grade.QuantityMt
+                PlannedQuantityMt = plannedInputQuantity
             };
             campaign.GradeSequence.Add(gradeSequence);
 
-            foreach (var heatQuantity in DistributeHeatQuantities(grade.QuantityMt, policy))
+            foreach (var heatQuantity in DistributeHeatQuantities(plannedInputQuantity, policy))
             {
                 campaign.Heats.Add(new CampaignHeat
                 {
@@ -347,6 +354,8 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
             throw new ArgumentOutOfRangeException(nameof(policy.MaximumHeatSizeMt));
         if (policy.MaximumCampaignQuantityMt < policy.MaximumHeatSizeMt)
             throw new ArgumentOutOfRangeException(nameof(policy.MaximumCampaignQuantityMt));
+        if (policy.ExpectedCastingYieldPct <= 0m || policy.ExpectedCastingYieldPct > 100m)
+            throw new ArgumentOutOfRangeException(nameof(policy.ExpectedCastingYieldPct));
     }
 
     private static string SequenceClass(ProductionOrder po) =>
