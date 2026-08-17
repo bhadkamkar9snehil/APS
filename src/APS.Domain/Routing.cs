@@ -24,6 +24,19 @@ public sealed class ManufacturingRouteOperation : Entity
     public decimal YieldPct { get; set; } = 100m;
 }
 
+public sealed class RouteResourceCapability : Entity
+{
+    public Guid ResourceId { get; set; }
+    public required string RouteCode { get; set; }
+    public WorkOrderType OperationType { get; set; }
+    public string? GradeCode { get; set; }
+    public string? GradeFamilyCode { get; set; }
+    public string? InputCrossSectionCode { get; set; }
+    public string? OutputCrossSectionCode { get; set; }
+    public string? ProductFamilyCode { get; set; }
+    public decimal? ThroughputMtPerHour { get; set; }
+}
+
 public sealed class RouteOperationPlan : Entity
 {
     public required string RouteCode { get; set; }
