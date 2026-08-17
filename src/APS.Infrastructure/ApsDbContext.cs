@@ -14,6 +14,7 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
     public DbSet<CastSequence> CastSequences => Set<CastSequence>();
     public DbSet<CastSequenceHeat> CastSequenceHeats => Set<CastSequenceHeat>();
     public DbSet<RollingPlan> RollingPlans => Set<RollingPlan>();
+    public DbSet<RollingPlanAllocation> RollingPlanAllocations => Set<RollingPlanAllocation>();
     public DbSet<Plant> Plants => Set<Plant>();
     public DbSet<ProcessStage> ProcessStages => Set<ProcessStage>();
     public DbSet<Resource> Resources => Set<Resource>();
@@ -88,6 +89,18 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
             .HasForeignKey(x => x.CampaignHeatId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        modelBuilder.Entity<RollingPlanAllocation>()
+            .HasOne(x => x.RollingPlan)
+            .WithMany(x => x.Allocations)
+            .HasForeignKey(x => x.RollingPlanId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<RollingPlanAllocation>()
+            .HasOne(x => x.ProductionOrder)
+            .WithMany()
+            .HasForeignKey(x => x.ProductionOrderId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         modelBuilder.Entity<WorkOrderAllocation>()
             .HasOne(x => x.WorkOrder)
             .WithMany(x => x.Allocations)
@@ -117,6 +130,7 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<CampaignGradeSequence>().HasIndex(x => new { x.CampaignId, x.SequenceNumber }).IsUnique();
         modelBuilder.Entity<CampaignHeat>().HasIndex(x => new { x.CampaignId, x.SequenceNumber }).IsUnique();
         modelBuilder.Entity<CastSequenceHeat>().HasIndex(x => new { x.CastSequenceId, x.Position }).IsUnique();
+        modelBuilder.Entity<RollingPlanAllocation>().HasIndex(x => new { x.RollingPlanId, x.ProductionOrderId, x.CampaignId });
         modelBuilder.Entity<ResourceCalendar>().HasIndex(x => new { x.ResourceId, x.Start, x.End });
 
         foreach (var property in modelBuilder.Model.GetEntityTypes()
