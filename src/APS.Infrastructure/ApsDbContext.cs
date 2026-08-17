@@ -7,6 +7,9 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
 {
     public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
     public DbSet<ProductionOrder> ProductionOrders => Set<ProductionOrder>();
+    public DbSet<ProductionOrderRequirement> ProductionOrderRequirements => Set<ProductionOrderRequirement>();
+    public DbSet<OrderChemistryRequirement> OrderChemistryRequirements => Set<OrderChemistryRequirement>();
+    public DbSet<OrderProcessRequirement> OrderProcessRequirements => Set<OrderProcessRequirement>();
     public DbSet<Campaign> Campaigns => Set<Campaign>();
     public DbSet<CampaignAllocation> CampaignAllocations => Set<CampaignAllocation>();
     public DbSet<CampaignGradeSequence> CampaignGradeSequences => Set<CampaignGradeSequence>();
@@ -15,13 +18,25 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
     public DbSet<CastSequenceHeat> CastSequenceHeats => Set<CastSequenceHeat>();
     public DbSet<RollingPlan> RollingPlans => Set<RollingPlan>();
     public DbSet<RollingPlanAllocation> RollingPlanAllocations => Set<RollingPlanAllocation>();
+
     public DbSet<Plant> Plants => Set<Plant>();
+    public DbSet<PlantArea> PlantAreas => Set<PlantArea>();
     public DbSet<ProcessStage> ProcessStages => Set<ProcessStage>();
     public DbSet<Resource> Resources => Set<Resource>();
     public DbSet<ResourceCapability> ResourceCapabilities => Set<ResourceCapability>();
     public DbSet<ResourceCalendar> ResourceCalendars => Set<ResourceCalendar>();
     public DbSet<PlantFlowLink> PlantFlowLinks => Set<PlantFlowLink>();
     public DbSet<TransitionRule> TransitionRules => Set<TransitionRule>();
+
+    public DbSet<SteelGrade> SteelGrades => Set<SteelGrade>();
+    public DbSet<GradeChemistryRequirement> GradeChemistryRequirements => Set<GradeChemistryRequirement>();
+    public DbSet<GradeProcessRequirement> GradeProcessRequirements => Set<GradeProcessRequirement>();
+    public DbSet<CrossSectionSpecification> CrossSectionSpecifications => Set<CrossSectionSpecification>();
+    public DbSet<MaterialSpecification> MaterialSpecifications => Set<MaterialSpecification>();
+    public DbSet<PackagingSpecification> PackagingSpecifications => Set<PackagingSpecification>();
+    public DbSet<ExternalMaterialSupply> ExternalMaterialSupplies => Set<ExternalMaterialSupply>();
+    public DbSet<PlannedPackagingUnit> PlannedPackagingUnits => Set<PlannedPackagingUnit>();
+
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
     public DbSet<WorkOrderAllocation> WorkOrderAllocations => Set<WorkOrderAllocation>();
     public DbSet<WorkOrderStatusHistory> WorkOrderStatusHistory => Set<WorkOrderStatusHistory>();
@@ -51,11 +66,60 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<WorkOrder>().HasIndex(x => x.ExternalExecutionId);
         modelBuilder.Entity<MaterialLot>().HasIndex(x => x.LotNumber).IsUnique();
         modelBuilder.Entity<Resource>().HasIndex(x => new { x.PlantId, x.Code }).IsUnique();
+        modelBuilder.Entity<PlantArea>().HasIndex(x => new { x.PlantId, x.Code }).IsUnique();
+        modelBuilder.Entity<ProcessStage>().HasIndex(x => new { x.PlantId, x.Code }).IsUnique();
+        modelBuilder.Entity<SteelGrade>().HasIndex(x => x.GradeCode).IsUnique();
+        modelBuilder.Entity<CrossSectionSpecification>().HasIndex(x => x.CrossSectionCode).IsUnique();
+        modelBuilder.Entity<MaterialSpecification>().HasIndex(x => x.MaterialSpecificationCode).IsUnique();
+        modelBuilder.Entity<PackagingSpecification>().HasIndex(x => x.PackagingCode).IsUnique();
+        modelBuilder.Entity<ExternalMaterialSupply>().HasIndex(x => new { x.SourceType, x.SupplyReference });
 
         modelBuilder.Entity<ProductionOrder>()
             .HasOne(x => x.SalesOrder)
             .WithMany()
             .HasForeignKey(x => x.SalesOrderId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<ProductionOrder>()
+            .HasOne(x => x.SteelGrade)
+            .WithMany()
+            .HasForeignKey(x => x.SteelGradeId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<ProductionOrder>()
+            .HasOne(x => x.Requirement)
+            .WithOne(x => x.ProductionOrder)
+            .HasForeignKey<ProductionOrderRequirement>(x => x.ProductionOrderId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ProductionOrderRequirement>()
+            .HasMany(x => x.ChemistryOverrides)
+            .WithOne()
+            .HasForeignKey(x => x.ProductionOrderRequirementId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ProductionOrderRequirement>()
+            .HasMany(x => x.ProcessOverrides)
+            .WithOne()
+            .HasForeignKey(x => x.ProductionOrderRequirementId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<SteelGrade>()
+            .HasMany(x => x.Chemistry)
+            .WithOne(x => x.SteelGrade)
+            .HasForeignKey(x => x.SteelGradeId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<SteelGrade>()
+            .HasMany(x => x.ProcessRequirements)
+            .WithOne(x => x.SteelGrade)
+            .HasForeignKey(x => x.SteelGradeId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ProcessStage>()
+            .HasOne<PlantArea>()
+            .WithMany()
+            .HasForeignKey(x => x.PlantAreaId)
             .OnDelete(DeleteBehavior.Restrict);
 
         modelBuilder.Entity<CampaignAllocation>()
@@ -178,12 +242,18 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
             .HasForeignKey(x => x.ManufacturingRouteId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        modelBuilder.Entity<ProductionOrderRequirement>().HasIndex(x => x.ProductionOrderId).IsUnique();
+        modelBuilder.Entity<GradeChemistryRequirement>().HasIndex(x => new { x.SteelGradeId, x.ElementCode }).IsUnique();
+        modelBuilder.Entity<GradeProcessRequirement>().HasIndex(x => new { x.SteelGradeId, x.ProcessOperationType }).IsUnique();
+        modelBuilder.Entity<OrderChemistryRequirement>().HasIndex(x => new { x.ProductionOrderRequirementId, x.ElementCode }).IsUnique();
+        modelBuilder.Entity<OrderProcessRequirement>().HasIndex(x => new { x.ProductionOrderRequirementId, x.ProcessOperationType, x.RequiredResourceId });
         modelBuilder.Entity<LotGenealogy>().HasIndex(x => new { x.ParentLotId, x.ChildLotId });
         modelBuilder.Entity<MaterialLotAllocation>().HasIndex(x => new { x.MaterialLotId, x.ProductionOrderId });
         modelBuilder.Entity<CampaignGradeSequence>().HasIndex(x => new { x.CampaignId, x.SequenceNumber }).IsUnique();
         modelBuilder.Entity<CampaignHeat>().HasIndex(x => new { x.CampaignId, x.SequenceNumber }).IsUnique();
         modelBuilder.Entity<CastSequenceHeat>().HasIndex(x => new { x.CastSequenceId, x.Position }).IsUnique();
         modelBuilder.Entity<RollingPlanAllocation>().HasIndex(x => new { x.RollingPlanId, x.ProductionOrderId, x.CampaignId });
+        modelBuilder.Entity<ResourceCapability>().HasIndex(x => new { x.ResourceId, x.ProcessOperationType });
         modelBuilder.Entity<ResourceCalendar>().HasIndex(x => new { x.ResourceId, x.Start, x.End });
         modelBuilder.Entity<WorkOrderStatusHistory>().HasIndex(x => new { x.WorkOrderId, x.ChangedOnUtc });
         modelBuilder.Entity<WorkOrderStatusHistory>().HasIndex(x => new { x.Source, x.ExternalEventId });
@@ -196,7 +266,7 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<PlanMaterialUnitSnapshot>().HasIndex(x => new { x.PlanVersionId, x.PlanningKey }).IsUnique();
         modelBuilder.Entity<ManufacturingRoute>().HasIndex(x => x.RouteCode).IsUnique();
         modelBuilder.Entity<ManufacturingRouteOperation>().HasIndex(x => new { x.RouteCode, x.SequenceNumber }).IsUnique();
-        modelBuilder.Entity<RouteResourceCapability>().HasIndex(x => new { x.RouteCode, x.ResourceId });
+        modelBuilder.Entity<RouteResourceCapability>().HasIndex(x => new { x.RouteCode, x.ResourceId, x.ProcessOperationType });
 
         foreach (var property in modelBuilder.Model.GetEntityTypes()
                      .SelectMany(t => t.GetProperties())
