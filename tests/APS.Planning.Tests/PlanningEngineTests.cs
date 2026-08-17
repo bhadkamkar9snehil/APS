@@ -8,7 +8,7 @@ namespace APS.Planning.Tests;
 public sealed class PlanningEngineTests
 {
     [Fact]
-    public void End_to_end_plan_preserves_mill_sequence_and_setup_time()
+    public void End_to_end_plan_applies_setup_only_when_distinct_mill_plans_are_adjacent()
     {
         var po16 = NewPo("PO-16", "16MM", 100m);
         var po20 = NewPo("PO-20", "20MM", 100m);
@@ -62,16 +62,8 @@ public sealed class PlanningEngineTests
         };
         var transitions = new[]
         {
-            new TransitionRule
-            {
-                ResourceId = mill.Id,
-                Dimension = TransitionDimension.CrossSection,
-                FromCode = "16MM",
-                ToCode = "20MM",
-                IsAllowed = true,
-                Penalty = 10,
-                TransitionTime = TimeSpan.FromMinutes(15)
-            }
+            SectionTransition(mill.Id, "16MM", "20MM", 15, 10),
+            SectionTransition(mill.Id, "20MM", "16MM", 15, 10)
         };
         var links = new[]
         {
@@ -108,15 +100,40 @@ public sealed class PlanningEngineTests
         Assert.True(result.IsFeasible, string.Join("; ", result.Schedule.Issues.Select(i => i.Message)));
         Assert.Equal(2, result.ProductionStructure.RollingPlans.Count);
 
-        var firstPlan = result.ProductionStructure.RollingPlans.Single(p => p.SequenceNumber == 1);
-        var secondPlan = result.ProductionStructure.RollingPlans.Single(p => p.SequenceNumber == 2);
-        var first = result.Schedule.Assignments.Where(a => a.SourceEntityId == firstPlan.Id).OrderBy(a => a.StartUtc).ToArray();
-        var second = result.Schedule.Assignments.Where(a => a.SourceEntityId == secondPlan.Id).OrderBy(a => a.StartUtc).ToArray();
+        var planIds = result.ProductionStructure.RollingPlans.Select(plan => plan.Id).ToHashSet();
+        var millAssignments = result.Schedule.Assignments
+            .Where(assignment => assignment.ResourceId == mill.Id && planIds.Contains(assignment.SourceEntityId))
+            .OrderBy(assignment => assignment.StartUtc)
+            .ToArray();
 
-        Assert.NotEmpty(first);
-        Assert.NotEmpty(second);
-        Assert.True(second[0].StartUtc >= first[^1].EndUtc.AddMinutes(15));
+        Assert.NotEmpty(millAssignments);
+        for (var i = 1; i < millAssignments.Length; i++)
+        {
+            var previous = millAssignments[i - 1];
+            var current = millAssignments[i];
+            if (previous.SourceEntityId == current.SourceEntityId) continue;
+
+            Assert.True(
+                current.StartUtc >= previous.EndUtc.AddMinutes(15),
+                $"Expected a 15-minute transition between distinct adjacent rolling plans, but {previous.SourceEntityId} ended at {previous.EndUtc:u} and {current.SourceEntityId} started at {current.StartUtc:u}.");
+        }
     }
+
+    private static TransitionRule SectionTransition(
+        Guid resourceId,
+        string from,
+        string to,
+        int minutes,
+        int penalty) => new()
+    {
+        ResourceId = resourceId,
+        Dimension = TransitionDimension.CrossSection,
+        FromCode = from,
+        ToCode = to,
+        IsAllowed = true,
+        Penalty = penalty,
+        TransitionTime = TimeSpan.FromMinutes(minutes)
+    };
 
     private static ProductionOrder NewPo(string number, string section, decimal quantity) => new()
     {
