@@ -22,12 +22,10 @@ public sealed class ProductionStructurePlanningService : IProductionStructurePla
 
         var tasks = BuildSchedulingTasks(
             request,
-            resources,
             castSequences,
             rollingPlans,
             castDurations,
-            rollingDurations,
-            issues);
+            rollingDurations);
 
         return new ProductionStructurePlanningResult(castSequences, rollingPlans, billetSupplies, tasks, issues);
     }
@@ -45,7 +43,6 @@ public sealed class ProductionStructurePlanningService : IProductionStructurePla
             .Where(r => r.ResourceType == ResourceType.Caster)
             .ToDictionary(r => r.Id, r => new CasterState(r));
 
-        var campaigns = request.Campaigns.ToDictionary(c => c.Id);
         var orderedHeats = request.Campaigns
             .OrderBy(c => c.RequiredDate)
             .ThenBy(c => c.CampaignNumber)
@@ -71,6 +68,16 @@ public sealed class ProductionStructurePlanningService : IProductionStructurePla
                         campaign.CasterSectionCode,
                         null);
                     if (matching.Count == 0) return null;
+
+                    if (!TransitionAllowed(
+                            request.TransitionRules,
+                            state.Resource,
+                            TransitionDimension.Grade,
+                            state.LastGradeCode,
+                            heat.GradeCode))
+                    {
+                        return null;
+                    }
 
                     var duration = DurationMinutes(heat.PlannedQuantityMt, matching, request.Policy.DefaultCastingMinutesPerHeat);
                     var append = CanAppendToCastSequence(state, campaign, heat, request);
@@ -101,10 +108,11 @@ public sealed class ProductionStructurePlanningService : IProductionStructurePla
 
             var selected = candidates[0];
             var state = selected.State;
+            CastSequence currentSequence;
 
             if (!selected.AppendToCurrent || state.CurrentSequence is null)
             {
-                state.CurrentSequence = new CastSequence
+                currentSequence = new CastSequence
                 {
                     CampaignId = campaign.Id,
                     CasterResourceId = state.Resource.Id,
@@ -112,33 +120,38 @@ public sealed class ProductionStructurePlanningService : IProductionStructurePla
                     CasterSectionCode = campaign.CasterSectionCode,
                     RouteCode = campaign.RouteCode
                 };
-                castSequences.Add(state.CurrentSequence);
-                castDurations[state.CurrentSequence.Id] = 0;
+                state.CurrentSequence = currentSequence;
+                castSequences.Add(currentSequence);
+                castDurations[currentSequence.Id] = 0;
             }
-            else if (state.CurrentSequence.CampaignId != campaign.Id)
+            else
             {
-                state.CurrentSequence.CampaignId = null;
+                currentSequence = state.CurrentSequence;
+                if (currentSequence.CampaignId != campaign.Id)
+                {
+                    currentSequence.CampaignId = null;
+                }
             }
 
-            state.CurrentSequence.Heats.Add(new CastSequenceHeat
+            currentSequence.Heats.Add(new CastSequenceHeat
             {
-                CastSequenceId = state.CurrentSequence.Id,
-                CastSequence = state.CurrentSequence,
+                CastSequenceId = currentSequence.Id,
+                CastSequence = currentSequence,
                 CampaignHeatId = heat.Id,
                 CampaignHeat = heat,
-                Position = state.CurrentSequence.Heats.Count + 1
+                Position = currentSequence.Heats.Count + 1
             });
 
             heat.PreferredCasterResourceId = state.Resource.Id;
             state.LoadMinutes += selected.DurationMinutes;
             state.LastGradeCode = heat.GradeCode;
-            castDurations[state.CurrentSequence.Id] += selected.DurationMinutes;
+            castDurations[currentSequence.Id] += selected.DurationMinutes;
 
             var yield = Math.Clamp(request.Policy.CastingYieldPct, 0m, 100m) / 100m;
             billetSupplies.Add(new PlannedBilletSupply(
                 campaign.Id,
                 heat.Id,
-                state.CurrentSequence.Id,
+                currentSequence.Id,
                 state.Resource.Id,
                 heat.GradeCode,
                 campaign.CasterSectionCode,
@@ -228,6 +241,22 @@ public sealed class ProductionStructurePlanningService : IProductionStructurePla
                         representative.ProductFamilyCode);
                     if (matching.Count == 0) return null;
 
+                    if (!TransitionAllowed(
+                            request.TransitionRules,
+                            state.Resource,
+                            TransitionDimension.Grade,
+                            state.LastGradeCode,
+                            representative.GradeCode) ||
+                        !TransitionAllowed(
+                            request.TransitionRules,
+                            state.Resource,
+                            TransitionDimension.CrossSection,
+                            state.LastOutputSectionCode,
+                            representative.FinalCrossSectionCode))
+                    {
+                        return null;
+                    }
+
                     var fallback = Math.Max(1, (int)Math.Ceiling((double)(quantity / 100m) * request.Policy.DefaultRollingMinutesPer100Mt));
                     var duration = DurationMinutes(quantity, matching, fallback);
                     var gradePenalty = TransitionPenalty(
@@ -256,7 +285,7 @@ public sealed class ProductionStructurePlanningService : IProductionStructurePla
                 issues.Add(new PlanningIssue(
                     PlanningIssueSeverity.Error,
                     "MILL_NOT_ELIGIBLE",
-                    $"No eligible rolling mill can process {representative.GradeCode} from {representative.CasterSectionCode} to {representative.FinalCrossSectionCode}.",
+                    $"No eligible rolling mill can process {representative.GradeCode} from {representative.CasterSectionCode} to {representative.FinalCrossSectionCode} with the current transition rules.",
                     representative.Id));
                 continue;
             }
@@ -311,7 +340,7 @@ public sealed class ProductionStructurePlanningService : IProductionStructurePla
                 foreach (var source in sourceCampaignGrades)
                 {
                     var hasCastSupply = castSequences.Any(sequence => sequence.Heats.Any(h =>
-                        h.CampaignHeat?.CampaignId == source.Id &&
+                        h.CampaignHeat.CampaignId == source.Id &&
                         h.CampaignHeat.GradeCode == source.GradeCode));
 
                     if (!hasCastSupply)
@@ -329,12 +358,10 @@ public sealed class ProductionStructurePlanningService : IProductionStructurePla
 
     private static IReadOnlyCollection<FiniteScheduleTask> BuildSchedulingTasks(
         ProductionStructurePlanningRequest request,
-        IReadOnlyDictionary<Guid, Resource> resources,
         IReadOnlyCollection<CastSequence> castSequences,
         IReadOnlyCollection<RollingPlan> rollingPlans,
         IReadOnlyDictionary<Guid, int> castDurations,
-        IReadOnlyDictionary<Guid, int> rollingDurations,
-        List<PlanningIssue> issues)
+        IReadOnlyDictionary<Guid, int> rollingDurations)
     {
         var tasks = new List<FiniteScheduleTask>();
         var campaignById = request.Campaigns.ToDictionary(c => c.Id);
@@ -343,17 +370,15 @@ public sealed class ProductionStructurePlanningService : IProductionStructurePla
         foreach (var sequence in castSequences)
         {
             var campaigns = sequence.Heats
-                .Select(h => h.CampaignHeat?.CampaignId)
-                .Where(id => id.HasValue)
-                .Select(id => campaignById[id!.Value])
+                .Select(h => h.CampaignHeat.CampaignId)
+                .Select(id => campaignById[id])
                 .DistinctBy(c => c.Id)
                 .ToArray();
             var grades = sequence.Heats
-                .Select(h => h.CampaignHeat?.GradeCode)
-                .Where(g => !string.IsNullOrWhiteSpace(g))
+                .Select(h => h.CampaignHeat.GradeCode)
                 .Distinct()
                 .ToArray();
-            var quantity = sequence.Heats.Sum(h => h.CampaignHeat?.PlannedQuantityMt ?? 0m);
+            var quantity = sequence.Heats.Sum(h => h.CampaignHeat.PlannedQuantityMt);
             var taskId = Guid.NewGuid();
             castTaskIds[sequence.Id] = taskId;
 
@@ -362,7 +387,7 @@ public sealed class ProductionStructurePlanningService : IProductionStructurePla
                 sequence.Id,
                 FiniteScheduleTaskType.Casting,
                 $"Cast {sequence.SequenceNumber}",
-                grades.Length == 1 ? grades[0]! : "MIXED",
+                grades.Length == 1 ? grades[0] : "MIXED",
                 sequence.CasterSectionCode,
                 quantity,
                 null,
@@ -381,7 +406,7 @@ public sealed class ProductionStructurePlanningService : IProductionStructurePla
             {
                 var sourceSequences = castSequences
                     .Where(sequence => sequence.Heats.Any(h =>
-                        h.CampaignHeat?.CampaignId == allocation.CampaignId &&
+                        h.CampaignHeat.CampaignId == allocation.CampaignId &&
                         h.CampaignHeat.GradeCode == plan.GradeCode))
                     .ToArray();
 
