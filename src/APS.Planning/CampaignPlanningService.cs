@@ -27,6 +27,7 @@ public sealed class MtsProductionOrderService : IMtsProductionOrderService
             DemandSource = DemandSourceType.MakeToStock,
             MaterialCode = policy.MaterialCode,
             GradeCode = policy.GradeCode,
+            GradeSequenceClassCode = policy.GradeSequenceClassCode,
             FinalCrossSectionCode = policy.FinalCrossSectionCode,
             CasterSectionCode = policy.CasterSectionCode,
             RouteCode = policy.RouteCode,
@@ -39,7 +40,7 @@ public sealed class MtsProductionOrderService : IMtsProductionOrderService
             StockPolicyCode = policy.PolicyCode
         };
 
-        return new(po, projected, proposed, "APS-generated MTS production order required to restore target stock.");
+        return new(po, projected, proposed, "APS-generated MTS Production Order required to restore target stock.");
     }
 }
 
@@ -55,8 +56,8 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
             .GroupBy(i => InventoryKey(i.MaterialCode, i.GradeCode, i.CrossSectionCode))
             .ToDictionary(g => g.Key, g => Math.Max(0m, g.Sum(x => x.ProjectedAvailableQuantityMt)));
 
-        // Finished-goods inventory is netted against PO demand before campaign formation.
-        // MTO receives precedence over MTS, then earlier required date and higher priority.
+        // Inventory allocation is deterministic: committed MTO requirements are protected first,
+        // followed by MTS replenishment, while preserving due-date and priority order.
         var ordered = request.ProductionOrders
             .Where(x => x.Status is ProductionOrderStatus.Planned or ProductionOrderStatus.Firmed)
             .OrderBy(x => x.DemandSource == DemandSourceType.MakeToOrder ? 0 : 1)
@@ -71,9 +72,8 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
             var key = InventoryKey(po.MaterialCode, po.GradeCode, po.FinalCrossSectionCode);
             inventoryPools.TryGetValue(key, out var available);
             var consumed = Math.Min(requirement, available);
-            available -= consumed;
+            inventoryPools[key] = available - consumed;
             requirement -= consumed;
-            inventoryPools[key] = available;
             netRequirements[po.Id] = requirement;
 
             if (requirement <= 0m)
@@ -82,9 +82,12 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
             }
         }
 
+        // GradeSequenceClassCode is the configurable compatibility envelope. Different exact
+        // grades may share a campaign only when master data places them in the same sequence class.
         var campaignInputs = ordered
             .Where(po => netRequirements[po.Id] > 0m)
-            .GroupBy(po => new CampaignCompatibilityKey(po.GradeCode, po.CasterSectionCode, po.RouteCode))
+            .GroupBy(po => new CampaignCompatibilityKey(
+                SequenceClass(po), po.CasterSectionCode, po.RouteCode))
             .OrderBy(g => g.Min(x => x.RequiredDate));
 
         var campaigns = new List<Campaign>();
@@ -96,6 +99,7 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
                 .OrderBy(x => x.DemandSource == DemandSourceType.MakeToOrder ? 0 : 1)
                 .ThenByDescending(x => x.Priority)
                 .ThenBy(x => x.RequiredDate)
+                .ThenBy(x => x.GradeCode)
                 .ToArray();
 
             var current = NewCampaign(request.CampaignNumberPrefix, sequence++, group.Key, groupOrders.Min(x => x.RequiredDate));
@@ -108,7 +112,7 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
                     var capacity = request.Policy.MaximumCampaignQuantityMt - current.PlannedQuantityMt;
                     if (capacity <= 0m)
                     {
-                        FinalizeHeatStructure(current, request.Policy);
+                        BuildGradeSequenceAndHeats(current, request.Policy);
                         campaigns.Add(current);
                         current = NewCampaign(request.CampaignNumberPrefix, sequence++, group.Key, po.RequiredDate);
                         capacity = request.Policy.MaximumCampaignQuantityMt;
@@ -131,7 +135,7 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
 
             if (current.PlannedQuantityMt > 0m)
             {
-                FinalizeHeatStructure(current, request.Policy);
+                BuildGradeSequenceAndHeats(current, request.Policy);
                 campaigns.Add(current);
             }
         }
@@ -143,7 +147,7 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
         new()
         {
             CampaignNumber = $"{prefix}-{sequence:00000}",
-            GradeCode = key.GradeCode,
+            GradeSequenceClassCode = key.GradeSequenceClassCode,
             CasterSectionCode = key.CasterSectionCode,
             RouteCode = key.RouteCode,
             PlannedQuantityMt = 0m,
@@ -151,40 +155,79 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
             Status = CampaignStatus.Draft
         };
 
-    private static void FinalizeHeatStructure(Campaign campaign, CampaignPlanningPolicy policy)
+    private static void BuildGradeSequenceAndHeats(Campaign campaign, CampaignPlanningPolicy policy)
     {
-        var remaining = campaign.PlannedQuantityMt;
-        var heatNo = 1;
+        campaign.GradeSequence.Clear();
+        campaign.Heats.Clear();
 
-        while (remaining > 0m)
+        var gradeGroups = campaign.Allocations
+            .Where(a => a.ProductionOrder is not null)
+            .GroupBy(a => a.ProductionOrder!.GradeCode)
+            .Select(g => new
+            {
+                GradeCode = g.Key,
+                QuantityMt = g.Sum(x => x.PlannedQuantityMt),
+                FirstIndex = campaign.Allocations.ToList().FindIndex(x => ReferenceEquals(x, g.First()))
+            })
+            .OrderBy(x => x.FirstIndex)
+            .ToArray();
+
+        var gradeSequenceNo = 1;
+        var heatSequenceNo = 1;
+
+        foreach (var grade in gradeGroups)
         {
-            var quantity = Math.Min(policy.NominalHeatSizeMt, remaining);
-
-            if (remaining > policy.MaximumHeatSizeMt)
-            {
-                quantity = Math.Min(policy.NominalHeatSizeMt, policy.MaximumHeatSizeMt);
-            }
-            else if (remaining < policy.MinimumHeatSizeMt && campaign.Heats.Count > 0)
-            {
-                var previous = campaign.Heats.Last();
-                var room = policy.MaximumHeatSizeMt - previous.PlannedQuantityMt;
-                var moved = Math.Min(room, remaining);
-                previous.PlannedQuantityMt += moved;
-                remaining -= moved;
-                if (remaining <= 0m) break;
-                quantity = remaining;
-            }
-
-            campaign.Heats.Add(new CampaignHeat
+            var gradeSequence = new CampaignGradeSequence
             {
                 CampaignId = campaign.Id,
                 Campaign = campaign,
-                SequenceNumber = heatNo++,
-                GradeCode = campaign.GradeCode,
-                PlannedQuantityMt = quantity
-            });
-            remaining -= quantity;
+                SequenceNumber = gradeSequenceNo++,
+                GradeCode = grade.GradeCode,
+                PlannedQuantityMt = grade.QuantityMt
+            };
+            campaign.GradeSequence.Add(gradeSequence);
+
+            foreach (var heatQuantity in DistributeHeatQuantities(grade.QuantityMt, policy))
+            {
+                campaign.Heats.Add(new CampaignHeat
+                {
+                    CampaignId = campaign.Id,
+                    Campaign = campaign,
+                    CampaignGradeSequenceId = gradeSequence.Id,
+                    CampaignGradeSequence = gradeSequence,
+                    SequenceNumber = heatSequenceNo++,
+                    GradeCode = grade.GradeCode,
+                    PlannedQuantityMt = heatQuantity
+                });
+            }
         }
+    }
+
+    private static IReadOnlyList<decimal> DistributeHeatQuantities(decimal totalQuantityMt, CampaignPlanningPolicy policy)
+    {
+        if (totalQuantityMt <= 0m) return Array.Empty<decimal>();
+
+        var preferredCount = Math.Max(1, (int)Math.Round(
+            totalQuantityMt / policy.NominalHeatSizeMt,
+            MidpointRounding.AwayFromZero));
+        var minimumCount = Math.Max(1, (int)Math.Ceiling(totalQuantityMt / policy.MaximumHeatSizeMt));
+        var maximumCount = totalQuantityMt >= policy.MinimumHeatSizeMt
+            ? Math.Max(1, (int)Math.Floor(totalQuantityMt / policy.MinimumHeatSizeMt))
+            : 1;
+
+        var heatCount = Math.Clamp(preferredCount, minimumCount, maximumCount);
+        var average = decimal.Round(totalQuantityMt / heatCount, 4, MidpointRounding.AwayFromZero);
+        var result = new List<decimal>(heatCount);
+        var allocated = 0m;
+
+        for (var i = 0; i < heatCount; i++)
+        {
+            var quantity = i == heatCount - 1 ? totalQuantityMt - allocated : average;
+            result.Add(quantity);
+            allocated += quantity;
+        }
+
+        return result;
     }
 
     private static void ValidatePolicy(CampaignPlanningPolicy policy)
@@ -198,6 +241,9 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
             throw new ArgumentOutOfRangeException(nameof(policy.MaximumCampaignQuantityMt));
     }
 
+    private static string SequenceClass(ProductionOrder po) =>
+        string.IsNullOrWhiteSpace(po.GradeSequenceClassCode) ? $"GRADE:{po.GradeCode}" : po.GradeSequenceClassCode;
+
     private static string InventoryKey(string material, string grade, string section) => $"{material}|{grade}|{section}";
-    private sealed record CampaignCompatibilityKey(string GradeCode, string CasterSectionCode, string RouteCode);
+    private sealed record CampaignCompatibilityKey(string GradeSequenceClassCode, string CasterSectionCode, string RouteCode);
 }
