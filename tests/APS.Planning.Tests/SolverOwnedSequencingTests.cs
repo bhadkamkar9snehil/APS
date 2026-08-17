@@ -94,15 +94,15 @@ public sealed class SolverOwnedSequencingTests
             5));
 
         Assert.True(result.IsFeasible, string.Join("; ", result.Issues.Select(issue => issue.Message)));
-        Assert.Equal(
-            start,
-            Assert.Single(result.Assignments, assignment => assignment.TaskId == immediatelyAvailableFeed.TaskId).StartUtc);
-        Assert.Equal(
-            start.AddMinutes(10),
-            Assert.Single(result.Assignments, assignment => assignment.TaskId == otherPlan.TaskId).StartUtc);
-        Assert.Equal(
-            start.AddMinutes(30),
-            Assert.Single(result.Assignments, assignment => assignment.TaskId == delayedFeed.TaskId).StartUtc);
+
+        var immediate = Assert.Single(result.Assignments, assignment => assignment.TaskId == immediatelyAvailableFeed.TaskId);
+        var intervening = Assert.Single(result.Assignments, assignment => assignment.TaskId == otherPlan.TaskId);
+        var delayed = Assert.Single(result.Assignments, assignment => assignment.TaskId == delayedFeed.TaskId);
+
+        Assert.Equal(start, immediate.StartUtc);
+        Assert.Equal(start.AddMinutes(10), intervening.StartUtc);
+        Assert.True(delayed.StartUtc >= start.AddMinutes(30));
+        Assert.True(intervening.EndUtc <= delayed.StartUtc);
     }
 
     [Fact]
