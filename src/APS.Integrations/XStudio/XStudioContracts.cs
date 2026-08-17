@@ -56,10 +56,19 @@ public sealed class XStudioExecutionMapper : IXStudioExecutionMapper
     };
 }
 
+public interface IXStudioPlanReleaseMapper
+{
+    XStudioPlanReleaseEnvelope Map(
+        PlanRelease release,
+        IReadOnlyCollection<CastSequence> castSequences,
+        IReadOnlyCollection<Resource> resources);
+}
+
 public sealed record XStudioPlanReleaseEnvelope(
     Guid PlanVersionId,
     DateTime ReleasedOnUtc,
-    IReadOnlyCollection<XStudioWorkOrderPlan> WorkOrders);
+    IReadOnlyCollection<XStudioWorkOrderPlan> WorkOrders,
+    IReadOnlyCollection<XStudioCastSequencePlan> CastSequences);
 
 public sealed record XStudioWorkOrderPlan(
     string ApsWorkOrderNumber,
@@ -79,3 +88,20 @@ public sealed record XStudioWorkOrderAllocation(
     string? SalesOrderItem,
     DemandSourceType DemandSource,
     decimal PlannedQuantityMt);
+
+public sealed record XStudioCastSequencePlan(
+    Guid ApsCastSequenceId,
+    string CasterResourceCode,
+    int SequenceNumber,
+    string CasterSectionCode,
+    string RouteCode,
+    DateTime? PlannedStart,
+    DateTime? PlannedEnd,
+    IReadOnlyCollection<XStudioCastHeatPlan> Heats);
+
+public sealed record XStudioCastHeatPlan(
+    Guid ApsCampaignHeatId,
+    int Position,
+    string GradeCode,
+    decimal PlannedQuantityMt,
+    Guid CampaignId);
