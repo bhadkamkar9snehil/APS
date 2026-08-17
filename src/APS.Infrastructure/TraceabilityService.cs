@@ -1,4 +1,5 @@
 using APS.Application;
+using APS.Domain;
 using Microsoft.EntityFrameworkCore;
 
 namespace APS.Infrastructure;
@@ -75,7 +76,7 @@ public sealed class TraceabilityService(ApsDbContext db) : ITraceabilityService
                 on po.SalesOrderId equals so0.Id into salesOrders
             from so in salesOrders.DefaultIfEmpty()
             where allocation.MaterialLotId == materialLotId
-               && allocation.Status != Domain.LotAllocationStatus.Cancelled
+               && allocation.Status != LotAllocationStatus.Cancelled
             orderby po.ProductionOrderNumber
             select new ProductionOrderTrace(
                 po.Id,
