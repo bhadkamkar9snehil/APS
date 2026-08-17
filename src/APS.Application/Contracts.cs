@@ -97,6 +97,19 @@ public sealed record PlannedBilletSupply(
     string CrossSectionCode,
     decimal QuantityMt);
 
+public sealed record PlannedStrandMaterialUnit(
+    string PlanningKey,
+    Guid CampaignId,
+    Guid CampaignHeatId,
+    Guid CastSequenceId,
+    Guid CasterResourceId,
+    int StrandNumber,
+    int UnitSequence,
+    string GradeCode,
+    string CrossSectionCode,
+    decimal QuantityMt,
+    Guid AvailabilityTaskId);
+
 public enum PlanningIssueSeverity { Warning = 1, Error = 2 }
 
 public sealed record PlanningIssue(
@@ -110,7 +123,8 @@ public sealed record ProductionStructurePlanningResult(
     IReadOnlyCollection<RollingPlan> RollingPlans,
     IReadOnlyCollection<PlannedBilletSupply> PlannedBilletSupplies,
     IReadOnlyCollection<FiniteScheduleTask> SchedulingTasks,
-    IReadOnlyCollection<PlanningIssue> Issues);
+    IReadOnlyCollection<PlanningIssue> Issues,
+    IReadOnlyCollection<PlannedStrandMaterialUnit>? PlannedStrandMaterialUnits = null);
 
 public interface IProductionStructurePlanningService
 {
@@ -118,6 +132,7 @@ public interface IProductionStructurePlanningService
 }
 
 public enum FiniteScheduleTaskType { Casting = 1, HotRolling = 2, ColdRolling = 3, Finishing = 4 }
+public enum TimeFenceZone { Frozen = 1, Slushy = 2, Liquid = 3 }
 
 public sealed record FiniteScheduleResourceOption(
     Guid ResourceId,
@@ -143,6 +158,14 @@ public sealed record FiniteScheduleTask(
     IReadOnlyCollection<FiniteScheduleResourceOption> ResourceOptions,
     IReadOnlyCollection<FiniteScheduleDependency> Dependencies);
 
+public sealed record FiniteScheduleStabilityConstraint(
+    Guid TaskId,
+    TimeFenceZone Zone,
+    Guid BaselineResourceId,
+    DateTime BaselineStartUtc,
+    int MovementPenaltyPerMinute = 50,
+    int ResourceChangePenalty = 5000);
+
 public sealed record FiniteScheduleRequest(
     DateTime HorizonStartUtc,
     DateTime HorizonEndUtc,
@@ -150,7 +173,8 @@ public sealed record FiniteScheduleRequest(
     IReadOnlyCollection<Resource> Resources,
     IReadOnlyCollection<ResourceCalendar> ResourceCalendars,
     IReadOnlyCollection<TransitionRule> TransitionRules,
-    int MaxSolverSeconds = 20);
+    int MaxSolverSeconds = 20,
+    IReadOnlyCollection<FiniteScheduleStabilityConstraint>? StabilityConstraints = null);
 
 public sealed record FiniteScheduleAssignment(
     Guid TaskId,
