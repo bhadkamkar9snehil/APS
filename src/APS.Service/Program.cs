@@ -30,6 +30,7 @@ if (hasApsDatabase)
     builder.Services.AddDbContext<ApsDbContext>(options => options.UseSqlServer(apsConnection));
     builder.Services.AddScoped<ITraceabilityService, TraceabilityService>();
     builder.Services.AddScoped<IWorkOrderExecutionService, WorkOrderExecutionService>();
+    builder.Services.AddScoped<IPlanVersionRepository, PlanVersionRepository>();
 }
 
 var app = builder.Build();
@@ -45,12 +46,68 @@ app.MapGet("/api/health", () => Results.Ok(new
     utc = DateTime.UtcNow
 }));
 
-app.MapPost("/api/planning/run",
-    (PlanningRunRequest request, IPlanningEngine planningEngine) =>
-    {
-        var result = planningEngine.Run(request);
-        return result.IsFeasible ? Results.Ok(result) : Results.UnprocessableEntity(result);
-    });
+if (hasApsDatabase)
+{
+    app.MapPost("/api/planning/run",
+        async (PlanningRunRequest request, IPlanningEngine planningEngine, IPlanVersionRepository plans, CancellationToken cancellationToken) =>
+        {
+            var result = planningEngine.Run(request);
+            var persisted = await plans.SaveAsync(new PersistPlanningRunRequest(
+                request,
+                result,
+                PlanTriggerType.Manual,
+                DateTime.UtcNow,
+                "Manual planning run"), cancellationToken);
+            return result.IsFeasible
+                ? Results.Ok(new { plan = result, version = persisted })
+                : Results.UnprocessableEntity(new { plan = result, version = persisted });
+        });
+
+    app.MapPost("/api/planning/replan/{baselinePlanVersionId:guid}",
+        async (Guid baselinePlanVersionId, ReplanApiRequest request, IPlanningEngine planningEngine, IPlanVersionRepository plans, CancellationToken cancellationToken) =>
+        {
+            var baseline = await plans.GetAsync(baselinePlanVersionId, cancellationToken);
+            if (baseline is null) return Results.NotFound(new { message = "Baseline plan version was not found." });
+
+            var referenceTime = request.ReferenceTimeUtc ?? DateTime.UtcNow;
+            var planningRequest = request.Planning with
+            {
+                ReplanContext = new PlanningReplanContext(
+                    baselinePlanVersionId,
+                    referenceTime,
+                    request.TimeFencePolicy,
+                    baseline.Operations)
+            };
+
+            var result = planningEngine.Run(planningRequest);
+            var persisted = await plans.SaveAsync(new PersistPlanningRunRequest(
+                planningRequest,
+                result,
+                request.Trigger,
+                referenceTime,
+                request.Reason ?? "Replanning from current manufacturing and inventory state"), cancellationToken);
+
+            return result.IsFeasible
+                ? Results.Ok(new { plan = result, version = persisted })
+                : Results.UnprocessableEntity(new { plan = result, version = persisted });
+        });
+
+    app.MapGet("/api/planning/versions/{planVersionId:guid}",
+        async (Guid planVersionId, IPlanVersionRepository plans, CancellationToken cancellationToken) =>
+        {
+            var version = await plans.GetAsync(planVersionId, cancellationToken);
+            return version is null ? Results.NotFound() : Results.Ok(version);
+        });
+}
+else
+{
+    app.MapPost("/api/planning/run",
+        (PlanningRunRequest request, IPlanningEngine planningEngine) =>
+        {
+            var result = planningEngine.Run(request);
+            return result.IsFeasible ? Results.Ok(result) : Results.UnprocessableEntity(result);
+        });
+}
 
 app.MapPost("/api/planning/mts/production-order",
     (MtsProductionOrderRequest request, IMtsProductionOrderService service) =>
@@ -142,6 +199,13 @@ public sealed record MtsProductionOrderRequest(
     StockPolicy Policy,
     InventoryPosition Inventory,
     decimal AlreadyFirmedSupplyMt = 0m);
+
+public sealed record ReplanApiRequest(
+    PlanningRunRequest Planning,
+    PlanningTimeFencePolicy TimeFencePolicy,
+    DateTime? ReferenceTimeUtc = null,
+    PlanTriggerType Trigger = PlanTriggerType.ExecutionFeedback,
+    string? Reason = null);
 
 public sealed record ManualWorkOrderExecutionRequest(
     WorkOrderStatus Status,
