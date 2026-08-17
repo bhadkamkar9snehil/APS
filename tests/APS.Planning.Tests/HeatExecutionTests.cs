@@ -1,6 +1,7 @@
 using APS.Application;
 using APS.Domain;
 using APS.Infrastructure;
+using APS.Planning;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
 
@@ -9,7 +10,7 @@ namespace APS.Planning.Tests;
 public sealed class HeatExecutionTests
 {
     [Fact]
-    public async Task Completed_heat_creates_available_intermediate_lots_and_mes_retry_is_idempotent()
+    public async Task Completed_heat_creates_inventory_that_reduces_next_fresh_steel_requirement()
     {
         var options = new DbContextOptionsBuilder<ApsDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
@@ -87,8 +88,40 @@ public sealed class HeatExecutionTests
         Assert.Equal(first.HeatExecutionActualId, retry.HeatExecutionActualId);
         Assert.Equal(49m, first.ActualQuantityMt);
         Assert.Equal(2, await db.MaterialLots.CountAsync());
-        Assert.All(await db.MaterialLots.ToListAsync(), lot => Assert.Equal(MaterialLotStatus.Available, lot.Status));
+        Assert.All(await db.MaterialLots.ToListAsync(), lot =>
+        {
+            Assert.Equal(MaterialLotStatus.Available, lot.Status);
+            Assert.Equal(InventoryStage.CastIntermediate, lot.Stage);
+        });
         Assert.Equal(2, await db.StrandMaterialActuals.CountAsync());
         Assert.Equal(2, await db.HeatExecutionActuals.CountAsync());
+
+        var inventory = await new SqlInventorySnapshotProvider(db).GetInventoryAsync();
+        var billet = Assert.Single(inventory);
+        Assert.Equal(49m, billet.ProjectedAvailableQuantityMt);
+        Assert.Equal(InventoryStage.CastIntermediate, billet.Stage);
+
+        var po = new ProductionOrder
+        {
+            ProductionOrderNumber = "PO-NEXT",
+            DemandSource = DemandSourceType.MakeToOrder,
+            MaterialCode = "FG-16",
+            GradeCode = "G1",
+            GradeSequenceClassCode = "SEQ-A",
+            FinalCrossSectionCode = "16MM",
+            CasterSectionCode = "150X150",
+            RouteCode = "SMS-RM",
+            PlannedQuantityMt = 100m,
+            RemainingQuantityMt = 100m,
+            RequiredDate = new DateTime(2026, 8, 22)
+        };
+        var campaignPlan = new CampaignPlanningService().FormCampaigns(new CampaignPlanningRequest(
+            new[] { po },
+            inventory,
+            new CampaignPlanningPolicy(50m, 25m, 55m, 250m, 300m)));
+
+        Assert.Equal(100m, campaignPlan.RollingRequirementsMt[po.Id]);
+        Assert.Equal(49m, campaignPlan.IntermediateInventoryAllocatedMt[po.Id]);
+        Assert.Equal(51m, campaignPlan.FreshSteelRequirementsMt[po.Id]);
     }
 }
