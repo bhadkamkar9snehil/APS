@@ -60,6 +60,16 @@ public sealed class PlanningEngine(
                 heatAllocations);
             if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId);
 
+            structure = RollingFeedProjector.Apply(
+                structure,
+                campaignPlan,
+                request.RoutePlanning,
+                request.Resources,
+                request.Capabilities,
+                request.FlowLinks,
+                request.ExternalMaterialSupplies);
+            if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId);
+
             structure = MultiStageRouteProjector.Apply(structure, request.RoutePlanning, request.Resources, request.TransitionRules);
             if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId);
         }
