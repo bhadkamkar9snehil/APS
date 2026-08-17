@@ -29,7 +29,8 @@ public sealed record CampaignPlanningPolicy(
     decimal TargetCampaignQuantityMt,
     decimal MaximumCampaignQuantityMt,
     bool AllowMtoMtsMixing = true,
-    bool AllowMixedGradesWithinSequenceClass = true);
+    bool AllowMixedGradesWithinSequenceClass = true,
+    decimal ExpectedCastingYieldPct = 100m);
 
 public sealed record CampaignPlanningRequest(
     IReadOnlyCollection<ProductionOrder> ProductionOrders,
