@@ -48,7 +48,8 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
 
         var outputs = update.MaterialOutputs ?? Array.Empty<StrandMaterialActualInput>();
         var outputQuantity = outputs.Sum(x => x.QuantityMt);
-        var actualQuantity = update.ActualQuantityMt ?? outputQuantity;
+        var actualQuantity = update.ActualQuantityMt ??
+                             (outputs.Count > 0 ? outputQuantity : previous?.ActualQuantityMt ?? 0m);
 
         var actual = new HeatExecutionActual
         {
@@ -84,12 +85,36 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
                 StrandNumber = output.StrandNumber,
                 UnitSequence = output.UnitSequence,
                 ExternalLotNumber = output.ExternalLotNumber,
+                MaterialCode = output.MaterialCode,
                 GradeCode = output.GradeCode,
                 CrossSectionCode = output.CrossSectionCode,
                 QuantityMt = output.QuantityMt,
                 ProducedOnUtc = output.ProducedOnUtc,
                 LocationCode = output.LocationCode
             });
+
+            var lotNumber = output.ExternalLotNumber ??
+                            $"{update.PlanningKey}:S{output.StrandNumber:00}:U{output.UnitSequence:000}";
+            var lotExists = await db.MaterialLots
+                .AsNoTracking()
+                .AnyAsync(x => x.LotNumber == lotNumber, cancellationToken);
+            if (!lotExists)
+            {
+                db.MaterialLots.Add(new MaterialLot
+                {
+                    LotNumber = lotNumber,
+                    MaterialCode = output.MaterialCode,
+                    GradeCode = output.GradeCode,
+                    CrossSectionCode = output.CrossSectionCode,
+                    QuantityMt = output.QuantityMt,
+                    Status = MaterialLotStatus.Available,
+                    LocationCode = output.LocationCode,
+                    HeatNumber = actual.ExternalHeatNumber,
+                    CastNumber = actual.ExternalCastNumber,
+                    StrandNumber = output.StrandNumber,
+                    ProducedOnUtc = output.ProducedOnUtc
+                });
+            }
         }
 
         await db.SaveChangesAsync(cancellationToken);
@@ -109,6 +134,7 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
                 x.StrandNumber,
                 x.UnitSequence,
                 x.ExternalLotNumber,
+                x.MaterialCode,
                 x.GradeCode,
                 x.CrossSectionCode,
                 x.QuantityMt,
@@ -149,6 +175,7 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
         {
             if (output.StrandNumber <= 0) throw new ArgumentOutOfRangeException(nameof(output.StrandNumber));
             if (output.UnitSequence <= 0) throw new ArgumentOutOfRangeException(nameof(output.UnitSequence));
+            if (string.IsNullOrWhiteSpace(output.MaterialCode)) throw new ArgumentException("MaterialCode is required for strand output.");
             if (output.QuantityMt < 0m) throw new ArgumentOutOfRangeException(nameof(output.QuantityMt));
         }
     }
