@@ -9,142 +9,87 @@ internal static class MultiStageRouteProjector
         ProductionStructurePlanningResult structure,
         RoutePlanningInput routePlanning,
         IReadOnlyCollection<Resource> resources,
-        IReadOnlyCollection<TransitionRule> transitionRules)
+        IReadOnlyCollection<TransitionRule> transitionRules,
+        IReadOnlyCollection<PlantFlowLink>? flowLinks = null)
     {
         var issues = structure.Issues.ToList();
         var tasks = structure.SchedulingTasks.ToList();
         var routePlans = new List<RouteOperationPlan>();
-        var activeResources = resources.Where(x => x.IsActive).ToDictionary(x => x.Id);
+        var activeResources = resources
+            .Where(x => x.IsActive && x.OperatingState is ResourceOperatingState.Available or ResourceOperatingState.CapacityDerated or ResourceOperatingState.QualityRestricted)
+            .ToDictionary(x => x.Id);
         var capabilities = routePlanning.ResourceCapabilities
             .GroupBy(x => x.ResourceId)
             .ToDictionary(x => x.Key, x => x.ToArray());
         var operationsByRoute = routePlanning.Operations
             .GroupBy(x => x.RouteCode, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                x => x.Key,
-                x => x.OrderBy(y => y.SequenceNumber).ToArray(),
-                StringComparer.OrdinalIgnoreCase);
-        var resourceStates = activeResources.Values.ToDictionary(x => x.Id, x => new ResourceState(x));
+            .ToDictionary(x => x.Key, x => x.OrderBy(y => y.SequenceNumber).ToArray(), StringComparer.OrdinalIgnoreCase);
+        var links = flowLinks ?? Array.Empty<PlantFlowLink>();
+        var explicitSteelTopology = resources.Any(x => x.ProcessUnitType != ProcessUnitType.Unknown);
 
-        foreach (var hotPlan in structure.RollingPlans
-                     .OrderBy(x => x.RollingMillResourceId)
-                     .ThenBy(x => x.SequenceNumber))
+        foreach (var hotPlan in structure.RollingPlans.OrderBy(x => x.SequenceNumber))
         {
             if (!operationsByRoute.TryGetValue(hotPlan.RouteCode, out var operations)) continue;
-            var hotIndex = Array.FindIndex(operations, x => x.OperationType == WorkOrderType.HotRolling);
+            var hotIndex = Array.FindIndex(operations, x => x.ProcessOperationType == ProcessOperationType.HotRoll);
             if (hotIndex < 0) continue;
 
-            var finalSections = hotPlan.Allocations
+            var orders = hotPlan.Allocations
                 .Where(x => x.ProductionOrder is not null)
-                .Select(x => x.ProductionOrder!.FinalCrossSectionCode)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(x => x.ProductionOrder!)
+                .DistinctBy(x => x.Id)
                 .ToArray();
+            var finalSections = orders.Select(x => x.FinalCrossSectionCode).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             if (finalSections.Length != 1)
             {
-                issues.Add(new PlanningIssue(
-                    PlanningIssueSeverity.Error,
-                    "ROUTE_FINAL_SECTION_AMBIGUOUS",
-                    $"Hot rolling plan {hotPlan.Id} contains multiple final cross-sections and cannot be expanded as one downstream route chain.",
-                    hotPlan.Id));
+                issues.Add(Error("ROUTE_FINAL_SECTION_AMBIGUOUS", $"Hot rolling plan {hotPlan.Id} contains multiple final cross-sections and cannot be expanded as one downstream route chain.", hotPlan.Id));
                 continue;
             }
 
             var finalSection = finalSections[0];
             var currentSection = hotPlan.OutputCrossSectionCode;
             var upstreamPlanId = hotPlan.Id;
-            var upstreamTasks = tasks
-                .Where(x => x.SourceEntityId == hotPlan.Id)
-                .ToArray();
+            var upstreamTasks = tasks.Where(x => x.SourceEntityId == hotPlan.Id && x.TaskType == FiniteScheduleTaskType.HotRolling).ToArray();
 
             foreach (var operation in operations.Skip(hotIndex + 1))
             {
-                if (!ShouldExecute(operation, currentSection, finalSection)) continue;
+                var disposition = ResolveRequirement(operation, orders, issues, hotPlan.Id);
+                if (disposition == EffectiveRequirement.Forbidden) continue;
+                if (disposition == EffectiveRequirement.Optional && !ChangesTowardFinalSection(operation, currentSection, finalSection)) continue;
+                if (disposition == EffectiveRequirement.Conflict) break;
+
                 if (upstreamTasks.Length == 0)
                 {
-                    issues.Add(new PlanningIssue(
-                        PlanningIssueSeverity.Error,
-                        "ROUTE_UPSTREAM_TASK_MISSING",
-                        $"Route {hotPlan.RouteCode} operation {operation.SequenceNumber} has no upstream scheduled material blocks.",
-                        hotPlan.Id));
+                    issues.Add(Error("ROUTE_UPSTREAM_TASK_MISSING", $"Route {hotPlan.RouteCode} operation {operation.SequenceNumber} has no upstream scheduled material blocks.", hotPlan.Id));
                     break;
                 }
 
                 var inputSection = operation.InputCrossSectionCode ?? currentSection;
-                var outputSection = operation.OutputCrossSectionCode ?? finalSection;
+                var outputSection = operation.OutputCrossSectionCode ?? currentSection;
                 if (!string.Equals(inputSection, currentSection, StringComparison.OrdinalIgnoreCase))
                 {
-                    issues.Add(new PlanningIssue(
-                        PlanningIssueSeverity.Error,
-                        "ROUTE_SECTION_DISCONTINUITY",
-                        $"Route {hotPlan.RouteCode} operation {operation.SequenceNumber} expects {inputSection} but upstream produces {currentSection}.",
-                        operation.Id));
+                    issues.Add(Error("ROUTE_SECTION_DISCONTINUITY", $"Route {hotPlan.RouteCode} operation {operation.SequenceNumber} expects {inputSection} but upstream produces {currentSection}.", operation.Id));
                     break;
                 }
 
-                var representative = hotPlan.Allocations
-                    .Select(x => x.ProductionOrder)
-                    .First(x => x is not null)!;
-                var candidates = resourceStates.Values
-                    .Select(state =>
-                    {
-                        var matching = MatchCapabilities(
-                            state.Resource,
-                            capabilities,
-                            representative,
-                            operation.OperationType,
-                            inputSection,
-                            outputSection);
-                        if (matching.Count == 0) return null;
-                        if (!TransitionAllowed(
-                                transitionRules,
-                                state.Resource,
-                                TransitionDimension.Grade,
-                                state.LastGradeCode,
-                                hotPlan.GradeCode) ||
-                            !TransitionAllowed(
-                                transitionRules,
-                                state.Resource,
-                                TransitionDimension.CrossSection,
-                                state.LastOutputSectionCode,
-                                outputSection))
-                        {
-                            return null;
-                        }
-
-                        var duration = upstreamTasks.Sum(task => DurationMinutes(
-                            task.QuantityMt,
-                            matching.Select(x => x.ThroughputMtPerHour),
-                            60));
-                        var score = state.LoadMinutes +
-                                    TransitionPenalty(transitionRules, state.Resource, TransitionDimension.Grade, state.LastGradeCode, hotPlan.GradeCode) +
-                                    TransitionPenalty(transitionRules, state.Resource, TransitionDimension.CrossSection, state.LastOutputSectionCode, outputSection);
-                        return new Candidate(state, matching, duration, score);
-                    })
-                    .Where(x => x is not null)
-                    .Cast<Candidate>()
-                    .OrderBy(x => x.Score)
-                    .ThenBy(x => x.State.Resource.Code)
-                    .ToArray();
-
-                if (candidates.Length == 0)
+                var representative = orders[0];
+                var eligible = BuildEligibleResources(operation, representative, inputSection, outputSection, activeResources, capabilities);
+                if (eligible.Count == 0)
                 {
-                    issues.Add(new PlanningIssue(
-                        PlanningIssueSeverity.Error,
-                        "ROUTE_RESOURCE_NOT_ELIGIBLE",
-                        $"No resource can perform {operation.OperationType} for {hotPlan.GradeCode} {inputSection}->{outputSection} on route {hotPlan.RouteCode}.",
-                        operation.Id));
+                    issues.Add(Error("ROUTE_RESOURCE_NOT_ELIGIBLE", $"No physical resource can perform {operation.ProcessOperationType} for {hotPlan.GradeCode} {inputSection}->{outputSection} on route {hotPlan.RouteCode}.", operation.Id));
                     break;
                 }
 
-                var selected = candidates[0];
                 var routePlan = new RouteOperationPlan
                 {
                     RouteCode = hotPlan.RouteCode,
                     UpstreamPlanId = upstreamPlanId,
-                    OperationType = operation.OperationType,
+                    ProcessOperationType = operation.ProcessOperationType,
+                    ReleaseWorkOrderType = operation.ReleaseWorkOrderType,
                     SequenceNumber = operation.SequenceNumber,
-                    ResourceId = selected.State.Resource.Id,
+                    ResourceId = null,
                     GradeCode = hotPlan.GradeCode,
+                    InputMaterialSpecificationCode = operation.InputMaterialSpecificationCode,
+                    OutputMaterialSpecificationCode = operation.OutputMaterialSpecificationCode,
                     InputCrossSectionCode = inputSection,
                     OutputCrossSectionCode = outputSection,
                     PlannedQuantityMt = hotPlan.PlannedQuantityMt,
@@ -152,7 +97,6 @@ internal static class MultiStageRouteProjector
                     MaximumQueueTime = operation.MaximumQueueTime,
                     IsInventoryDecouplingPoint = operation.IsInventoryDecouplingPoint
                 };
-
                 foreach (var allocation in hotPlan.Allocations)
                 {
                     routePlan.Allocations.Add(new RouteOperationPlanAllocation
@@ -165,178 +109,186 @@ internal static class MultiStageRouteProjector
                         PlannedQuantityMt = allocation.PlannedQuantityMt
                     });
                 }
-
                 routePlans.Add(routePlan);
-                var due = routePlan.Allocations
-                    .Where(x => x.ProductionOrder is not null)
-                    .Min(x => x.ProductionOrder!.RequiredDate);
-                var priority = routePlan.Allocations
-                    .Where(x => x.ProductionOrder is not null)
-                    .Max(x => x.ProductionOrder!.Priority);
-                var newTasks = new List<FiniteScheduleTask>();
 
+                var due = orders.Min(x => x.RequiredDate);
+                var priority = orders.Max(x => x.Priority);
+                var newTasks = new List<FiniteScheduleTask>();
                 foreach (var upstreamTask in upstreamTasks)
                 {
-                    var duration = DurationMinutes(
-                        upstreamTask.QuantityMt,
-                        selected.Capabilities.Select(x => x.ThroughputMtPerHour),
-                        60);
+                    var options = eligible.Select(x => new FiniteScheduleResourceOption(
+                            x.Resource.Id,
+                            DurationMinutes(upstreamTask.QuantityMt, x.Capabilities, x.Resource),
+                            x.AssignmentPenalty))
+                        .ToArray();
+                    var dependency = BuildDependency(
+                        upstreamTask,
+                        options,
+                        operation,
+                        links,
+                        explicitSteelTopology,
+                        issues,
+                        routePlan.Id);
+
                     newTasks.Add(new FiniteScheduleTask(
                         Guid.NewGuid(),
                         routePlan.Id,
-                        MapTaskType(operation.OperationType),
-                        $"{operation.OperationType} {routePlan.SequenceNumber} - {routePlan.GradeCode}/{outputSection}",
+                        MapTaskType(operation.ProcessOperationType),
+                        $"{operation.ProcessOperationType} {routePlan.SequenceNumber} - {routePlan.GradeCode}/{outputSection}",
                         routePlan.GradeCode,
                         outputSection,
                         upstreamTask.QuantityMt,
                         null,
                         due,
                         priority,
-                        new[] { new FiniteScheduleResourceOption(selected.State.Resource.Id, duration) },
-                        new[]
-                        {
-                            new FiniteScheduleDependency(
-                                upstreamTask.TaskId,
-                                Minutes(operation.MinimumQueueTime),
-                                operation.MaximumQueueTime is null ? null : Minutes(operation.MaximumQueueTime.Value))
-                        }));
+                        options,
+                        new[] { dependency },
+                        operation.ProcessOperationType));
                 }
 
                 tasks.AddRange(newTasks);
-                selected.State.LoadMinutes += selected.DurationMinutes;
-                selected.State.LastGradeCode = hotPlan.GradeCode;
-                selected.State.LastOutputSectionCode = outputSection;
                 upstreamPlanId = routePlan.Id;
                 upstreamTasks = newTasks.ToArray();
                 currentSection = outputSection;
             }
 
             if (!string.Equals(currentSection, finalSection, StringComparison.OrdinalIgnoreCase))
-            {
-                issues.Add(new PlanningIssue(
-                    PlanningIssueSeverity.Error,
-                    "ROUTE_FINAL_SECTION_NOT_REACHED",
-                    $"Route {hotPlan.RouteCode} ends at {currentSection} but Production Orders require {finalSection}.",
-                    hotPlan.Id));
-            }
+                issues.Add(Error("ROUTE_FINAL_SECTION_NOT_REACHED", $"Route {hotPlan.RouteCode} ends at {currentSection} but Production Orders require {finalSection}.", hotPlan.Id));
         }
 
-        return structure with
-        {
-            SchedulingTasks = tasks,
-            Issues = issues,
-            RouteOperationPlans = routePlans
-        };
+        return structure with { SchedulingTasks = tasks, Issues = issues, RouteOperationPlans = routePlans };
     }
 
-    private static bool ShouldExecute(
+    private static IReadOnlyList<EligibleResource> BuildEligibleResources(
         ManufacturingRouteOperation operation,
-        string currentSection,
-        string finalSection)
-    {
-        if (!operation.IsOptional) return true;
-        return !string.IsNullOrWhiteSpace(operation.OutputCrossSectionCode) &&
-               string.Equals(operation.OutputCrossSectionCode, finalSection, StringComparison.OrdinalIgnoreCase) &&
-               !string.Equals(currentSection, finalSection, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static IReadOnlyList<RouteResourceCapability> MatchCapabilities(
-        Resource resource,
-        IReadOnlyDictionary<Guid, RouteResourceCapability[]> capabilities,
         ProductionOrder po,
-        WorkOrderType operationType,
         string inputSection,
-        string outputSection)
+        string outputSection,
+        IReadOnlyDictionary<Guid, Resource> resources,
+        IReadOnlyDictionary<Guid, RouteResourceCapability[]> capabilities)
     {
-        if (!capabilities.TryGetValue(resource.Id, out var values)) return Array.Empty<RouteResourceCapability>();
-        return values.Where(x =>
-            x.OperationType == operationType &&
-            Matches(x.RouteCode, po.RouteCode) &&
-            (string.IsNullOrWhiteSpace(x.GradeCode) || Matches(x.GradeCode, po.GradeCode)) &&
-            (string.IsNullOrWhiteSpace(x.GradeFamilyCode) || Matches(x.GradeFamilyCode, po.GradeFamilyCode)) &&
-            (string.IsNullOrWhiteSpace(x.InputCrossSectionCode) || Matches(x.InputCrossSectionCode, inputSection)) &&
-            (string.IsNullOrWhiteSpace(x.OutputCrossSectionCode) || Matches(x.OutputCrossSectionCode, outputSection)) &&
-            (string.IsNullOrWhiteSpace(x.ProductFamilyCode) || Matches(x.ProductFamilyCode, po.ProductFamilyCode)))
-            .ToArray();
+        var result = new List<EligibleResource>();
+        foreach (var resource in resources.Values)
+        {
+            if (!capabilities.TryGetValue(resource.Id, out var values)) continue;
+            var matches = values.Where(x =>
+                    x.ProcessOperationType == operation.ProcessOperationType &&
+                    Matches(x.RouteCode, po.RouteCode) &&
+                    Matches(x.GradeCode, po.GradeCode) &&
+                    Matches(x.GradeFamilyCode, po.GradeFamilyCode) &&
+                    Matches(x.CastingClassCode, po.SteelGrade?.CastingClassCode) &&
+                    Matches(x.InputCrossSectionCode, inputSection) &&
+                    Matches(x.OutputCrossSectionCode, outputSection) &&
+                    Matches(x.ProductFamilyCode, po.ProductFamilyCode))
+                .ToArray();
+            if (matches.Length == 0) continue;
+            var penalty = matches.Select(x => x.AssignmentPenalty).DefaultIfEmpty(0).Min();
+            if (matches.Any(x => x.IsPreferred)) penalty = 0;
+            result.Add(new EligibleResource(resource, matches, penalty));
+        }
+        return result;
     }
 
-    private static FiniteScheduleTaskType MapTaskType(WorkOrderType type) => type switch
+    private static FiniteScheduleDependency BuildDependency(
+        FiniteScheduleTask predecessor,
+        IReadOnlyCollection<FiniteScheduleResourceOption> successorOptions,
+        ManufacturingRouteOperation operation,
+        IReadOnlyCollection<PlantFlowLink> flowLinks,
+        bool requirePhysicalPath,
+        ICollection<PlanningIssue> issues,
+        Guid sourceId)
     {
-        WorkOrderType.HotRolling => FiniteScheduleTaskType.HotRolling,
-        WorkOrderType.ColdRolling => FiniteScheduleTaskType.ColdRolling,
-        WorkOrderType.Finishing => FiniteScheduleTaskType.Finishing,
-        _ => throw new InvalidOperationException($"Configured downstream route operation {type} is not supported by the current scheduler.")
+        var pairs = new List<FiniteScheduleDependencyResourcePair>();
+        foreach (var from in predecessor.ResourceOptions)
+        foreach (var to in successorOptions)
+        {
+            var link = flowLinks.FirstOrDefault(x => x.IsEnabled && x.FromResourceId == from.ResourceId && x.ToResourceId == to.ResourceId);
+            if (link is null) continue;
+            pairs.Add(new FiniteScheduleDependencyResourcePair(
+                from.ResourceId,
+                to.ResourceId,
+                Math.Max(Minutes(operation.MinimumQueueTime), Minutes(link.MinimumTransferTime)),
+                MinNullable(
+                    operation.MaximumQueueTime.HasValue ? Minutes(operation.MaximumQueueTime.Value) : null,
+                    link.MaximumTransferTime.HasValue ? Minutes(link.MaximumTransferTime.Value) : null)));
+        }
+
+        if (pairs.Count > 0) return new FiniteScheduleDependency(predecessor.TaskId, 0, null, pairs);
+        if (requirePhysicalPath)
+        {
+            issues.Add(Error("ROUTE_PHYSICAL_FLOW_MISSING", $"No enabled physical flow path exists into {operation.ProcessOperationType}.", sourceId));
+            return new FiniteScheduleDependency(predecessor.TaskId);
+        }
+        return new FiniteScheduleDependency(
+            predecessor.TaskId,
+            Minutes(operation.MinimumQueueTime),
+            operation.MaximumQueueTime.HasValue ? Minutes(operation.MaximumQueueTime.Value) : null);
+    }
+
+    private static EffectiveRequirement ResolveRequirement(
+        ManufacturingRouteOperation operation,
+        IReadOnlyCollection<ProductionOrder> orders,
+        ICollection<PlanningIssue> issues,
+        Guid sourceId)
+    {
+        var values = new List<RequirementDisposition> { operation.Requirement };
+        foreach (var order in orders)
+        {
+            var grade = order.SteelGrade?.ProcessRequirements.FirstOrDefault(x => x.ProcessOperationType == operation.ProcessOperationType)?.Requirement;
+            if (grade.HasValue) values.Add(grade.Value);
+            if (operation.ProcessOperationType == ProcessOperationType.Tmt && order.Requirement?.RequireTmt == true)
+                values.Add(RequirementDisposition.Required);
+            values.AddRange(order.Requirement?.ProcessOverrides
+                .Where(x => x.ProcessOperationType == operation.ProcessOperationType)
+                .Select(x => x.Requirement) ?? Array.Empty<RequirementDisposition>());
+        }
+
+        if (values.Contains(RequirementDisposition.Required) && values.Contains(RequirementDisposition.Forbidden))
+        {
+            issues.Add(Error("DOWNSTREAM_PROCESS_REQUIREMENT_CONFLICT", $"Conflicting Required/Forbidden requirements exist for {operation.ProcessOperationType}.", sourceId));
+            return EffectiveRequirement.Conflict;
+        }
+        if (values.Contains(RequirementDisposition.Forbidden)) return EffectiveRequirement.Forbidden;
+        if (values.Contains(RequirementDisposition.Required)) return EffectiveRequirement.Required;
+        return EffectiveRequirement.Optional;
+    }
+
+    private static bool ChangesTowardFinalSection(ManufacturingRouteOperation operation, string currentSection, string finalSection) =>
+        !string.IsNullOrWhiteSpace(operation.OutputCrossSectionCode) &&
+        string.Equals(operation.OutputCrossSectionCode, finalSection, StringComparison.OrdinalIgnoreCase) &&
+        !string.Equals(currentSection, finalSection, StringComparison.OrdinalIgnoreCase);
+
+    private static FiniteScheduleTaskType MapTaskType(ProcessOperationType type) => type switch
+    {
+        ProcessOperationType.HotRoll => FiniteScheduleTaskType.HotRolling,
+        ProcessOperationType.ColdRoll => FiniteScheduleTaskType.ColdRolling,
+        ProcessOperationType.Tmt => FiniteScheduleTaskType.Tmt,
+        ProcessOperationType.Cool => FiniteScheduleTaskType.Cooling,
+        ProcessOperationType.Cut => FiniteScheduleTaskType.Cutting,
+        ProcessOperationType.Bundle => FiniteScheduleTaskType.Bundling,
+        ProcessOperationType.Coil => FiniteScheduleTaskType.Coiling,
+        ProcessOperationType.Finish => FiniteScheduleTaskType.Finishing,
+        _ => FiniteScheduleTaskType.Finishing
     };
 
-    private static int DurationMinutes(
-        decimal quantityMt,
-        IEnumerable<decimal?> throughputs,
-        int fallbackMinutes)
+    private static int DurationMinutes(decimal quantityMt, IReadOnlyCollection<RouteResourceCapability> capabilities, Resource resource)
     {
-        var throughput = throughputs
-            .Where(x => x.HasValue && x.Value > 0m)
-            .Select(x => x!.Value)
+        var fixedDuration = capabilities.Where(x => x.FixedDurationMinutes.HasValue).Select(x => x.FixedDurationMinutes!.Value).DefaultIfEmpty(0).Max();
+        if (fixedDuration > 0) return fixedDuration;
+        var throughput = capabilities.Where(x => x.ThroughputMtPerHour.HasValue && x.ThroughputMtPerHour.Value > 0m)
+            .Select(x => x.ThroughputMtPerHour!.Value)
+            .Append(resource.NominalThroughputMtPerHour ?? 0m)
             .DefaultIfEmpty(0m)
             .Max();
-        return throughput <= 0m
-            ? Math.Max(1, fallbackMinutes)
-            : Math.Max(1, (int)Math.Ceiling((double)(quantityMt / throughput * 60m)));
+        return throughput <= 0m ? 60 : Math.Max(1, (int)Math.Ceiling((double)(quantityMt / throughput * 60m)));
     }
-
-    private static bool TransitionAllowed(
-        IReadOnlyCollection<TransitionRule> rules,
-        Resource resource,
-        TransitionDimension dimension,
-        string? from,
-        string to)
-    {
-        if (string.IsNullOrWhiteSpace(from) || Matches(from, to)) return true;
-        return FindTransitionRule(rules, resource, dimension, from, to)?.IsAllowed ?? true;
-    }
-
-    private static int TransitionPenalty(
-        IReadOnlyCollection<TransitionRule> rules,
-        Resource resource,
-        TransitionDimension dimension,
-        string? from,
-        string to)
-    {
-        if (string.IsNullOrWhiteSpace(from) || Matches(from, to)) return 0;
-        return FindTransitionRule(rules, resource, dimension, from, to)?.Penalty ?? 0;
-    }
-
-    private static TransitionRule? FindTransitionRule(
-        IReadOnlyCollection<TransitionRule> rules,
-        Resource resource,
-        TransitionDimension dimension,
-        string from,
-        string to) =>
-        rules
-            .Where(x => x.Dimension == dimension && Matches(x.FromCode, from) && Matches(x.ToCode, to))
-            .OrderByDescending(x => x.ResourceId == resource.Id)
-            .ThenByDescending(x => x.ResourceType == resource.ResourceType)
-            .FirstOrDefault(x =>
-                x.ResourceId == resource.Id ||
-                x.ResourceType == resource.ResourceType ||
-                (!x.ResourceId.HasValue && !x.ResourceType.HasValue));
 
     private static bool Matches(string? configured, string? actual) =>
-        string.IsNullOrWhiteSpace(configured) ||
-        string.Equals(configured, actual, StringComparison.OrdinalIgnoreCase);
-
+        string.IsNullOrWhiteSpace(configured) || string.Equals(configured, actual, StringComparison.OrdinalIgnoreCase);
     private static int Minutes(TimeSpan value) => Math.Max(0, (int)Math.Ceiling(value.TotalMinutes));
+    private static int? MinNullable(int? first, int? second) => !first.HasValue ? second : !second.HasValue ? first : Math.Min(first.Value, second.Value);
+    private static PlanningIssue Error(string code, string message, Guid sourceId) => new(PlanningIssueSeverity.Error, code, message, sourceId);
 
-    private sealed class ResourceState(Resource resource)
-    {
-        public Resource Resource { get; } = resource;
-        public int LoadMinutes { get; set; }
-        public string? LastGradeCode { get; set; }
-        public string? LastOutputSectionCode { get; set; }
-    }
-
-    private sealed record Candidate(
-        ResourceState State,
-        IReadOnlyList<RouteResourceCapability> Capabilities,
-        int DurationMinutes,
-        int Score);
+    private sealed record EligibleResource(Resource Resource, IReadOnlyList<RouteResourceCapability> Capabilities, int AssignmentPenalty);
+    private enum EffectiveRequirement { Optional = 0, Required = 1, Forbidden = 2, Conflict = 3 }
 }
