@@ -15,18 +15,23 @@ internal static class PlanningTaskIdentityService
             .DistinctBy(x => x.Id)
             .ToDictionary(x => x.Id);
         var rollingPlans = structure.RollingPlans.ToDictionary(x => x.Id);
+        var ordinalByTask = structure.SchedulingTasks
+            .GroupBy(x => x.SourceEntityId)
+            .SelectMany(group => group.Select((task, index) => new { task.TaskId, Ordinal = index + 1 }))
+            .ToDictionary(x => x.TaskId, x => x.Ordinal);
 
         return structure.SchedulingTasks
             .Select(task => new PlanningTaskIdentity(
                 task.TaskId,
                 task.SourceEntityId,
-                StableKey(task, heats, rollingPlans),
+                StableKey(task, ordinalByTask[task.TaskId], heats, rollingPlans),
                 task.TaskType))
             .ToArray();
     }
 
     private static string StableKey(
         FiniteScheduleTask task,
+        int sourceOrdinal,
         IReadOnlyDictionary<Guid, CampaignHeat> heats,
         IReadOnlyDictionary<Guid, RollingPlan> rollingPlans)
     {
@@ -71,6 +76,8 @@ internal static class PlanningTaskIdentityService
                 plan.OutputCrossSectionCode,
                 plan.RouteCode,
                 feed,
+                sourceOrdinal,
+                task.QuantityMt.ToString("0.####"),
                 string.Join(",", allocations)));
         }
 
@@ -78,7 +85,8 @@ internal static class PlanningTaskIdentityService
             task.Name,
             task.GradeCode,
             task.CrossSectionCode,
-            task.QuantityMt.ToString("0.####")));
+            task.QuantityMt.ToString("0.####"),
+            sourceOrdinal));
     }
 
     private static string Key(string prefix, string value)
