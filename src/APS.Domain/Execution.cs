@@ -53,6 +53,7 @@ public sealed class StrandMaterialActual : Entity
     public int StrandNumber { get; set; }
     public int UnitSequence { get; set; }
     public string? ExternalLotNumber { get; set; }
+    public required string MaterialCode { get; set; }
     public required string GradeCode { get; set; }
     public required string CrossSectionCode { get; set; }
     public decimal QuantityMt { get; set; }
