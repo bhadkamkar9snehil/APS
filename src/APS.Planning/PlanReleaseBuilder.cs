@@ -17,9 +17,11 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
         var assignmentsBySource = request.Schedule.Assignments
             .GroupBy(a => a.SourceEntityId)
             .ToDictionary(g => g.Key, g => g.OrderBy(x => x.StartUtc).ToArray());
+        var planningKeyByTask = PlanningTaskIdentityService.Build(request.ProductionStructure)
+            .ToDictionary(x => x.TaskId, x => x.PlanningKey);
 
-        BuildSmsWorkOrders(request, assignmentsBySource, workOrders, scheduledOperations);
-        BuildRollingWorkOrders(request, assignmentsBySource, workOrders, scheduledOperations);
+        BuildSmsWorkOrders(request, assignmentsBySource, planningKeyByTask, workOrders, scheduledOperations);
+        BuildRollingWorkOrders(request, assignmentsBySource, planningKeyByTask, workOrders, scheduledOperations);
 
         return new PlanRelease(request.PlanVersionId, workOrders, scheduledOperations);
     }
@@ -27,6 +29,7 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
     private static void BuildSmsWorkOrders(
         PlanReleaseBuildRequest request,
         IReadOnlyDictionary<Guid, FiniteScheduleAssignment[]> assignmentsBySource,
+        IReadOnlyDictionary<Guid, string> planningKeyByTask,
         List<WorkOrder> workOrders,
         List<ScheduledOperation> scheduledOperations)
     {
@@ -89,11 +92,13 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
 
                 foreach (var assignment in heatAssignments)
                 {
+                    planningKeyByTask.TryGetValue(assignment.TaskId, out var planningKey);
                     scheduledOperations.Add(new ScheduledOperation
                     {
                         PlanVersionId = request.PlanVersionId,
                         WorkOrderId = workOrder.Id,
                         ResourceId = assignment.ResourceId,
+                        PlanningKey = planningKey,
                         Start = assignment.StartUtc,
                         End = assignment.EndUtc,
                         IsFrozen = false
@@ -106,6 +111,7 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
     private static void BuildRollingWorkOrders(
         PlanReleaseBuildRequest request,
         IReadOnlyDictionary<Guid, FiniteScheduleAssignment[]> assignmentsBySource,
+        IReadOnlyDictionary<Guid, string> planningKeyByTask,
         List<WorkOrder> workOrders,
         List<ScheduledOperation> scheduledOperations)
     {
@@ -156,11 +162,13 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
 
             foreach (var assignment in assignments)
             {
+                planningKeyByTask.TryGetValue(assignment.TaskId, out var planningKey);
                 scheduledOperations.Add(new ScheduledOperation
                 {
                     PlanVersionId = request.PlanVersionId,
                     WorkOrderId = workOrder.Id,
                     ResourceId = assignment.ResourceId,
+                    PlanningKey = planningKey,
                     Start = assignment.StartUtc,
                     End = assignment.EndUtc,
                     IsFrozen = false
