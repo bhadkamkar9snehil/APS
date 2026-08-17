@@ -26,23 +26,13 @@ public sealed class PlanningEngine(
             request.FlowLinks,
             request.StructurePolicy));
 
-        if (structure.Issues.Any(i => i.Severity == PlanningIssueSeverity.Error))
+        if (HasErrors(structure))
         {
-            var schedule = new FiniteScheduleResult(
-                "StructureInvalid",
-                false,
-                0,
-                Array.Empty<FiniteScheduleAssignment>(),
-                structure.Issues);
-
-            return new PlanningRunResult(
+            return InvalidStructureResult(
                 planVersionId,
                 createdOnUtc,
                 campaignPlan,
                 structure,
-                schedule,
-                false,
-                Array.Empty<PlanningTaskIdentity>(),
                 request.ReplanContext?.BaselinePlanVersionId);
         }
 
@@ -52,6 +42,16 @@ public sealed class PlanningEngine(
             request.Capabilities,
             request.FlowLinks,
             request.StructurePolicy);
+
+        if (HasErrors(structure))
+        {
+            return InvalidStructureResult(
+                planVersionId,
+                createdOnUtc,
+                campaignPlan,
+                structure,
+                request.ReplanContext?.BaselinePlanVersionId);
+        }
 
         var sequencedTasks = FiniteScheduleTaskSequencer.Apply(
             structure.SchedulingTasks,
@@ -81,6 +81,34 @@ public sealed class PlanningEngine(
             finiteSchedule.IsFeasible,
             identities,
             request.ReplanContext?.BaselinePlanVersionId);
+    }
+
+    private static bool HasErrors(ProductionStructurePlanningResult structure) =>
+        structure.Issues.Any(i => i.Severity == PlanningIssueSeverity.Error);
+
+    private static PlanningRunResult InvalidStructureResult(
+        Guid planVersionId,
+        DateTime createdOnUtc,
+        CampaignPlanningResult campaignPlan,
+        ProductionStructurePlanningResult structure,
+        Guid? baselinePlanVersionId)
+    {
+        var schedule = new FiniteScheduleResult(
+            "StructureInvalid",
+            false,
+            0,
+            Array.Empty<FiniteScheduleAssignment>(),
+            structure.Issues);
+
+        return new PlanningRunResult(
+            planVersionId,
+            createdOnUtc,
+            campaignPlan,
+            structure,
+            schedule,
+            false,
+            Array.Empty<PlanningTaskIdentity>(),
+            baselinePlanVersionId);
     }
 
     private static IReadOnlyCollection<FiniteScheduleStabilityConstraint> BuildStabilityConstraints(
