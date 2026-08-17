@@ -16,19 +16,21 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
         var scheduledOperations = new List<ScheduledOperation>();
         var assignmentsBySource = request.Schedule.Assignments
             .GroupBy(a => a.SourceEntityId)
-            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.StartUtc).First());
+            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.StartUtc).ToArray());
 
-        BuildSmsWorkOrders(request.Campaigns, workOrders);
+        BuildSmsWorkOrders(request, assignmentsBySource, workOrders, scheduledOperations);
         BuildRollingWorkOrders(request, assignmentsBySource, workOrders, scheduledOperations);
 
         return new PlanRelease(request.PlanVersionId, workOrders, scheduledOperations);
     }
 
     private static void BuildSmsWorkOrders(
-        IReadOnlyCollection<Campaign> campaigns,
-        List<WorkOrder> workOrders)
+        PlanReleaseBuildRequest request,
+        IReadOnlyDictionary<Guid, FiniteScheduleAssignment[]> assignmentsBySource,
+        List<WorkOrder> workOrders,
+        List<ScheduledOperation> scheduledOperations)
     {
-        foreach (var campaign in campaigns.OrderBy(c => c.RequiredDate).ThenBy(c => c.CampaignNumber))
+        foreach (var campaign in request.Campaigns.OrderBy(c => c.RequiredDate).ThenBy(c => c.CampaignNumber))
         {
             foreach (var gradeSequence in campaign.GradeSequence.OrderBy(g => g.SequenceNumber))
             {
@@ -39,21 +41,35 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
                                 string.Equals(po.GradeCode, gradeSequence.GradeCode, StringComparison.OrdinalIgnoreCase) &&
                                 a.FreshSteelQuantityMt > 0m)
                     .ToArray();
+                var matchingHeats = campaign.Heats
+                    .Where(h => string.Equals(h.GradeCode, gradeSequence.GradeCode, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(h => h.SequenceNumber)
+                    .ToArray();
+                var heatAssignments = matchingHeats
+                    .SelectMany(h => assignmentsBySource.TryGetValue(h.Id, out var assignments)
+                        ? assignments
+                        : Array.Empty<FiniteScheduleAssignment>())
+                    .OrderBy(x => x.StartUtc)
+                    .ToArray();
 
                 var materialCodes = matchingAllocations
                     .Select(a => a.ProductionOrder!.MaterialCode)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToArray();
+                var assignedResources = heatAssignments.Select(x => x.ResourceId).Distinct().ToArray();
 
                 var workOrder = new WorkOrder
                 {
                     WorkOrderNumber = $"SMS-{campaign.CampaignNumber}-{gradeSequence.SequenceNumber:00}",
                     WorkOrderType = WorkOrderType.Steelmaking,
                     CampaignId = campaign.Id,
+                    ResourceId = assignedResources.Length == 1 ? assignedResources[0] : null,
                     MaterialCode = materialCodes.Length == 1 ? materialCodes[0] : "MULTI",
                     GradeCode = gradeSequence.GradeCode,
                     CrossSectionCode = campaign.CasterSectionCode,
                     PlannedQuantityMt = gradeSequence.PlannedQuantityMt,
+                    PlannedStart = heatAssignments.Length == 0 ? null : heatAssignments.Min(x => x.StartUtc),
+                    PlannedEnd = heatAssignments.Length == 0 ? null : heatAssignments.Max(x => x.EndUtc),
                     Status = WorkOrderStatus.Planned
                 };
 
@@ -70,13 +86,26 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
                 }
 
                 workOrders.Add(workOrder);
+
+                foreach (var assignment in heatAssignments)
+                {
+                    scheduledOperations.Add(new ScheduledOperation
+                    {
+                        PlanVersionId = request.PlanVersionId,
+                        WorkOrderId = workOrder.Id,
+                        ResourceId = assignment.ResourceId,
+                        Start = assignment.StartUtc,
+                        End = assignment.EndUtc,
+                        IsFrozen = false
+                    });
+                }
             }
         }
     }
 
     private static void BuildRollingWorkOrders(
         PlanReleaseBuildRequest request,
-        IReadOnlyDictionary<Guid, FiniteScheduleAssignment> assignmentsBySource,
+        IReadOnlyDictionary<Guid, FiniteScheduleAssignment[]> assignmentsBySource,
         List<WorkOrder> workOrders,
         List<ScheduledOperation> scheduledOperations)
     {
@@ -93,7 +122,8 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
 
-            assignmentsBySource.TryGetValue(rollingPlan.Id, out var assignment);
+            assignmentsBySource.TryGetValue(rollingPlan.Id, out var assignments);
+            var assignment = assignments?.OrderBy(x => x.StartUtc).FirstOrDefault();
 
             var workOrder = new WorkOrder
             {
