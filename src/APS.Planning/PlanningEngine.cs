@@ -45,7 +45,13 @@ public sealed class PlanningEngine(
 
         if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId);
 
-        structure = HeatLevelScheduleProjector.Apply(structure, request.Resources, request.Capabilities, request.FlowLinks, request.StructurePolicy);
+        structure = HeatLevelScheduleProjector.Apply(
+            structure,
+            request.Resources,
+            request.Capabilities,
+            request.FlowLinks,
+            request.StructurePolicy,
+            heatAllocations);
         if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId);
 
         if (request.RoutePlanning is not null)
