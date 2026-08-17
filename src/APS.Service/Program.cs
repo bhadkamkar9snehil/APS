@@ -16,6 +16,7 @@ builder.Services.AddScoped<IMtsProductionOrderService, MtsProductionOrderService
 builder.Services.AddScoped<ICampaignPlanningService, CampaignPlanningService>();
 builder.Services.AddScoped<IProductionStructurePlanningService, ProductionStructurePlanningService>();
 builder.Services.AddScoped<IFiniteScheduleOptimizer, FiniteScheduleOptimizer>();
+builder.Services.AddScoped<IPlanReleaseBuilder, PlanReleaseBuilder>();
 
 var apsConnection = builder.Configuration.GetConnectionString("APS");
 var hasApsDatabase = !string.IsNullOrWhiteSpace(apsConnection);
@@ -55,6 +56,17 @@ app.MapPost("/api/planning/schedule/solve",
     {
         var result = optimizer.Solve(request);
         return result.IsFeasible ? Results.Ok(result) : Results.UnprocessableEntity(result);
+    });
+
+app.MapPost("/api/planning/release/build",
+    (PlanReleaseBuildRequest request, IPlanReleaseBuilder builder) =>
+    {
+        if (!request.Schedule.IsFeasible)
+        {
+            return Results.UnprocessableEntity(new { message = "Cannot build Work Orders from an infeasible schedule." });
+        }
+
+        return Results.Ok(builder.Build(request));
     });
 
 app.MapPost("/api/integration/xstudio/execution-events",
