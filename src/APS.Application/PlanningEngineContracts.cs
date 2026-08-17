@@ -2,6 +2,31 @@ using APS.Domain;
 
 namespace APS.Application;
 
+public sealed record PlanningTimeFencePolicy(
+    int FrozenMinutes = 120,
+    int SlushyMinutes = 720,
+    int SlushyMovementPenaltyPerMinute = 50,
+    int SlushyResourceChangePenalty = 5000);
+
+public sealed record BaselinePlanOperation(
+    string PlanningKey,
+    Guid ResourceId,
+    DateTime StartUtc,
+    DateTime EndUtc,
+    FiniteScheduleTaskType TaskType);
+
+public sealed record PlanningReplanContext(
+    Guid BaselinePlanVersionId,
+    DateTime ReferenceTimeUtc,
+    PlanningTimeFencePolicy TimeFencePolicy,
+    IReadOnlyCollection<BaselinePlanOperation> BaselineOperations);
+
+public sealed record PlanningTaskIdentity(
+    Guid TaskId,
+    Guid SourceEntityId,
+    string PlanningKey,
+    FiniteScheduleTaskType TaskType);
+
 public sealed record PlanningRunRequest(
     IReadOnlyCollection<ProductionOrder> ProductionOrders,
     IReadOnlyCollection<InventoryPosition> Inventory,
@@ -15,7 +40,8 @@ public sealed record PlanningRunRequest(
     DateTime HorizonStartUtc,
     DateTime HorizonEndUtc,
     int MaxSolverSeconds = 20,
-    string CampaignNumberPrefix = "CMP");
+    string CampaignNumberPrefix = "CMP",
+    PlanningReplanContext? ReplanContext = null);
 
 public sealed record PlanningRunResult(
     Guid PlanVersionId,
@@ -23,7 +49,9 @@ public sealed record PlanningRunResult(
     CampaignPlanningResult CampaignPlan,
     ProductionStructurePlanningResult ProductionStructure,
     FiniteScheduleResult Schedule,
-    bool IsFeasible);
+    bool IsFeasible,
+    IReadOnlyCollection<PlanningTaskIdentity>? TaskIdentities = null,
+    Guid? BaselinePlanVersionId = null);
 
 public interface IPlanningEngine
 {
