@@ -17,7 +17,35 @@ public sealed class ManufacturingRouteOperation : Entity
     public int SequenceNumber { get; set; }
     public ProcessOperationType ProcessOperationType { get; set; }
     public WorkOrderType ReleaseWorkOrderType { get; set; }
+
+    // Temporary migration bridge for existing callers; ProcessOperationType is the canonical process semantic.
+    public WorkOrderType OperationType
+    {
+        get => ReleaseWorkOrderType;
+        set
+        {
+            ReleaseWorkOrderType = value;
+            if (ProcessOperationType == ProcessOperationType.Unknown)
+            {
+                ProcessOperationType = value switch
+                {
+                    WorkOrderType.Steelmaking => ProcessOperationType.Eaf,
+                    WorkOrderType.Casting => ProcessOperationType.Ccm,
+                    WorkOrderType.HotRolling => ProcessOperationType.HotRoll,
+                    WorkOrderType.ColdRolling => ProcessOperationType.ColdRoll,
+                    WorkOrderType.Finishing => ProcessOperationType.Finish,
+                    _ => ProcessOperationType.Unknown
+                };
+            }
+        }
+    }
+
     public RequirementDisposition Requirement { get; set; } = RequirementDisposition.Required;
+    public bool IsOptional
+    {
+        get => Requirement == RequirementDisposition.Optional;
+        set { if (value) Requirement = RequirementDisposition.Optional; }
+    }
     public string? CapabilityClassCode { get; set; }
     public string? InputMaterialSpecificationCode { get; set; }
     public string? OutputMaterialSpecificationCode { get; set; }
@@ -36,6 +64,25 @@ public sealed class RouteResourceCapability : Entity
     public Guid ResourceId { get; set; }
     public required string RouteCode { get; set; }
     public ProcessOperationType ProcessOperationType { get; set; }
+    public WorkOrderType OperationType
+    {
+        get => ProcessOperationType switch
+        {
+            ProcessOperationType.Ccm => WorkOrderType.Casting,
+            ProcessOperationType.HotRoll => WorkOrderType.HotRolling,
+            ProcessOperationType.ColdRoll => WorkOrderType.ColdRolling,
+            ProcessOperationType.Tmt or ProcessOperationType.Cool or ProcessOperationType.Cut or ProcessOperationType.Bundle or ProcessOperationType.Coil or ProcessOperationType.Finish => WorkOrderType.Finishing,
+            _ => WorkOrderType.Steelmaking
+        };
+        set => ProcessOperationType = value switch
+        {
+            WorkOrderType.Casting => ProcessOperationType.Ccm,
+            WorkOrderType.HotRolling => ProcessOperationType.HotRoll,
+            WorkOrderType.ColdRolling => ProcessOperationType.ColdRoll,
+            WorkOrderType.Finishing => ProcessOperationType.Finish,
+            _ => ProcessOperationType.Eaf
+        };
+    }
     public string? CapabilityClassCode { get; set; }
     public string? GradeCode { get; set; }
     public string? GradeFamilyCode { get; set; }
@@ -58,6 +105,25 @@ public sealed class RouteOperationPlan : Entity
     public Guid UpstreamPlanId { get; set; }
     public ProcessOperationType ProcessOperationType { get; set; }
     public WorkOrderType ReleaseWorkOrderType { get; set; }
+    public WorkOrderType OperationType
+    {
+        get => ReleaseWorkOrderType;
+        set
+        {
+            ReleaseWorkOrderType = value;
+            if (ProcessOperationType == ProcessOperationType.Unknown)
+            {
+                ProcessOperationType = value switch
+                {
+                    WorkOrderType.Casting => ProcessOperationType.Ccm,
+                    WorkOrderType.HotRolling => ProcessOperationType.HotRoll,
+                    WorkOrderType.ColdRolling => ProcessOperationType.ColdRoll,
+                    WorkOrderType.Finishing => ProcessOperationType.Finish,
+                    _ => ProcessOperationType.Eaf
+                };
+            }
+        }
+    }
     public int SequenceNumber { get; set; }
     public Guid? ResourceId { get; set; }
     public required string GradeCode { get; set; }
