@@ -24,6 +24,9 @@ public sealed class PlanningEngine(
             request.SteelGrades,
             request.ExternalMaterialSupplies));
 
+        var heatAllocations = CampaignHeatAllocationBuilder.Build(campaignPlan.Campaigns);
+        campaignPlan = campaignPlan with { HeatAllocations = heatAllocations };
+
         var structureRequest = new ProductionStructurePlanningRequest(
             campaignPlan.Campaigns,
             request.Resources,
@@ -47,7 +50,14 @@ public sealed class PlanningEngine(
 
         if (request.RoutePlanning is not null)
         {
-            structure = SteelmakingRouteProjector.Apply(structure, request.RoutePlanning, request.Resources, request.Capabilities, request.FlowLinks, request.SteelGrades);
+            structure = SteelmakingRouteProjector.Apply(
+                structure,
+                request.RoutePlanning,
+                request.Resources,
+                request.Capabilities,
+                request.FlowLinks,
+                request.SteelGrades,
+                heatAllocations);
             if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId);
 
             structure = MultiStageRouteProjector.Apply(structure, request.RoutePlanning, request.Resources, request.TransitionRules);
