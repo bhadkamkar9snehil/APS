@@ -33,6 +33,7 @@ if (hasApsDatabase)
     builder.Services.AddScoped<IHeatExecutionService, HeatExecutionService>();
     builder.Services.AddScoped<IPlanVersionRepository, PlanVersionRepository>();
     builder.Services.AddScoped<IPlanReleaseRepository, PlanReleaseRepository>();
+    builder.Services.AddScoped<IPlanComparisonService, PlanComparisonService>();
 }
 
 var app = builder.Build();
@@ -100,6 +101,10 @@ if (hasApsDatabase)
             var version = await plans.GetAsync(planVersionId, cancellationToken);
             return version is null ? Results.NotFound() : Results.Ok(version);
         });
+
+    app.MapGet("/api/planning/versions/{newPlanVersionId:guid}/compare/{baselinePlanVersionId:guid}",
+        async (Guid newPlanVersionId, Guid baselinePlanVersionId, IPlanComparisonService comparison, CancellationToken cancellationToken) =>
+            Results.Ok(await comparison.CompareAsync(baselinePlanVersionId, newPlanVersionId, cancellationToken)));
 
     app.MapPost("/api/planning/release",
         async (PlanReleaseBuildRequest request, IPlanReleaseBuilder releaseBuilder, IPlanReleaseRepository releases, CancellationToken cancellationToken) =>
