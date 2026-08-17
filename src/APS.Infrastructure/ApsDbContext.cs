@@ -24,6 +24,7 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
     public DbSet<TransitionRule> TransitionRules => Set<TransitionRule>();
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
     public DbSet<WorkOrderAllocation> WorkOrderAllocations => Set<WorkOrderAllocation>();
+    public DbSet<WorkOrderStatusHistory> WorkOrderStatusHistory => Set<WorkOrderStatusHistory>();
     public DbSet<MaterialLot> MaterialLots => Set<MaterialLot>();
     public DbSet<LotGenealogy> LotGenealogy => Set<LotGenealogy>();
     public DbSet<MaterialLotAllocation> MaterialLotAllocations => Set<MaterialLotAllocation>();
@@ -38,6 +39,7 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<ProductionOrder>().HasIndex(x => x.ProductionOrderNumber).IsUnique();
         modelBuilder.Entity<Campaign>().HasIndex(x => x.CampaignNumber).IsUnique();
         modelBuilder.Entity<WorkOrder>().HasIndex(x => x.WorkOrderNumber).IsUnique();
+        modelBuilder.Entity<WorkOrder>().HasIndex(x => x.ExternalExecutionId);
         modelBuilder.Entity<MaterialLot>().HasIndex(x => x.LotNumber).IsUnique();
         modelBuilder.Entity<Resource>().HasIndex(x => new { x.PlantId, x.Code }).IsUnique();
 
@@ -113,6 +115,12 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
             .HasForeignKey(x => x.ProductionOrderId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        modelBuilder.Entity<WorkOrderStatusHistory>()
+            .HasOne(x => x.WorkOrder)
+            .WithMany()
+            .HasForeignKey(x => x.WorkOrderId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         modelBuilder.Entity<MaterialLotAllocation>()
             .HasOne<MaterialLot>()
             .WithMany()
@@ -132,6 +140,8 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<CastSequenceHeat>().HasIndex(x => new { x.CastSequenceId, x.Position }).IsUnique();
         modelBuilder.Entity<RollingPlanAllocation>().HasIndex(x => new { x.RollingPlanId, x.ProductionOrderId, x.CampaignId });
         modelBuilder.Entity<ResourceCalendar>().HasIndex(x => new { x.ResourceId, x.Start, x.End });
+        modelBuilder.Entity<WorkOrderStatusHistory>().HasIndex(x => new { x.WorkOrderId, x.ChangedOnUtc });
+        modelBuilder.Entity<WorkOrderStatusHistory>().HasIndex(x => new { x.Source, x.ExternalEventId });
 
         foreach (var property in modelBuilder.Model.GetEntityTypes()
                      .SelectMany(t => t.GetProperties())
