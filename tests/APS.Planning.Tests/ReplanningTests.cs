@@ -27,6 +27,33 @@ public sealed class ReplanningTests
     }
 
     [Fact]
+    public void Fresh_rolling_can_start_from_earlier_heat_before_later_heat_finishes()
+    {
+        var fixture = NewFixture();
+        var result = fixture.Engine.Run(fixture.Request);
+        Assert.True(result.IsFeasible, string.Join("; ", result.Schedule.Issues.Select(x => x.Message)));
+
+        var castingTaskIds = result.ProductionStructure.SchedulingTasks
+            .Where(x => x.TaskType == FiniteScheduleTaskType.Casting)
+            .Select(x => x.TaskId)
+            .ToHashSet();
+        var casting = result.Schedule.Assignments
+            .Where(x => castingTaskIds.Contains(x.TaskId))
+            .OrderBy(x => x.StartUtc)
+            .ToArray();
+
+        var freshPlan = result.ProductionStructure.RollingPlans.Single(x => x.FreshSteelQuantityMt > 0m);
+        var freshRolling = result.Schedule.Assignments
+            .Where(x => x.SourceEntityId == freshPlan.Id)
+            .OrderBy(x => x.StartUtc)
+            .ToArray();
+
+        Assert.True(casting.Length >= 2);
+        Assert.True(freshRolling.Length >= 2);
+        Assert.True(freshRolling[0].StartUtc < casting[^1].EndUtc);
+    }
+
+    [Fact]
     public void Frozen_replan_preserves_matching_operation_start_and_resource()
     {
         var fixture = NewFixture();
