@@ -36,12 +36,17 @@ public sealed record CampaignPlanningRequest(
     IReadOnlyCollection<ProductionOrder> ProductionOrders,
     IReadOnlyCollection<InventoryPosition> Inventory,
     CampaignPlanningPolicy Policy,
-    string CampaignNumberPrefix = "CMP");
+    string CampaignNumberPrefix = "CMP",
+    IReadOnlyCollection<Resource>? Resources = null,
+    IReadOnlyCollection<ResourceCapability>? ResourceCapabilities = null,
+    IReadOnlyCollection<SteelGrade>? SteelGrades = null,
+    IReadOnlyCollection<ExternalMaterialSupply>? ExternalMaterialSupplies = null);
 
 public enum PlanningInventoryUse
 {
     FinishedGoodsFulfilment = 1,
-    IntermediateFeed = 2
+    IntermediateFeed = 2,
+    ExternalIntermediateFeed = 3
 }
 
 public sealed record PlanningInventoryAllocation(
@@ -52,7 +57,9 @@ public sealed record PlanningInventoryAllocation(
     string CrossSectionCode,
     string? LocationCode,
     decimal QuantityMt,
-    PlanningInventoryUse Use);
+    PlanningInventoryUse Use,
+    string? SourceReference = null,
+    DateTime? AvailableFromUtc = null);
 
 public sealed record CampaignPlanningResult(
     IReadOnlyCollection<Campaign> Campaigns,
@@ -60,7 +67,8 @@ public sealed record CampaignPlanningResult(
     IReadOnlyDictionary<Guid, decimal> RollingRequirementsMt,
     IReadOnlyDictionary<Guid, decimal> FreshSteelRequirementsMt,
     IReadOnlyDictionary<Guid, decimal> IntermediateInventoryAllocatedMt,
-    IReadOnlyCollection<PlanningInventoryAllocation> InventoryAllocations);
+    IReadOnlyCollection<PlanningInventoryAllocation> InventoryAllocations,
+    IReadOnlyDictionary<Guid, decimal>? ExternalIntermediateAllocatedMt = null);
 
 public interface IMtsProductionOrderService
 {
@@ -88,7 +96,10 @@ public sealed record ProductionStructurePlanningRequest(
     IReadOnlyCollection<TransitionRule> TransitionRules,
     IReadOnlyCollection<PlantFlowLink> FlowLinks,
     ProductionStructurePlanningPolicy Policy,
-    RoutePlanningInput? RoutePlanning = null);
+    RoutePlanningInput? RoutePlanning = null,
+    IReadOnlyCollection<SteelGrade>? SteelGrades = null,
+    IReadOnlyCollection<MaterialSpecification>? MaterialSpecifications = null,
+    IReadOnlyCollection<ExternalMaterialSupply>? ExternalMaterialSupplies = null);
 
 public sealed record PlannedBilletSupply(
     Guid CampaignId,
@@ -134,7 +145,23 @@ public interface IProductionStructurePlanningService
     ProductionStructurePlanningResult Build(ProductionStructurePlanningRequest request);
 }
 
-public enum FiniteScheduleTaskType { Casting = 1, HotRolling = 2, ColdRolling = 3, Finishing = 4 }
+public enum FiniteScheduleTaskType
+{
+    Casting = 1,
+    HotRolling = 2,
+    ColdRolling = 3,
+    Finishing = 4,
+    Eaf = 5,
+    Lrf = 6,
+    Vd = 7,
+    Reheating = 8,
+    Tmt = 9,
+    Cooling = 10,
+    Cutting = 11,
+    Bundling = 12,
+    Coiling = 13
+}
+
 public enum TimeFenceZone { Frozen = 1, Slushy = 2, Liquid = 3 }
 
 public sealed record FiniteScheduleResourceOption(
@@ -142,10 +169,17 @@ public sealed record FiniteScheduleResourceOption(
     int DurationMinutes,
     int AssignmentPenalty = 0);
 
+public sealed record FiniteScheduleDependencyResourcePair(
+    Guid PredecessorResourceId,
+    Guid SuccessorResourceId,
+    int MinimumLagMinutes = 0,
+    int? MaximumLagMinutes = null);
+
 public sealed record FiniteScheduleDependency(
     Guid PredecessorTaskId,
     int MinimumLagMinutes = 0,
-    int? MaximumLagMinutes = null);
+    int? MaximumLagMinutes = null,
+    IReadOnlyCollection<FiniteScheduleDependencyResourcePair>? AllowedResourcePairs = null);
 
 public sealed record FiniteScheduleTask(
     Guid TaskId,
@@ -159,7 +193,8 @@ public sealed record FiniteScheduleTask(
     DateTime? DueUtc,
     int Priority,
     IReadOnlyCollection<FiniteScheduleResourceOption> ResourceOptions,
-    IReadOnlyCollection<FiniteScheduleDependency> Dependencies);
+    IReadOnlyCollection<FiniteScheduleDependency> Dependencies,
+    ProcessOperationType ProcessOperationType = ProcessOperationType.Unknown);
 
 public sealed record FiniteScheduleStabilityConstraint(
     Guid TaskId,
