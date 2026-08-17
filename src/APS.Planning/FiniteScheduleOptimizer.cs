@@ -22,9 +22,11 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
         var horizonMinutes = Math.Max(1, Minutes(request.HorizonEndUtc - request.HorizonStartUtc));
         var model = new CpModel();
         var taskVars = new Dictionary<Guid, TaskVariables>();
-        var intervalsByResource = request.Resources
-            .Where(r => r.IsActive)
-            .ToDictionary(r => r.Id, _ => new List<IntervalVar>());
+        var schedulableResources = request.Resources
+            .Where(IsSchedulable)
+            .ToDictionary(r => r.Id);
+        var intervalsByResource = schedulableResources.Keys
+            .ToDictionary(id => id, _ => new List<IntervalVar>());
 
         foreach (var task in request.Tasks)
         {
@@ -46,24 +48,18 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
             {
                 if (!intervalsByResource.ContainsKey(option.ResourceId))
                 {
-                    issues.Add(new PlanningIssue(
-                        PlanningIssueSeverity.Error,
-                        "RESOURCE_NOT_AVAILABLE",
-                        $"Task {task.Name} references resource {option.ResourceId} that is not active in the scheduling request.",
-                        task.TaskId));
                     continue;
                 }
 
                 var selected = model.NewBoolVar($"task_{task.TaskId:N}_resource_{option.ResourceId:N}");
                 presence[option.ResourceId] = selected;
                 var duration = Math.Max(1, option.DurationMinutes);
-                var interval = model.NewOptionalIntervalVar(
+                intervalsByResource[option.ResourceId].Add(model.NewOptionalIntervalVar(
                     start,
                     duration,
                     end,
                     selected,
-                    $"interval_{task.TaskId:N}_{option.ResourceId:N}");
-                intervalsByResource[option.ResourceId].Add(interval);
+                    $"interval_{task.TaskId:N}_{option.ResourceId:N}"));
             }
 
             if (presence.Count == 0)
@@ -71,13 +67,12 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
                 issues.Add(new PlanningIssue(
                     PlanningIssueSeverity.Error,
                     "TASK_WITHOUT_ACTIVE_RESOURCE",
-                    $"Task {task.Name} has no active resource option.",
+                    $"Task {task.Name} has no schedulable resource option after operating-state filtering.",
                     task.TaskId));
                 continue;
             }
 
             model.AddExactlyOne(presence.Values.Cast<ILiteral>());
-
             if (task.EarliestStartUtc.HasValue)
             {
                 model.Add(start >= ToMinute(task.EarliestStartUtc.Value, request.HorizonStartUtc, horizonMinutes));
@@ -97,54 +92,24 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
             var start = Math.Clamp(ToMinute(calendar.Start, request.HorizonStartUtc, horizonMinutes), 0, horizonMinutes);
             var end = Math.Clamp(ToMinute(calendar.End, request.HorizonStartUtc, horizonMinutes), 0, horizonMinutes);
             if (end <= start) continue;
-
-            intervals.Add(model.NewFixedSizeIntervalVar(
-                start,
-                end - start,
-                $"calendar_block_{calendar.Id:N}"));
+            intervals.Add(model.NewFixedSizeIntervalVar(start, end - start, $"calendar_block_{calendar.Id:N}"));
         }
 
         foreach (var intervals in intervalsByResource.Values)
         {
-            if (intervals.Count > 1)
-            {
-                model.AddNoOverlap(intervals);
-            }
+            if (intervals.Count > 1) model.AddNoOverlap(intervals);
         }
 
-        foreach (var task in request.Tasks)
-        {
-            if (!taskVars.TryGetValue(task.TaskId, out var current)) continue;
-
-            foreach (var dependency in task.Dependencies)
-            {
-                if (!taskVars.TryGetValue(dependency.PredecessorTaskId, out var predecessor))
-                {
-                    issues.Add(new PlanningIssue(
-                        PlanningIssueSeverity.Error,
-                        "DEPENDENCY_NOT_FOUND",
-                        $"Task {task.Name} references missing predecessor {dependency.PredecessorTaskId}.",
-                        task.TaskId));
-                    continue;
-                }
-
-                model.Add(current.Start >= predecessor.End + Math.Max(0, dependency.MinimumLagMinutes));
-                if (dependency.MaximumLagMinutes.HasValue)
-                {
-                    model.Add(current.Start <= predecessor.End + Math.Max(0, dependency.MaximumLagMinutes.Value));
-                }
-            }
-        }
-
+        ApplyDependencies(request, model, taskVars, issues);
         if (issues.Any(i => i.Severity == PlanningIssueSeverity.Error))
         {
             return new FiniteScheduleResult("InvalidInput", false, 0, Array.Empty<FiniteScheduleAssignment>(), issues);
         }
 
         var objectiveTerms = new List<LinearExpr>();
-        ApplyResourceSequenceCircuits(request, model, taskVars, objectiveTerms);
-
+        ApplyResourceSequenceCircuits(request, model, taskVars, schedulableResources, objectiveTerms);
         ApplyStabilityConstraints(request, horizonMinutes, model, taskVars, objectiveTerms, issues);
+
         if (issues.Any(i => i.Severity == PlanningIssueSeverity.Error))
         {
             return new FiniteScheduleResult("InvalidInput", false, 0, Array.Empty<FiniteScheduleAssignment>(), issues);
@@ -159,8 +124,7 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
                 var dueMinute = ToMinute(task.DueUtc.Value, request.HorizonStartUtc, horizonMinutes);
                 var tardiness = model.NewIntVar(0, horizonMinutes, $"late_{task.TaskId:N}");
                 model.Add(tardiness >= variables.End - dueMinute);
-                var weight = Math.Max(1, task.Priority + 1) * 1000L;
-                objectiveTerms.Add(tardiness * weight);
+                objectiveTerms.Add(tardiness * (Math.Max(1, task.Priority + 1) * 1000L));
             }
 
             foreach (var option in task.ResourceOptions.Where(o => o.AssignmentPenalty > 0))
@@ -197,7 +161,7 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
                 PlanningIssueSeverity.Error,
                 status == CpSolverStatus.Infeasible ? "SCHEDULE_INFEASIBLE" : "SCHEDULE_NOT_SOLVED",
                 status == CpSolverStatus.Infeasible
-                    ? "No finite schedule satisfies the current resource, calendar, dependency, sequencing and time-fence constraints."
+                    ? "No finite schedule satisfies the current resource, calendar, material-flow, dependency, sequencing and time-fence constraints."
                     : $"CP-SAT returned {status}."));
             return new FiniteScheduleResult(status.ToString(), false, 0, Array.Empty<FiniteScheduleAssignment>(), issues);
         }
@@ -207,15 +171,12 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
         {
             if (!taskVars.TryGetValue(task.TaskId, out var variables)) continue;
             var resourceId = variables.Presence.First(pair => solver.Value(pair.Value) == 1).Key;
-            var startMinute = solver.Value(variables.Start);
-            var endMinute = solver.Value(variables.End);
-
             assignments.Add(new FiniteScheduleAssignment(
                 task.TaskId,
                 task.SourceEntityId,
                 resourceId,
-                request.HorizonStartUtc.AddMinutes(startMinute),
-                request.HorizonStartUtc.AddMinutes(endMinute)));
+                request.HorizonStartUtc.AddMinutes(solver.Value(variables.Start)),
+                request.HorizonStartUtc.AddMinutes(solver.Value(variables.End))));
         }
 
         return new FiniteScheduleResult(
@@ -226,44 +187,99 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
             issues);
     }
 
+    private static void ApplyDependencies(
+        FiniteScheduleRequest request,
+        CpModel model,
+        IReadOnlyDictionary<Guid, TaskVariables> taskVars,
+        ICollection<PlanningIssue> issues)
+    {
+        foreach (var task in request.Tasks)
+        {
+            if (!taskVars.TryGetValue(task.TaskId, out var current)) continue;
+            foreach (var dependency in task.Dependencies)
+            {
+                if (!taskVars.TryGetValue(dependency.PredecessorTaskId, out var predecessor))
+                {
+                    issues.Add(new PlanningIssue(
+                        PlanningIssueSeverity.Error,
+                        "DEPENDENCY_NOT_FOUND",
+                        $"Task {task.Name} references missing predecessor {dependency.PredecessorTaskId}.",
+                        task.TaskId));
+                    continue;
+                }
+
+                if (dependency.AllowedResourcePairs is not { Count: > 0 })
+                {
+                    model.Add(current.Start >= predecessor.End + Math.Max(0, dependency.MinimumLagMinutes));
+                    if (dependency.MaximumLagMinutes.HasValue)
+                    {
+                        model.Add(current.Start <= predecessor.End + Math.Max(0, dependency.MaximumLagMinutes.Value));
+                    }
+                    continue;
+                }
+
+                var allowedPairs = dependency.AllowedResourcePairs
+                    .ToDictionary(x => (x.PredecessorResourceId, x.SuccessorResourceId));
+
+                foreach (var predecessorPresence in predecessor.Presence)
+                {
+                    foreach (var currentPresence in current.Presence)
+                    {
+                        if (!allowedPairs.TryGetValue((predecessorPresence.Key, currentPresence.Key), out var pair))
+                        {
+                            model.Add(predecessorPresence.Value + currentPresence.Value <= 1);
+                            continue;
+                        }
+
+                        var minimum = model.Add(current.Start >= predecessor.End + Math.Max(0, pair.MinimumLagMinutes));
+                        minimum.OnlyEnforceIf(predecessorPresence.Value);
+                        minimum.OnlyEnforceIf(currentPresence.Value);
+
+                        if (pair.MaximumLagMinutes.HasValue)
+                        {
+                            var maximum = model.Add(current.Start <= predecessor.End + Math.Max(0, pair.MaximumLagMinutes.Value));
+                            maximum.OnlyEnforceIf(predecessorPresence.Value);
+                            maximum.OnlyEnforceIf(currentPresence.Value);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private static void ApplyResourceSequenceCircuits(
         FiniteScheduleRequest request,
         CpModel model,
         IReadOnlyDictionary<Guid, TaskVariables> taskVars,
+        IReadOnlyDictionary<Guid, Resource> resources,
         ICollection<LinearExpr> objectiveTerms)
     {
-        var resources = request.Resources
-            .Where(resource => resource.IsActive)
-            .ToDictionary(resource => resource.Id);
-
-        // Phase 1 deliberately sequences only tasks whose physical resource is already fixed.
-        // Every ResourceId gets a completely separate circuit. Resources of the same type are
-        // never pooled, so CCM-1/CCM-2 and RM-1/RM-2 can operate independently and in parallel.
-        var fixedTasksByResource = request.Tasks
-            .Where(task =>
-                task.ResourceOptions.Count == 1 &&
-                taskVars.ContainsKey(task.TaskId))
-            .GroupBy(task => task.ResourceOptions.Single().ResourceId);
-
-        foreach (var resourceTasks in fixedTasksByResource)
+        // One completely independent circuit is created for each physical ResourceId.
+        // Optional self-loops remove tasks that CP-SAT assigns to another eligible resource.
+        foreach (var resource in resources.Values)
         {
-            if (!resources.TryGetValue(resourceTasks.Key, out var resource)) continue;
-
-            var nodes = resourceTasks
+            var nodes = request.Tasks
+                .Where(task => taskVars.TryGetValue(task.TaskId, out var variables) &&
+                               variables.Presence.ContainsKey(resource.Id))
                 .Select((task, index) => new ResourceSequenceNode(index + 1, task))
                 .ToArray();
             if (nodes.Length <= 1) continue;
 
             var circuit = model.AddCircuit();
+            var presences = nodes.Select(node => taskVars[node.Task.TaskId].Presence[resource.Id]).ToArray();
+            var resourceUnused = model.NewBoolVar($"seq_{resource.Id:N}_unused");
+            circuit.AddArc(0, 0, resourceUnused);
+            var unusedConstraint = model.Add(LinearExpr.Sum(presences) == 0);
+            unusedConstraint.OnlyEnforceIf(resourceUnused);
+            var usedConstraint = model.Add(LinearExpr.Sum(presences) >= 1);
+            usedConstraint.OnlyEnforceIf(resourceUnused.Not());
 
-            // Node 0 is a dummy depot. The selected circuit therefore represents one linear
-            // queue on this physical machine. Dummy arcs carry no setup time or penalty.
             foreach (var node in nodes)
             {
-                var firstArc = model.NewBoolVar($"seq_{resource.Id:N}_0_{node.NodeIndex}");
-                var lastArc = model.NewBoolVar($"seq_{resource.Id:N}_{node.NodeIndex}_0");
-                circuit.AddArc(0, node.NodeIndex, firstArc);
-                circuit.AddArc(node.NodeIndex, 0, lastArc);
+                var presence = taskVars[node.Task.TaskId].Presence[resource.Id];
+                circuit.AddArc(node.NodeIndex, node.NodeIndex, presence.Not());
+                circuit.AddArc(0, node.NodeIndex, model.NewBoolVar($"seq_{resource.Id:N}_0_{node.NodeIndex}"));
+                circuit.AddArc(node.NodeIndex, 0, model.NewBoolVar($"seq_{resource.Id:N}_{node.NodeIndex}_0"));
             }
 
             foreach (var previous in nodes)
@@ -275,27 +291,13 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
                     var transition = previous.Task.SourceEntityId == current.Task.SourceEntityId
                         ? new TransitionProfile(true, 0, 0)
                         : ResolveTransition(request.TransitionRules, resource, previous.Task, current.Task);
-                    if (!transition.IsAllowed)
-                    {
-                        // Omitting this directional arc makes the adjacency impossible.
-                        continue;
-                    }
+                    if (!transition.IsAllowed) continue;
 
-                    var adjacency = model.NewBoolVar(
-                        $"seq_{resource.Id:N}_{previous.NodeIndex}_{current.NodeIndex}");
+                    var adjacency = model.NewBoolVar($"seq_{resource.Id:N}_{previous.NodeIndex}_{current.NodeIndex}");
                     circuit.AddArc(previous.NodeIndex, current.NodeIndex, adjacency);
-
-                    var previousVars = taskVars[previous.Task.TaskId];
-                    var currentVars = taskVars[current.Task.TaskId];
-                    model.Add(currentVars.Start >= previousVars.End + transition.TransitionMinutes)
+                    model.Add(taskVars[current.Task.TaskId].Start >= taskVars[previous.Task.TaskId].End + transition.TransitionMinutes)
                         .OnlyEnforceIf(adjacency);
-
-                    // Penalty is attached only to the selected adjacency literal. Non-adjacent
-                    // plan pairs therefore contribute neither setup time nor transition penalty.
-                    if (transition.Penalty > 0)
-                    {
-                        objectiveTerms.Add(adjacency * transition.Penalty);
-                    }
+                    if (transition.Penalty > 0) objectiveTerms.Add(adjacency * transition.Penalty);
                 }
             }
         }
@@ -309,40 +311,29 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
     {
         var matchedRules = new[]
             {
-                FindTransitionRule(
-                    rules,
-                    resource,
-                    TransitionDimension.Grade,
-                    previous.GradeCode,
-                    current.GradeCode),
-                FindTransitionRule(
-                    rules,
-                    resource,
-                    TransitionDimension.CrossSection,
-                    previous.CrossSectionCode,
-                    current.CrossSectionCode)
+                FindTransitionRule(rules, resource, previous, current, TransitionDimension.Grade, previous.GradeCode, current.GradeCode),
+                FindTransitionRule(rules, resource, previous, current, TransitionDimension.CrossSection, previous.CrossSectionCode, current.CrossSectionCode)
             }
             .Where(rule => rule is not null)
             .Cast<TransitionRule>()
             .ToArray();
 
-        if (matchedRules.Any(rule => !rule.IsAllowed))
+        if (matchedRules.Any(rule => !rule.IsAllowed || rule.RequiresSequenceBreak))
         {
             return new TransitionProfile(false, 0, 0);
         }
 
-        var transitionMinutes = matchedRules
-            .Select(rule => Minutes(rule.TransitionTime))
-            .DefaultIfEmpty(0)
-            .Max();
-        var penalty = matchedRules.Sum(rule => Math.Max(0, rule.Penalty));
-
-        return new TransitionProfile(true, transitionMinutes, penalty);
+        return new TransitionProfile(
+            true,
+            matchedRules.Select(rule => Minutes(rule.TransitionTime)).DefaultIfEmpty(0).Max(),
+            matchedRules.Sum(rule => Math.Max(0, rule.Penalty)));
     }
 
     private static TransitionRule? FindTransitionRule(
         IReadOnlyCollection<TransitionRule> rules,
         Resource resource,
+        FiniteScheduleTask previous,
+        FiniteScheduleTask current,
         TransitionDimension dimension,
         string from,
         string to) =>
@@ -352,10 +343,15 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
                 string.Equals(rule.FromCode, from, StringComparison.OrdinalIgnoreCase) &&
                 string.Equals(rule.ToCode, to, StringComparison.OrdinalIgnoreCase))
             .Where(rule =>
-                rule.ResourceId == resource.Id ||
-                rule.ResourceType == resource.ResourceType ||
-                (!rule.ResourceId.HasValue && !rule.ResourceType.HasValue))
+                (!rule.ResourceId.HasValue || rule.ResourceId == resource.Id) &&
+                (!rule.ResourceType.HasValue || rule.ResourceType == resource.ResourceType) &&
+                (!rule.ProcessUnitType.HasValue || rule.ProcessUnitType == resource.ProcessUnitType) &&
+                (!rule.ProcessOperationType.HasValue ||
+                 rule.ProcessOperationType == current.ProcessOperationType ||
+                 rule.ProcessOperationType == previous.ProcessOperationType))
             .OrderByDescending(rule => rule.ResourceId == resource.Id)
+            .ThenByDescending(rule => rule.ProcessUnitType == resource.ProcessUnitType)
+            .ThenByDescending(rule => rule.ProcessOperationType.HasValue)
             .ThenByDescending(rule => rule.ResourceType == resource.ResourceType)
             .FirstOrDefault();
 
@@ -409,6 +405,12 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
         }
     }
 
+    private static bool IsSchedulable(Resource resource) =>
+        resource.IsActive && resource.OperatingState is
+            ResourceOperatingState.Available or
+            ResourceOperatingState.CapacityDerated or
+            ResourceOperatingState.QualityRestricted;
+
     private static FiniteScheduleResult Invalid(string code, string message) =>
         new("InvalidInput", false, 0, Array.Empty<FiniteScheduleAssignment>(),
             new[] { new PlanningIssue(PlanningIssueSeverity.Error, code, message) });
@@ -426,12 +428,6 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
         IntVar End,
         IReadOnlyDictionary<Guid, BoolVar> Presence);
 
-    private sealed record ResourceSequenceNode(
-        int NodeIndex,
-        FiniteScheduleTask Task);
-
-    private sealed record TransitionProfile(
-        bool IsAllowed,
-        int TransitionMinutes,
-        int Penalty);
+    private sealed record ResourceSequenceNode(int NodeIndex, FiniteScheduleTask Task);
+    private sealed record TransitionProfile(bool IsAllowed, int TransitionMinutes, int Penalty);
 }
