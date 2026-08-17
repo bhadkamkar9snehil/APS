@@ -10,53 +10,26 @@ internal static class ConfiguredRouteProductionStructureBuilder
         var routePlanning = request.RoutePlanning
             ?? throw new ArgumentException("RoutePlanning is required for configured-route planning.", nameof(request));
         var issues = ValidateRouteMaster(routePlanning).ToList();
-        if (issues.Any(x => x.Severity == PlanningIssueSeverity.Error))
-        {
-            return Empty(issues);
-        }
+        if (issues.Any(x => x.Severity == PlanningIssueSeverity.Error)) return Empty(issues);
 
-        var resources = request.Resources.Where(x => x.IsActive).ToDictionary(x => x.Id);
-        var casterCapabilities = request.Capabilities
-            .GroupBy(x => x.ResourceId)
-            .ToDictionary(x => x.Key, x => x.ToArray());
-        var routeCapabilities = routePlanning.ResourceCapabilities
-            .GroupBy(x => x.ResourceId)
-            .ToDictionary(x => x.Key, x => x.ToArray());
+        var resources = request.Resources
+            .Where(x => x.IsActive && x.OperatingState is ResourceOperatingState.Available or ResourceOperatingState.CapacityDerated or ResourceOperatingState.QualityRestricted)
+            .ToDictionary(x => x.Id);
+        var casterCapabilities = request.Capabilities.GroupBy(x => x.ResourceId).ToDictionary(x => x.Key, x => x.ToArray());
+        var routeCapabilities = routePlanning.ResourceCapabilities.GroupBy(x => x.ResourceId).ToDictionary(x => x.Key, x => x.ToArray());
         var routeOperations = routePlanning.Operations
             .GroupBy(x => x.RouteCode, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                x => x.Key,
-                x => x.OrderBy(y => y.SequenceNumber).ToArray(),
-                StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(x => x.Key, x => x.OrderBy(y => y.SequenceNumber).ToArray(), StringComparer.OrdinalIgnoreCase);
 
         var castSequences = new List<CastSequence>();
         var billetSupplies = new List<PlannedBilletSupply>();
-        BuildCasterPlan(
-            request,
-            resources,
-            casterCapabilities,
-            castSequences,
-            billetSupplies,
-            issues);
+        BuildCasterPlan(request, resources, casterCapabilities, castSequences, billetSupplies, issues);
 
         var rollingPlans = new List<RollingPlan>();
         var schedulingTasks = new List<FiniteScheduleTask>();
-        BuildHotRollingPlan(
-            request,
-            resources,
-            routeCapabilities,
-            routeOperations,
-            castSequences,
-            rollingPlans,
-            schedulingTasks,
-            issues);
+        BuildHotRollingPlan(request, resources, routeCapabilities, routeOperations, castSequences, rollingPlans, schedulingTasks, issues);
 
-        return new ProductionStructurePlanningResult(
-            castSequences,
-            rollingPlans,
-            billetSupplies,
-            schedulingTasks,
-            issues);
+        return new ProductionStructurePlanningResult(castSequences, rollingPlans, billetSupplies, schedulingTasks, issues);
     }
 
     private static IEnumerable<PlanningIssue> ValidateRouteMaster(RoutePlanningInput input)
@@ -65,39 +38,17 @@ internal static class ConfiguredRouteProductionStructureBuilder
         {
             var sequenceNumbers = route.Select(x => x.SequenceNumber).ToArray();
             if (sequenceNumbers.Distinct().Count() != sequenceNumbers.Length)
-            {
-                yield return new PlanningIssue(
-                    PlanningIssueSeverity.Error,
-                    "ROUTE_SEQUENCE_DUPLICATE",
-                    $"Route {route.Key} contains duplicate operation sequence numbers.");
-            }
+                yield return new PlanningIssue(PlanningIssueSeverity.Error, "ROUTE_SEQUENCE_DUPLICATE", $"Route {route.Key} contains duplicate operation sequence numbers.");
 
-            if (!route.Any(x => x.OperationType == WorkOrderType.HotRolling))
-            {
-                yield return new PlanningIssue(
-                    PlanningIssueSeverity.Error,
-                    "ROUTE_HOT_ROLLING_MISSING",
-                    $"Route {route.Key} does not contain a HotRolling operation.");
-            }
+            if (!route.Any(x => x.ProcessOperationType == ProcessOperationType.HotRoll))
+                yield return new PlanningIssue(PlanningIssueSeverity.Error, "ROUTE_HOT_ROLLING_MISSING", $"Route {route.Key} does not contain a HotRoll operation.");
 
             foreach (var operation in route)
             {
                 if (operation.YieldPct <= 0m || operation.YieldPct > 100m)
-                {
-                    yield return new PlanningIssue(
-                        PlanningIssueSeverity.Error,
-                        "ROUTE_YIELD_INVALID",
-                        $"Route {route.Key} operation {operation.SequenceNumber} has invalid yield {operation.YieldPct}.",
-                        operation.Id);
-                }
-                else if (operation.YieldPct != 100m)
-                {
-                    yield return new PlanningIssue(
-                        PlanningIssueSeverity.Error,
-                        "DOWNSTREAM_ROUTE_YIELD_NOT_YET_PROPAGATED",
-                        $"Route {route.Key} operation {operation.SequenceNumber} specifies {operation.YieldPct}% yield. Downstream route yields must remain 100% until backward quantity propagation is enabled.",
-                        operation.Id);
-                }
+                    yield return new PlanningIssue(PlanningIssueSeverity.Error, "ROUTE_YIELD_INVALID", $"Route {route.Key} operation {operation.SequenceNumber} has invalid yield {operation.YieldPct}.", operation.Id);
+                else if (operation.YieldPct != 100m && operation.ProcessOperationType is not (ProcessOperationType.Ccm or ProcessOperationType.HotRoll or ProcessOperationType.ColdRoll))
+                    yield return new PlanningIssue(PlanningIssueSeverity.Warning, "ROUTE_YIELD_REQUIRES_MATERIAL_BALANCE", $"Route {route.Key} operation {operation.SequenceNumber} has {operation.YieldPct}% yield; time-phased material balance must carry the loss downstream.", operation.Id);
             }
         }
     }
@@ -110,67 +61,35 @@ internal static class ConfiguredRouteProductionStructureBuilder
         List<PlannedBilletSupply> billetSupplies,
         List<PlanningIssue> issues)
     {
+        var explicitCcm = resources.Values.Any(x => x.ProcessUnitType == ProcessUnitType.Ccm);
         var states = resources.Values
-            .Where(x => x.ResourceType == ResourceType.Caster)
+            .Where(x => x.ProcessUnitType == ProcessUnitType.Ccm || (!explicitCcm && x.ResourceType == ResourceType.Caster))
             .ToDictionary(x => x.Id, x => new CasterState(x));
 
         foreach (var item in request.Campaigns
                      .OrderBy(x => x.RequiredDate)
                      .ThenBy(x => x.CampaignNumber)
-                     .SelectMany(campaign => campaign.Heats
-                         .OrderBy(x => x.SequenceNumber)
-                         .Select(heat => (Campaign: campaign, Heat: heat))))
+                     .SelectMany(campaign => campaign.Heats.OrderBy(x => x.SequenceNumber).Select(heat => (Campaign: campaign, Heat: heat))))
         {
             var family = GradeFamilyFor(item.Campaign, item.Heat.GradeCode);
             var candidates = states.Values
                 .Select(state =>
                 {
-                    var matching = MatchCasterCapabilities(
-                        state.Resource,
-                        capabilities,
-                        item.Campaign.RouteCode,
-                        item.Heat.GradeCode,
-                        family,
-                        item.Campaign.CasterSectionCode);
+                    var matching = MatchCasterCapabilities(state.Resource, capabilities, item.Campaign.RouteCode, item.Heat.GradeCode, family, item.Campaign.CasterSectionCode);
                     if (matching.Count == 0) return null;
-                    if (!TransitionAllowed(
-                            request.TransitionRules,
-                            state.Resource,
-                            TransitionDimension.Grade,
-                            state.LastGradeCode,
-                            item.Heat.GradeCode))
-                    {
-                        return null;
-                    }
+                    if (!TransitionAllowed(request.TransitionRules, state.Resource, TransitionDimension.Grade, state.LastGradeCode, item.Heat.GradeCode)) return null;
 
-                    var duration = DurationMinutes(
-                        item.Heat.PlannedQuantityMt,
-                        matching.Select(x => x.ThroughputMtPerHour),
-                        request.Policy.DefaultCastingMinutesPerHeat);
+                    var duration = DurationMinutes(item.Heat.PlannedQuantityMt, matching.Select(x => x.ThroughputMtPerHour), request.Policy.DefaultCastingMinutesPerHeat);
                     var append = CanAppend(state, item.Campaign, item.Heat, request);
-                    var transitionPenalty = TransitionPenalty(
-                        request.TransitionRules,
-                        state.Resource,
-                        TransitionDimension.Grade,
-                        state.LastGradeCode,
-                        item.Heat.GradeCode);
-                    var score = state.LoadMinutes + transitionPenalty +
-                                (append ? 0 : request.Policy.SequenceBreakPenalty);
+                    var score = state.LoadMinutes + TransitionPenalty(request.TransitionRules, state.Resource, TransitionDimension.Grade, state.LastGradeCode, item.Heat.GradeCode) + (append ? 0 : request.Policy.SequenceBreakPenalty);
                     return new CasterCandidate(state, duration, append, score);
                 })
-                .Where(x => x is not null)
-                .Cast<CasterCandidate>()
-                .OrderBy(x => x.Score)
-                .ThenBy(x => x.State.Resource.Code)
-                .ToArray();
+                .Where(x => x is not null).Cast<CasterCandidate>()
+                .OrderBy(x => x.Score).ThenBy(x => x.State.Resource.Code).ToArray();
 
             if (candidates.Length == 0)
             {
-                issues.Add(new PlanningIssue(
-                    PlanningIssueSeverity.Error,
-                    "CASTER_NOT_ELIGIBLE",
-                    $"No caster is eligible for campaign {item.Campaign.CampaignNumber} heat {item.Heat.SequenceNumber} ({item.Heat.GradeCode}/{item.Campaign.CasterSectionCode}).",
-                    item.Heat.Id));
+                issues.Add(new PlanningIssue(PlanningIssueSeverity.Error, "CASTER_NOT_ELIGIBLE", $"No CCM is eligible for campaign {item.Campaign.CampaignNumber} heat {item.Heat.SequenceNumber} ({item.Heat.GradeCode}/{item.Campaign.CasterSectionCode}).", item.Heat.Id));
                 continue;
             }
 
@@ -185,7 +104,8 @@ internal static class ConfiguredRouteProductionStructureBuilder
                     CasterResourceId = state.Resource.Id,
                     SequenceNumber = ++state.SequenceNumber,
                     CasterSectionCode = item.Campaign.CasterSectionCode,
-                    RouteCode = item.Campaign.RouteCode
+                    RouteCode = item.Campaign.RouteCode,
+                    TundishNumber = 1
                 };
                 state.CurrentSequence = sequence;
                 castSequences.Add(sequence);
@@ -193,10 +113,7 @@ internal static class ConfiguredRouteProductionStructureBuilder
             else
             {
                 sequence = state.CurrentSequence;
-                if (sequence.CampaignId != item.Campaign.Id)
-                {
-                    sequence.CampaignId = null;
-                }
+                if (sequence.CampaignId != item.Campaign.Id) sequence.CampaignId = null;
             }
 
             sequence.Heats.Add(new CastSequenceHeat
@@ -232,13 +149,12 @@ internal static class ConfiguredRouteProductionStructureBuilder
         List<FiniteScheduleTask> schedulingTasks,
         List<PlanningIssue> issues)
     {
-        var millStates = resources.Values
-            .Where(x => x.ResourceType == ResourceType.RollingMill)
-            .ToDictionary(x => x.Id, x => new MillState(x));
+        var explicitHotMills = resources.Values.Any(x => x.ProcessUnitType == ProcessUnitType.HotRollingMill);
+        var mills = resources.Values
+            .Where(x => x.ProcessUnitType == ProcessUnitType.HotRollingMill || (!explicitHotMills && x.ResourceType == ResourceType.RollingMill))
+            .ToArray();
         var lines = request.Campaigns
-            .SelectMany(campaign => campaign.Allocations
-                .Where(x => x.ProductionOrder is not null)
-                .SelectMany(allocation => SplitFeed(campaign, allocation)))
+            .SelectMany(campaign => campaign.Allocations.Where(x => x.ProductionOrder is not null).SelectMany(allocation => SplitFeed(campaign, allocation)))
             .ToArray();
 
         var groups = lines
@@ -255,92 +171,48 @@ internal static class ConfiguredRouteProductionStructureBuilder
             .ThenBy(x => x.Key.FinalCrossSectionCode)
             .ToArray();
 
+        var planSequence = 0;
         foreach (var group in groups)
         {
-            var groupLines = group
-                .OrderByDescending(x => x.ProductionOrder.Priority)
-                .ThenBy(x => x.ProductionOrder.RequiredDate)
-                .ThenBy(x => x.ProductionOrder.ProductionOrderNumber)
-                .ToArray();
+            var groupLines = group.OrderByDescending(x => x.ProductionOrder.Priority).ThenBy(x => x.ProductionOrder.RequiredDate).ThenBy(x => x.ProductionOrder.ProductionOrderNumber).ToArray();
             var representative = groupLines[0].ProductionOrder;
             if (!routeOperations.TryGetValue(representative.RouteCode, out var operations))
             {
-                issues.Add(new PlanningIssue(
-                    PlanningIssueSeverity.Error,
-                    "ROUTE_NOT_FOUND",
-                    $"No route master exists for {representative.RouteCode}.",
-                    representative.Id));
+                issues.Add(new PlanningIssue(PlanningIssueSeverity.Error, "ROUTE_NOT_FOUND", $"No route master exists for {representative.RouteCode}.", representative.Id));
                 continue;
             }
 
-            var hotOperation = operations.First(x => x.OperationType == WorkOrderType.HotRolling);
+            var hotOperation = operations.First(x => x.ProcessOperationType == ProcessOperationType.HotRoll);
             var inputSection = hotOperation.InputCrossSectionCode ?? representative.CasterSectionCode;
             var outputSection = hotOperation.OutputCrossSectionCode ?? representative.FinalCrossSectionCode;
             var quantity = groupLines.Sum(x => x.QuantityMt);
+            var fallback = Math.Max(1, (int)Math.Ceiling((double)(quantity / 100m) * request.Policy.DefaultRollingMinutesPer100Mt));
 
-            var candidates = millStates.Values
-                .Select(state =>
+            var options = mills.Select(resource =>
                 {
-                    var matching = MatchRouteCapabilities(
-                        state.Resource,
-                        capabilities,
-                        representative,
-                        WorkOrderType.HotRolling,
-                        inputSection,
-                        outputSection);
+                    var matching = MatchRouteCapabilities(resource, capabilities, representative, ProcessOperationType.HotRoll, inputSection, outputSection);
                     if (matching.Count == 0) return null;
-                    if (!TransitionAllowed(
-                            request.TransitionRules,
-                            state.Resource,
-                            TransitionDimension.Grade,
-                            state.LastGradeCode,
-                            representative.GradeCode) ||
-                        !TransitionAllowed(
-                            request.TransitionRules,
-                            state.Resource,
-                            TransitionDimension.CrossSection,
-                            state.LastOutputSectionCode,
-                            outputSection))
-                    {
-                        return null;
-                    }
-
-                    var fallback = Math.Max(1, (int)Math.Ceiling(
-                        (double)(quantity / 100m) * request.Policy.DefaultRollingMinutesPer100Mt));
-                    var duration = DurationMinutes(
-                        quantity,
-                        matching.Select(x => x.ThroughputMtPerHour),
-                        fallback);
-                    var score = state.LoadMinutes +
-                                TransitionPenalty(request.TransitionRules, state.Resource, TransitionDimension.Grade, state.LastGradeCode, representative.GradeCode) +
-                                TransitionPenalty(request.TransitionRules, state.Resource, TransitionDimension.CrossSection, state.LastOutputSectionCode, outputSection);
-                    return new MillCandidate(state, duration, score);
+                    var duration = DurationMinutes(quantity, matching.Select(x => x.ThroughputMtPerHour), fallback);
+                    var penalty = matching.Select(x => x.AssignmentPenalty).DefaultIfEmpty(0).Min();
+                    if (matching.Any(x => x.IsPreferred)) penalty = 0;
+                    return new FiniteScheduleResourceOption(resource.Id, duration, penalty);
                 })
-                .Where(x => x is not null)
-                .Cast<MillCandidate>()
-                .OrderBy(x => x.Score)
-                .ThenBy(x => x.State.Resource.Code)
-                .ToArray();
+                .Where(x => x is not null).Cast<FiniteScheduleResourceOption>().ToArray();
 
-            if (candidates.Length == 0)
+            if (options.Length == 0)
             {
-                issues.Add(new PlanningIssue(
-                    PlanningIssueSeverity.Error,
-                    "HOT_MILL_NOT_ELIGIBLE",
-                    $"No hot-rolling resource is eligible for {representative.GradeCode} {inputSection}->{outputSection} on route {representative.RouteCode}.",
-                    representative.Id));
+                issues.Add(new PlanningIssue(PlanningIssueSeverity.Error, "HOT_MILL_NOT_ELIGIBLE", $"No hot-rolling resource is eligible for {representative.GradeCode} {inputSection}->{outputSection} on route {representative.RouteCode}.", representative.Id));
                 continue;
             }
 
-            var selected = candidates[0];
             var distinctCampaigns = groupLines.Select(x => x.Campaign.Id).Distinct().ToArray();
             var distinctPos = groupLines.Select(x => x.ProductionOrder.Id).Distinct().ToArray();
             var plan = new RollingPlan
             {
                 CampaignId = distinctCampaigns.Length == 1 ? distinctCampaigns[0] : null,
                 ProductionOrderId = distinctPos.Length == 1 ? distinctPos[0] : null,
-                RollingMillResourceId = selected.State.Resource.Id,
-                SequenceNumber = ++selected.State.SequenceNumber,
+                RollingMillResourceId = null,
+                SequenceNumber = ++planSequence,
                 GradeCode = representative.GradeCode,
                 InputCrossSectionCode = inputSection,
                 OutputCrossSectionCode = outputSection,
@@ -364,23 +236,11 @@ internal static class ConfiguredRouteProductionStructureBuilder
                     FreshSteelQuantityMt = line.FreshSteelQuantityMt
                 });
             }
-
             rollingPlans.Add(plan);
-            selected.State.LoadMinutes += selected.DurationMinutes;
-            selected.State.LastGradeCode = representative.GradeCode;
-            selected.State.LastOutputSectionCode = outputSection;
 
             if (group.Key.RequiresFreshSteel && !HasCastSupply(castSequences, groupLines, representative.GradeCode))
-            {
-                issues.Add(new PlanningIssue(
-                    PlanningIssueSeverity.Error,
-                    "ROLLING_WITHOUT_CAST_SUPPLY",
-                    $"Hot rolling plan {plan.Id} requires fresh {representative.GradeCode} material but no cast sequence produces it.",
-                    plan.Id));
-            }
+                issues.Add(new PlanningIssue(PlanningIssueSeverity.Error, "ROLLING_WITHOUT_CAST_SUPPLY", $"Hot rolling plan {plan.Id} requires fresh {representative.GradeCode} material but no cast sequence produces it.", plan.Id));
 
-            var due = groupLines.Min(x => x.ProductionOrder.RequiredDate);
-            var priority = groupLines.Max(x => x.ProductionOrder.Priority);
             schedulingTasks.Add(new FiniteScheduleTask(
                 Guid.NewGuid(),
                 plan.Id,
@@ -390,10 +250,11 @@ internal static class ConfiguredRouteProductionStructureBuilder
                 plan.OutputCrossSectionCode,
                 plan.PlannedQuantityMt,
                 null,
-                due,
-                priority,
-                new[] { new FiniteScheduleResourceOption(selected.State.Resource.Id, selected.DurationMinutes) },
-                Array.Empty<FiniteScheduleDependency>()));
+                groupLines.Min(x => x.ProductionOrder.RequiredDate),
+                groupLines.Max(x => x.ProductionOrder.Priority),
+                options,
+                Array.Empty<FiniteScheduleDependency>(),
+                ProcessOperationType.HotRoll));
         }
     }
 
@@ -401,186 +262,100 @@ internal static class ConfiguredRouteProductionStructureBuilder
     {
         var po = allocation.ProductionOrder!;
         if (allocation.ExistingIntermediateInventoryMt > 0m)
-        {
-            yield return new HotRollingDemandLine(
-                campaign,
-                po,
-                allocation.ExistingIntermediateInventoryMt,
-                allocation.ExistingIntermediateInventoryMt,
-                0m,
-                false);
-        }
-
+            yield return new HotRollingDemandLine(campaign, po, allocation.ExistingIntermediateInventoryMt, allocation.ExistingIntermediateInventoryMt, 0m, false);
         if (allocation.FreshSteelQuantityMt > 0m)
-        {
-            yield return new HotRollingDemandLine(
-                campaign,
-                po,
-                allocation.FreshSteelQuantityMt,
-                0m,
-                allocation.FreshSteelQuantityMt,
-                true);
-        }
+            yield return new HotRollingDemandLine(campaign, po, allocation.FreshSteelQuantityMt, 0m, allocation.FreshSteelQuantityMt, true);
     }
 
-    private static IReadOnlyList<ResourceCapability> MatchCasterCapabilities(
-        Resource resource,
-        IReadOnlyDictionary<Guid, ResourceCapability[]> capabilities,
-        string routeCode,
-        string gradeCode,
-        string? gradeFamilyCode,
-        string outputSection)
+    private static IReadOnlyList<ResourceCapability> MatchCasterCapabilities(Resource resource, IReadOnlyDictionary<Guid, ResourceCapability[]> capabilities, string routeCode, string gradeCode, string? gradeFamilyCode, string outputSection)
     {
         if (!capabilities.TryGetValue(resource.Id, out var values)) return Array.Empty<ResourceCapability>();
         return values.Where(x =>
-            Matches(x.RouteCode, routeCode) &&
-            (string.IsNullOrWhiteSpace(x.GradeCode) || Matches(x.GradeCode, gradeCode)) &&
-            (string.IsNullOrWhiteSpace(x.GradeFamilyCode) || Matches(x.GradeFamilyCode, gradeFamilyCode)) &&
-            (string.IsNullOrWhiteSpace(x.OutputCrossSectionCode) || Matches(x.OutputCrossSectionCode, outputSection)))
-            .ToArray();
+            (!x.ProcessOperationType.HasValue || x.ProcessOperationType == ProcessOperationType.Ccm) &&
+            Matches(x.RouteCode, routeCode) && Matches(x.GradeCode, gradeCode) && Matches(x.GradeFamilyCode, gradeFamilyCode) && Matches(x.OutputCrossSectionCode, outputSection)).ToArray();
     }
 
-    private static IReadOnlyList<RouteResourceCapability> MatchRouteCapabilities(
-        Resource resource,
-        IReadOnlyDictionary<Guid, RouteResourceCapability[]> capabilities,
-        ProductionOrder po,
-        WorkOrderType operationType,
-        string inputSection,
-        string outputSection)
+    private static IReadOnlyList<RouteResourceCapability> MatchRouteCapabilities(Resource resource, IReadOnlyDictionary<Guid, RouteResourceCapability[]> capabilities, ProductionOrder po, ProcessOperationType operationType, string inputSection, string outputSection)
     {
         if (!capabilities.TryGetValue(resource.Id, out var values)) return Array.Empty<RouteResourceCapability>();
         return values.Where(x =>
-            x.OperationType == operationType &&
-            Matches(x.RouteCode, po.RouteCode) &&
-            (string.IsNullOrWhiteSpace(x.GradeCode) || Matches(x.GradeCode, po.GradeCode)) &&
-            (string.IsNullOrWhiteSpace(x.GradeFamilyCode) || Matches(x.GradeFamilyCode, po.GradeFamilyCode)) &&
-            (string.IsNullOrWhiteSpace(x.InputCrossSectionCode) || Matches(x.InputCrossSectionCode, inputSection)) &&
-            (string.IsNullOrWhiteSpace(x.OutputCrossSectionCode) || Matches(x.OutputCrossSectionCode, outputSection)) &&
-            (string.IsNullOrWhiteSpace(x.ProductFamilyCode) || Matches(x.ProductFamilyCode, po.ProductFamilyCode)))
-            .ToArray();
+            x.ProcessOperationType == operationType &&
+            Matches(x.RouteCode, po.RouteCode) && Matches(x.GradeCode, po.GradeCode) && Matches(x.GradeFamilyCode, po.GradeFamilyCode) && Matches(x.CastingClassCode, po.SteelGrade?.CastingClassCode) &&
+            Matches(x.InputCrossSectionCode, inputSection) && Matches(x.OutputCrossSectionCode, outputSection) && Matches(x.ProductFamilyCode, po.ProductFamilyCode)).ToArray();
     }
 
-    private static bool HasCastSupply(
-        IReadOnlyCollection<CastSequence> sequences,
-        IReadOnlyCollection<HotRollingDemandLine> lines,
-        string gradeCode)
+    private static bool HasCastSupply(IReadOnlyCollection<CastSequence> sequences, IReadOnlyCollection<HotRollingDemandLine> lines, string gradeCode)
     {
         var campaigns = lines.Select(x => x.Campaign.Id).ToHashSet();
-        return sequences.Any(sequence => sequence.Heats.Any(heat =>
-            campaigns.Contains(heat.CampaignHeat.CampaignId) &&
-            Matches(heat.CampaignHeat.GradeCode, gradeCode)));
+        return sequences.Any(sequence => sequence.Heats.Any(heat => campaigns.Contains(heat.CampaignHeat.CampaignId) && Matches(heat.CampaignHeat.GradeCode, gradeCode)));
     }
 
-    private static bool CanAppend(
-        CasterState state,
-        Campaign campaign,
-        CampaignHeat heat,
-        ProductionStructurePlanningRequest request)
+    private static bool CanAppend(CasterState state, Campaign campaign, CampaignHeat heat, ProductionStructurePlanningRequest request)
     {
         var current = state.CurrentSequence;
-        if (current is null || current.Heats.Count >= request.Policy.MaximumHeatsPerCastSequence) return false;
+        if (current is null) return false;
+        var resourceLimit = new[]
+        {
+            request.Policy.MaximumHeatsPerCastSequence,
+            state.Resource.MaximumHeatsPerSequence ?? int.MaxValue,
+            state.Resource.MaximumHeatsPerTundish ?? int.MaxValue
+        }.Min();
+        if (current.Heats.Count >= resourceLimit) return false;
         if (!Matches(current.CasterSectionCode, campaign.CasterSectionCode) || !Matches(current.RouteCode, campaign.RouteCode)) return false;
         if (!request.Policy.AllowCrossCampaignCastSequences && current.CampaignId != campaign.Id) return false;
-        return TransitionAllowed(
-            request.TransitionRules,
-            state.Resource,
-            TransitionDimension.Grade,
-            state.LastGradeCode,
-            heat.GradeCode);
+        return TransitionAllowed(request.TransitionRules, state.Resource, TransitionDimension.Grade, state.LastGradeCode, heat.GradeCode);
     }
 
     private static decimal ExpectedCastOutputForHeat(Campaign campaign, CampaignHeat heat)
     {
-        var gradeHeats = campaign.Heats
-            .Where(x => Matches(x.GradeCode, heat.GradeCode))
-            .OrderBy(x => x.SequenceNumber)
-            .ToArray();
-        var output = campaign.Allocations
-            .Where(x => x.ProductionOrder is not null && x.FreshSteelQuantityMt > 0m &&
-                        Matches(x.ProductionOrder.GradeCode, heat.GradeCode))
-            .Sum(x => x.FreshSteelQuantityMt);
+        var gradeHeats = campaign.Heats.Where(x => Matches(x.GradeCode, heat.GradeCode)).OrderBy(x => x.SequenceNumber).ToArray();
+        var output = campaign.Allocations.Where(x => x.ProductionOrder is not null && x.FreshSteelQuantityMt > 0m && Matches(x.ProductionOrder.GradeCode, heat.GradeCode)).Sum(x => x.FreshSteelQuantityMt);
         var input = gradeHeats.Sum(x => x.PlannedQuantityMt);
         if (output <= 0m || input <= 0m) return 0m;
-
         var index = Array.FindIndex(gradeHeats, x => x.Id == heat.Id);
         if (index < 0) return 0m;
         if (index == gradeHeats.Length - 1)
         {
-            var prior = gradeHeats.Take(index)
-                .Sum(x => decimal.Round(x.PlannedQuantityMt / input * output, 4, MidpointRounding.AwayFromZero));
+            var prior = gradeHeats.Take(index).Sum(x => decimal.Round(x.PlannedQuantityMt / input * output, 4, MidpointRounding.AwayFromZero));
             return output - prior;
         }
         return decimal.Round(heat.PlannedQuantityMt / input * output, 4, MidpointRounding.AwayFromZero);
     }
 
     private static string? GradeFamilyFor(Campaign campaign, string gradeCode) =>
-        campaign.Allocations
-            .Select(x => x.ProductionOrder)
-            .FirstOrDefault(x => x is not null && Matches(x.GradeCode, gradeCode))
-            ?.GradeFamilyCode;
+        campaign.Allocations.Select(x => x.ProductionOrder).FirstOrDefault(x => x is not null && Matches(x.GradeCode, gradeCode))?.GradeFamilyCode;
 
-    private static int DurationMinutes(
-        decimal quantityMt,
-        IEnumerable<decimal?> throughputs,
-        int fallbackMinutes)
+    private static int DurationMinutes(decimal quantityMt, IEnumerable<decimal?> throughputs, int fallbackMinutes)
     {
-        var throughput = throughputs
-            .Where(x => x.HasValue && x.Value > 0m)
-            .Select(x => x!.Value)
-            .DefaultIfEmpty(0m)
-            .Max();
-        return throughput <= 0m
-            ? Math.Max(1, fallbackMinutes)
-            : Math.Max(1, (int)Math.Ceiling((double)(quantityMt / throughput * 60m)));
+        var throughput = throughputs.Where(x => x.HasValue && x.Value > 0m).Select(x => x!.Value).DefaultIfEmpty(0m).Max();
+        return throughput <= 0m ? Math.Max(1, fallbackMinutes) : Math.Max(1, (int)Math.Ceiling((double)(quantityMt / throughput * 60m)));
     }
 
-    private static bool TransitionAllowed(
-        IReadOnlyCollection<TransitionRule> rules,
-        Resource resource,
-        TransitionDimension dimension,
-        string? from,
-        string to)
+    private static bool TransitionAllowed(IReadOnlyCollection<TransitionRule> rules, Resource resource, TransitionDimension dimension, string? from, string to)
     {
         if (string.IsNullOrWhiteSpace(from) || Matches(from, to)) return true;
-        return FindTransitionRule(rules, resource, dimension, from, to)?.IsAllowed ?? true;
+        var rule = FindTransitionRule(rules, resource, dimension, from, to);
+        return rule is null || (rule.IsAllowed && !rule.RequiresSequenceBreak);
     }
 
-    private static int TransitionPenalty(
-        IReadOnlyCollection<TransitionRule> rules,
-        Resource resource,
-        TransitionDimension dimension,
-        string? from,
-        string to)
+    private static int TransitionPenalty(IReadOnlyCollection<TransitionRule> rules, Resource resource, TransitionDimension dimension, string? from, string to)
     {
         if (string.IsNullOrWhiteSpace(from) || Matches(from, to)) return 0;
         return FindTransitionRule(rules, resource, dimension, from, to)?.Penalty ?? 0;
     }
 
-    private static TransitionRule? FindTransitionRule(
-        IReadOnlyCollection<TransitionRule> rules,
-        Resource resource,
-        TransitionDimension dimension,
-        string from,
-        string to) =>
-        rules
-            .Where(x => x.Dimension == dimension && Matches(x.FromCode, from) && Matches(x.ToCode, to))
+    private static TransitionRule? FindTransitionRule(IReadOnlyCollection<TransitionRule> rules, Resource resource, TransitionDimension dimension, string from, string to) =>
+        rules.Where(x => x.Dimension == dimension && Matches(x.FromCode, from) && Matches(x.ToCode, to))
+            .Where(x => (!x.ResourceId.HasValue || x.ResourceId == resource.Id) && (!x.ResourceType.HasValue || x.ResourceType == resource.ResourceType) && (!x.ProcessUnitType.HasValue || x.ProcessUnitType == resource.ProcessUnitType))
             .OrderByDescending(x => x.ResourceId == resource.Id)
+            .ThenByDescending(x => x.ProcessUnitType == resource.ProcessUnitType)
             .ThenByDescending(x => x.ResourceType == resource.ResourceType)
-            .FirstOrDefault(x =>
-                x.ResourceId == resource.Id ||
-                x.ResourceType == resource.ResourceType ||
-                (!x.ResourceId.HasValue && !x.ResourceType.HasValue));
+            .FirstOrDefault();
 
-    private static bool Matches(string? configured, string? actual) =>
-        string.IsNullOrWhiteSpace(configured) ||
-        string.Equals(configured, actual, StringComparison.OrdinalIgnoreCase);
+    private static bool Matches(string? configured, string? actual) => string.IsNullOrWhiteSpace(configured) || string.Equals(configured, actual, StringComparison.OrdinalIgnoreCase);
 
     private static ProductionStructurePlanningResult Empty(IReadOnlyCollection<PlanningIssue> issues) => new(
-        Array.Empty<CastSequence>(),
-        Array.Empty<RollingPlan>(),
-        Array.Empty<PlannedBilletSupply>(),
-        Array.Empty<FiniteScheduleTask>(),
-        issues);
+        Array.Empty<CastSequence>(), Array.Empty<RollingPlan>(), Array.Empty<PlannedBilletSupply>(), Array.Empty<FiniteScheduleTask>(), issues);
 
     private sealed class CasterState(Resource resource)
     {
@@ -592,32 +367,6 @@ internal static class ConfiguredRouteProductionStructureBuilder
     }
 
     private sealed record CasterCandidate(CasterState State, int DurationMinutes, bool Append, int Score);
-
-    private sealed class MillState(Resource resource)
-    {
-        public Resource Resource { get; } = resource;
-        public int LoadMinutes { get; set; }
-        public int SequenceNumber { get; set; }
-        public string? LastGradeCode { get; set; }
-        public string? LastOutputSectionCode { get; set; }
-    }
-
-    private sealed record MillCandidate(MillState State, int DurationMinutes, int Score);
-
-    private sealed record HotRollingDemandLine(
-        Campaign Campaign,
-        ProductionOrder ProductionOrder,
-        decimal QuantityMt,
-        decimal ExistingIntermediateInventoryMt,
-        decimal FreshSteelQuantityMt,
-        bool RequiresFreshSteel);
-
-    private sealed record HotRollingGroupKey(
-        string GradeCode,
-        string InputCrossSectionCode,
-        string FinalCrossSectionCode,
-        string RouteCode,
-        string? ProductFamilyCode,
-        bool RequiresFreshSteel,
-        Guid? CampaignPartition);
+    private sealed record HotRollingDemandLine(Campaign Campaign, ProductionOrder ProductionOrder, decimal QuantityMt, decimal ExistingIntermediateInventoryMt, decimal FreshSteelQuantityMt, bool RequiresFreshSteel);
+    private sealed record HotRollingGroupKey(string GradeCode, string InputCrossSectionCode, string FinalCrossSectionCode, string RouteCode, string? ProductFamilyCode, bool RequiresFreshSteel, Guid? CampaignPartition);
 }
