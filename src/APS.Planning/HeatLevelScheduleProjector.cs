@@ -24,7 +24,6 @@ internal static class HeatLevelScheduleProjector
 
         var heatTasks = new List<FiniteScheduleTask>();
         var heatTaskByHeatId = new Dictionary<Guid, FiniteScheduleTask>();
-        var heatCasterByTaskId = new Dictionary<Guid, Guid>();
         var materialUnits = new List<PlannedStrandMaterialUnit>();
 
         foreach (var sequence in structure.CastSequences
@@ -83,7 +82,6 @@ internal static class HeatLevelScheduleProjector
 
                 heatTasks.Add(task);
                 heatTaskByHeatId[heat.Id] = task;
-                heatCasterByTaskId[taskId] = sequence.CasterResourceId;
                 previousTaskId = taskId;
 
                 var plannedOutput = structure.PlannedBilletSupplies
@@ -152,7 +150,6 @@ internal static class HeatLevelScheduleProjector
                 if (!remainingSupplyByHeat.TryGetValue(heatId, out var available) || available <= 0m) continue;
                 if (!supplyByHeat.TryGetValue(heatId, out var supply)) continue;
                 if (!heatTaskByHeatId.TryGetValue(heatId, out var predecessor)) continue;
-                if (!heatCasterByTaskId.TryGetValue(predecessor.TaskId, out var casterId)) continue;
 
                 var blockQuantity = Math.Min(remainingRequirement, available);
                 remainingRequirement -= blockQuantity;
@@ -161,7 +158,7 @@ internal static class HeatLevelScheduleProjector
 
                 var link = flowLinks.FirstOrDefault(x =>
                     x.IsEnabled &&
-                    x.FromResourceId == casterId &&
+                    x.FromResourceId == supply.CasterResourceId &&
                     x.ToResourceId == plan.RollingMillResourceId.Value);
                 var maxLag = link?.MaximumTransferTime is { } maximumTransfer
                     ? Minutes(maximumTransfer)
