@@ -11,7 +11,8 @@ internal static class SteelmakingRouteProjector
         IReadOnlyCollection<Resource> resources,
         IReadOnlyCollection<ResourceCapability> capabilities,
         IReadOnlyCollection<PlantFlowLink> flowLinks,
-        IReadOnlyCollection<SteelGrade>? steelGrades)
+        IReadOnlyCollection<SteelGrade>? steelGrades,
+        IReadOnlyCollection<CampaignHeatAllocation>? heatAllocations)
     {
         var issues = structure.Issues.ToList();
         var tasks = structure.SchedulingTasks.ToList();
@@ -20,6 +21,9 @@ internal static class SteelmakingRouteProjector
         var routes = routePlanning.Operations.GroupBy(x => x.RouteCode, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.OrderBy(y => y.SequenceNumber).ToArray(), StringComparer.OrdinalIgnoreCase);
         var grades = (steelGrades ?? Array.Empty<SteelGrade>()).ToDictionary(x => x.GradeCode, StringComparer.OrdinalIgnoreCase);
+        var allocationsByHeat = (heatAllocations ?? Array.Empty<CampaignHeatAllocation>())
+            .GroupBy(x => x.CampaignHeatId)
+            .ToDictionary(x => x.Key, x => x.ToArray());
 
         foreach (var sequence in structure.CastSequences)
         {
@@ -39,9 +43,18 @@ internal static class SteelmakingRouteProjector
                     continue;
                 }
 
-                var heatOrders = campaign.Allocations
-                    .Where(x => x.ProductionOrder is not null && x.FreshSteelQuantityMt > 0m && string.Equals(x.ProductionOrder.GradeCode, heat.GradeCode, StringComparison.OrdinalIgnoreCase))
-                    .Select(x => x.ProductionOrder!).DistinctBy(x => x.Id).ToArray();
+                var heatOrders = allocationsByHeat.TryGetValue(heat.Id, out var exactAllocations)
+                    ? exactAllocations.Where(x => x.ProductionOrder is not null).Select(x => x.ProductionOrder!).DistinctBy(x => x.Id).ToArray()
+                    : campaign.Allocations
+                        .Where(x => x.ProductionOrder is not null && x.FreshSteelQuantityMt > 0m && string.Equals(x.ProductionOrder.GradeCode, heat.GradeCode, StringComparison.OrdinalIgnoreCase))
+                        .Select(x => x.ProductionOrder!).DistinctBy(x => x.Id).ToArray();
+
+                if (heatOrders.Length == 0)
+                {
+                    issues.Add(new PlanningIssue(PlanningIssueSeverity.Error, "HEAT_WITHOUT_DEMAND_PEGGING", $"Heat {campaign.CampaignNumber}/{heat.SequenceNumber:00} is not pegged to any Production Order.", heat.Id));
+                    continue;
+                }
+
                 var grade = heatOrders.Select(x => x.SteelGrade).FirstOrDefault(x => x is not null)
                             ?? (grades.TryGetValue(heat.GradeCode, out var found) ? found : null);
 
@@ -65,9 +78,7 @@ internal static class SteelmakingRouteProjector
                     if (effective == RequirementResolution.Forbidden)
                     {
                         if (operation.Requirement == RequirementDisposition.Required)
-                        {
                             issues.Add(new PlanningIssue(PlanningIssueSeverity.Error, "REQUIRED_PROCESS_FORBIDDEN", $"Route {campaign.RouteCode} requires {operation.ProcessOperationType} but grade/order requirements forbid it for heat {campaign.CampaignNumber}/{heat.SequenceNumber:00}.", heat.Id));
-                        }
                         continue;
                     }
                     if (operation.Requirement == RequirementDisposition.Optional && effective != RequirementResolution.Required) continue;
@@ -187,9 +198,7 @@ internal static class SteelmakingRouteProjector
         }
 
         if (pairs.Count == 0)
-        {
             issues.Add(new PlanningIssue(PlanningIssueSeverity.Error, "PROCESS_FLOW_PATH_MISSING", $"No physical flow path exists from {predecessor.ProcessOperationType} to {successorOperation.ProcessOperationType} for heat {heatId}.", heatId));
-        }
         return new FiniteScheduleDependency(predecessor.TaskId, 0, null, pairs);
     }
 
