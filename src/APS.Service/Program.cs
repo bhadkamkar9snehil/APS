@@ -31,6 +31,7 @@ if (hasApsDatabase)
     builder.Services.AddScoped<ITraceabilityService, TraceabilityService>();
     builder.Services.AddScoped<IWorkOrderExecutionService, WorkOrderExecutionService>();
     builder.Services.AddScoped<IHeatExecutionService, HeatExecutionService>();
+    builder.Services.AddScoped<IInventorySnapshotProvider, SqlInventorySnapshotProvider>();
     builder.Services.AddScoped<IPlanVersionRepository, PlanVersionRepository>();
     builder.Services.AddScoped<IPlanReleaseRepository, PlanReleaseRepository>();
     builder.Services.AddScoped<IPlanComparisonService, PlanComparisonService>();
@@ -51,6 +52,10 @@ app.MapGet("/api/health", () => Results.Ok(new
 
 if (hasApsDatabase)
 {
+    app.MapGet("/api/inventory/snapshot",
+        async (IInventorySnapshotProvider inventory, CancellationToken cancellationToken) =>
+            Results.Ok(await inventory.GetInventoryAsync(cancellationToken)));
+
     app.MapPost("/api/planning/run",
         async (PlanningRunRequest request, IPlanningEngine planningEngine, IPlanVersionRepository plans, CancellationToken cancellationToken) =>
         {
