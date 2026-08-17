@@ -35,7 +35,7 @@ rolling requirement
   = fresh steel requirement
 ```
 
-The campaign plan retains each inventory allocation by Production Order, stage, material, grade, section, location and quantity. This makes inventory consumption an explicit planning assumption that can later be reserved and reconciled against MES inventory rather than an invisible arithmetic deduction.
+The campaign plan retains each inventory allocation by Production Order, stage, material, grade, section, location and quantity. This makes inventory consumption an explicit planning assumption that can be reserved and reconciled against MES inventory rather than an invisible arithmetic deduction.
 
 A campaign therefore tracks both rolling requirement and fresh-steel requirement. Existing intermediate inventory can create a rolling-only planning block without creating new heats.
 
@@ -65,10 +65,11 @@ Campaign heats
   -> rolling requirements
   -> mill eligibility/allocation
   -> rolling sequence blocks
-  -> finite scheduling tasks
 ```
 
 Casters and mills are capability driven rather than hard-coded. Resource capability can constrain grade/family, route, input/output cross-section and product family. Transition rules provide allowed/forbidden and penalized grade/section changes.
+
+`HeatLevelScheduleProjector` then projects each cast sequence into individual heat tasks. Each heat generates planned strand material units using the configured caster strand count. This means planned material availability exists heat-by-heat and strand-by-strand rather than only at cast completion.
 
 Fresh rolling blocks inherit caster-to-mill transfer dependencies. Existing-intermediate-inventory blocks do not require a new cast predecessor.
 
@@ -86,53 +87,74 @@ Fresh rolling blocks inherit caster-to-mill transfer dependencies. Existing-inte
 - transition/setup time between planned blocks,
 - weighted tardiness,
 - assignment penalties,
-- makespan minimization.
+- makespan minimization,
+- frozen-operation hard constraints,
+- slushy-zone movement and resource-change penalties.
 
 Infeasible plans return an explicit non-feasible result and are not silently converted to a heuristic schedule.
 
-## End-to-end planning run
+## Plan versions and replanning
 
-`PlanningEngine` runs the complete calculation from one refreshed snapshot:
+Every database-backed planning run is persisted as a Plan Version. The stored snapshot includes:
+
+- parent/baseline Plan Version,
+- trigger and reference time,
+- horizon and solver result,
+- stable planning-operation identity,
+- assigned resource/start/end,
+- inventory allocations used by the plan,
+- planned strand material units and planned availability.
+
+Stable planning keys are derived from business content rather than transient solver GUIDs. A replan can therefore match equivalent casting and rolling operations across plan versions.
+
+Time fences are applied against the baseline plan:
 
 ```text
-Production Orders + inventory + plant/resource masters
-  -> campaign formation
-  -> production structure
-  -> finite schedule
-  -> plan version result
+Frozen -> resource and start remain fixed
+Slushy -> movement is allowed but penalized
+Liquid -> operation is freely replanned
 ```
 
-This is also the intended full replanning path after manufacturing changes: refresh open Production Orders and inventory/execution state, then run a new plan version. Partial/frozen-zone replanning is a later refinement.
+`POST /api/planning/replan/{baselinePlanVersionId}` creates a child Plan Version rather than overwriting history.
 
 ## Release and traceability
 
 An approved feasible plan is converted into Work Orders:
 
-- SMS Work Orders carry campaign/grade fresh-steel quantities.
+- SMS Work Orders carry campaign/grade fresh-steel quantities and are timed from their scheduled heats.
+- An SMS WO can contain multiple heat-level scheduled operations.
 - RM Work Orders carry rolling quantities and mill/time assignments.
 - Work Order allocations retain the Production Order contribution.
 - MTO Production Orders retain their Sales Order/item link.
 
-The XStudio release envelope contains both Work Orders and cast-sequence/heat details, so execution receives the commercial lineage and the caster production structure.
+Database-backed release persists Work Orders, allocations and scheduled operations and marks the Plan Version `Released`. The XStudio release envelope contains both Work Orders and cast-sequence/heat details.
 
 ## Execution feedback
 
-Manual execution and MES events use the same Work Order execution service. It stores:
+Two execution grains are deliberately separate.
 
-- lifecycle status,
-- actual start/end,
-- actual quantity,
-- status history,
-- update source,
-- external event ID and comment.
+### Work Order execution
 
-Status transitions are validated. Terminal states require an explicit correction to move backwards. External event IDs are treated idempotently, including quantity-only events that do not change WO status.
+Manual execution and MES events use the same Work Order execution service. It stores lifecycle status, actual start/end, actual quantity, audit history, source and idempotent external event IDs.
+
+### Heat/cast execution
+
+Heat execution is tracked independently because one SMS Work Order can contain multiple heats. Heat updates can carry:
+
+- actual heat/cast identifiers,
+- actual caster,
+- actual start/end and quantity,
+- strand/unit output,
+- material, grade and cross-section,
+- produced lot number and location.
+
+Completed strand outputs are materialized as available intermediate `MaterialLot` records. These lots can therefore feed the next inventory-aware planning run. MES retries are idempotent by external event ID and existing lot number.
 
 ## Integration boundary
 
 `APS.Integrations` contains the XStudio boundary. APS planning code must not reference XStudio table names or REST details. Deployments may use:
 
-- API events for execution changes,
+- API events for WO and heat/cast execution changes,
 - controlled MES stored procedures/APIs for released plan writes,
 - read-only SQL reconciliation for bulk recovery and inventory/actual snapshots.
 
@@ -144,19 +166,24 @@ Status transitions are validated. Terminal states require an explicit correction
 - SQL Server / EF Core
 - Google OR-Tools CP-SAT
 
-Current APIs:
+Current APIs include:
 
 - `GET /api/health`
 - `POST /api/planning/run`
+- `POST /api/planning/replan/{baselinePlanVersionId}`
+- `GET /api/planning/versions/{planVersionId}`
 - `POST /api/planning/mts/production-order`
 - `POST /api/planning/campaigns/form`
 - `POST /api/planning/structure/build`
 - `POST /api/planning/schedule/solve`
 - `POST /api/planning/release/build`
+- `POST /api/planning/release`
 - `POST /api/execution/work-orders/{workOrderId}`
+- `POST /api/execution/heats`
 - `POST /api/integration/xstudio/execution-events`
+- `POST /api/integration/xstudio/heat-events`
 - traceability endpoints for Work Orders and material lots
 
 ## Current boundary / next refinements
 
-The present implementation separates campaign formation, production-structure selection and exact-time optimization, while carrying the selected equipment sequence into CP-SAT. The next iterations should deepen sequence optimization rather than selecting it heuristically first, add strand/billet-level material release, persist/freeze plan versions, support execution-driven partial replanning and improve infeasibility explanation.
+The next solver work should deepen sequence selection inside optimization rather than selecting structure heuristically first, allow rolling to consume progressively available strand/billet units instead of conservatively waiting on all linked fresh heats, incorporate active execution directly into resource availability during replanning, add plan-difference/infeasibility explanations, and extend the same route model through cold rolling and finishing where required.
