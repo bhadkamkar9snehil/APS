@@ -22,6 +22,7 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
 
         BuildSmsWorkOrders(request, assignmentsBySource, planningKeyByTask, workOrders, scheduledOperations);
         BuildRollingWorkOrders(request, assignmentsBySource, planningKeyByTask, workOrders, scheduledOperations);
+        BuildConfiguredRouteWorkOrders(request, assignmentsBySource, planningKeyByTask, workOrders, scheduledOperations);
 
         return new PlanRelease(request.PlanVersionId, workOrders, scheduledOperations);
     }
@@ -146,34 +147,99 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
                 Status = WorkOrderStatus.Planned
             };
 
-            foreach (var allocation in rollingPlan.Allocations)
-            {
-                workOrder.Allocations.Add(new WorkOrderAllocation
-                {
-                    WorkOrderId = workOrder.Id,
-                    WorkOrder = workOrder,
-                    ProductionOrderId = allocation.ProductionOrderId,
-                    ProductionOrder = allocation.ProductionOrder,
-                    PlannedQuantityMt = allocation.PlannedQuantityMt
-                });
-            }
-
+            AddAllocations(workOrder, rollingPlan.Allocations.Select(x =>
+                (x.ProductionOrderId, x.ProductionOrder, x.PlannedQuantityMt)));
             workOrders.Add(workOrder);
+            AddScheduledOperations(request.PlanVersionId, workOrder.Id, assignments, planningKeyByTask, scheduledOperations);
+        }
+    }
 
-            foreach (var assignment in assignments)
+    private static void BuildConfiguredRouteWorkOrders(
+        PlanReleaseBuildRequest request,
+        IReadOnlyDictionary<Guid, FiniteScheduleAssignment[]> assignmentsBySource,
+        IReadOnlyDictionary<Guid, string> planningKeyByTask,
+        List<WorkOrder> workOrders,
+        List<ScheduledOperation> scheduledOperations)
+    {
+        foreach (var plan in request.ProductionStructure.RouteOperationPlans ?? Array.Empty<RouteOperationPlan>())
+        {
+            if (!plan.ResourceId.HasValue) continue;
+            assignmentsBySource.TryGetValue(plan.Id, out var assignments);
+            assignments ??= Array.Empty<FiniteScheduleAssignment>();
+
+            var materialCodes = plan.Allocations
+                .Select(x => x.ProductionOrder?.MaterialCode)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var campaignIds = plan.Allocations.Select(x => x.CampaignId).Distinct().ToArray();
+            var prefix = plan.OperationType switch
             {
-                planningKeyByTask.TryGetValue(assignment.TaskId, out var planningKey);
-                scheduledOperations.Add(new ScheduledOperation
-                {
-                    PlanVersionId = request.PlanVersionId,
-                    WorkOrderId = workOrder.Id,
-                    ResourceId = assignment.ResourceId,
-                    PlanningKey = planningKey,
-                    Start = assignment.StartUtc,
-                    End = assignment.EndUtc,
-                    IsFrozen = false
-                });
-            }
+                WorkOrderType.ColdRolling => "CRM",
+                WorkOrderType.Finishing => "FIN",
+                _ => "PROC"
+            };
+
+            var workOrder = new WorkOrder
+            {
+                WorkOrderNumber = $"{prefix}-{plan.Id:N}",
+                WorkOrderType = plan.OperationType,
+                CampaignId = campaignIds.Length == 1 ? campaignIds[0] : null,
+                ResourceId = plan.ResourceId,
+                MaterialCode = materialCodes.Length == 1 ? materialCodes[0] : "MULTI",
+                GradeCode = plan.GradeCode,
+                CrossSectionCode = plan.OutputCrossSectionCode,
+                PlannedQuantityMt = plan.PlannedQuantityMt,
+                PlannedStart = assignments.Length == 0 ? null : assignments.Min(x => x.StartUtc),
+                PlannedEnd = assignments.Length == 0 ? null : assignments.Max(x => x.EndUtc),
+                Status = WorkOrderStatus.Planned
+            };
+
+            AddAllocations(workOrder, plan.Allocations.Select(x =>
+                (x.ProductionOrderId, x.ProductionOrder, x.PlannedQuantityMt)));
+            workOrders.Add(workOrder);
+            AddScheduledOperations(request.PlanVersionId, workOrder.Id, assignments, planningKeyByTask, scheduledOperations);
+        }
+    }
+
+    private static void AddAllocations(
+        WorkOrder workOrder,
+        IEnumerable<(Guid ProductionOrderId, ProductionOrder? ProductionOrder, decimal QuantityMt)> allocations)
+    {
+        foreach (var allocation in allocations)
+        {
+            workOrder.Allocations.Add(new WorkOrderAllocation
+            {
+                WorkOrderId = workOrder.Id,
+                WorkOrder = workOrder,
+                ProductionOrderId = allocation.ProductionOrderId,
+                ProductionOrder = allocation.ProductionOrder,
+                PlannedQuantityMt = allocation.QuantityMt
+            });
+        }
+    }
+
+    private static void AddScheduledOperations(
+        Guid planVersionId,
+        Guid workOrderId,
+        IEnumerable<FiniteScheduleAssignment> assignments,
+        IReadOnlyDictionary<Guid, string> planningKeyByTask,
+        ICollection<ScheduledOperation> scheduledOperations)
+    {
+        foreach (var assignment in assignments)
+        {
+            planningKeyByTask.TryGetValue(assignment.TaskId, out var planningKey);
+            scheduledOperations.Add(new ScheduledOperation
+            {
+                PlanVersionId = planVersionId,
+                WorkOrderId = workOrderId,
+                ResourceId = assignment.ResourceId,
+                PlanningKey = planningKey,
+                Start = assignment.StartUtc,
+                End = assignment.EndUtc,
+                IsFrozen = false
+            });
         }
     }
 }
