@@ -29,6 +29,10 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
     public DbSet<LotGenealogy> LotGenealogy => Set<LotGenealogy>();
     public DbSet<MaterialLotAllocation> MaterialLotAllocations => Set<MaterialLotAllocation>();
     public DbSet<PlanVersion> PlanVersions => Set<PlanVersion>();
+    public DbSet<PlanVersionState> PlanVersionStates => Set<PlanVersionState>();
+    public DbSet<PlanOperationSnapshot> PlanOperationSnapshots => Set<PlanOperationSnapshot>();
+    public DbSet<PlanInventoryAllocationSnapshot> PlanInventoryAllocationSnapshots => Set<PlanInventoryAllocationSnapshot>();
+    public DbSet<PlanMaterialUnitSnapshot> PlanMaterialUnitSnapshots => Set<PlanMaterialUnitSnapshot>();
     public DbSet<ScheduledOperation> ScheduledOperations => Set<ScheduledOperation>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -133,6 +137,30 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
             .HasForeignKey(x => x.ProductionOrderId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        modelBuilder.Entity<PlanVersionState>()
+            .HasOne<PlanVersion>()
+            .WithMany()
+            .HasForeignKey(x => x.PlanVersionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PlanOperationSnapshot>()
+            .HasOne<PlanVersion>()
+            .WithMany()
+            .HasForeignKey(x => x.PlanVersionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PlanInventoryAllocationSnapshot>()
+            .HasOne<PlanVersion>()
+            .WithMany()
+            .HasForeignKey(x => x.PlanVersionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<PlanMaterialUnitSnapshot>()
+            .HasOne<PlanVersion>()
+            .WithMany()
+            .HasForeignKey(x => x.PlanVersionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         modelBuilder.Entity<LotGenealogy>().HasIndex(x => new { x.ParentLotId, x.ChildLotId });
         modelBuilder.Entity<MaterialLotAllocation>().HasIndex(x => new { x.MaterialLotId, x.ProductionOrderId });
         modelBuilder.Entity<CampaignGradeSequence>().HasIndex(x => new { x.CampaignId, x.SequenceNumber }).IsUnique();
@@ -142,6 +170,10 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<ResourceCalendar>().HasIndex(x => new { x.ResourceId, x.Start, x.End });
         modelBuilder.Entity<WorkOrderStatusHistory>().HasIndex(x => new { x.WorkOrderId, x.ChangedOnUtc });
         modelBuilder.Entity<WorkOrderStatusHistory>().HasIndex(x => new { x.Source, x.ExternalEventId });
+        modelBuilder.Entity<PlanVersionState>().HasIndex(x => x.PlanVersionId).IsUnique();
+        modelBuilder.Entity<PlanOperationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.PlanningKey }).IsUnique();
+        modelBuilder.Entity<PlanInventoryAllocationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.ProductionOrderId, x.Stage });
+        modelBuilder.Entity<PlanMaterialUnitSnapshot>().HasIndex(x => new { x.PlanVersionId, x.PlanningKey }).IsUnique();
 
         foreach (var property in modelBuilder.Model.GetEntityTypes()
                      .SelectMany(t => t.GetProperties())
