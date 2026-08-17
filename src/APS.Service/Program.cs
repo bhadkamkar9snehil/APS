@@ -32,6 +32,7 @@ if (hasApsDatabase)
     builder.Services.AddScoped<IWorkOrderExecutionService, WorkOrderExecutionService>();
     builder.Services.AddScoped<IHeatExecutionService, HeatExecutionService>();
     builder.Services.AddScoped<IInventorySnapshotProvider, SqlInventorySnapshotProvider>();
+    builder.Services.AddScoped<IReplanningActualStateProvider, ReplanningActualStateProvider>();
     builder.Services.AddScoped<IPlanVersionRepository, PlanVersionRepository>();
     builder.Services.AddScoped<IPlanReleaseRepository, PlanReleaseRepository>();
     builder.Services.AddScoped<IPlanComparisonService, PlanComparisonService>();
@@ -72,19 +73,30 @@ if (hasApsDatabase)
         });
 
     app.MapPost("/api/planning/replan/{baselinePlanVersionId:guid}",
-        async (Guid baselinePlanVersionId, ReplanApiRequest request, IPlanningEngine planningEngine, IPlanVersionRepository plans, CancellationToken cancellationToken) =>
+        async (Guid baselinePlanVersionId,
+            ReplanApiRequest request,
+            IPlanningEngine planningEngine,
+            IPlanVersionRepository plans,
+            IReplanningActualStateProvider actualStateProvider,
+            CancellationToken cancellationToken) =>
         {
             var baseline = await plans.GetAsync(baselinePlanVersionId, cancellationToken);
             if (baseline is null) return Results.NotFound(new { message = "Baseline plan version was not found." });
 
             var referenceTime = request.ReferenceTimeUtc ?? DateTime.UtcNow;
+            var actualState = await actualStateProvider.GetAsync(
+                baselinePlanVersionId,
+                referenceTime,
+                baseline.Operations,
+                cancellationToken);
             var planningRequest = request.Planning with
             {
+                Inventory = request.RefreshInventoryFromProvider ? actualState.Inventory : request.Planning.Inventory,
                 ReplanContext = new PlanningReplanContext(
                     baselinePlanVersionId,
                     referenceTime,
                     request.TimeFencePolicy,
-                    baseline.Operations)
+                    actualState.BaselineOperations)
             };
 
             var result = planningEngine.Run(planningRequest);
@@ -95,9 +107,18 @@ if (hasApsDatabase)
                 referenceTime,
                 request.Reason ?? "Replanning from current manufacturing and inventory state"), cancellationToken);
 
-            return result.IsFeasible
-                ? Results.Ok(new { plan = result, version = persisted })
-                : Results.UnprocessableEntity(new { plan = result, version = persisted });
+            var response = new
+            {
+                plan = result,
+                version = persisted,
+                executionState = new
+                {
+                    actualState.CompletedPlanningKeys,
+                    actualState.RunningPlanningKeys,
+                    InventoryPositions = actualState.Inventory.Count
+                }
+            };
+            return result.IsFeasible ? Results.Ok(response) : Results.UnprocessableEntity(response);
         });
 
     app.MapGet("/api/planning/versions/{planVersionId:guid}",
@@ -266,7 +287,8 @@ public sealed record ReplanApiRequest(
     PlanningTimeFencePolicy TimeFencePolicy,
     DateTime? ReferenceTimeUtc = null,
     PlanTriggerType Trigger = PlanTriggerType.ExecutionFeedback,
-    string? Reason = null);
+    string? Reason = null,
+    bool RefreshInventoryFromProvider = true);
 
 public sealed record ManualHeatExecutionRequest(
     Guid PlanVersionId,
