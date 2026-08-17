@@ -142,11 +142,7 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
         }
 
         var objectiveTerms = new List<LinearExpr>();
-        ApplyResourceSequenceCircuits(request, horizonMinutes, model, taskVars, objectiveTerms, issues);
-        if (issues.Any(i => i.Severity == PlanningIssueSeverity.Error))
-        {
-            return new FiniteScheduleResult("InvalidInput", false, 0, Array.Empty<FiniteScheduleAssignment>(), issues);
-        }
+        ApplyResourceSequenceCircuits(request, model, taskVars, objectiveTerms);
 
         ApplyStabilityConstraints(request, horizonMinutes, model, taskVars, objectiveTerms, issues);
         if (issues.Any(i => i.Severity == PlanningIssueSeverity.Error))
@@ -232,19 +228,17 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
 
     private static void ApplyResourceSequenceCircuits(
         FiniteScheduleRequest request,
-        int horizonMinutes,
         CpModel model,
         IReadOnlyDictionary<Guid, TaskVariables> taskVars,
-        ICollection<LinearExpr> objectiveTerms,
-        ICollection<PlanningIssue> issues)
+        ICollection<LinearExpr> objectiveTerms)
     {
         var resources = request.Resources
             .Where(resource => resource.IsActive)
             .ToDictionary(resource => resource.Id);
 
         // Phase 1 deliberately sequences only tasks whose physical resource is already fixed.
-        // Each ResourceId receives its own independent circuit. Resources of the same type are
-        // never pooled, so CCM-1/CCM-2 and RM-1/RM-2 remain independently schedulable in parallel.
+        // Every ResourceId gets a completely separate circuit. Resources of the same type are
+        // never pooled, so CCM-1/CCM-2 and RM-1/RM-2 can operate independently and in parallel.
         var fixedTasksByResource = request.Tasks
             .Where(task =>
                 task.ResourceOptions.Count == 1 &&
@@ -253,89 +247,37 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
 
         foreach (var resourceTasks in fixedTasksByResource)
         {
-            if (!resources.TryGetValue(resourceTasks.Key, out var resource))
-            {
-                continue;
-            }
+            if (!resources.TryGetValue(resourceTasks.Key, out var resource)) continue;
 
-            var groups = new List<ResourceSequenceGroup>();
-            var sourceGroups = resourceTasks
-                .GroupBy(task => task.SourceEntityId)
+            var nodes = resourceTasks
+                .Select((task, index) => new ResourceSequenceNode(index + 1, task))
                 .ToArray();
-
-            foreach (var sourceGroup in sourceGroups)
-            {
-                var tasks = sourceGroup.ToArray();
-                var gradeCodes = tasks
-                    .Select(task => task.GradeCode)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToArray();
-                var sectionCodes = tasks
-                    .Select(task => task.CrossSectionCode)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToArray();
-
-                if (gradeCodes.Length != 1 || sectionCodes.Length != 1)
-                {
-                    issues.Add(new PlanningIssue(
-                        PlanningIssueSeverity.Error,
-                        "SEQUENCE_SOURCE_ATTRIBUTES_AMBIGUOUS",
-                        $"Source {sourceGroup.Key} has multiple grade/section identities on resource {resource.Code}; it cannot be represented as one sequencing node.",
-                        sourceGroup.Key));
-                    continue;
-                }
-
-                var groupStart = model.NewIntVar(
-                    0,
-                    horizonMinutes,
-                    $"seq_group_start_{resource.Id:N}_{sourceGroup.Key:N}");
-                var groupEnd = model.NewIntVar(
-                    0,
-                    horizonMinutes,
-                    $"seq_group_end_{resource.Id:N}_{sourceGroup.Key:N}");
-
-                model.AddMinEquality(groupStart, tasks.Select(task => taskVars[task.TaskId].Start));
-                model.AddMaxEquality(groupEnd, tasks.Select(task => taskVars[task.TaskId].End));
-
-                groups.Add(new ResourceSequenceGroup(
-                    groups.Count + 1,
-                    sourceGroup.Key,
-                    tasks[0],
-                    groupStart,
-                    groupEnd));
-            }
-
-            if (groups.Count <= 1)
-            {
-                continue;
-            }
+            if (nodes.Length <= 1) continue;
 
             var circuit = model.AddCircuit();
 
-            // Node 0 is a dummy depot. Arcs to/from it make the circuit represent a linear
-            // machine queue: exactly N-1 real plan-to-plan adjacencies are selected for N groups.
-            foreach (var group in groups)
+            // Node 0 is a dummy depot. The selected circuit therefore represents one linear
+            // queue on this physical machine. Dummy arcs carry no setup time or penalty.
+            foreach (var node in nodes)
             {
-                var firstArc = model.NewBoolVar($"seq_{resource.Id:N}_0_{group.NodeIndex}");
-                var lastArc = model.NewBoolVar($"seq_{resource.Id:N}_{group.NodeIndex}_0");
-                circuit.AddArc(0, group.NodeIndex, firstArc);
-                circuit.AddArc(group.NodeIndex, 0, lastArc);
+                var firstArc = model.NewBoolVar($"seq_{resource.Id:N}_0_{node.NodeIndex}");
+                var lastArc = model.NewBoolVar($"seq_{resource.Id:N}_{node.NodeIndex}_0");
+                circuit.AddArc(0, node.NodeIndex, firstArc);
+                circuit.AddArc(node.NodeIndex, 0, lastArc);
             }
 
-            foreach (var previous in groups)
+            foreach (var previous in nodes)
             {
-                foreach (var current in groups)
+                foreach (var current in nodes)
                 {
                     if (previous.NodeIndex == current.NodeIndex) continue;
 
-                    var transition = ResolveTransition(
-                        request.TransitionRules,
-                        resource,
-                        previous.RepresentativeTask,
-                        current.RepresentativeTask);
+                    var transition = previous.Task.SourceEntityId == current.Task.SourceEntityId
+                        ? new TransitionProfile(true, 0, 0)
+                        : ResolveTransition(request.TransitionRules, resource, previous.Task, current.Task);
                     if (!transition.IsAllowed)
                     {
-                        // No arc means this directional adjacency cannot be selected.
+                        // Omitting this directional arc makes the adjacency impossible.
                         continue;
                     }
 
@@ -343,9 +285,13 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
                         $"seq_{resource.Id:N}_{previous.NodeIndex}_{current.NodeIndex}");
                     circuit.AddArc(previous.NodeIndex, current.NodeIndex, adjacency);
 
-                    model.Add(current.Start >= previous.End + transition.TransitionMinutes)
+                    var previousVars = taskVars[previous.Task.TaskId];
+                    var currentVars = taskVars[current.Task.TaskId];
+                    model.Add(currentVars.Start >= previousVars.End + transition.TransitionMinutes)
                         .OnlyEnforceIf(adjacency);
 
+                    // Penalty is attached only to the selected adjacency literal. Non-adjacent
+                    // plan pairs therefore contribute neither setup time nor transition penalty.
                     if (transition.Penalty > 0)
                     {
                         objectiveTerms.Add(adjacency * transition.Penalty);
@@ -480,12 +426,9 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
         IntVar End,
         IReadOnlyDictionary<Guid, BoolVar> Presence);
 
-    private sealed record ResourceSequenceGroup(
+    private sealed record ResourceSequenceNode(
         int NodeIndex,
-        Guid SourceEntityId,
-        FiniteScheduleTask RepresentativeTask,
-        IntVar Start,
-        IntVar End);
+        FiniteScheduleTask Task);
 
     private sealed record TransitionProfile(
         bool IsAllowed,
