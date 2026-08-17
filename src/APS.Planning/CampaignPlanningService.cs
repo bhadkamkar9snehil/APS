@@ -54,16 +54,18 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
         var rollingRequirements = new Dictionary<Guid, decimal>();
         var freshSteelRequirements = new Dictionary<Guid, decimal>();
         var intermediateAllocated = new Dictionary<Guid, decimal>();
+        var inventoryAllocations = new List<PlanningInventoryAllocation>();
 
         var finishedGoodsPools = request.Inventory
-            .Where(i => i.Stage == InventoryStage.FinishedGoods)
-            .GroupBy(i => FinishedGoodsKey(i.MaterialCode, i.GradeCode, i.CrossSectionCode))
-            .ToDictionary(g => g.Key, g => Math.Max(0m, g.Sum(x => x.ProjectedAvailableQuantityMt)));
+            .Where(i => i.Stage == InventoryStage.FinishedGoods && i.ProjectedAvailableQuantityMt > 0m)
+            .Select(i => new InventoryPool(i, i.ProjectedAvailableQuantityMt))
+            .ToList();
 
         var intermediatePools = request.Inventory
             .Where(i => i.Stage is InventoryStage.CastIntermediate or InventoryStage.OtherIntermediate)
-            .GroupBy(i => IntermediateKey(i.GradeCode, i.CrossSectionCode))
-            .ToDictionary(g => g.Key, g => Math.Max(0m, g.Sum(x => x.ProjectedAvailableQuantityMt)));
+            .Where(i => i.ProjectedAvailableQuantityMt > 0m)
+            .Select(i => new InventoryPool(i, i.ProjectedAvailableQuantityMt))
+            .ToList();
 
         // MTO is protected before MTS. Within each class, higher priority and earlier requirement date win inventory.
         var ordered = request.ProductionOrders
@@ -78,10 +80,16 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
         {
             var remaining = Math.Max(0m, po.RemainingQuantityMt);
 
-            var fgKey = FinishedGoodsKey(po.MaterialCode, po.GradeCode, po.FinalCrossSectionCode);
-            finishedGoodsPools.TryGetValue(fgKey, out var fgAvailable);
-            var fgUsed = Math.Min(remaining, fgAvailable);
-            finishedGoodsPools[fgKey] = fgAvailable - fgUsed;
+            var fgUsed = AllocateInventory(
+                po,
+                remaining,
+                finishedGoodsPools,
+                position =>
+                    Same(position.MaterialCode, po.MaterialCode) &&
+                    Same(position.GradeCode, po.GradeCode) &&
+                    Same(position.CrossSectionCode, po.FinalCrossSectionCode),
+                PlanningInventoryUse.FinishedGoodsFulfilment,
+                inventoryAllocations);
 
             var rollingRequirement = remaining - fgUsed;
             rollingRequirements[po.Id] = rollingRequirement;
@@ -95,10 +103,15 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
             }
 
             // Existing compatible cast/intermediate stock can feed rolling without creating new heats.
-            var intermediateKey = IntermediateKey(po.GradeCode, po.CasterSectionCode);
-            intermediatePools.TryGetValue(intermediateKey, out var intermediateAvailable);
-            var intermediateUsed = Math.Min(rollingRequirement, intermediateAvailable);
-            intermediatePools[intermediateKey] = intermediateAvailable - intermediateUsed;
+            var intermediateUsed = AllocateInventory(
+                po,
+                rollingRequirement,
+                intermediatePools,
+                position =>
+                    Same(position.GradeCode, po.GradeCode) &&
+                    Same(position.CrossSectionCode, po.CasterSectionCode),
+                PlanningInventoryUse.IntermediateFeed,
+                inventoryAllocations);
 
             intermediateAllocated[po.Id] = intermediateUsed;
             freshSteelRequirements[po.Id] = rollingRequirement - intermediateUsed;
@@ -187,7 +200,44 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
             coveredByFinishedGoods,
             rollingRequirements,
             freshSteelRequirements,
-            intermediateAllocated);
+            intermediateAllocated,
+            inventoryAllocations);
+    }
+
+    private static decimal AllocateInventory(
+        ProductionOrder productionOrder,
+        decimal requiredQuantityMt,
+        IEnumerable<InventoryPool> pools,
+        Func<InventoryPosition, bool> matches,
+        PlanningInventoryUse use,
+        ICollection<PlanningInventoryAllocation> allocations)
+    {
+        var allocated = 0m;
+        foreach (var pool in pools
+                     .Where(pool => pool.RemainingQuantityMt > 0m && matches(pool.Position))
+                     .OrderBy(pool => pool.Position.LocationCode)
+                     .ThenBy(pool => pool.Position.MaterialCode))
+        {
+            var stillRequired = requiredQuantityMt - allocated;
+            if (stillRequired <= 0m) break;
+
+            var quantity = Math.Min(stillRequired, pool.RemainingQuantityMt);
+            if (quantity <= 0m) continue;
+
+            pool.RemainingQuantityMt -= quantity;
+            allocated += quantity;
+            allocations.Add(new PlanningInventoryAllocation(
+                productionOrder.Id,
+                pool.Position.Stage,
+                pool.Position.MaterialCode,
+                pool.Position.GradeCode,
+                pool.Position.CrossSectionCode,
+                pool.Position.LocationCode,
+                quantity,
+                use));
+        }
+
+        return allocated;
     }
 
     private static CampaignCompatibilityKey CampaignKey(ProductionOrder po, CampaignPlanningPolicy policy)
@@ -302,8 +352,14 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
     private static string SequenceClass(ProductionOrder po) =>
         string.IsNullOrWhiteSpace(po.GradeSequenceClassCode) ? $"GRADE:{po.GradeCode}" : po.GradeSequenceClassCode;
 
-    private static string FinishedGoodsKey(string material, string grade, string section) => $"{material}|{grade}|{section}";
-    private static string IntermediateKey(string grade, string section) => $"{grade}|{section}";
+    private static bool Same(string left, string right) =>
+        string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
+    private sealed class InventoryPool(InventoryPosition position, decimal remainingQuantityMt)
+    {
+        public InventoryPosition Position { get; } = position;
+        public decimal RemainingQuantityMt { get; set; } = remainingQuantityMt;
+    }
 
     private sealed record CampaignCompatibilityKey(
         string GradeSequenceClassCode,
