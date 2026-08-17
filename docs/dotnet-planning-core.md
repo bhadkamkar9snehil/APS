@@ -35,6 +35,8 @@ rolling requirement
   = fresh steel requirement
 ```
 
+The campaign plan retains each inventory allocation by Production Order, stage, material, grade, section, location and quantity. This makes inventory consumption an explicit planning assumption that can later be reserved and reconciled against MES inventory rather than an invisible arithmetic deduction.
+
 A campaign therefore tracks both rolling requirement and fresh-steel requirement. Existing intermediate inventory can create a rolling-only planning block without creating new heats.
 
 ## Campaign planning
@@ -44,9 +46,10 @@ Campaign formation currently:
 1. Nets finished-goods inventory against open Production Order quantity.
 2. Gives MTO precedence over MTS during inventory allocation.
 3. Nets compatible cast/intermediate inventory before calculating fresh steel.
-4. Groups residual production by configurable manufacturing compatibility.
-5. Allocates multiple Production Orders into campaigns without losing lineage.
-6. Forms grade sequence and heat structure inside campaign planning, using fresh-steel quantity only.
+4. Records the exact inventory positions allocated to each Production Order.
+5. Groups residual production by configurable manufacturing compatibility.
+6. Allocates multiple Production Orders into campaigns without losing lineage.
+7. Forms grade sequence and heat structure inside campaign planning, using fresh-steel quantity only.
 
 Compatible exact grades may share a campaign through a configured grade-sequence class. MTO/MTS mixing is policy controlled.
 
@@ -79,11 +82,27 @@ Fresh rolling blocks inherit caster-to-mill transfer dependencies. Existing-inte
 - precedence,
 - minimum transfer lag,
 - optional maximum transfer/hot-charge lag,
+- selected caster/mill sequence precedence,
+- transition/setup time between planned blocks,
 - weighted tardiness,
 - assignment penalties,
 - makespan minimization.
 
 Infeasible plans return an explicit non-feasible result and are not silently converted to a heuristic schedule.
+
+## End-to-end planning run
+
+`PlanningEngine` runs the complete calculation from one refreshed snapshot:
+
+```text
+Production Orders + inventory + plant/resource masters
+  -> campaign formation
+  -> production structure
+  -> finite schedule
+  -> plan version result
+```
+
+This is also the intended full replanning path after manufacturing changes: refresh open Production Orders and inventory/execution state, then run a new plan version. Partial/frozen-zone replanning is a later refinement.
 
 ## Release and traceability
 
@@ -95,6 +114,19 @@ An approved feasible plan is converted into Work Orders:
 - MTO Production Orders retain their Sales Order/item link.
 
 The XStudio release envelope contains both Work Orders and cast-sequence/heat details, so execution receives the commercial lineage and the caster production structure.
+
+## Execution feedback
+
+Manual execution and MES events use the same Work Order execution service. It stores:
+
+- lifecycle status,
+- actual start/end,
+- actual quantity,
+- status history,
+- update source,
+- external event ID and comment.
+
+Status transitions are validated. Terminal states require an explicit correction to move backwards. External event IDs are treated idempotently, including quantity-only events that do not change WO status.
 
 ## Integration boundary
 
@@ -112,17 +144,19 @@ The XStudio release envelope contains both Work Orders and cast-sequence/heat de
 - SQL Server / EF Core
 - Google OR-Tools CP-SAT
 
-Current planning APIs:
+Current APIs:
 
 - `GET /api/health`
+- `POST /api/planning/run`
 - `POST /api/planning/mts/production-order`
 - `POST /api/planning/campaigns/form`
 - `POST /api/planning/structure/build`
 - `POST /api/planning/schedule/solve`
 - `POST /api/planning/release/build`
+- `POST /api/execution/work-orders/{workOrderId}`
 - `POST /api/integration/xstudio/execution-events`
 - traceability endpoints for Work Orders and material lots
 
 ## Current boundary / next refinements
 
-The present implementation deliberately separates campaign formation, production-structure selection and exact-time optimization. The next iterations should add true sequence-dependent setup constraints inside CP-SAT, rolling/casting sequence improvement loops, strand-level billet generation, execution-driven replanning and richer infeasibility explanation.
+The present implementation separates campaign formation, production-structure selection and exact-time optimization, while carrying the selected equipment sequence into CP-SAT. The next iterations should deepen sequence optimization rather than selecting it heuristically first, add strand/billet-level material release, persist/freeze plan versions, support execution-driven partial replanning and improve infeasibility explanation.
