@@ -213,7 +213,8 @@ public sealed record FiniteScheduleRequest(
     IReadOnlyCollection<ResourceCalendar> ResourceCalendars,
     IReadOnlyCollection<TransitionRule> TransitionRules,
     int MaxSolverSeconds = 20,
-    IReadOnlyCollection<FiniteScheduleStabilityConstraint>? StabilityConstraints = null);
+    IReadOnlyCollection<FiniteScheduleStabilityConstraint>? StabilityConstraints = null,
+    IReadOnlyCollection<SteelGrade>? SteelGrades = null);
 
 public sealed record FiniteScheduleAssignment(
     Guid TaskId,
