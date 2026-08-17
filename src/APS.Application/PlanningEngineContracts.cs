@@ -42,7 +42,12 @@ public sealed record PlanningRunRequest(
     int MaxSolverSeconds = 20,
     string CampaignNumberPrefix = "CMP",
     PlanningReplanContext? ReplanContext = null,
-    RoutePlanningInput? RoutePlanning = null);
+    RoutePlanningInput? RoutePlanning = null,
+    IReadOnlyCollection<SteelGrade>? SteelGrades = null,
+    IReadOnlyCollection<CrossSectionSpecification>? CrossSections = null,
+    IReadOnlyCollection<MaterialSpecification>? MaterialSpecifications = null,
+    IReadOnlyCollection<PackagingSpecification>? PackagingSpecifications = null,
+    IReadOnlyCollection<ExternalMaterialSupply>? ExternalMaterialSupplies = null);
 
 public sealed record PlanningRunResult(
     Guid PlanVersionId,
