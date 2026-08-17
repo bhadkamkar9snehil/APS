@@ -12,3 +12,10 @@ public interface IPlanReleaseBuilder
 {
     PlanRelease Build(PlanReleaseBuildRequest request);
 }
+
+public interface IPlanReleaseRepository
+{
+    Task<PlanRelease> PersistAsync(
+        PlanRelease release,
+        CancellationToken cancellationToken = default);
+}
