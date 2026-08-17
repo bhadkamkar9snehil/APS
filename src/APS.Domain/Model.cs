@@ -10,6 +10,7 @@ public enum MaterialLotStatus { Available = 1, Reserved = 2, Consumed = 3, Held 
 public enum FlowCouplingType { Direct = 1, HotTransfer = 2, Buffered = 3, InventoryDecoupled = 4 }
 public enum TransitionDimension { Grade = 1, CrossSection = 2, ProductFamily = 3 }
 public enum LotAllocationStatus { Planned = 1, Reserved = 2, ConsumedForOrder = 3, Delivered = 4, Cancelled = 5 }
+public enum InventoryStage { FinishedGoods = 1, CastIntermediate = 2, OtherIntermediate = 3, RawMaterial = 4 }
 
 public abstract class Entity
 {
@@ -63,7 +64,16 @@ public sealed class Campaign : Entity
     public required string GradeSequenceClassCode { get; set; }
     public required string CasterSectionCode { get; set; }
     public required string RouteCode { get; set; }
+
+    // Quantity still requiring rolling after finished-goods inventory netting.
     public decimal PlannedQuantityMt { get; set; }
+
+    // Portion that requires fresh steelmaking/casting after intermediate inventory netting.
+    public decimal FreshSteelRequirementMt { get; set; }
+
+    // Existing compatible billet/slab/intermediate inventory assigned to this campaign.
+    public decimal ExistingIntermediateInventoryMt { get; set; }
+
     public DateTime RequiredDate { get; set; }
     public CampaignStatus Status { get; set; } = CampaignStatus.Draft;
     public DateTime CreatedOnUtc { get; set; } = DateTime.UtcNow;
@@ -79,7 +89,15 @@ public sealed class CampaignAllocation : Entity
     public Campaign? Campaign { get; set; }
     public Guid ProductionOrderId { get; set; }
     public ProductionOrder? ProductionOrder { get; set; }
+
+    // Total quantity still requiring production operations after FG inventory netting.
     public decimal PlannedQuantityMt { get; set; }
+
+    // Portion supplied by compatible intermediate inventory and therefore not requiring SMS/casting.
+    public decimal ExistingIntermediateInventoryMt { get; set; }
+
+    // Portion requiring fresh steelmaking/casting.
+    public decimal FreshSteelQuantityMt { get; set; }
 }
 
 public sealed class CampaignGradeSequence : Entity
@@ -88,6 +106,8 @@ public sealed class CampaignGradeSequence : Entity
     public Campaign? Campaign { get; set; }
     public int SequenceNumber { get; set; }
     public required string GradeCode { get; set; }
+
+    // Fresh steel quantity only; rolling-only quantities covered from intermediate stock do not create heats.
     public decimal PlannedQuantityMt { get; set; }
 }
 
@@ -105,9 +125,12 @@ public sealed class CampaignHeat : Entity
 
 public sealed class CastSequence : Entity
 {
-    public Guid CampaignId { get; set; }
+    // Null when a caster sequence spans heats from more than one campaign.
+    public Guid? CampaignId { get; set; }
     public Guid CasterResourceId { get; set; }
     public int SequenceNumber { get; set; }
+    public required string CasterSectionCode { get; set; }
+    public required string RouteCode { get; set; }
     public DateTime? PlannedStart { get; set; }
     public DateTime? PlannedEnd { get; set; }
     public ICollection<CastSequenceHeat> Heats { get; set; } = new List<CastSequenceHeat>();
@@ -124,14 +147,31 @@ public sealed class CastSequenceHeat : Entity
 
 public sealed class RollingPlan : Entity
 {
-    public Guid CampaignId { get; set; }
-    public Guid ProductionOrderId { get; set; }
+    // Populated only when the plan is sourced from a single campaign/PO; allocations remain authoritative.
+    public Guid? CampaignId { get; set; }
+    public Guid? ProductionOrderId { get; set; }
     public Guid? RollingMillResourceId { get; set; }
     public int SequenceNumber { get; set; }
     public required string GradeCode { get; set; }
     public required string InputCrossSectionCode { get; set; }
     public required string OutputCrossSectionCode { get; set; }
+    public required string RouteCode { get; set; }
     public decimal PlannedQuantityMt { get; set; }
+    public decimal ExistingIntermediateInventoryMt { get; set; }
+    public decimal FreshSteelQuantityMt { get; set; }
+    public ICollection<RollingPlanAllocation> Allocations { get; set; } = new List<RollingPlanAllocation>();
+}
+
+public sealed class RollingPlanAllocation : Entity
+{
+    public Guid RollingPlanId { get; set; }
+    public RollingPlan? RollingPlan { get; set; }
+    public Guid CampaignId { get; set; }
+    public Guid ProductionOrderId { get; set; }
+    public ProductionOrder? ProductionOrder { get; set; }
+    public decimal PlannedQuantityMt { get; set; }
+    public decimal ExistingIntermediateInventoryMt { get; set; }
+    public decimal FreshSteelQuantityMt { get; set; }
 }
 
 public sealed class Plant : Entity
@@ -269,6 +309,7 @@ public sealed class InventoryPosition
     public required string MaterialCode { get; init; }
     public required string GradeCode { get; init; }
     public required string CrossSectionCode { get; init; }
+    public InventoryStage Stage { get; init; } = InventoryStage.FinishedGoods;
     public string? LocationCode { get; init; }
     public decimal AvailableQuantityMt { get; init; }
     public decimal ReservedQuantityMt { get; init; }
