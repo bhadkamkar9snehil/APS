@@ -31,6 +31,7 @@ if (hasApsDatabase)
     builder.Services.AddScoped<ITraceabilityService, TraceabilityService>();
     builder.Services.AddScoped<IWorkOrderExecutionService, WorkOrderExecutionService>();
     builder.Services.AddScoped<IPlanVersionRepository, PlanVersionRepository>();
+    builder.Services.AddScoped<IPlanReleaseRepository, PlanReleaseRepository>();
 }
 
 var app = builder.Build();
@@ -97,6 +98,19 @@ if (hasApsDatabase)
         {
             var version = await plans.GetAsync(planVersionId, cancellationToken);
             return version is null ? Results.NotFound() : Results.Ok(version);
+        });
+
+    app.MapPost("/api/planning/release",
+        async (PlanReleaseBuildRequest request, IPlanReleaseBuilder releaseBuilder, IPlanReleaseRepository releases, CancellationToken cancellationToken) =>
+        {
+            if (!request.Schedule.IsFeasible)
+            {
+                return Results.UnprocessableEntity(new { message = "Cannot release Work Orders from an infeasible schedule." });
+            }
+
+            var release = releaseBuilder.Build(request);
+            var persisted = await releases.PersistAsync(release, cancellationToken);
+            return Results.Ok(persisted);
         });
 }
 else
