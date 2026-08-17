@@ -112,19 +112,46 @@ Existing-intermediate-inventory rolling blocks have no fresh-cast predecessor.
 - resource assignment from eligible options,
 - unary finite capacity through `NoOverlap`,
 - resource-calendar downtime blocks,
-- precedence,
+- explicit process/material/queue precedence,
 - minimum transfer lag,
 - optional maximum transfer/hot-charge lag,
-- transition/setup time between planned blocks,
+- solver-owned fixed-resource sequencing through `AddCircuit`,
+- sequence-dependent transition/setup time and penalty only on selected adjacency,
+- forbidden directional transitions represented by omitted circuit arcs,
 - weighted tardiness,
 - assignment penalties,
 - makespan minimization,
 - frozen-operation hard constraints,
 - slushy-zone movement and resource-change penalties.
 
-The optimizer already models one presence variable per `(task, resource option)` and `AddExactlyOne` over eligible options. At present, upstream production-structure builders normally collapse those options to one selected caster/mill/resource before solve, so the alternative-resource capability is largely unused by the end-to-end planning path.
+The optimizer models one presence variable per `(task, resource option)` and `AddExactlyOne` over eligible options. At present, upstream production-structure builders normally collapse those options to one selected caster/mill/resource before solve, so alternative-resource assignment is still largely unused by the end-to-end path.
 
-`FiniteScheduleTaskSequencer` currently adds same-resource/same-task-type ordering dependencies before CP-SAT. It deliberately does **not** chain adjacent tasks that share the same `SourceEntityId`: those are feed-block siblings from one upstream plan/route operation, and each already carries its own material/queue predecessor. Different source entities sharing a resource are still chained so configured changeover time remains enforced.
+### Solver-owned fixed-resource sequence
+
+For tasks that currently have exactly one `FiniteScheduleResourceOption`, ordering is no longer imposed by a pre-solver insertion-order sequencer. `FiniteScheduleOptimizer` creates an independent circuit for each physical `ResourceId`.
+
+This boundary is deliberate and load-bearing:
+
+```text
+CCM-1 -> its own circuit / queue
+CCM-2 -> its own circuit / queue
+RM-1  -> its own circuit / queue
+RM-2  -> its own circuit / queue
+```
+
+Resources are never pooled by `ResourceType`. Two casters or two rolling mills therefore remain independently and simultaneously schedulable; no circuit arc can create precedence between different physical resources.
+
+Each fixed-resource scheduling task is a circuit node and node `0` is a dummy depot. The resulting circuit represents one linear physical-machine queue. For a selected adjacency `A -> B` between distinct source plans, CP-SAT enforces:
+
+```text
+Start(B) >= End(A) + TransitionTime(A, B)
+```
+
+Only that selected adjacency literal receives the configured transition penalty. Non-adjacent pairs receive neither setup time nor transition penalty. If either the grade or cross-section transition is explicitly forbidden, the directional arc is omitted and cannot be selected.
+
+Tasks with the same `SourceEntityId` are progressive/feed-block siblings belonging to the same upstream plan or route operation. Their mutual circuit arcs carry zero transition time and zero transition penalty. No fixed sibling order is injected before solve; the solver can choose their actual machine order from material readiness and other real dependencies, and another plan may run between sibling feed blocks when that produces the better feasible schedule. `NoOverlap` remains the physical-capacity constraint.
+
+The former `FiniteScheduleTaskSequencer` has been removed. Existing explicit cast/material/route dependencies remain authoritative and coexist with the selected machine adjacency constraints.
 
 Infeasible plans return an explicit non-feasible result and are not silently converted to a heuristic schedule.
 
@@ -258,12 +285,12 @@ Current APIs include:
 
 ## Current boundary / next refinements
 
-The highest-value next solver work is to move resource and sequence choice into CP-SAT instead of giving the optimizer a heuristic fait accompli:
+Solver-owned fixed-resource sequencing is now implemented. The next solver work should deepen resource choice without weakening the physical-resource separation introduced above:
 
-1. Move same-resource task ordering and sequence-dependent transition/setup selection into the optimization model while preserving feed-block sibling semantics and existing explicit material/queue dependencies.
-2. Expose multiple eligible mill/resource options from production-structure planning so the existing CP-SAT alternative-resource variables are actually used end-to-end.
-3. Extend the same alternative-resource treatment to caster assignment without breaking cast-sequence continuity and material-source identity.
-4. Propagate non-100% yields backward through configured downstream route stages.
-5. Improve active-operation remaining-duration treatment during replanning.
-6. Add richer infeasibility/relaxation explanations.
-7. Model individual billet-piece sizing/cut patterns where required rather than only aggregate strand material units.
+1. Expose multiple eligible rolling-mill/resource options from production-structure planning so the existing CP-SAT alternative-resource variables are used end-to-end. Resource assignment and sequencing will then need to be coupled conditionally to the selected machine.
+2. Extend alternative-resource choice to caster assignment while preserving cast-sequence continuity, heat identity, strand/material-source identity and caster-to-mill flow constraints.
+3. Propagate non-100% yields backward through configured downstream route stages.
+4. Improve active-operation remaining-duration treatment during replanning.
+5. Add richer infeasibility/relaxation explanations.
+6. Model individual billet-piece sizing/cut patterns where required rather than only aggregate strand material units.
+7. Build DB-backed planner/replanning/execution UI pages on top of the working Blazor host.
