@@ -260,6 +260,7 @@ public sealed class MaterialLot : Entity
     public required string MaterialCode { get; set; }
     public required string GradeCode { get; set; }
     public required string CrossSectionCode { get; set; }
+    public InventoryStage Stage { get; set; } = InventoryStage.OtherIntermediate;
     public decimal QuantityMt { get; set; }
     public MaterialLotStatus Status { get; set; } = MaterialLotStatus.Available;
     public string? LocationCode { get; set; }
@@ -315,6 +316,7 @@ public sealed class ScheduledOperation : Entity
     public Guid PlanVersionId { get; set; }
     public Guid WorkOrderId { get; set; }
     public Guid ResourceId { get; set; }
+    public string? PlanningKey { get; set; }
     public DateTime Start { get; set; }
     public DateTime End { get; set; }
     public bool IsFrozen { get; set; }
