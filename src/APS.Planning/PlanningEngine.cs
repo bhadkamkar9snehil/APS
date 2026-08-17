@@ -13,6 +13,13 @@ public sealed class PlanningEngine(
         var createdOnUtc = DateTime.UtcNow;
         var planVersionId = Guid.NewGuid();
         var steelTopologyConfigured = request.Resources.Any(x => x.ProcessUnitType != ProcessUnitType.Unknown);
+        var effectiveTransitionRules = TransitionRuleMaterializer.Materialize(
+            request.TransitionRules,
+            request.Resources,
+            request.ProductionOrders,
+            request.SteelGrades,
+            request.CrossSections,
+            request.RoutePlanning);
 
         var campaignPlan = campaignPlanning.FormCampaigns(new CampaignPlanningRequest(
             request.ProductionOrders,
@@ -31,7 +38,7 @@ public sealed class PlanningEngine(
             campaignPlan.Campaigns,
             request.Resources,
             request.Capabilities,
-            request.TransitionRules,
+            effectiveTransitionRules,
             request.FlowLinks,
             request.StructurePolicy,
             request.RoutePlanning,
@@ -80,7 +87,7 @@ public sealed class PlanningEngine(
                 structure,
                 request.RoutePlanning,
                 request.Resources,
-                request.TransitionRules,
+                effectiveTransitionRules,
                 request.FlowLinks);
             if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId);
         }
@@ -88,32 +95,60 @@ public sealed class PlanningEngine(
         var identities = PlanningTaskIdentityService.Build(structure);
         var stabilityConstraints = BuildStabilityConstraints(request, structure.SchedulingTasks, identities);
         var finiteSchedule = scheduleOptimizer.Solve(new FiniteScheduleRequest(
-            request.HorizonStartUtc, request.HorizonEndUtc, structure.SchedulingTasks, request.Resources,
-            request.ResourceCalendars, request.TransitionRules, request.MaxSolverSeconds, stabilityConstraints));
+            request.HorizonStartUtc,
+            request.HorizonEndUtc,
+            structure.SchedulingTasks,
+            request.Resources,
+            request.ResourceCalendars,
+            effectiveTransitionRules,
+            request.MaxSolverSeconds,
+            stabilityConstraints,
+            request.SteelGrades));
 
-        return new PlanningRunResult(planVersionId, createdOnUtc, campaignPlan, structure, finiteSchedule,
-            finiteSchedule.IsFeasible, identities, request.ReplanContext?.BaselinePlanVersionId);
+        return new PlanningRunResult(
+            planVersionId,
+            createdOnUtc,
+            campaignPlan,
+            structure,
+            finiteSchedule,
+            finiteSchedule.IsFeasible,
+            identities,
+            request.ReplanContext?.BaselinePlanVersionId);
     }
 
     private static bool HasErrors(ProductionStructurePlanningResult structure) =>
         structure.Issues.Any(i => i.Severity == PlanningIssueSeverity.Error);
 
-    private static PlanningRunResult InvalidStructureResult(Guid planVersionId, DateTime createdOnUtc,
-        CampaignPlanningResult campaignPlan, ProductionStructurePlanningResult structure, Guid? baselinePlanVersionId)
+    private static PlanningRunResult InvalidStructureResult(
+        Guid planVersionId,
+        DateTime createdOnUtc,
+        CampaignPlanningResult campaignPlan,
+        ProductionStructurePlanningResult structure,
+        Guid? baselinePlanVersionId)
     {
         var schedule = new FiniteScheduleResult("StructureInvalid", false, 0, Array.Empty<FiniteScheduleAssignment>(), structure.Issues);
-        return new PlanningRunResult(planVersionId, createdOnUtc, campaignPlan, structure, schedule, false,
-            Array.Empty<PlanningTaskIdentity>(), baselinePlanVersionId);
+        return new PlanningRunResult(
+            planVersionId,
+            createdOnUtc,
+            campaignPlan,
+            structure,
+            schedule,
+            false,
+            Array.Empty<PlanningTaskIdentity>(),
+            baselinePlanVersionId);
     }
 
     private static IReadOnlyCollection<FiniteScheduleStabilityConstraint> BuildStabilityConstraints(
-        PlanningRunRequest request, IReadOnlyCollection<FiniteScheduleTask> tasks, IReadOnlyCollection<PlanningTaskIdentity> identities)
+        PlanningRunRequest request,
+        IReadOnlyCollection<FiniteScheduleTask> tasks,
+        IReadOnlyCollection<PlanningTaskIdentity> identities)
     {
         var context = request.ReplanContext;
         if (context is null || context.BaselineOperations.Count == 0) return Array.Empty<FiniteScheduleStabilityConstraint>();
 
         var taskIds = tasks.Select(x => x.TaskId).ToHashSet();
-        var baselineByKey = context.BaselineOperations.GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
+        var baselineByKey = context.BaselineOperations
+            .GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.OrderBy(y => y.StartUtc).First(), StringComparer.OrdinalIgnoreCase);
         var policy = context.TimeFencePolicy;
         var constraints = new List<FiniteScheduleStabilityConstraint>();
@@ -122,11 +157,19 @@ public sealed class PlanningEngine(
         {
             if (!baselineByKey.TryGetValue(identity.PlanningKey, out var baseline) || baseline.EndUtc <= context.ReferenceTimeUtc) continue;
             var minutesToStart = (baseline.StartUtc - context.ReferenceTimeUtc).TotalMinutes;
-            var zone = minutesToStart <= policy.FrozenMinutes ? TimeFenceZone.Frozen
-                : minutesToStart <= policy.FrozenMinutes + policy.SlushyMinutes ? TimeFenceZone.Slushy : TimeFenceZone.Liquid;
+            var zone = minutesToStart <= policy.FrozenMinutes
+                ? TimeFenceZone.Frozen
+                : minutesToStart <= policy.FrozenMinutes + policy.SlushyMinutes
+                    ? TimeFenceZone.Slushy
+                    : TimeFenceZone.Liquid;
             if (zone == TimeFenceZone.Liquid) continue;
-            constraints.Add(new FiniteScheduleStabilityConstraint(identity.TaskId, zone, baseline.ResourceId, baseline.StartUtc,
-                policy.SlushyMovementPenaltyPerMinute, policy.SlushyResourceChangePenalty));
+            constraints.Add(new FiniteScheduleStabilityConstraint(
+                identity.TaskId,
+                zone,
+                baseline.ResourceId,
+                baseline.StartUtc,
+                policy.SlushyMovementPenaltyPerMinute,
+                policy.SlushyResourceChangePenalty));
         }
         return constraints;
     }
