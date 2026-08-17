@@ -6,6 +6,7 @@ public sealed record StrandMaterialActualInput(
     int StrandNumber,
     int UnitSequence,
     string? ExternalLotNumber,
+    string MaterialCode,
     string GradeCode,
     string CrossSectionCode,
     decimal QuantityMt,
