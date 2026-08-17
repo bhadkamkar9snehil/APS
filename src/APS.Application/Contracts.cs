@@ -68,7 +68,8 @@ public sealed record CampaignPlanningResult(
     IReadOnlyDictionary<Guid, decimal> FreshSteelRequirementsMt,
     IReadOnlyDictionary<Guid, decimal> IntermediateInventoryAllocatedMt,
     IReadOnlyCollection<PlanningInventoryAllocation> InventoryAllocations,
-    IReadOnlyDictionary<Guid, decimal>? ExternalIntermediateAllocatedMt = null);
+    IReadOnlyDictionary<Guid, decimal>? ExternalIntermediateAllocatedMt = null,
+    IReadOnlyCollection<CampaignHeatAllocation>? HeatAllocations = null);
 
 public interface IMtsProductionOrderService
 {
