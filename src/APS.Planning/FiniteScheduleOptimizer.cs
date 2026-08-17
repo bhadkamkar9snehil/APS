@@ -91,7 +91,6 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
             return new FiniteScheduleResult("InvalidInput", false, 0, Array.Empty<FiniteScheduleAssignment>(), issues);
         }
 
-        // Resource calendars are represented as fixed unavailable intervals inside the same NoOverlap constraint.
         foreach (var calendar in request.ResourceCalendars.Where(c => !c.IsAvailable))
         {
             if (!intervalsByResource.TryGetValue(calendar.ResourceId, out var intervals)) continue;
@@ -143,6 +142,12 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
         }
 
         var objectiveTerms = new List<LinearExpr>();
+        ApplyStabilityConstraints(request, horizonMinutes, model, taskVars, objectiveTerms, issues);
+        if (issues.Any(i => i.Severity == PlanningIssueSeverity.Error))
+        {
+            return new FiniteScheduleResult("InvalidInput", false, 0, Array.Empty<FiniteScheduleAssignment>(), issues);
+        }
+
         foreach (var task in request.Tasks)
         {
             if (!taskVars.TryGetValue(task.TaskId, out var variables)) continue;
@@ -190,7 +195,7 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
                 PlanningIssueSeverity.Error,
                 status == CpSolverStatus.Infeasible ? "SCHEDULE_INFEASIBLE" : "SCHEDULE_NOT_SOLVED",
                 status == CpSolverStatus.Infeasible
-                    ? "No finite schedule satisfies the current resource, calendar and dependency constraints."
+                    ? "No finite schedule satisfies the current resource, calendar, dependency and time-fence constraints."
                     : $"CP-SAT returned {status}."));
             return new FiniteScheduleResult(status.ToString(), false, 0, Array.Empty<FiniteScheduleAssignment>(), issues);
         }
@@ -217,6 +222,56 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
             Convert.ToInt64(Math.Round(solver.ObjectiveValue)),
             assignments.OrderBy(a => a.StartUtc).ToArray(),
             issues);
+    }
+
+    private static void ApplyStabilityConstraints(
+        FiniteScheduleRequest request,
+        int horizonMinutes,
+        CpModel model,
+        IReadOnlyDictionary<Guid, TaskVariables> taskVars,
+        ICollection<LinearExpr> objectiveTerms,
+        ICollection<PlanningIssue> issues)
+    {
+        foreach (var constraint in request.StabilityConstraints ?? Array.Empty<FiniteScheduleStabilityConstraint>())
+        {
+            if (!taskVars.TryGetValue(constraint.TaskId, out var variables)) continue;
+
+            if (!variables.Presence.TryGetValue(constraint.BaselineResourceId, out var baselineResource))
+            {
+                if (constraint.Zone == TimeFenceZone.Frozen)
+                {
+                    issues.Add(new PlanningIssue(
+                        PlanningIssueSeverity.Error,
+                        "FROZEN_RESOURCE_NO_LONGER_ELIGIBLE",
+                        $"Frozen task {constraint.TaskId} cannot remain on baseline resource {constraint.BaselineResourceId}.",
+                        constraint.TaskId));
+                }
+                continue;
+            }
+
+            var baselineStart = ToMinute(constraint.BaselineStartUtc, request.HorizonStartUtc, horizonMinutes);
+            if (constraint.Zone == TimeFenceZone.Frozen)
+            {
+                model.Add(variables.Start == baselineStart);
+                model.Add(baselineResource == 1);
+                continue;
+            }
+
+            if (constraint.Zone != TimeFenceZone.Slushy) continue;
+
+            var delta = model.NewIntVar(-horizonMinutes, horizonMinutes, $"move_delta_{constraint.TaskId:N}");
+            var absoluteDelta = model.NewIntVar(0, horizonMinutes, $"move_abs_{constraint.TaskId:N}");
+            model.Add(delta == variables.Start - baselineStart);
+            model.AddAbsEquality(absoluteDelta, delta);
+            objectiveTerms.Add(absoluteDelta * Math.Max(0, constraint.MovementPenaltyPerMinute));
+
+            if (constraint.ResourceChangePenalty > 0)
+            {
+                var changedResource = model.NewBoolVar($"resource_changed_{constraint.TaskId:N}");
+                model.Add(changedResource + baselineResource == 1);
+                objectiveTerms.Add(changedResource * constraint.ResourceChangePenalty);
+            }
+        }
     }
 
     private static FiniteScheduleResult Invalid(string code, string message) =>
