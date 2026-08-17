@@ -20,6 +20,7 @@ builder.Services.AddScoped<IMtsProductionOrderService, MtsProductionOrderService
 builder.Services.AddScoped<ICampaignPlanningService, CampaignPlanningService>();
 builder.Services.AddScoped<IProductionStructurePlanningService, ProductionStructurePlanningService>();
 builder.Services.AddScoped<IFiniteScheduleOptimizer, FiniteScheduleOptimizer>();
+builder.Services.AddScoped<IPlanningEngine, PlanningEngine>();
 builder.Services.AddScoped<IPlanReleaseBuilder, PlanReleaseBuilder>();
 
 var apsConnection = builder.Configuration.GetConnectionString("APS");
@@ -43,6 +44,13 @@ app.MapGet("/api/health", () => Results.Ok(new
     databaseConfigured = hasApsDatabase,
     utc = DateTime.UtcNow
 }));
+
+app.MapPost("/api/planning/run",
+    (PlanningRunRequest request, IPlanningEngine planningEngine) =>
+    {
+        var result = planningEngine.Run(request);
+        return result.IsFeasible ? Results.Ok(result) : Results.UnprocessableEntity(result);
+    });
 
 app.MapPost("/api/planning/mts/production-order",
     (MtsProductionOrderRequest request, IMtsProductionOrderService service) =>
