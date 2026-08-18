@@ -106,7 +106,7 @@ public sealed class RecursiveMaterialRequirementEngine : IRecursiveMaterialRequi
             requirement.Status = MaterialRequirementStatus.CycleBlocked;
             requirement.IsInternallyManufacturable = false;
             requirement.NetRequirementQuantity = context.Quantity;
-            requirement.ShortfallQuantityMt = IsMt(context.Uom) ? context.Quantity : 0m;
+            SetShortfall(requirement, context.Quantity, context.Uom);
             requirement.Explanation = $"BOM cycle detected: {path}.";
             issues.Add(new PlanningIssue(
                 PlanningIssueSeverity.Error,
@@ -141,7 +141,7 @@ public sealed class RecursiveMaterialRequirementEngine : IRecursiveMaterialRequi
         }
         var covered = Math.Min(context.Quantity, reportedCovered);
         var net = Math.Max(0m, context.Quantity - covered);
-        requirement.CoveredQuantityMt = IsMt(context.Uom) ? covered : 0m;
+        ApplyCoverageBreakdown(requirement, coverage.Allocations, covered, context.Uom);
         requirement.NetRequirementQuantity = net;
         foreach (var allocation in coverage.Allocations)
             coverageAllocations.Add(allocation);
@@ -151,7 +151,7 @@ public sealed class RecursiveMaterialRequirementEngine : IRecursiveMaterialRequi
             requirement.Status = MaterialRequirementStatus.Covered;
             requirement.IsInternallyManufacturable = false;
             requirement.InternalProductionQuantity = 0m;
-            requirement.ShortfallQuantityMt = 0m;
+            SetShortfall(requirement, 0m, context.Uom);
             requirement.Explanation = $"Qualified supply covers the full {context.Quantity:0.######} {context.Uom} requirement; recursion stops at this node.";
             return;
         }
@@ -162,7 +162,7 @@ public sealed class RecursiveMaterialRequirementEngine : IRecursiveMaterialRequi
             requirement.Status = MaterialRequirementStatus.NotManufacturableHere;
             requirement.IsInternallyManufacturable = false;
             requirement.InternalProductionQuantity = 0m;
-            requirement.ShortfallQuantityMt = IsMt(context.Uom) ? net : 0m;
+            SetShortfall(requirement, net, context.Uom);
             requirement.Explanation = $"{net:0.######} {context.Uom} remains uncovered and no effective internal BOM is configured. APS records shortfall; it does not invent BUY/TRANSFER supply.";
             return;
         }
@@ -172,7 +172,7 @@ public sealed class RecursiveMaterialRequirementEngine : IRecursiveMaterialRequi
         {
             requirement.Status = MaterialRequirementStatus.Shortfall;
             requirement.IsInternallyManufacturable = false;
-            requirement.ShortfallQuantityMt = IsMt(context.Uom) ? net : 0m;
+            SetShortfall(requirement, net, context.Uom);
             requirement.Explanation = $"BOM {bom.BomCode} v{bom.VersionNumber} output UOM {bom.OutputUom} does not match requirement UOM {context.Uom}; no implicit UOM conversion is permitted.";
             issues.Add(new PlanningIssue(
                 PlanningIssueSeverity.Error,
@@ -193,6 +193,7 @@ public sealed class RecursiveMaterialRequirementEngine : IRecursiveMaterialRequi
 
         requirement.IsInternallyManufacturable = true;
         requirement.InternalProductionQuantity = net;
+        SetShortfall(requirement, 0m, context.Uom);
         requirement.Status = MaterialRequirementStatus.InternalProductionRequired;
         requirement.SelectedBomId = bom.Id;
         requirement.SelectedBomCode = bom.BomCode;
@@ -261,6 +262,60 @@ public sealed class RecursiveMaterialRequirementEngine : IRecursiveMaterialRequi
                 pathDisplay,
                 ref counter);
         }
+    }
+
+    private static void ApplyCoverageBreakdown(
+        MaterialRequirement requirement,
+        IReadOnlyCollection<MaterialCoverageAllocation> allocations,
+        decimal acceptedCoveredQuantity,
+        string uom)
+    {
+        var remaining = Math.Max(0m, acceptedCoveredQuantity);
+        var opening = 0m;
+        var incoming = 0m;
+        var committed = 0m;
+        var planned = 0m;
+        var actual = 0m;
+
+        foreach (var allocation in allocations)
+        {
+            if (remaining <= QuantityTolerance) break;
+            var accepted = Math.Min(remaining, Math.Max(0m, allocation.Quantity));
+            remaining -= accepted;
+            switch (allocation.SourceType)
+            {
+                case MaterialCoverageSourceType.OpeningInventory:
+                    opening += accepted;
+                    break;
+                case MaterialCoverageSourceType.KnownIncoming:
+                    incoming += accepted;
+                    break;
+                case MaterialCoverageSourceType.CommittedInternalProduction:
+                    committed += accepted;
+                    break;
+                case MaterialCoverageSourceType.PlannedInternalProduction:
+                    planned += accepted;
+                    break;
+                case MaterialCoverageSourceType.ActualProduction:
+                    actual += accepted;
+                    break;
+            }
+        }
+
+        requirement.CoveredQuantity = acceptedCoveredQuantity;
+        requirement.OpeningInventoryCoveredQuantity = opening;
+        requirement.KnownIncomingCoveredQuantity = incoming;
+        requirement.CommittedProductionCoveredQuantity = committed;
+        requirement.PlannedProductionCoveredQuantity = planned;
+        requirement.ActualProductionCoveredQuantity = actual;
+        requirement.CoveredQuantityMt = IsMt(uom) ? acceptedCoveredQuantity : 0m;
+    }
+
+    private static void SetShortfall(MaterialRequirement requirement, decimal quantity, string uom)
+    {
+        var normalized = Math.Max(0m, quantity);
+        requirement.ShortfallQuantity = normalized;
+        requirement.ShortfallQuantityMt = IsMt(uom) ? normalized : 0m;
     }
 
     private static MaterialRequirement NewRequirement(
