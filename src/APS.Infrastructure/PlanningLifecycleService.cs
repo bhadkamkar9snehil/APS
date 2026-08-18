@@ -139,7 +139,8 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
             MaterialSupplyPolicy: request.MaterialSupplyPolicy,
             AssignmentPolicies: request.AssignmentPolicies,
             MaterialSourcingRules: masterData.EffectiveMaterialSourcingRules,
-            CommittedMaterialSupplies: committedSupplies);
+            CommittedMaterialSupplies: committedSupplies,
+            ExecutionMode: PlanningExecutionMode.Production);
     }
 
     private static void ValidateProductionConfiguration(
