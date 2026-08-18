@@ -219,4 +219,12 @@ public interface IPlannerWorkspaceQueryService
     Task<CampaignStudioView?> GetCampaignStudioAsync(
         Guid? planVersionId = null,
         CancellationToken cancellationToken = default);
+
+    Task<SteelmakingCastingWorkspaceView?> GetSteelmakingCastingAsync(
+        Guid? planVersionId = null,
+        CancellationToken cancellationToken = default);
+
+    Task<FiniteScheduleWorkspaceView?> GetFiniteScheduleAsync(
+        Guid? planVersionId = null,
+        CancellationToken cancellationToken = default);
 }
