@@ -227,4 +227,13 @@ public interface IPlannerWorkspaceQueryService
     Task<FiniteScheduleWorkspaceView?> GetFiniteScheduleAsync(
         Guid? planVersionId = null,
         CancellationToken cancellationToken = default);
+
+    Task<WorkOrdersWorkspaceView?> GetWorkOrdersAsync(
+        Guid? planVersionId = null,
+        CancellationToken cancellationToken = default);
+
+    Task<PlanComparisonWorkspaceView?> GetPlanComparisonAsync(
+        Guid baselinePlanVersionId,
+        Guid newPlanVersionId,
+        CancellationToken cancellationToken = default);
 }
