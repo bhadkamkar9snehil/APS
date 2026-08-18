@@ -92,6 +92,110 @@ public sealed record ControlTowerView(
     IReadOnlyCollection<PlanMaterialSummaryView> MaterialAllocations,
     DateTime GeneratedOnUtc);
 
+public sealed record DemandSupplyRowView(
+    Guid ProductionOrderId,
+    string ProductionOrderNumber,
+    DemandSourceType DemandSource,
+    string? SalesOrderNumber,
+    string? SalesOrderItemNumber,
+    string? CustomerCode,
+    string MaterialCode,
+    string GradeCode,
+    string FinalCrossSectionCode,
+    string CasterSectionCode,
+    string RouteCode,
+    decimal PlannedQuantityMt,
+    decimal RemainingQuantityMt,
+    DateTime RequiredDate,
+    int Priority,
+    ProductionOrderStatus Status,
+    decimal FinishedGoodsAllocatedMt,
+    decimal RollingRequirementMt,
+    decimal ExistingIntermediateAllocatedMt,
+    decimal ExternalIntermediateAllocatedMt,
+    decimal FreshSteelRequirementMt,
+    decimal CoveredQuantityMt,
+    decimal UncoveredQuantityMt,
+    decimal? TargetStockMt,
+    decimal? ProjectedAvailableStockMt,
+    string? StockPolicyCode,
+    string? RequirementFingerprint,
+    string? QualityClassCode,
+    SegregationPolicy SegregationPolicy,
+    RequirementDisposition VdRequirement,
+    RequirementDisposition ReheatRequirement,
+    RequirementDisposition TmtRequirement,
+    bool HotChargeAllowed);
+
+public sealed record DemandSupplyView(
+    PlanContextView Plan,
+    decimal TotalRemainingQuantityMt,
+    decimal FinishedGoodsAllocatedMt,
+    decimal ExistingIntermediateAllocatedMt,
+    decimal ExternalIntermediateAllocatedMt,
+    decimal FreshSteelRequirementMt,
+    decimal UncoveredQuantityMt,
+    int MakeToOrderCount,
+    int MakeToStockCount,
+    IReadOnlyCollection<DemandSupplyRowView> Rows);
+
+public sealed record CampaignAllocationView(
+    Guid ProductionOrderId,
+    string ProductionOrderNumber,
+    DemandSourceType DemandSource,
+    string? SalesOrderNumber,
+    decimal PlannedQuantityMt,
+    decimal ExistingIntermediateInventoryMt,
+    decimal FreshSteelQuantityMt);
+
+public sealed record CampaignGradeSequenceItemView(
+    int SequenceNumber,
+    string GradeCode,
+    decimal PlannedQuantityMt);
+
+public sealed record HeatAllocationView(
+    Guid ProductionOrderId,
+    string ProductionOrderNumber,
+    string? SalesOrderNumber,
+    decimal PlannedOutputQuantityMt,
+    decimal PlannedInputQuantityMt);
+
+public sealed record CampaignHeatView(
+    Guid CampaignHeatId,
+    int SequenceNumber,
+    string GradeCode,
+    decimal PlannedQuantityMt,
+    decimal? MinimumFeasibleQuantityMt,
+    decimal? TargetQuantityMt,
+    decimal? MaximumFeasibleQuantityMt,
+    Guid? PreferredSteelmakingResourceId,
+    Guid? PreferredCasterResourceId,
+    IReadOnlyCollection<HeatAllocationView> Allocations);
+
+public sealed record CampaignView(
+    Guid CampaignId,
+    string CampaignNumber,
+    string GradeSequenceClassCode,
+    string CasterSectionCode,
+    string RouteCode,
+    decimal PlannedQuantityMt,
+    decimal FreshSteelRequirementMt,
+    decimal ExistingIntermediateInventoryMt,
+    DateTime RequiredDate,
+    CampaignStatus Status,
+    IReadOnlyCollection<CampaignAllocationView> Allocations,
+    IReadOnlyCollection<CampaignGradeSequenceItemView> GradeSequence,
+    IReadOnlyCollection<CampaignHeatView> Heats);
+
+public sealed record CampaignStudioView(
+    PlanContextView Plan,
+    int CampaignCount,
+    int HeatCount,
+    decimal PlannedRollingQuantityMt,
+    decimal FreshSteelRequirementMt,
+    decimal ExistingIntermediateQuantityMt,
+    IReadOnlyCollection<CampaignView> Campaigns);
+
 public interface IPlannerWorkspaceQueryService
 {
     Task<PlanContextView?> GetCurrentPlanAsync(CancellationToken cancellationToken = default);
@@ -105,6 +209,14 @@ public interface IPlannerWorkspaceQueryService
         CancellationToken cancellationToken = default);
 
     Task<ControlTowerView?> GetControlTowerAsync(
+        Guid? planVersionId = null,
+        CancellationToken cancellationToken = default);
+
+    Task<DemandSupplyView?> GetDemandSupplyAsync(
+        Guid? planVersionId = null,
+        CancellationToken cancellationToken = default);
+
+    Task<CampaignStudioView?> GetCampaignStudioAsync(
         Guid? planVersionId = null,
         CancellationToken cancellationToken = default);
 }
