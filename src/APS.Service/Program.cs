@@ -125,9 +125,17 @@ if (hasApsDatabase)
                 referenceTime,
                 baseline.Operations,
                 cancellationToken);
+            var committedSupplies = (request.Planning.CommittedMaterialSupplies ?? Array.Empty<CommittedMaterialSupply>())
+                .Concat(actualState.EffectiveCommittedFutureSupplies)
+                .GroupBy(x => x.SupplyReference, StringComparer.OrdinalIgnoreCase)
+                .Select(x => x.Last())
+                .OrderBy(x => x.AvailableFromUtc)
+                .ThenBy(x => x.SupplyReference, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
             var planningRequest = request.Planning with
             {
                 Inventory = request.RefreshInventoryFromProvider ? actualState.Inventory : request.Planning.Inventory,
+                CommittedMaterialSupplies = committedSupplies,
                 ReplanContext = new PlanningReplanContext(
                     baselinePlanVersionId,
                     referenceTime,
@@ -157,7 +165,8 @@ if (hasApsDatabase)
                 {
                     actualState.CompletedPlanningKeys,
                     actualState.RunningPlanningKeys,
-                    InventoryPositions = actualState.Inventory.Count
+                    InventoryPositions = actualState.Inventory.Count,
+                    CommittedFutureSupplies = committedSupplies.Length
                 }
             };
             return result.IsFeasible ? Results.Ok(response) : Results.UnprocessableEntity(response);
