@@ -58,6 +58,66 @@ internal static class TimePhasedMaterialPlanner
                     : MaterialBalanceEventType.OpeningInventory));
         }
 
+        // Planned procurement/transfer/manual supply is not current inventory. It enters the same
+        // PO-qualified reservoir only at its explicitly expected receipt time and remains auditable as
+        // a supply action required by this plan.
+        foreach (var allocation in campaignPlan.PlannedSupplyAllocations ?? Array.Empty<PlanningSupplyAllocation>())
+        {
+            if (allocation.ActionType is MaterialSupplyActionType.Make or MaterialSupplyActionType.Unsourced) continue;
+            if (!poById.TryGetValue(allocation.ProductionOrderId, out var po)) continue;
+            if (!allocation.ExpectedReceiptUtc.HasValue)
+            {
+                issues.Add(new PlanningIssue(
+                    PlanningIssueSeverity.Error,
+                    "PLANNED_SUPPLY_RECEIPT_TIME_MISSING",
+                    $"{allocation.ActionType} supply for {po.ProductionOrderNumber} has no expected receipt time.",
+                    po.Id));
+                continue;
+            }
+
+            var sourceType = allocation.ActionType switch
+            {
+                MaterialSupplyActionType.Buy => BilletSupplySourceType.ExternalPurchased,
+                MaterialSupplyActionType.Transfer => BilletSupplySourceType.InTransit,
+                _ => BilletSupplySourceType.ManualPlannerSupply
+            };
+            var ledgerType = allocation.ActionType switch
+            {
+                MaterialSupplyActionType.Buy => MaterialBalanceEventType.PlannedPurchaseReceipt,
+                MaterialSupplyActionType.Transfer => MaterialBalanceEventType.PlannedTransferReceipt,
+                _ => MaterialBalanceEventType.ExternalReceipt
+            };
+
+            reservations.Add(new MaterialSupplyReservation
+            {
+                ProductionOrderId = po.Id,
+                MaterialSpecificationCode = po.MaterialCode,
+                GradeCode = po.GradeCode,
+                CrossSectionCode = po.CasterSectionCode,
+                InventoryStage = InventoryStage.InTransit,
+                ExternalSourceType = sourceType,
+                SupplyReference = allocation.SupplyReference,
+                LocationCode = allocation.DestinationLocationCode,
+                QuantityMt = allocation.QuantityMt,
+                AvailableFromUtc = allocation.ExpectedReceiptUtc.Value,
+                Status = MaterialReservationStatus.Planned
+            });
+            events.Add(new ScheduledMaterialEvent(
+                PoolKey(po),
+                Kg(allocation.QuantityMt),
+                ScheduledMaterialEventTiming.FixedTime,
+                FixedTimeUtc: allocation.ExpectedReceiptUtc.Value,
+                Explanation: $"Plan-required {allocation.ActionType} billet receipt ({allocation.RuleCode ?? "default sourcing rule"}).",
+                ProductionOrderId: po.Id,
+                MaterialCode: po.MaterialCode,
+                MaterialSpecificationCode: po.MaterialCode,
+                GradeCode: po.GradeCode,
+                CrossSectionCode: po.CasterSectionCode,
+                LocationCode: allocation.DestinationLocationCode,
+                SupplyReference: allocation.SupplyReference,
+                LedgerEventType: ledgerType));
+        }
+
         var ccmTaskByHeat = structure.SchedulingTasks
             .Where(x => x.ProcessOperationType == ProcessOperationType.Ccm || x.TaskType == FiniteScheduleTaskType.Casting)
             .GroupBy(x => x.SourceEntityId)
@@ -228,7 +288,10 @@ internal static class TimePhasedMaterialPlanner
                 .OrderBy(x => x.EffectiveAtUtc)
                 .ToArray();
             var usesFutureSupply = poolEvents.Any(x =>
-                x.EventType is MaterialBalanceEventType.PlannedProductionReceipt or MaterialBalanceEventType.ExternalReceipt &&
+                (x.EventType is MaterialBalanceEventType.PlannedProductionReceipt or
+                    MaterialBalanceEventType.ExternalReceipt or
+                    MaterialBalanceEventType.PlannedPurchaseReceipt or
+                    MaterialBalanceEventType.PlannedTransferReceipt) &&
                 x.EffectiveAtUtc > request.HorizonStartUtc);
             var latestReceipt = poolEvents.LastOrDefault()?.EffectiveAtUtc;
 
@@ -317,19 +380,11 @@ internal static class TimePhasedMaterialPlanner
         IReadOnlyDictionary<Guid, CampaignHeat> heatById)
     {
         var result = new List<MaterialSupplyRequirement>();
-        var policy = request.MaterialSupplyPolicy ?? new MaterialSupplyPlanningPolicy();
         var poById = request.ProductionOrders.ToDictionary(x => x.Id);
 
-        foreach (var allocation in campaignPlan.HeatAllocations ?? Array.Empty<CampaignHeatAllocation>())
+        foreach (var allocation in campaignPlan.PlannedSupplyAllocations ?? Array.Empty<PlanningSupplyAllocation>())
         {
-            if (allocation.PlannedOutputQuantityMt <= 0m || !poById.TryGetValue(allocation.ProductionOrderId, out var po)) continue;
-            heatById.TryGetValue(allocation.CampaignHeatId, out var heat);
-            var actionType = policy.AllowInternalMake
-                ? MaterialSupplyActionType.Make
-                : policy.AllowExternalBuy
-                    ? MaterialSupplyActionType.Buy
-                    : MaterialSupplyActionType.Unsourced;
-
+            if (!poById.TryGetValue(allocation.ProductionOrderId, out var po)) continue;
             result.Add(new MaterialSupplyRequirement
             {
                 MaterialRequirementId = Guid.Empty,
@@ -337,22 +392,45 @@ internal static class TimePhasedMaterialPlanner
                 MaterialCode = po.MaterialCode,
                 GradeCode = po.GradeCode,
                 CrossSectionCode = po.CasterSectionCode,
-                ActionType = actionType,
+                ActionType = allocation.ActionType,
+                QuantityMt = allocation.QuantityMt,
+                RequiredReceiptUtc = allocation.RequiredReceiptUtc,
+                ExpectedReceiptUtc = allocation.ExpectedReceiptUtc,
+                SupplyReference = allocation.SupplyReference,
+                SupplierCode = allocation.SupplierCode,
+                SourceLocationCode = allocation.SourceLocationCode,
+                DestinationLocationCode = allocation.DestinationLocationCode,
+                IsFirm = allocation.IsFirm,
+                Explanation = allocation.ActionType switch
+                {
+                    MaterialSupplyActionType.Buy => $"Plan requires procurement of {allocation.QuantityMt:0.####} MT qualified billet.",
+                    MaterialSupplyActionType.Transfer => $"Plan requires transfer of {allocation.QuantityMt:0.####} MT qualified billet.",
+                    MaterialSupplyActionType.Manual => $"Plan uses a planner-authorized supply assumption for {allocation.QuantityMt:0.####} MT qualified billet.",
+                    MaterialSupplyActionType.Unsourced => $"No approved source path exists for {allocation.QuantityMt:0.####} MT qualified billet.",
+                    _ => null
+                }
+            });
+        }
+
+        foreach (var allocation in campaignPlan.HeatAllocations ?? Array.Empty<CampaignHeatAllocation>())
+        {
+            if (allocation.PlannedOutputQuantityMt <= 0m || !poById.TryGetValue(allocation.ProductionOrderId, out var po)) continue;
+            heatById.TryGetValue(allocation.CampaignHeatId, out var heat);
+            result.Add(new MaterialSupplyRequirement
+            {
+                MaterialRequirementId = Guid.Empty,
+                ProductionOrderId = po.Id,
+                MaterialCode = po.MaterialCode,
+                GradeCode = po.GradeCode,
+                CrossSectionCode = po.CasterSectionCode,
+                ActionType = MaterialSupplyActionType.Make,
                 QuantityMt = allocation.PlannedOutputQuantityMt,
                 RequiredReceiptUtc = po.RequiredDate,
                 ExpectedReceiptUtc = null,
                 UpstreamCampaignId = heat?.CampaignId,
-                UpstreamHeatId = actionType == MaterialSupplyActionType.Make ? allocation.CampaignHeatId : null,
+                UpstreamHeatId = allocation.CampaignHeatId,
                 IsFirm = false,
-                Explanation = actionType switch
-                {
-                    MaterialSupplyActionType.Make =>
-                        $"APS-planned internal billet receipt from heat {allocation.CampaignHeatId}; stock need not exist when the campaign is created.",
-                    MaterialSupplyActionType.Buy =>
-                        $"Internal make is disabled; procurement must provide {allocation.PlannedOutputQuantityMt:0.####} MT qualified billet.",
-                    _ =>
-                        $"No approved make/buy/transfer path exists for {allocation.PlannedOutputQuantityMt:0.####} MT qualified billet."
-                }
+                Explanation = $"APS-planned internal billet receipt from heat {allocation.CampaignHeatId}; stock need not exist when the campaign is created."
             });
         }
 
