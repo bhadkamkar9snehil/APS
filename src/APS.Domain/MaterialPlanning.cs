@@ -56,6 +56,42 @@ public enum MaterialRequirementSourceType
     StockPolicy = 5
 }
 
+/// <summary>
+/// Master rule defining which supply paths are permitted for a qualified material requirement.
+/// Null material/grade/section selectors act as progressively broader defaults; the most specific
+/// matching rule wins. This allows normal integrated-plant MAKE preference while retaining approved
+/// BUY/TRANSFER contingency paths without hard-coded plant logic.
+/// </summary>
+public sealed class MaterialSourcingRule : Entity
+{
+    public required string RuleCode { get; set; }
+    public string? MaterialCode { get; set; }
+    public string? MaterialSpecificationCode { get; set; }
+    public string? GradeCode { get; set; }
+    public string? GradeFamilyCode { get; set; }
+    public string? CrossSectionCode { get; set; }
+    public SteelProductForm? ProductForm { get; set; }
+    public string? DestinationLocationCode { get; set; }
+
+    public bool AllowMake { get; set; } = true;
+    public bool AllowBuy { get; set; }
+    public bool AllowTransfer { get; set; }
+    public bool AllowManualSupply { get; set; } = true;
+    public MaterialSupplyActionType PreferredAction { get; set; } = MaterialSupplyActionType.Make;
+
+    public TimeSpan? PurchaseLeadTime { get; set; }
+    public TimeSpan? TransferLeadTime { get; set; }
+    public string? PreferredSupplierCode { get; set; }
+    public string? TransferSourceLocationCode { get; set; }
+    public decimal? MinimumBuyQuantityMt { get; set; }
+    public decimal? BuyOrderMultipleMt { get; set; }
+    public decimal? MinimumTransferQuantityMt { get; set; }
+    public int MakePenalty { get; set; }
+    public int BuyPenalty { get; set; } = 100;
+    public int TransferPenalty { get; set; } = 50;
+    public bool IsActive { get; set; } = true;
+}
+
 public sealed class MaterialRequirement : Entity
 {
     public Guid? PlanVersionId { get; set; }
