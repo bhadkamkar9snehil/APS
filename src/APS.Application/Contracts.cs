@@ -40,13 +40,19 @@ public sealed record CampaignPlanningRequest(
     IReadOnlyCollection<Resource>? Resources = null,
     IReadOnlyCollection<ResourceCapability>? ResourceCapabilities = null,
     IReadOnlyCollection<SteelGrade>? SteelGrades = null,
-    IReadOnlyCollection<ExternalMaterialSupply>? ExternalMaterialSupplies = null);
+    IReadOnlyCollection<ExternalMaterialSupply>? ExternalMaterialSupplies = null,
+    MaterialSupplyPlanningPolicy? MaterialSupplyPolicy = null,
+    IReadOnlyCollection<MaterialSourcingRule>? MaterialSourcingRules = null,
+    DateTime? PlanningReferenceTimeUtc = null);
 
 public enum PlanningInventoryUse
 {
     FinishedGoodsFulfilment = 1,
     IntermediateFeed = 2,
-    ExternalIntermediateFeed = 3
+    ExternalIntermediateFeed = 3,
+    PlannedPurchaseFeed = 4,
+    PlannedTransferFeed = 5,
+    ManualPlannedFeed = 6
 }
 
 public sealed record PlanningInventoryAllocation(
@@ -61,6 +67,19 @@ public sealed record PlanningInventoryAllocation(
     string? SourceReference = null,
     DateTime? AvailableFromUtc = null);
 
+public sealed record PlanningSupplyAllocation(
+    Guid ProductionOrderId,
+    MaterialSupplyActionType ActionType,
+    decimal QuantityMt,
+    DateTime RequiredReceiptUtc,
+    DateTime? ExpectedReceiptUtc,
+    string? SupplyReference = null,
+    string? SupplierCode = null,
+    string? SourceLocationCode = null,
+    string? DestinationLocationCode = null,
+    bool IsFirm = false,
+    string? RuleCode = null);
+
 public sealed record CampaignPlanningResult(
     IReadOnlyCollection<Campaign> Campaigns,
     IReadOnlyCollection<ProductionOrder> FullyCoveredByFinishedGoods,
@@ -69,7 +88,10 @@ public sealed record CampaignPlanningResult(
     IReadOnlyDictionary<Guid, decimal> IntermediateInventoryAllocatedMt,
     IReadOnlyCollection<PlanningInventoryAllocation> InventoryAllocations,
     IReadOnlyDictionary<Guid, decimal>? ExternalIntermediateAllocatedMt = null,
-    IReadOnlyCollection<CampaignHeatAllocation>? HeatAllocations = null);
+    IReadOnlyCollection<CampaignHeatAllocation>? HeatAllocations = null,
+    IReadOnlyCollection<PlanningSupplyAllocation>? PlannedSupplyAllocations = null,
+    IReadOnlyDictionary<Guid, decimal>? PlannedPurchaseAllocatedMt = null,
+    IReadOnlyDictionary<Guid, decimal>? PlannedTransferAllocatedMt = null);
 
 public interface IMtsProductionOrderService
 {
@@ -168,7 +190,8 @@ public enum TimeFenceZone { Frozen = 1, Slushy = 2, Liquid = 3 }
 public sealed record FiniteScheduleResourceOption(
     Guid ResourceId,
     int DurationMinutes,
-    int AssignmentPenalty = 0);
+    int AssignmentPenalty = 0,
+    string? EligibilityBasisCode = null);
 
 public sealed record FiniteScheduleDependencyResourcePair(
     Guid PredecessorResourceId,
