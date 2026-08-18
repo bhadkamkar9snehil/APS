@@ -513,9 +513,6 @@ public sealed class ProductionDemandOrchestrationService(
         IReadOnlyCollection<FinishedGoodsPoolRow> pool,
         SalesOrderRequirementProfile? requirementProfile)
     {
-        // Current inventory positions do not yet carry the complete certified requirement fingerprint.
-        // Never guess customer-specific equivalence. #14/#18 can later enrich lot qualification evidence;
-        // until then special-demand FG remains visible inventory but is not auto-consumed for the SO.
         if (!string.IsNullOrWhiteSpace(requirementProfile?.QualificationFingerprint))
             return Array.Empty<DemandCoverageEvidence>();
 
@@ -680,8 +677,12 @@ public sealed class ProductionDemandOrchestrationService(
         po.SalesOrderId = so.Id;
         po.SalesOrder = so;
 
-        if (po.Requirement is not null) db.Entry(po.Requirement).State = EntityState.Deleted;
-        po.Requirement = BuildProductionRequirement(po, so, sourceRequirement, definition.RouteCode);
+        po.Requirement ??= new ProductionOrderRequirement
+        {
+            ProductionOrderId = po.Id,
+            ProductionOrder = po
+        };
+        ApplyProductionRequirement(po.Requirement, po, so, sourceRequirement, definition.RouteCode);
     }
 
     private static ProductionOrderRequirement BuildProductionRequirement(
@@ -693,37 +694,51 @@ public sealed class ProductionDemandOrchestrationService(
         var requirement = new ProductionOrderRequirement
         {
             ProductionOrderId = po.Id,
-            ProductionOrder = po,
-            CustomerCode = so.CustomerCode,
-            CustomerGroupCode = so.CustomerGroupCode,
-            RequirementReference = $"SO:{so.SalesOrderNumber}/{so.ItemNumber}",
-            QualityClassCode = source?.QualityClassCode,
-            SegregationPolicy = source?.SegregationPolicy ?? SegregationPolicy.None,
-            RequireVd = source?.RequireVd,
-            ForbidVd = source?.ForbidVd,
-            RequireReheating = source?.RequireReheating,
-            ForbidHotCharge = source?.ForbidHotCharge,
-            RequireTmt = source?.RequireTmt,
-            RequiredRouteCode = source?.RequiredRouteCode ?? routeCode,
-            RequiredResourceId = source?.RequiredResourceId,
-            RequiredResourceGroupCode = source?.RequiredResourceGroupCode,
-            MinimumSuperheatC = source?.MinimumSuperheatC,
-            TargetSuperheatC = source?.TargetSuperheatC,
-            MaximumSuperheatC = source?.MaximumSuperheatC,
-            MinimumCastingTemperatureC = source?.MinimumCastingTemperatureC,
-            MaximumCastingTemperatureC = source?.MaximumCastingTemperatureC,
-            CutLengthM = source?.CutLengthM,
-            TargetBundleWeightMt = source?.TargetBundleWeightMt,
-            MinimumBundleWeightMt = source?.MinimumBundleWeightMt,
-            MaximumBundleWeightMt = source?.MaximumBundleWeightMt,
-            TargetCoilWeightMt = source?.TargetCoilWeightMt,
-            MinimumCoilWeightMt = source?.MinimumCoilWeightMt,
-            MaximumCoilWeightMt = source?.MaximumCoilWeightMt,
-            AllowMixedHeatBundle = source?.AllowMixedHeatBundle,
-            MarkingRequirementCode = source?.MarkingRequirementCode,
-            InspectionRequirementCode = source?.InspectionRequirementCode
+            ProductionOrder = po
         };
+        ApplyProductionRequirement(requirement, po, so, source, routeCode);
+        return requirement;
+    }
 
+    private static void ApplyProductionRequirement(
+        ProductionOrderRequirement requirement,
+        ProductionOrder po,
+        SalesOrder so,
+        SalesOrderRequirementProfile? source,
+        string routeCode)
+    {
+        requirement.ProductionOrderId = po.Id;
+        requirement.ProductionOrder = po;
+        requirement.CustomerCode = so.CustomerCode;
+        requirement.CustomerGroupCode = so.CustomerGroupCode;
+        requirement.RequirementReference = $"SO:{so.SalesOrderNumber}/{so.ItemNumber}";
+        requirement.QualityClassCode = source?.QualityClassCode;
+        requirement.SegregationPolicy = source?.SegregationPolicy ?? SegregationPolicy.None;
+        requirement.RequireVd = source?.RequireVd;
+        requirement.ForbidVd = source?.ForbidVd;
+        requirement.RequireReheating = source?.RequireReheating;
+        requirement.ForbidHotCharge = source?.ForbidHotCharge;
+        requirement.RequireTmt = source?.RequireTmt;
+        requirement.RequiredRouteCode = source?.RequiredRouteCode ?? routeCode;
+        requirement.RequiredResourceId = source?.RequiredResourceId;
+        requirement.RequiredResourceGroupCode = source?.RequiredResourceGroupCode;
+        requirement.MinimumSuperheatC = source?.MinimumSuperheatC;
+        requirement.TargetSuperheatC = source?.TargetSuperheatC;
+        requirement.MaximumSuperheatC = source?.MaximumSuperheatC;
+        requirement.MinimumCastingTemperatureC = source?.MinimumCastingTemperatureC;
+        requirement.MaximumCastingTemperatureC = source?.MaximumCastingTemperatureC;
+        requirement.CutLengthM = source?.CutLengthM;
+        requirement.TargetBundleWeightMt = source?.TargetBundleWeightMt;
+        requirement.MinimumBundleWeightMt = source?.MinimumBundleWeightMt;
+        requirement.MaximumBundleWeightMt = source?.MaximumBundleWeightMt;
+        requirement.TargetCoilWeightMt = source?.TargetCoilWeightMt;
+        requirement.MinimumCoilWeightMt = source?.MinimumCoilWeightMt;
+        requirement.MaximumCoilWeightMt = source?.MaximumCoilWeightMt;
+        requirement.AllowMixedHeatBundle = source?.AllowMixedHeatBundle;
+        requirement.MarkingRequirementCode = source?.MarkingRequirementCode;
+        requirement.InspectionRequirementCode = source?.InspectionRequirementCode;
+
+        requirement.ChemistryOverrides.Clear();
         foreach (var chemistry in source?.ChemistryOverrides ?? Array.Empty<SalesOrderChemistryRequirement>())
         {
             requirement.ChemistryOverrides.Add(new OrderChemistryRequirement
@@ -735,6 +750,7 @@ public sealed class ProductionDemandOrchestrationService(
                 MaximumPct = chemistry.MaximumPct
             });
         }
+        requirement.ProcessOverrides.Clear();
         foreach (var process in source?.ProcessOverrides ?? Array.Empty<SalesOrderProcessRequirement>())
         {
             requirement.ProcessOverrides.Add(new OrderProcessRequirement
@@ -747,7 +763,6 @@ public sealed class ProductionDemandOrchestrationService(
                 MaximumQueueMinutes = process.MaximumQueueMinutes
             });
         }
-        return requirement;
     }
 
     private static bool RequirementsEquivalent(ProductionOrderRequirement? po, SalesOrderRequirementProfile? source)
@@ -758,17 +773,48 @@ public sealed class ProductionDemandOrchestrationService(
         {
             return po.SegregationPolicy == SegregationPolicy.None &&
                    string.IsNullOrWhiteSpace(po.QualityClassCode) &&
+                   po.RequireVd is null && po.ForbidVd is null && po.RequireReheating is null &&
+                   po.ForbidHotCharge is null && po.RequireTmt is null &&
+                   po.RequiredResourceId is null && string.IsNullOrWhiteSpace(po.RequiredResourceGroupCode) &&
                    po.ChemistryOverrides.Count == 0 && po.ProcessOverrides.Count == 0;
         }
-        return Same(po.QualityClassCode, source.QualityClassCode) &&
-               po.SegregationPolicy == source.SegregationPolicy &&
-               po.RequireVd == source.RequireVd && po.ForbidVd == source.ForbidVd &&
-               po.RequireReheating == source.RequireReheating && po.ForbidHotCharge == source.ForbidHotCharge &&
-               po.RequireTmt == source.RequireTmt && Same(po.RequiredRouteCode, source.RequiredRouteCode) &&
-               po.RequiredResourceId == source.RequiredResourceId &&
-               Same(po.RequiredResourceGroupCode, source.RequiredResourceGroupCode) &&
-               po.ChemistryOverrides.Count == source.ChemistryOverrides.Count &&
-               po.ProcessOverrides.Count == source.ProcessOverrides.Count;
+
+        if (!Same(po.QualityClassCode, source.QualityClassCode) ||
+            po.SegregationPolicy != source.SegregationPolicy ||
+            po.RequireVd != source.RequireVd || po.ForbidVd != source.ForbidVd ||
+            po.RequireReheating != source.RequireReheating || po.ForbidHotCharge != source.ForbidHotCharge ||
+            po.RequireTmt != source.RequireTmt || !Same(po.RequiredRouteCode, source.RequiredRouteCode) ||
+            po.RequiredResourceId != source.RequiredResourceId ||
+            !Same(po.RequiredResourceGroupCode, source.RequiredResourceGroupCode) ||
+            po.MinimumSuperheatC != source.MinimumSuperheatC || po.TargetSuperheatC != source.TargetSuperheatC || po.MaximumSuperheatC != source.MaximumSuperheatC ||
+            po.MinimumCastingTemperatureC != source.MinimumCastingTemperatureC || po.MaximumCastingTemperatureC != source.MaximumCastingTemperatureC ||
+            po.CutLengthM != source.CutLengthM || po.TargetBundleWeightMt != source.TargetBundleWeightMt ||
+            po.MinimumBundleWeightMt != source.MinimumBundleWeightMt || po.MaximumBundleWeightMt != source.MaximumBundleWeightMt ||
+            po.TargetCoilWeightMt != source.TargetCoilWeightMt || po.MinimumCoilWeightMt != source.MinimumCoilWeightMt ||
+            po.MaximumCoilWeightMt != source.MaximumCoilWeightMt || po.AllowMixedHeatBundle != source.AllowMixedHeatBundle ||
+            !Same(po.MarkingRequirementCode, source.MarkingRequirementCode) ||
+            !Same(po.InspectionRequirementCode, source.InspectionRequirementCode))
+            return false;
+
+        var poChem = po.ChemistryOverrides.OrderBy(x => x.ElementCode, StringComparer.OrdinalIgnoreCase).ToArray();
+        var soChem = source.ChemistryOverrides.OrderBy(x => x.ElementCode, StringComparer.OrdinalIgnoreCase).ToArray();
+        if (poChem.Length != soChem.Length) return false;
+        for (var i = 0; i < poChem.Length; i++)
+            if (!Same(poChem[i].ElementCode, soChem[i].ElementCode) || poChem[i].MinimumPct != soChem[i].MinimumPct ||
+                poChem[i].TargetPct != soChem[i].TargetPct || poChem[i].MaximumPct != soChem[i].MaximumPct)
+                return false;
+
+        var poProc = po.ProcessOverrides.OrderBy(x => x.ProcessOperationType).ThenBy(x => x.RequiredResourceId).ToArray();
+        var soProc = source.ProcessOverrides.OrderBy(x => x.ProcessOperationType).ThenBy(x => x.RequiredResourceId).ToArray();
+        if (poProc.Length != soProc.Length) return false;
+        for (var i = 0; i < poProc.Length; i++)
+            if (poProc[i].ProcessOperationType != soProc[i].ProcessOperationType ||
+                poProc[i].Requirement != soProc[i].Requirement ||
+                !Same(poProc[i].CapabilityClassCode, soProc[i].CapabilityClassCode) ||
+                poProc[i].RequiredResourceId != soProc[i].RequiredResourceId ||
+                poProc[i].MaximumQueueMinutes != soProc[i].MaximumQueueMinutes)
+                return false;
+        return true;
     }
 
     private static void ProtectCommittedPo(SalesOrderDemandState state, ProductionOrder po, string reasonCode)
