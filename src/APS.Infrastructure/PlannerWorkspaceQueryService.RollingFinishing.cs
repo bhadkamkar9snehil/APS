@@ -1,3 +1,4 @@
+using System.Text.Json;
 using APS.Application;
 using APS.Domain;
 using Microsoft.EntityFrameworkCore;
@@ -6,6 +7,8 @@ namespace APS.Infrastructure;
 
 public sealed partial class PlannerWorkspaceQueryService
 {
+    private static readonly JsonSerializerOptions SnapshotJsonOptions = new(JsonSerializerDefaults.Web);
+
     private static readonly ProcessOperationType[] RollingFeedProcessTypes =
     {
         ProcessOperationType.Reheat,
@@ -71,10 +74,26 @@ public sealed partial class PlannerWorkspaceQueryService
         var feedOpsByPlan = feedOperationViews.GroupBy(x => x.SourceEntityId).ToDictionary(x => x.Key, x => x.ToArray());
         var routeOpsByUpstream = routeOperations.GroupBy(x => x.UpstreamPlanId).ToDictionary(x => x.Key, x => x.ToArray());
 
+        var state = await db.PlanVersionStates.AsNoTracking()
+            .Where(x => x.PlanVersionId == plan.PlanVersionId)
+            .Select(x => new { x.MaterialRequirementsJson, x.MaterialReservationsJson })
+            .SingleOrDefaultAsync(cancellationToken);
+        var requirementsByPo = DeserializeSnapshot<MaterialRequirement>(state?.MaterialRequirementsJson)
+            .Where(x => x.ProductionOrderId.HasValue)
+            .GroupBy(x => x.ProductionOrderId!.Value)
+            .ToDictionary(x => x.Key, x => x.ToArray());
+        var reservationsByPo = DeserializeSnapshot<MaterialSupplyReservation>(state?.MaterialReservationsJson)
+            .GroupBy(x => x.ProductionOrderId)
+            .ToDictionary(x => x.Key, x => x.ToArray());
+
         var views = rollingPlans.Select(rp =>
         {
             allocationsByPlan.TryGetValue(rp.RollingPlanId, out var planAllocations);
             planAllocations ??= Array.Empty<PlanRollingPlanAllocationSnapshot>();
+
+            feedOpsByPlan.TryGetValue(rp.RollingPlanId, out var feedOps);
+            feedOps ??= Array.Empty<ScheduledProcessOperationView>();
+            var requiresReheat = feedOps.Any(x => x.ProcessOperationType == ProcessOperationType.Reheat);
 
             var allocationViews = planAllocations
                 .Select(a =>
@@ -87,12 +106,10 @@ public sealed partial class PlannerWorkspaceQueryService
                         po?.DemandSource ?? DemandSourceType.MakeToOrder,
                         a.PlannedQuantityMt,
                         a.ExistingIntermediateInventoryMt,
-                        a.FreshSteelQuantityMt);
+                        a.FreshSteelQuantityMt,
+                        BuildSupplyTrace(a.ProductionOrderId, rp.InputCrossSectionCode, requiresReheat, requirementsByPo, reservationsByPo));
                 })
                 .ToArray();
-
-            feedOpsByPlan.TryGetValue(rp.RollingPlanId, out var feedOps);
-            feedOps ??= Array.Empty<ScheduledProcessOperationView>();
 
             var downstream = WalkDownstreamChain(rp.RollingPlanId, routeOpsByUpstream)
                 .Select(route => new DownstreamRouteOperationView(
@@ -154,6 +171,51 @@ public sealed partial class PlannerWorkspaceQueryService
             packagingUnits.Count(x => x.PackagingUnitType == PackagingUnitType.Bundle),
             packagingUnits.Count(x => x.PackagingUnitType == PackagingUnitType.Coil),
             views);
+    }
+
+    private static BilletSupplyTraceView? BuildSupplyTrace(
+        Guid productionOrderId,
+        string billetCrossSectionCode,
+        bool requiresReheat,
+        IReadOnlyDictionary<Guid, MaterialRequirement[]> requirementsByPo,
+        IReadOnlyDictionary<Guid, MaterialSupplyReservation[]> reservationsByPo)
+    {
+        requirementsByPo.TryGetValue(productionOrderId, out var requirements);
+        reservationsByPo.TryGetValue(productionOrderId, out var reservations);
+        if ((requirements is null || requirements.Length == 0) && (reservations is null || reservations.Length == 0))
+            return null;
+
+        var requirement = requirements?
+            .Where(x => string.Equals(x.CrossSectionCode, billetCrossSectionCode, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(x => x.ShortfallQuantityMt)
+            .FirstOrDefault();
+
+        var sources = (reservations ?? Array.Empty<MaterialSupplyReservation>())
+            .Where(x => string.Equals(x.CrossSectionCode, billetCrossSectionCode, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x.AvailableFromUtc)
+            .Select(x => new BilletSupplyAllocationView(
+                x.SupplyReference,
+                x.InventoryStage,
+                x.ExternalSourceType,
+                x.QuantityMt,
+                x.AvailableFromUtc,
+                x.LocationCode,
+                x.Status))
+            .ToArray();
+
+        return new BilletSupplyTraceView(
+            requirement?.Status,
+            requirement?.ShortfallQuantityMt ?? 0m,
+            requirement?.LateSupplyQuantity ?? 0m,
+            requirement?.Explanation,
+            requiresReheat,
+            sources);
+    }
+
+    private static IReadOnlyCollection<T> DeserializeSnapshot<T>(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return Array.Empty<T>();
+        return JsonSerializer.Deserialize<T[]>(json, SnapshotJsonOptions) ?? Array.Empty<T>();
     }
 
     /// <summary>

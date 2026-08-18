@@ -23,7 +23,30 @@ public sealed record RollingAllocationView(
     DemandSourceType DemandSource,
     decimal PlannedQuantityMt,
     decimal ExistingIntermediateInventoryMt,
-    decimal FreshSteelQuantityMt);
+    decimal FreshSteelQuantityMt,
+    BilletSupplyTraceView? SupplyTrace = null);
+
+/// <summary>
+/// Answers "which billet/heat supplies this rolling requirement, is it hot or cold, does it need
+/// RHF, and why is it short" from the same persisted MaterialRequirement/MaterialSupplyReservation
+/// facts the planning kernel already wrote, without recomputing coverage arithmetic in the UI.
+/// </summary>
+public sealed record BilletSupplyTraceView(
+    MaterialRequirementStatus? Status,
+    decimal ShortfallQuantityMt,
+    decimal LateSupplyQuantityMt,
+    string? Explanation,
+    bool RequiresReheat,
+    IReadOnlyCollection<BilletSupplyAllocationView> Sources);
+
+public sealed record BilletSupplyAllocationView(
+    string? SupplyReference,
+    InventoryStage InventoryStage,
+    BilletSupplySourceType? ExternalSourceType,
+    decimal QuantityMt,
+    DateTime AvailableFromUtc,
+    string? LocationCode,
+    MaterialReservationStatus Status);
 
 public sealed record PlannedPackagingUnitView(
     Guid PlannedPackagingUnitId,
