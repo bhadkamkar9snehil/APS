@@ -1,0 +1,53 @@
+.compare-picker {
+    display: grid;
+    grid-template-columns: minmax(230px, 1fr) 34px minmax(230px, 1fr) 110px;
+    gap: 8px;
+    align-items: end;
+    margin-bottom: 10px;
+    padding: 10px;
+    border: 1px solid var(--aps-border-dark);
+    background: #e9e7e1;
+    box-shadow: var(--aps-shadow-raised);
+}
+.compare-picker label > span { display: block; margin-bottom: 4px; color: var(--aps-faint); font-size: .5rem; font-weight: 800; letter-spacing: .08em; }
+.compare-picker select { width: 100%; height: 31px; border: 1px solid #bcb9b1; border-radius: 2px; background: #f8f6f0; color: var(--aps-text); padding: 0 7px; font-size: .58rem; }
+.compare-arrow { padding-bottom: 7px; color: #81768d; text-align: center; font-size: .9rem; }
+.compare-run { height: 31px; border: 1px solid #4d4a52; border-radius: 2px; background: linear-gradient(180deg, #766885, #5e526a); color: white; font-size: .57rem; font-weight: 800; cursor: pointer; }
+.compare-run:hover { filter: brightness(1.06); }
+.compare-summary { display: grid; grid-template-columns: minmax(185px, 1.4fr) repeat(5, minmax(78px, .65fr)) minmax(185px, 1.4fr); margin-bottom: 10px; border: 1px solid var(--aps-border); background: #ebe9e3; }
+.compare-summary > div { min-height: 61px; padding: 8px 9px; border-left: 1px solid #cac7bf; }
+.compare-summary > div:first-child { border-left: 0; }
+.compare-plan-card { background: #e2e0da; }
+.compare-plan-card.new-plan { background: #e9e5ed; }
+.compare-summary span { display: block; color: var(--aps-faint); font-size: .48rem; text-transform: uppercase; letter-spacing: .07em; }
+.compare-summary strong { display: block; margin-top: 5px; font-size: .67rem; }
+.compare-summary small { display: block; margin-top: 4px; color: var(--aps-muted); font-size: .47rem; }
+.compare-metric strong { font-size: .85rem; }
+.compare-ledger { border: 1px solid var(--aps-border); background: var(--aps-panel); }
+.compare-ledger-head, .compare-ledger-row { display: grid; grid-template-columns: minmax(250px, 1.6fr) 130px minmax(180px, 1fr) minmax(190px, 1fr) 80px; gap: 9px; align-items: center; padding: 0 10px; }
+.compare-ledger-head { min-height: 32px; border-bottom: 1px solid #cbc8c0; background: #dfddd7; }
+.compare-ledger-head span { color: var(--aps-faint); font-size: .49rem; font-weight: 800; text-transform: uppercase; }
+.compare-ledger-row { min-height: 48px; border-bottom: 1px solid #dfdcd5; background: #f7f5ef; }
+.compare-ledger-row.is-unchanged { opacity: .58; background: #efede7; }
+.compare-ledger-row > div:first-child strong { display: block; font-size: .58rem; }
+.compare-ledger-row > div:first-child span { display: block; margin-top: 2px; color: var(--aps-faint); font-size: .46rem; }
+.change-badge { justify-self: start; padding: 2px 5px; border: 1px solid #c5c1b8; background: #e9e6df; color: #65696d; font-size: .46rem; font-weight: 800; text-transform: uppercase; }
+.change-badge.added { border-color: #9eb9a7; background: var(--aps-success-bg); color: var(--aps-success); }
+.change-badge.removed { border-color: #c8a3a0; background: var(--aps-error-bg); color: var(--aps-error); }
+.change-badge.moved, .change-badge.moved-resource { border-color: #c7b083; background: var(--aps-warning-bg); color: var(--aps-warning); }
+.change-badge.resource { border-color: #aab5c1; background: #e6ecf0; color: #4d6578; }
+.compare-resource-change, .compare-time-change { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.compare-resource-change span, .compare-time-change span { color: var(--aps-faint); font-size: .48rem; }
+.compare-resource-change i { color: #8c8293; font-style: normal; }
+.compare-resource-change strong, .compare-time-change strong { font-size: .52rem; }
+.movement-value { justify-self: end; font-size: .56rem; }
+.movement-value.later { color: var(--aps-warning); }
+.movement-value.earlier { color: var(--aps-success); }
+.movement-value.same { color: var(--aps-faint); }
+
+@media (max-width: 1200px) {
+    .compare-summary { grid-template-columns: 1fr repeat(3, 90px) 1fr; }
+    .compare-summary > div:nth-child(5), .compare-summary > div:nth-child(6) { display: none; }
+    .compare-ledger-head, .compare-ledger-row { grid-template-columns: minmax(220px, 1.6fr) 120px minmax(160px, 1fr) 72px; }
+    .compare-ledger-head > :nth-child(4), .compare-ledger-row > :nth-child(4) { display: none; }
+}
