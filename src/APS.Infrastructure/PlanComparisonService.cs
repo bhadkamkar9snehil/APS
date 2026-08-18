@@ -120,6 +120,15 @@ public sealed class PlanComparisonService(ApsDbContext db) : IPlanComparisonServ
         PlanOperationType.HotRolling => FiniteScheduleTaskType.HotRolling,
         PlanOperationType.ColdRolling => FiniteScheduleTaskType.ColdRolling,
         PlanOperationType.Finishing => FiniteScheduleTaskType.Finishing,
+        PlanOperationType.Eaf => FiniteScheduleTaskType.Eaf,
+        PlanOperationType.Lrf => FiniteScheduleTaskType.Lrf,
+        PlanOperationType.Vd => FiniteScheduleTaskType.Vd,
+        PlanOperationType.Reheating => FiniteScheduleTaskType.Reheating,
+        PlanOperationType.Tmt => FiniteScheduleTaskType.Tmt,
+        PlanOperationType.Cooling => FiniteScheduleTaskType.Cooling,
+        PlanOperationType.Cutting => FiniteScheduleTaskType.Cutting,
+        PlanOperationType.Bundling => FiniteScheduleTaskType.Bundling,
+        PlanOperationType.Coiling => FiniteScheduleTaskType.Coiling,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
     };
 }
