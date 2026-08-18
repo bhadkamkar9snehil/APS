@@ -23,7 +23,16 @@ public enum PlanOperationType
     Casting = 1,
     HotRolling = 2,
     ColdRolling = 3,
-    Finishing = 4
+    Finishing = 4,
+    Eaf = 5,
+    Lrf = 6,
+    Vd = 7,
+    Reheating = 8,
+    Tmt = 9,
+    Cooling = 10,
+    Cutting = 11,
+    Bundling = 12,
+    Coiling = 13
 }
 
 public sealed class PlanVersionState : Entity
@@ -46,6 +55,7 @@ public sealed class PlanOperationSnapshot : Entity
     public required string PlanningKey { get; set; }
     public Guid SourceEntityId { get; set; }
     public PlanOperationType OperationType { get; set; }
+    public ProcessOperationType ProcessOperationType { get; set; } = ProcessOperationType.Unknown;
     public Guid ResourceId { get; set; }
     public DateTime StartUtc { get; set; }
     public DateTime EndUtc { get; set; }
