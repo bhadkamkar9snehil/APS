@@ -24,7 +24,12 @@ internal static class RollingFeedProjector
             .GroupBy(x => x.RouteCode, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.OrderBy(y => y.SequenceNumber).ToArray(), StringComparer.OrdinalIgnoreCase);
         var inventoryByPo = campaignPlan.InventoryAllocations
-            .Where(x => x.Use is PlanningInventoryUse.IntermediateFeed or PlanningInventoryUse.ExternalIntermediateFeed)
+            .Where(x => x.Use is
+                PlanningInventoryUse.IntermediateFeed or
+                PlanningInventoryUse.ExternalIntermediateFeed or
+                PlanningInventoryUse.PlannedPurchaseFeed or
+                PlanningInventoryUse.PlannedTransferFeed or
+                PlanningInventoryUse.ManualPlannedFeed)
             .GroupBy(x => x.ProductionOrderId)
             .ToDictionary(x => x.Key, x => x.ToArray());
 
@@ -65,8 +70,9 @@ internal static class RollingFeedProjector
                 continue;
             }
 
-            // Existing and purchased billets are cold-charge by default. An external supply may
-            // explicitly carry a hot thermal state, in which case a valid direct hot path can bypass RHF.
+            // Existing, confirmed external, planned purchase/transfer and planner-authorized billet are
+            // all legitimate feed paths. Anything other than an explicitly-hot confirmed external supply
+            // defaults to cold charge and therefore uses RHF when the route requires one.
             var sourceAllocations = plan.Allocations
                 .Where(x => x.ProductionOrder is not null)
                 .SelectMany(x => inventoryByPo.TryGetValue(x.ProductionOrderId, out var values) ? values : Array.Empty<PlanningInventoryAllocation>())
@@ -77,7 +83,6 @@ internal static class RollingFeedProjector
                 continue;
             }
 
-            var latestAvailability = sourceAllocations.Where(x => x.AvailableFromUtc.HasValue).Select(x => x.AvailableFromUtc!.Value).DefaultIfEmpty().Max();
             var allExplicitlyHot = sourceAllocations.All(x =>
                 x.Use == PlanningInventoryUse.ExternalIntermediateFeed &&
                 x.SourceReference is not null &&
@@ -89,11 +94,9 @@ internal static class RollingFeedProjector
             {
                 if (!needsReheat)
                 {
-                    Replace(tasks, rollingTask with
-                    {
-                        EarliestStartUtc = latestAvailability == default ? rollingTask.EarliestStartUtc : latestAvailability,
-                        ProcessOperationType = ProcessOperationType.HotRoll
-                    });
+                    // Do not use one max ETA for the whole plan. The material reservoir contains the
+                    // actual receipt times and allows progressive feed as qualified material becomes available.
+                    Replace(tasks, rollingTask with { EarliestStartUtc = null, ProcessOperationType = ProcessOperationType.HotRoll });
                     continue;
                 }
 
@@ -105,7 +108,7 @@ internal static class RollingFeedProjector
 
                 var reheatTask = CreateInventoryReheatTask(
                     rollingTask,
-                    latestAvailability == default ? null : latestAvailability,
+                    null,
                     reheat,
                     resources,
                     capabilitiesByResource,
@@ -191,7 +194,11 @@ internal static class RollingFeedProjector
                     .Append(resource.NominalThroughputMtPerHour ?? 0m).DefaultIfEmpty(0m).Max();
                 duration = throughput > 0m ? Math.Max(1, (int)Math.Ceiling((double)(task.QuantityMt / throughput * 60m))) : 60;
             }
-            result.Add(new FiniteScheduleResourceOption(resource.Id, duration, matches.Select(x => x.AssignmentPenalty).DefaultIfEmpty(0).Min()));
+            result.Add(new FiniteScheduleResourceOption(
+                resource.Id,
+                duration,
+                matches.Select(x => x.AssignmentPenalty).DefaultIfEmpty(0).Min(),
+                "RHF_CAPABILITY_MATCH"));
         }
         return result;
     }
