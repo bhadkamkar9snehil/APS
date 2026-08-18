@@ -65,9 +65,9 @@ public sealed record PlanningOperationResourceAlternative(
 
 public sealed record MaterialSupplyPlanningPolicy(
     bool AllowInternalMake = true,
-    bool AllowExternalBuy = true,
+    bool AllowExternalBuy = false,
     bool AllowTransfer = false,
-    bool AllowManualSupply = true,
+    bool AllowManualSupply = false,
     TimeSpan? DefaultExternalLeadTime = null,
     bool PreserveCustomerQualifiedPools = true);
 
