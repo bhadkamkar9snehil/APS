@@ -271,6 +271,10 @@ public interface IPlannerWorkspaceQueryService
         Guid? planVersionId = null,
         CancellationToken cancellationToken = default);
 
+    Task<RollingFinishingWorkspaceView?> GetRollingFinishingAsync(
+        Guid? planVersionId = null,
+        CancellationToken cancellationToken = default);
+
     Task<WorkOrdersWorkspaceView?> GetWorkOrdersAsync(
         Guid? planVersionId = null,
         CancellationToken cancellationToken = default);

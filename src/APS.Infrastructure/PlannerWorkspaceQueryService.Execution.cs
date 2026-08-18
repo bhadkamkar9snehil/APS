@@ -59,7 +59,8 @@ public sealed partial class PlannerWorkspaceQueryService
             scheduledForWo ??= Array.Empty<ScheduledOperation>();
 
             var operations = scheduledForWo
-                .Select(x => planOperationByKey.TryGetValue(x.PlanningKey, out var op) ? op : null)
+                .Where(x => x.PlanningKey is not null)
+                .Select(x => planOperationByKey.TryGetValue(x.PlanningKey!, out var op) ? op : null)
                 .Where(x => x is not null)
                 .Cast<PlanOperationSnapshot>()
                 .OrderBy(x => x.StartUtc)

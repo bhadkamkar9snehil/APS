@@ -77,6 +77,14 @@ public sealed class UnavailablePlannerWorkspaceQueryService : IPlannerWorkspaceQ
         return Task.FromResult<FiniteScheduleWorkspaceView?>(null);
     }
 
+    public Task<RollingFinishingWorkspaceView?> GetRollingFinishingAsync(
+        Guid? planVersionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureAvailable();
+        return Task.FromResult<RollingFinishingWorkspaceView?>(null);
+    }
+
     public Task<WorkOrdersWorkspaceView?> GetWorkOrdersAsync(
         Guid? planVersionId = null,
         CancellationToken cancellationToken = default)

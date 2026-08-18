@@ -17,7 +17,7 @@ public sealed partial class PlannerWorkspaceQueryService
         var difference = await new PlanComparisonService(db)
             .CompareAsync(baselinePlanVersionId, newPlanVersionId, cancellationToken);
 
-        var resourceIds = difference.Differences
+        var resourceIds = difference.Operations
             .SelectMany(x => new[] { x.BaselineResourceId, x.NewResourceId })
             .Where(x => x.HasValue)
             .Select(x => x!.Value)
@@ -29,7 +29,7 @@ public sealed partial class PlannerWorkspaceQueryService
                 .Where(x => resourceIds.Contains(x.Id))
                 .ToDictionaryAsync(x => x.Id, x => x.Code, cancellationToken);
 
-        var changes = difference.Differences
+        var changes = difference.Operations
             .OrderByDescending(x => x.ChangeType != PlanOperationChangeType.Unchanged)
             .ThenByDescending(x => Math.Abs(x.StartMovementMinutes))
             .ThenBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
@@ -49,11 +49,11 @@ public sealed partial class PlannerWorkspaceQueryService
         return new PlanComparisonWorkspaceView(
             baseline,
             next,
-            difference.AddedOperations,
-            difference.RemovedOperations,
-            difference.MovedOperations,
-            difference.ResourceChangedOperations,
-            difference.UnchangedOperations,
+            difference.AddedCount,
+            difference.RemovedCount,
+            difference.MovedCount,
+            difference.ResourceChangedCount,
+            difference.UnchangedCount,
             difference.MaximumStartMovementMinutes,
             changes);
     }

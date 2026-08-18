@@ -183,8 +183,8 @@ public sealed class ProductionDemandOrchestrationService(
         var existingMto = salesOrderIds.Length == 0
             ? new List<ProductionOrder>()
             : await db.ProductionOrders
-                .Include(x => x.Requirement)!.ThenInclude(x => x.ChemistryOverrides)
-                .Include(x => x.Requirement)!.ThenInclude(x => x.ProcessOverrides)
+                .Include(x => x.Requirement!).ThenInclude(x => x.ChemistryOverrides)
+                .Include(x => x.Requirement!).ThenInclude(x => x.ProcessOverrides)
                 .Include(x => x.SalesOrder)
                 .Where(x => x.DemandSource == DemandSourceType.MakeToOrder &&
                             x.SalesOrderId.HasValue && salesOrderIds.Contains(x.SalesOrderId.Value))
@@ -349,8 +349,8 @@ public sealed class ProductionDemandOrchestrationService(
 
         var mts = selection.IncludeMakeToStock
             ? await db.ProductionOrders
-                .Include(x => x.Requirement)!.ThenInclude(x => x.ChemistryOverrides)
-                .Include(x => x.Requirement)!.ThenInclude(x => x.ProcessOverrides)
+                .Include(x => x.Requirement!).ThenInclude(x => x.ChemistryOverrides)
+                .Include(x => x.Requirement!).ThenInclude(x => x.ProcessOverrides)
                 .Where(x => x.DemandSource == DemandSourceType.MakeToStock &&
                             x.Status != ProductionOrderStatus.Cancelled &&
                             x.Status != ProductionOrderStatus.Completed &&
