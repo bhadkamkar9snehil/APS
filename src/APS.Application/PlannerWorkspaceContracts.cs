@@ -92,6 +92,38 @@ public sealed record ControlTowerView(
     IReadOnlyCollection<PlanMaterialSummaryView> MaterialAllocations,
     DateTime GeneratedOnUtc);
 
+public sealed record SalesOrderDemandCoverageView(
+    string MaterialCode,
+    string GradeCode,
+    string CrossSectionCode,
+    string? LocationCode,
+    DateTime? AvailableFromUtc,
+    MaterialQualityStatus QualityStatus,
+    decimal QuantityMt);
+
+public sealed record SalesOrderDemandRowView(
+    Guid SalesOrderId,
+    string SalesOrderNumber,
+    string SalesOrderItemNumber,
+    string? CustomerCode,
+    string? CustomerGroupCode,
+    string MaterialCode,
+    string GradeCode,
+    string FinalCrossSectionCode,
+    decimal OpenDemandQuantityMt,
+    decimal FinishedGoodsCoveredQuantityMt,
+    decimal ManufacturingRequirementQuantityMt,
+    Guid? ProductionOrderId,
+    string? ProductionOrderNumber,
+    DateTime CustomerRequiredDate,
+    DateTime? ConfirmedDeliveryDate,
+    DateTime ProductionRequiredByDate,
+    int Priority,
+    DemandReconciliationDisposition Disposition,
+    bool PlannerAttentionRequired,
+    string? ReasonCode,
+    IReadOnlyCollection<SalesOrderDemandCoverageView> FinishedGoodsCoverage);
+
 public sealed record DemandSupplyRowView(
     Guid ProductionOrderId,
     string ProductionOrderNumber,
@@ -137,7 +169,12 @@ public sealed record DemandSupplyView(
     decimal UncoveredQuantityMt,
     int MakeToOrderCount,
     int MakeToStockCount,
-    IReadOnlyCollection<DemandSupplyRowView> Rows);
+    IReadOnlyCollection<DemandSupplyRowView> Rows,
+    IReadOnlyCollection<SalesOrderDemandRowView>? SalesOrders = null,
+    decimal TotalSalesOrderOpenDemandMt = 0m,
+    decimal SalesOrderFinishedGoodsCoveredMt = 0m,
+    decimal SalesOrderManufacturingRequirementMt = 0m,
+    int PlannerAttentionCount = 0);
 
 public sealed record CampaignAllocationView(
     Guid ProductionOrderId,
@@ -146,7 +183,10 @@ public sealed record CampaignAllocationView(
     string? SalesOrderNumber,
     decimal PlannedQuantityMt,
     decimal ExistingIntermediateInventoryMt,
-    decimal FreshSteelQuantityMt);
+    decimal FreshSteelQuantityMt,
+    DateTime? RequiredDate = null,
+    int Priority = 0,
+    string? SalesOrderItemNumber = null);
 
 public sealed record CampaignGradeSequenceItemView(
     int SequenceNumber,
@@ -158,7 +198,10 @@ public sealed record HeatAllocationView(
     string ProductionOrderNumber,
     string? SalesOrderNumber,
     decimal PlannedOutputQuantityMt,
-    decimal PlannedInputQuantityMt);
+    decimal PlannedInputQuantityMt,
+    DateTime? RequiredDate = null,
+    int Priority = 0,
+    string? SalesOrderItemNumber = null);
 
 public sealed record CampaignHeatView(
     Guid CampaignHeatId,
