@@ -55,7 +55,7 @@ public sealed class RecursiveMaterialRequirementEngineTests
 
         var result = engine.Explode(Request(Seed(poId, "FG", 100m), boms, new InventorySnapshotMaterialCoverageSession(inventory)));
 
-        var billet = Assert.Single(result.Requirements.Where(x => x.MaterialCode == "BILLET"));
+        var billet = Assert.Single(result.Requirements, x => x.MaterialCode == "BILLET");
         Assert.Equal(MaterialRequirementStatus.Covered, billet.Status);
         Assert.Equal(100m, billet.CoveredQuantityMt);
         Assert.DoesNotContain(result.Requirements, x => x.MaterialCode == "LIQUID");
@@ -78,8 +78,8 @@ public sealed class RecursiveMaterialRequirementEngineTests
             boms,
             new InventorySnapshotMaterialCoverageSession(new[] { Inventory("BILLET", 30m) })));
 
-        var billet = Assert.Single(result.Requirements.Where(x => x.MaterialCode == "BILLET"));
-        var liquid = Assert.Single(result.Requirements.Where(x => x.MaterialCode == "LIQUID"));
+        var billet = Assert.Single(result.Requirements, x => x.MaterialCode == "BILLET");
+        var liquid = Assert.Single(result.Requirements, x => x.MaterialCode == "LIQUID");
         Assert.Equal(100m, billet.GrossQuantity);
         Assert.Equal(30m, billet.CoveredQuantityMt);
         Assert.Equal(70m, billet.NetRequirementQuantity);
@@ -95,7 +95,7 @@ public sealed class RecursiveMaterialRequirementEngineTests
         var component = Input("RAW", 1m, yieldPct: 90m, requiredAtOffsetMinutes: 120);
         var result = engine.Explode(Request(Seed(poId, "FG", 90m), new[] { Bom("FG", component) }));
 
-        var raw = Assert.Single(result.Requirements.Where(x => x.MaterialCode == "RAW"));
+        var raw = Assert.Single(result.Requirements, x => x.MaterialCode == "RAW");
         Assert.Equal(100m, decimal.Round(raw.GrossQuantity, 4));
         Assert.Equal(90m, raw.EffectiveYieldPct);
         Assert.Equal(10m, raw.EffectiveScrapPct);
@@ -124,7 +124,7 @@ public sealed class RecursiveMaterialRequirementEngineTests
 
         var result = engine.Explode(Request(Seed(poId, "LIQUID", 100m), boms));
 
-        var slag = Assert.Single(result.Requirements.Where(x => x.MaterialCode == "SLAG"));
+        var slag = Assert.Single(result.Requirements, x => x.MaterialCode == "SLAG");
         Assert.Equal(BomFlowType.Byproduct, slag.FlowType);
         Assert.Equal(MaterialRequirementStatus.ProjectedOutput, slag.Status);
         Assert.Equal(12m, slag.ProducedQuantity);
@@ -146,7 +146,7 @@ public sealed class RecursiveMaterialRequirementEngineTests
             }));
 
         Assert.True(result.HasErrors);
-        var issue = Assert.Single(result.Issues.Where(x => x.Code == "BOM_CYCLE_DETECTED"));
+        var issue = Assert.Single(result.Issues, x => x.Code == "BOM_CYCLE_DETECTED");
         Assert.Contains("A[MT] -> B[MT] -> C[MT] -> A[MT]", issue.Message);
         Assert.Contains(result.Requirements, x => x.MaterialCode == "A" && x.ParentRequirementId.HasValue && x.Status == MaterialRequirementStatus.CycleBlocked);
     }
@@ -202,7 +202,7 @@ public sealed class RecursiveMaterialRequirementEngineTests
 
         var result = engine.Explode(Request(Seed(poId, "CHEM-BATCH", 10m, "KG"), new[] { bom }));
 
-        var additive = Assert.Single(result.Requirements.Where(x => x.MaterialCode == "ADDITIVE"));
+        var additive = Assert.Single(result.Requirements, x => x.MaterialCode == "ADDITIVE");
         Assert.Equal("KG", additive.MaterialUom);
         Assert.Equal(25m, additive.GrossQuantity);
         Assert.Equal(0m, additive.RequiredQuantityMt);
@@ -228,8 +228,8 @@ public sealed class RecursiveMaterialRequirementEngineTests
         Assert.Equal(2, roots.Length);
         Assert.Equal(150m, result.CoverageAllocations.Sum(x => x.Quantity));
         Assert.Equal(50m, roots.Sum(x => x.NetRequirementQuantity));
-        Assert.Single(roots.Where(x => x.Status == MaterialRequirementStatus.Covered));
-        Assert.Single(roots.Where(x => x.Status == MaterialRequirementStatus.NotManufacturableHere));
+        Assert.Single(roots, x => x.Status == MaterialRequirementStatus.Covered);
+        Assert.Single(roots, x => x.Status == MaterialRequirementStatus.NotManufacturableHere);
     }
 
     private static RecursiveMaterialRequirementRequest Request(

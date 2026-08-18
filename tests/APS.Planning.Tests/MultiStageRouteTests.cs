@@ -92,15 +92,26 @@ public sealed class MultiStageRouteTests
         Assert.True(result.IsFeasible, string.Join("; ", result.Schedule.Issues.Select(x => x.Message)));
         var hot = Assert.Single(result.ProductionStructure.RollingPlans);
         Assert.Equal("HRC", hot.OutputCrossSectionCode);
-        Assert.Equal(hotMill.Id, hot.RollingMillResourceId);
+        // Mill assignment is now solver-owned: ConfiguredRouteProductionStructureBuilder hands CP-SAT
+        // every eligible mill as a FiniteScheduleResourceOption rather than fixing RollingMillResourceId
+        // up front, so the selected mill only shows up in the solved schedule assignments.
+        var hotAssignments = result.Schedule.Assignments.Where(a => a.SourceEntityId == hot.Id).ToArray();
+        Assert.NotEmpty(hotAssignments);
+        Assert.All(hotAssignments, a => Assert.Equal(hotMill.Id, a.ResourceId));
 
         var downstream = Assert.IsAssignableFrom<IReadOnlyCollection<RouteOperationPlan>>(
             result.ProductionStructure.RouteOperationPlans);
         Assert.Equal(2, downstream.Count);
         var cold = downstream.Single(x => x.OperationType == WorkOrderType.ColdRolling);
         var finish = downstream.Single(x => x.OperationType == WorkOrderType.Finishing);
-        Assert.Equal(coldMill.Id, cold.ResourceId);
-        Assert.Equal(finishing.Id, finish.ResourceId);
+        // Downstream route resource assignment is likewise solver-owned now (RouteOperationPlan.ResourceId
+        // stays null; the actual assignment only exists in the solved schedule).
+        var coldAssignments = result.Schedule.Assignments.Where(a => a.SourceEntityId == cold.Id).ToArray();
+        var finishAssignments = result.Schedule.Assignments.Where(a => a.SourceEntityId == finish.Id).ToArray();
+        Assert.NotEmpty(coldAssignments);
+        Assert.NotEmpty(finishAssignments);
+        Assert.All(coldAssignments, a => Assert.Equal(coldMill.Id, a.ResourceId));
+        Assert.All(finishAssignments, a => Assert.Equal(finishing.Id, a.ResourceId));
         Assert.Equal("CRC", cold.OutputCrossSectionCode);
         Assert.Equal("1.0MM", finish.OutputCrossSectionCode);
 

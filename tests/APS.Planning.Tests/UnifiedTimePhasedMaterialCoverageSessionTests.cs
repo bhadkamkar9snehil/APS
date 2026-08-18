@@ -95,10 +95,8 @@ public sealed class UnifiedTimePhasedMaterialCoverageSessionTests
     [Fact]
     public void Held_or_rejected_stock_is_not_available_to_material_coverage()
     {
-        var held = Inventory("BILLET", available: 50m);
-        held.QualityStatus = MaterialQualityStatus.Held;
-        var rejected = Inventory("BILLET", available: 50m);
-        rejected.QualityStatus = MaterialQualityStatus.Rejected;
+        var held = Inventory("BILLET", available: 50m, qualityStatus: MaterialQualityStatus.QualityHold);
+        var rejected = Inventory("BILLET", available: 50m, qualityStatus: MaterialQualityStatus.Rejected);
         var session = new UnifiedTimePhasedMaterialCoverageSession(
             ReferenceUtc,
             new[] { held, rejected },
@@ -135,7 +133,8 @@ public sealed class UnifiedTimePhasedMaterialCoverageSessionTests
         string material,
         decimal available = 0m,
         decimal confirmedIncoming = 0m,
-        DateTime? availableFromUtc = null) =>
+        DateTime? availableFromUtc = null,
+        MaterialQualityStatus qualityStatus = MaterialQualityStatus.Available) =>
         new()
         {
             MaterialCode = material,
@@ -143,7 +142,7 @@ public sealed class UnifiedTimePhasedMaterialCoverageSessionTests
             CrossSectionCode = "150X150",
             Stage = InventoryStage.CastIntermediate,
             LocationCode = "YARD",
-            QualityStatus = MaterialQualityStatus.Available,
+            QualityStatus = qualityStatus,
             AvailableQuantityMt = available,
             ConfirmedIncomingQuantityMt = confirmedIncoming,
             AvailableFromUtc = availableFromUtc ?? ReferenceUtc

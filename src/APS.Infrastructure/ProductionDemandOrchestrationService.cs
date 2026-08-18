@@ -543,12 +543,24 @@ public sealed class ProductionDemandOrchestrationService(
         return result;
     }
 
-    private static void ReplaceCoverage(SalesOrderDemandState state, IReadOnlyCollection<DemandCoverageEvidence> coverage)
+    private void ReplaceCoverage(SalesOrderDemandState state, IReadOnlyCollection<DemandCoverageEvidence> coverage)
     {
-        state.FinishedGoodsCoverage.Clear();
+        // Entity.Id is assigned client-side (Guid.NewGuid() in the property initializer), so a brand
+        // new SalesOrderFinishedGoodsCoverage already carries a "real" key by the time EF sees it.
+        // Appending it only to the navigation collection lets EF's graph-fixup heuristic decide the
+        // tracking state, and with a pre-set key it infers Modified (an update to an existing row)
+        // rather than Added - which then fails as a concurrency exception because that row was never
+        // inserted. Track additions/removals through the DbContext explicitly instead of relying on
+        // collection-navigation fixup to guess correctly.
+        foreach (var existing in state.FinishedGoodsCoverage.ToArray())
+        {
+            state.FinishedGoodsCoverage.Remove(existing);
+            db.SalesOrderFinishedGoodsCoverage.Remove(existing);
+        }
+
         foreach (var item in coverage)
         {
-            state.FinishedGoodsCoverage.Add(new SalesOrderFinishedGoodsCoverage
+            var row = new SalesOrderFinishedGoodsCoverage
             {
                 SalesOrderDemandStateId = state.Id,
                 SalesOrderDemandState = state,
@@ -559,7 +571,9 @@ public sealed class ProductionDemandOrchestrationService(
                 AvailableFromUtc = item.AvailableFromUtc,
                 QualityStatus = item.QualityStatus,
                 QuantityMt = item.QuantityMt
-            });
+            };
+            state.FinishedGoodsCoverage.Add(row);
+            db.SalesOrderFinishedGoodsCoverage.Add(row);
         }
     }
 
@@ -631,8 +645,14 @@ public sealed class ProductionDemandOrchestrationService(
             DemandSource = DemandSourceType.MakeToOrder,
             MaterialCode = so.MaterialCode,
             GradeCode = so.GradeCode,
+            // FK only, deliberately no SteelGrade navigation assignment: definition.Grade comes from the
+            // PlanningMasterDataSnapshot, which isn't tracked by this DbContext. Assigning the full
+            // navigation reference pulls that untracked master-data object into the change tracker via
+            // graph fixup, where EF's "does this look like an existing row" heuristic marks it Modified
+            // rather than Added or Unchanged - and since it was never actually inserted, SaveChanges then
+            // fails with a concurrency exception on read-only reference data that was never meant to be
+            // written by demand orchestration at all.
             SteelGradeId = definition.Grade.Id,
-            SteelGrade = definition.Grade,
             GradeFamilyCode = definition.Grade.GradeFamilyCode,
             GradeSequenceClassCode = definition.Grade.SequenceClassCode,
             FinalCrossSectionCode = so.FinalCrossSectionCode,
@@ -662,8 +682,7 @@ public sealed class ProductionDemandOrchestrationService(
     {
         po.MaterialCode = so.MaterialCode;
         po.GradeCode = so.GradeCode;
-        po.SteelGradeId = definition.Grade.Id;
-        po.SteelGrade = definition.Grade;
+        po.SteelGradeId = definition.Grade.Id; // no navigation assignment - see CreateProductionOrder
         po.GradeFamilyCode = definition.Grade.GradeFamilyCode;
         po.GradeSequenceClassCode = definition.Grade.SequenceClassCode;
         po.FinalCrossSectionCode = so.FinalCrossSectionCode;

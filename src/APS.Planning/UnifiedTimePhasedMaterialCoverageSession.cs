@@ -82,6 +82,7 @@ public sealed class UnifiedTimePhasedMaterialCoverageSession : IMaterialCoverage
         foreach (var supply in externalMaterialSupplies ?? Array.Empty<ExternalMaterialSupply>())
         {
             if (!supply.IsFirm || supply.QualityStatus is not (MaterialQualityStatus.Available or MaterialQualityStatus.Released)) continue;
+            if (string.IsNullOrWhiteSpace(supply.MaterialSpecificationCode)) continue;
             var quantity = Math.Max(0m, supply.QuantityMt - supply.ReservedQuantityMt);
             if (quantity <= QuantityTolerance) continue;
             materialCodeBySpecification.TryGetValue(supply.MaterialSpecificationCode, out var materialCode);

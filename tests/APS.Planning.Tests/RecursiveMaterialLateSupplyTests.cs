@@ -130,7 +130,7 @@ public sealed class RecursiveMaterialLateSupplyTests
             Array.Empty<MaterialSpecification>(),
             session));
 
-        var billet = Assert.Single(result.Requirements.Where(x => x.MaterialCode == "BILLET"));
+        var billet = Assert.Single(result.Requirements, x => x.MaterialCode == "BILLET");
         Assert.Equal(MaterialRequirementStatus.InternalProductionRequired, billet.Status);
         Assert.Equal(100m, billet.InternalProductionQuantity);
         Assert.Equal(100m, billet.LateSupplyQuantity);

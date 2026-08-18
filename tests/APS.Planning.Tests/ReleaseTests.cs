@@ -56,16 +56,29 @@ public sealed class PlanReleaseBuilderTests
             PlannedQuantityMt = 100m,
             FreshSteelQuantityMt = 100m
         });
-        campaign.GradeSequence.Add(new CampaignGradeSequence
+        var gradeSequence = new CampaignGradeSequence
         {
             CampaignId = campaign.Id,
             Campaign = campaign,
             SequenceNumber = 1,
             GradeCode = "G1",
             PlannedQuantityMt = 100m
-        });
+        };
+        campaign.GradeSequence.Add(gradeSequence);
+        var heat = new CampaignHeat
+        {
+            CampaignId = campaign.Id,
+            Campaign = campaign,
+            CampaignGradeSequenceId = gradeSequence.Id,
+            CampaignGradeSequence = gradeSequence,
+            SequenceNumber = 1,
+            GradeCode = "G1",
+            PlannedQuantityMt = 100m
+        };
+        campaign.Heats.Add(heat);
 
         var millId = Guid.NewGuid();
+        var eafResourceId = Guid.NewGuid();
         var rollingPlan = new RollingPlan
         {
             CampaignId = campaign.Id,
@@ -90,18 +103,56 @@ public sealed class PlanReleaseBuilderTests
             FreshSteelQuantityMt = 100m
         });
 
+        var start = new DateTime(2026, 8, 20, 8, 0, 0, DateTimeKind.Utc);
+        var steelmakingTaskId = Guid.NewGuid();
+        var rollingTaskId = Guid.NewGuid();
+        var steelmakingTask = new FiniteScheduleTask(
+            steelmakingTaskId,
+            heat.Id,
+            // Not FiniteScheduleTaskType.Casting: PlanReleaseBuilder's casting-assignment filter treats
+            // TaskType.Casting as a legacy fallback classifier (in addition to ProcessOperationType.Ccm),
+            // so an Eaf/steelmaking task carrying it would get double-counted as a casting assignment too.
+            FiniteScheduleTaskType.Finishing,
+            "Heat 1",
+            "G1",
+            "150X150",
+            100m,
+            null,
+            null,
+            0,
+            Array.Empty<FiniteScheduleResourceOption>(),
+            Array.Empty<FiniteScheduleDependency>(),
+            ProcessOperationType.Eaf);
+        var rollingTask = new FiniteScheduleTask(
+            rollingTaskId,
+            rollingPlan.Id,
+            FiniteScheduleTaskType.HotRolling,
+            "Roll 1",
+            "G1",
+            "16MM",
+            100m,
+            null,
+            null,
+            0,
+            Array.Empty<FiniteScheduleResourceOption>(),
+            Array.Empty<FiniteScheduleDependency>(),
+            ProcessOperationType.HotRoll);
+
         var structure = new ProductionStructurePlanningResult(
             Array.Empty<CastSequence>(),
             new[] { rollingPlan },
             Array.Empty<PlannedBilletSupply>(),
-            Array.Empty<FiniteScheduleTask>(),
+            new[] { steelmakingTask, rollingTask },
             Array.Empty<PlanningIssue>());
-        var start = new DateTime(2026, 8, 20, 8, 0, 0, DateTimeKind.Utc);
         var schedule = new FiniteScheduleResult(
             "Optimal",
             true,
             0,
-            new[] { new FiniteScheduleAssignment(Guid.NewGuid(), rollingPlan.Id, millId, start, start.AddHours(2)) },
+            new[]
+            {
+                new FiniteScheduleAssignment(steelmakingTaskId, heat.Id, eafResourceId, start, start.AddHours(1)),
+                new FiniteScheduleAssignment(rollingTaskId, rollingPlan.Id, millId, start.AddHours(1), start.AddHours(3))
+            },
             Array.Empty<PlanningIssue>());
         var planVersionId = Guid.NewGuid();
 
@@ -117,6 +168,6 @@ public sealed class PlanReleaseBuilderTests
         Assert.Equal(po.Id, Assert.Single(sms.Allocations).ProductionOrderId);
         Assert.Equal(po.Id, Assert.Single(rm.Allocations).ProductionOrderId);
         Assert.Equal(salesOrder.Id, Assert.Single(rm.Allocations).ProductionOrder!.SalesOrderId);
-        Assert.Single(release.Operations);
+        Assert.Equal(2, release.Operations.Count);
     }
 }

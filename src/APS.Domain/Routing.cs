@@ -97,6 +97,16 @@ public sealed class RouteResourceCapability : Entity
     public string? MaterialSpecificationCode { get; set; }
     public string? InputCrossSectionCode { get; set; }
     public string? OutputCrossSectionCode { get; set; }
+
+    // Hierarchical fallback below exact InputCrossSectionCode/OutputCrossSectionCode: when set, the
+    // capability matches any CrossSectionSpecification sharing that family/class, not just an exact
+    // code, mirroring CrossSectionSpecification.SectionFamilyCode/CasterFormatClassCode/RollingFamilyCode.
+    // See CrossSectionCapabilityMatcher for the exact-then-family precedence.
+    public string? InputSectionFamilyCode { get; set; }
+    public string? OutputSectionFamilyCode { get; set; }
+    public string? InputCasterFormatClassCode { get; set; }
+    public string? OutputRollingFamilyCode { get; set; }
+
     public string? ProductFamilyCode { get; set; }
     public decimal? MinimumQuantityMt { get; set; }
     public decimal? MaximumQuantityMt { get; set; }
