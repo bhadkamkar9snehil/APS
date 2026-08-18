@@ -69,6 +69,7 @@ public sealed class PlanDemandSnapshot : Entity
     public required string SalesOrderNumber { get; set; }
     public required string SalesOrderItemNumber { get; set; }
     public string? CustomerCode { get; set; }
+    public string? CustomerGroupCode { get; set; }
     public required string MaterialCode { get; set; }
     public required string GradeCode { get; set; }
     public required string FinalCrossSectionCode { get; set; }
