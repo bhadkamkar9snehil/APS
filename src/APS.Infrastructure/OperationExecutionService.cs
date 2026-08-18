@@ -40,7 +40,7 @@ public sealed class OperationExecutionService(ApsDbContext db) : IOperationExecu
         var resourceWasEligible = IsEligibleResource(operation, resource);
 
         // READY is a dispatch/commitment decision, not yet immutable execution truth. Reject an invalid
-        // resource and require the operator/planner to create a real redispatch/replan instead of bypassing APS.
+        // resource and require a real redispatch/replan rather than bypassing the planning constraints.
         if (update.Status == OperationExecutionStatus.Ready &&
             update.ActualResourceId.HasValue &&
             !resourceWasEligible &&
@@ -113,8 +113,155 @@ public sealed class OperationExecutionService(ApsDbContext db) : IOperationExecu
             update.Comment));
         operation.ExecutionHistoryJson = JsonSerializer.Serialize(history, JsonOptions);
 
+        // Execution progress is itself a commitment trigger for downstream routable operations. Evaluate
+        // the whole Plan Version before saving so successor LRF/VD/CCM/RHF/RM assignments harden only
+        // according to their own snapshotted policy.
+        await RefreshCommitmentsCoreAsync(update.PlanVersionId, update.ChangedOnUtc, cancellationToken);
+
         await db.SaveChangesAsync(cancellationToken);
         return Snapshot(operation);
+    }
+
+    public async Task<IReadOnlyCollection<OperationExecutionSnapshot>> RefreshCommitmentsAsync(
+        Guid planVersionId,
+        DateTime referenceTimeUtc,
+        CancellationToken cancellationToken = default)
+    {
+        var operations = await RefreshCommitmentsCoreAsync(planVersionId, referenceTimeUtc, cancellationToken);
+        await db.SaveChangesAsync(cancellationToken);
+        return operations.OrderBy(x => x.StartUtc).ThenBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
+            .Select(Snapshot)
+            .ToArray();
+    }
+
+    private async Task<IReadOnlyCollection<PlanOperationSnapshot>> RefreshCommitmentsCoreAsync(
+        Guid planVersionId,
+        DateTime referenceTimeUtc,
+        CancellationToken cancellationToken)
+    {
+        var operations = await db.PlanOperationSnapshots
+            .Where(x => x.PlanVersionId == planVersionId)
+            .OrderBy(x => x.StartUtc)
+            .ToListAsync(cancellationToken);
+        if (operations.Count == 0)
+            throw new KeyNotFoundException("No planned process operations exist for the supplied Plan Version.");
+
+        var byKey = operations.ToDictionary(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var operation in operations)
+        {
+            operation.CommitmentLastEvaluatedOnUtc = referenceTimeUtc;
+
+            if (operation.ExecutionStatus == OperationExecutionStatus.Completed)
+            {
+                operation.AssignmentCommitmentState = OperationAssignmentCommitmentState.Completed;
+                operation.CommittedResourceId ??= operation.ActualResourceId ?? operation.ResourceId;
+                continue;
+            }
+            if (operation.ExecutionStatus is OperationExecutionStatus.Running or OperationExecutionStatus.Held && operation.ActualResourceId.HasValue)
+            {
+                operation.AssignmentCommitmentState = OperationAssignmentCommitmentState.Running;
+                operation.CommittedResourceId ??= operation.ActualResourceId;
+                continue;
+            }
+            if (operation.ExecutionStatus == OperationExecutionStatus.Cancelled) continue;
+
+            var policy = DeserializePolicy(operation.AssignmentPolicyJson);
+            if (policy is null) continue;
+
+            var desired = EvaluateClockCommitment(policy, operation.StartUtc, referenceTimeUtc);
+            var predecessorKeys = DeserializePredecessorKeys(operation.PredecessorPlanningKeysJson);
+            if (predecessorKeys.Count > 0)
+            {
+                var predecessors = predecessorKeys
+                    .Where(byKey.ContainsKey)
+                    .Select(key => byKey[key])
+                    .ToArray();
+
+                // Do not treat missing predecessor snapshots as satisfied. All snapshotted predecessors
+                // must reach the configured gate before process progress can harden this assignment.
+                if (predecessors.Length == predecessorKeys.Count)
+                {
+                    var allRunningOrCompleted = predecessors.All(x =>
+                        x.ExecutionStatus is OperationExecutionStatus.Running or OperationExecutionStatus.Completed);
+                    var allCompleted = predecessors.All(x => x.ExecutionStatus == OperationExecutionStatus.Completed);
+                    var predecessorGateSatisfied =
+                        (policy.CommitWhenPredecessorRunning && allRunningOrCompleted) ||
+                        (policy.CommitWhenPredecessorCompleted && allCompleted);
+
+                    if (predecessorGateSatisfied)
+                    {
+                        desired = MaxCommitment(
+                            desired,
+                            policy.RequireDispatchAcknowledgement
+                                ? OperationAssignmentCommitmentState.Firm
+                                : OperationAssignmentCommitmentState.Committed);
+                    }
+                }
+            }
+
+            // READY with a selected resource is an explicit dispatch acknowledgement and therefore
+            // overrides a policy that otherwise requires acknowledgement before auto-commit.
+            if (operation.ExecutionStatus == OperationExecutionStatus.Ready && operation.CommittedResourceId.HasValue)
+                desired = MaxCommitment(desired, OperationAssignmentCommitmentState.Committed);
+
+            var promoted = MaxCommitment(operation.AssignmentCommitmentState, desired);
+            if (promoted == operation.AssignmentCommitmentState) continue;
+
+            operation.AssignmentCommitmentState = promoted;
+            if (promoted == OperationAssignmentCommitmentState.Committed)
+                operation.CommittedResourceId ??= operation.ResourceId;
+        }
+
+        return operations;
+    }
+
+    private static OperationAssignmentCommitmentState EvaluateClockCommitment(
+        OperationAssignmentPolicy policy,
+        DateTime plannedStartUtc,
+        DateTime referenceTimeUtc)
+    {
+        var minutes = (plannedStartUtc - referenceTimeUtc).TotalMinutes;
+        if (minutes <= policy.CommitMinutesBeforeStart)
+        {
+            return policy.RequireDispatchAcknowledgement
+                ? OperationAssignmentCommitmentState.Firm
+                : OperationAssignmentCommitmentState.Committed;
+        }
+        if (minutes <= policy.FirmMinutesBeforeStart) return OperationAssignmentCommitmentState.Firm;
+        return OperationAssignmentCommitmentState.Flexible;
+    }
+
+    private static OperationAssignmentCommitmentState MaxCommitment(
+        OperationAssignmentCommitmentState left,
+        OperationAssignmentCommitmentState right) =>
+        (OperationAssignmentCommitmentState)Math.Max((int)left, (int)right);
+
+    private static OperationAssignmentPolicy? DeserializePolicy(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return null;
+        try
+        {
+            return JsonSerializer.Deserialize<OperationAssignmentPolicy>(json, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static IReadOnlyList<string> DeserializePredecessorKeys(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return Array.Empty<string>();
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(json, JsonOptions)
+                   ?? new List<string>();
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<string>();
+        }
     }
 
     private static bool IsEligibleResource(PlanOperationSnapshot operation, Guid resourceId)
