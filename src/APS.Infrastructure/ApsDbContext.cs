@@ -51,6 +51,17 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
     public DbSet<PlanOperationSnapshot> PlanOperationSnapshots => Set<PlanOperationSnapshot>();
     public DbSet<PlanInventoryAllocationSnapshot> PlanInventoryAllocationSnapshots => Set<PlanInventoryAllocationSnapshot>();
     public DbSet<PlanMaterialUnitSnapshot> PlanMaterialUnitSnapshots => Set<PlanMaterialUnitSnapshot>();
+    public DbSet<PlanProductionOrderSnapshot> PlanProductionOrderSnapshots => Set<PlanProductionOrderSnapshot>();
+    public DbSet<PlanCampaignSnapshot> PlanCampaignSnapshots => Set<PlanCampaignSnapshot>();
+    public DbSet<PlanCampaignAllocationSnapshot> PlanCampaignAllocationSnapshots => Set<PlanCampaignAllocationSnapshot>();
+    public DbSet<PlanCampaignGradeSequenceSnapshot> PlanCampaignGradeSequenceSnapshots => Set<PlanCampaignGradeSequenceSnapshot>();
+    public DbSet<PlanHeatSnapshot> PlanHeatSnapshots => Set<PlanHeatSnapshot>();
+    public DbSet<PlanHeatAllocationSnapshot> PlanHeatAllocationSnapshots => Set<PlanHeatAllocationSnapshot>();
+    public DbSet<PlanCastSequenceSnapshot> PlanCastSequenceSnapshots => Set<PlanCastSequenceSnapshot>();
+    public DbSet<PlanCastSequenceHeatSnapshot> PlanCastSequenceHeatSnapshots => Set<PlanCastSequenceHeatSnapshot>();
+    public DbSet<PlanRollingPlanSnapshot> PlanRollingPlanSnapshots => Set<PlanRollingPlanSnapshot>();
+    public DbSet<PlanRollingPlanAllocationSnapshot> PlanRollingPlanAllocationSnapshots => Set<PlanRollingPlanAllocationSnapshot>();
+    public DbSet<PlanPackagingUnitSnapshot> PlanPackagingUnitSnapshots => Set<PlanPackagingUnitSnapshot>();
     public DbSet<ScheduledOperation> ScheduledOperations => Set<ScheduledOperation>();
     public DbSet<ManufacturingRoute> ManufacturingRoutes => Set<ManufacturingRoute>();
     public DbSet<ManufacturingRouteOperation> ManufacturingRouteOperations => Set<ManufacturingRouteOperation>();
@@ -249,6 +260,18 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
             .HasForeignKey(x => x.PlanVersionId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        modelBuilder.Entity<PlanProductionOrderSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PlanCampaignSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PlanCampaignAllocationSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PlanCampaignGradeSequenceSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PlanHeatSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PlanHeatAllocationSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PlanCastSequenceSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PlanCastSequenceHeatSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PlanRollingPlanSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PlanRollingPlanAllocationSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PlanPackagingUnitSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+
         modelBuilder.Entity<ManufacturingRouteOperation>()
             .HasOne(x => x.ManufacturingRoute)
             .WithMany(x => x.Operations)
@@ -278,6 +301,17 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<PlanOperationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.PlanningKey }).IsUnique();
         modelBuilder.Entity<PlanInventoryAllocationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.ProductionOrderId, x.Stage });
         modelBuilder.Entity<PlanMaterialUnitSnapshot>().HasIndex(x => new { x.PlanVersionId, x.PlanningKey }).IsUnique();
+        modelBuilder.Entity<PlanProductionOrderSnapshot>().HasIndex(x => new { x.PlanVersionId, x.ProductionOrderId }).IsUnique();
+        modelBuilder.Entity<PlanCampaignSnapshot>().HasIndex(x => new { x.PlanVersionId, x.CampaignId }).IsUnique();
+        modelBuilder.Entity<PlanCampaignAllocationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.CampaignId, x.ProductionOrderId });
+        modelBuilder.Entity<PlanCampaignGradeSequenceSnapshot>().HasIndex(x => new { x.PlanVersionId, x.CampaignId, x.SequenceNumber }).IsUnique();
+        modelBuilder.Entity<PlanHeatSnapshot>().HasIndex(x => new { x.PlanVersionId, x.CampaignHeatId }).IsUnique();
+        modelBuilder.Entity<PlanHeatAllocationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.CampaignHeatId, x.ProductionOrderId });
+        modelBuilder.Entity<PlanCastSequenceSnapshot>().HasIndex(x => new { x.PlanVersionId, x.CastSequenceId }).IsUnique();
+        modelBuilder.Entity<PlanCastSequenceHeatSnapshot>().HasIndex(x => new { x.PlanVersionId, x.CastSequenceId, x.Position }).IsUnique();
+        modelBuilder.Entity<PlanRollingPlanSnapshot>().HasIndex(x => new { x.PlanVersionId, x.RollingPlanId }).IsUnique();
+        modelBuilder.Entity<PlanRollingPlanAllocationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.RollingPlanId, x.ProductionOrderId });
+        modelBuilder.Entity<PlanPackagingUnitSnapshot>().HasIndex(x => new { x.PlanVersionId, x.PlannedPackagingUnitId }).IsUnique();
         modelBuilder.Entity<ManufacturingRoute>().HasIndex(x => x.RouteCode).IsUnique();
         modelBuilder.Entity<ManufacturingRouteOperation>().HasIndex(x => new { x.RouteCode, x.SequenceNumber }).IsUnique();
         modelBuilder.Entity<RouteResourceCapability>().HasIndex(x => new { x.RouteCode, x.ResourceId, x.ProcessOperationType });
