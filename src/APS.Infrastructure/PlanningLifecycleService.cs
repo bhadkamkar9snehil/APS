@@ -1,12 +1,13 @@
 using APS.Application;
 using APS.Domain;
+using Microsoft.Extensions.Logging;
 
 namespace APS.Infrastructure;
 
 /// <summary>
-/// Canonical production orchestration. HTTP/UI callers provide demand and planning controls only;
-/// plant masters, current inventory, committed in-process supply and Plan Version persistence are
-/// resolved here so every production calculation uses the same state boundary.
+/// Canonical production orchestration. HTTP/UI callers provide demand selection and planning controls only;
+/// Sales Order reconciliation, MTO/MTS manufacturing demand, plant masters, current inventory, committed
+/// in-process supply and Plan Version persistence are resolved behind this boundary.
 /// </summary>
 public sealed class PlanningLifecycleService : IPlanningLifecycleService
 {
@@ -15,38 +16,61 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
     private readonly IPlanningMasterDataProvider _masters;
     private readonly IInventorySnapshotProvider _inventory;
     private readonly IReplanningActualStateProvider _actualState;
+    private readonly IProductionDemandOrchestrationService _demand;
+    private readonly ILogger<PlanningLifecycleService> _logger;
 
     public PlanningLifecycleService(
         IPlanningEngine planningEngine,
         IPlanVersionRepository plans,
         IPlanningMasterDataProvider masters,
         IInventorySnapshotProvider inventory,
-        IReplanningActualStateProvider actualState)
+        IReplanningActualStateProvider actualState,
+        IProductionDemandOrchestrationService demand,
+        ILogger<PlanningLifecycleService> logger)
     {
         _planningEngine = planningEngine;
         _plans = plans;
         _masters = masters;
         _inventory = inventory;
         _actualState = actualState;
+        _demand = demand;
+        _logger = logger;
     }
 
     public async Task<PersistedPlanningRunResult> CalculateAsync(
         PlanningCalculationRequest request,
         CancellationToken cancellationToken = default)
     {
+        var referenceTime = DateTime.UtcNow;
         var masterData = await _masters.GetAsync(cancellationToken);
         ValidateProductionConfiguration(request, masterData);
 
         var inventory = await _inventory.GetInventoryAsync(cancellationToken);
-        var planningRequest = BuildPlanningRequest(request, masterData, inventory);
+        var demand = await _demand.PrepareAsync(
+            request.Demand,
+            inventory,
+            masterData,
+            referenceTime,
+            request.HorizonEndUtc,
+            cancellationToken);
+        EnsureDemandIsPlannable(demand);
+
+        var planningRequest = BuildPlanningRequest(request, demand.ProductionOrders, masterData, inventory);
         var result = _planningEngine.Run(planningRequest);
-        var referenceTime = DateTime.UtcNow;
         var version = await _plans.SaveAsync(new PersistPlanningRunRequest(
             planningRequest,
             result,
             PlanTriggerType.Manual,
             referenceTime,
-            "Canonical production planning calculation"), cancellationToken);
+            "Canonical production planning calculation",
+            demand), cancellationToken);
+
+        _logger.LogInformation(
+            "Completed canonical planning lifecycle. PlanVersionId={PlanVersionId} ProductionOrders={ProductionOrderCount} MtoDemand={MtoDemandCount} Feasible={Feasible}",
+            result.PlanVersionId,
+            demand.ProductionOrders.Count,
+            demand.MakeToOrderDemand.Count,
+            result.IsFeasible);
 
         return new PersistedPlanningRunResult(result, version);
     }
@@ -69,6 +93,15 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
             baseline.Operations,
             cancellationToken);
 
+        var demand = await _demand.PrepareAsync(
+            request.Planning.Demand,
+            actualState.Inventory,
+            masterData,
+            referenceTime,
+            request.Planning.HorizonEndUtc,
+            cancellationToken);
+        EnsureDemandIsPlannable(demand);
+
         var committedSupplies = actualState.EffectiveCommittedFutureSupplies
             .GroupBy(x => x.SupplyReference, StringComparer.OrdinalIgnoreCase)
             .Select(x => x.Last())
@@ -85,6 +118,7 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
 
         var planningRequest = BuildPlanningRequest(
             request.Planning,
+            demand.ProductionOrders,
             masterData,
             actualState.Inventory,
             committedSupplies,
@@ -96,27 +130,36 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
             : request.Trigger;
         var reason = request.Reason ?? (trigger == PlanTriggerType.OperationalRedispatch
             ? "Operational resource redispatch"
-            : "Replanning from authoritative execution and inventory state");
+            : "Replanning from authoritative demand, execution and inventory state");
 
         var version = await _plans.SaveAsync(new PersistPlanningRunRequest(
             planningRequest,
             result,
             trigger,
             referenceTime,
-            reason), cancellationToken);
+            reason,
+            demand), cancellationToken);
+
+        _logger.LogInformation(
+            "Completed canonical replan. BaselinePlanVersionId={BaselinePlanVersionId} PlanVersionId={PlanVersionId} ProductionOrders={ProductionOrderCount} Feasible={Feasible}",
+            baselinePlanVersionId,
+            result.PlanVersionId,
+            demand.ProductionOrders.Count,
+            result.IsFeasible);
 
         return new PersistedPlanningRunResult(result, version, actualState);
     }
 
     private static PlanningRunRequest BuildPlanningRequest(
         PlanningCalculationRequest request,
+        IReadOnlyCollection<ProductionOrder> productionOrders,
         PlanningMasterDataSnapshot masterData,
         IReadOnlyCollection<InventoryPosition> inventory,
         IReadOnlyCollection<CommittedMaterialSupply>? committedSupplies = null,
         PlanningReplanContext? replanContext = null)
     {
         return new PlanningRunRequest(
-            ProductionOrders: request.ProductionOrders,
+            ProductionOrders: productionOrders,
             Inventory: inventory,
             Resources: masterData.Resources,
             Capabilities: masterData.ResourceCapabilities,
@@ -149,6 +192,8 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
     {
         var issues = new List<string>();
 
+        if (request.HorizonEndUtc <= request.HorizonStartUtc)
+            issues.Add("Planning horizon end must be after its start.");
         if (masterData.Resources.Count == 0)
             issues.Add("No physical resources are configured in APS master data.");
         if (masterData.RoutePlanning is null)
@@ -163,5 +208,12 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
 
         if (issues.Count > 0)
             throw new PlanningConfigurationException(issues.ToArray());
+    }
+
+    private static void EnsureDemandIsPlannable(DemandOrchestrationResult demand)
+    {
+        var errors = demand.Issues.Where(x => x.Severity == PlanningIssueSeverity.Error).ToArray();
+        if (errors.Length == 0) return;
+        throw new PlanningConfigurationException(errors.Select(x => $"{x.Code}: {x.Message}").ToArray());
     }
 }
