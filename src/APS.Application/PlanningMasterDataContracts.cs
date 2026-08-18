@@ -19,7 +19,8 @@ public sealed record PlanningMasterDataSnapshot(
     IReadOnlyCollection<MaterialSpecification>? MaterialSpecifications = null,
     IReadOnlyCollection<PackagingSpecification>? PackagingSpecifications = null,
     IReadOnlyCollection<ExternalMaterialSupply>? ExternalMaterialSupplies = null,
-    IReadOnlyCollection<MaterialSourcingRule>? MaterialSourcingRules = null)
+    IReadOnlyCollection<MaterialSourcingRule>? MaterialSourcingRules = null,
+    IReadOnlyCollection<BillOfMaterial>? BillsOfMaterial = null)
 {
     public IReadOnlyCollection<PlantArea> EffectivePlantAreas => PlantAreas ?? Array.Empty<PlantArea>();
     public IReadOnlyCollection<SteelGrade> EffectiveSteelGrades => SteelGrades ?? Array.Empty<SteelGrade>();
@@ -28,6 +29,7 @@ public sealed record PlanningMasterDataSnapshot(
     public IReadOnlyCollection<PackagingSpecification> EffectivePackagingSpecifications => PackagingSpecifications ?? Array.Empty<PackagingSpecification>();
     public IReadOnlyCollection<ExternalMaterialSupply> EffectiveExternalMaterialSupplies => ExternalMaterialSupplies ?? Array.Empty<ExternalMaterialSupply>();
     public IReadOnlyCollection<MaterialSourcingRule> EffectiveMaterialSourcingRules => MaterialSourcingRules ?? Array.Empty<MaterialSourcingRule>();
+    public IReadOnlyCollection<BillOfMaterial> EffectiveBillsOfMaterial => BillsOfMaterial ?? Array.Empty<BillOfMaterial>();
 
     public RoutePlanningInput? RoutePlanning => RouteOperations.Count == 0
         ? null
