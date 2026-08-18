@@ -13,6 +13,7 @@ public sealed class PlanningEngine(
         var createdOnUtc = DateTime.UtcNow;
         var planVersionId = Guid.NewGuid();
         SteelOrderRequirementValidator.Validate(request.ProductionOrders, request.SteelGrades);
+        var requirementSnapshots = PlanRequirementSnapshotBuilder.Build(planVersionId, request.ProductionOrders);
 
         var steelTopologyConfigured = request.Resources.Any(x => x.ProcessUnitType != ProcessUnitType.Unknown);
         var effectiveTransitionRules = TransitionRuleMaterializer.Materialize(
@@ -52,7 +53,7 @@ public sealed class PlanningEngine(
             ? structurePlanning.Build(structureRequest)
             : ConfiguredRouteProductionStructureBuilder.Build(structureRequest);
 
-        if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId);
+        if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
 
         structure = HeatLevelScheduleProjector.Apply(
             structure,
@@ -61,7 +62,7 @@ public sealed class PlanningEngine(
             request.FlowLinks,
             request.StructurePolicy,
             heatAllocations);
-        if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId);
+        if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
 
         if (request.RoutePlanning is not null)
         {
@@ -73,7 +74,7 @@ public sealed class PlanningEngine(
                 request.FlowLinks,
                 request.SteelGrades,
                 heatAllocations);
-            if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId);
+            if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
 
             structure = RollingFeedProjector.Apply(
                 structure,
@@ -83,7 +84,7 @@ public sealed class PlanningEngine(
                 request.Capabilities,
                 request.FlowLinks,
                 request.ExternalMaterialSupplies);
-            if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId);
+            if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
 
             structure = MultiStageRouteProjector.Apply(
                 structure,
@@ -91,7 +92,7 @@ public sealed class PlanningEngine(
                 request.Resources,
                 effectiveTransitionRules,
                 request.FlowLinks);
-            if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId);
+            if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
         }
 
         var identities = PlanningTaskIdentityService.Build(structure);
@@ -123,7 +124,8 @@ public sealed class PlanningEngine(
             finiteSchedule.IsFeasible,
             identities,
             request.ReplanContext?.BaselinePlanVersionId,
-            packagingUnits);
+            packagingUnits,
+            requirementSnapshots);
     }
 
     private static bool HasErrors(ProductionStructurePlanningResult structure) =>
@@ -134,11 +136,12 @@ public sealed class PlanningEngine(
         DateTime createdOnUtc,
         CampaignPlanningResult campaignPlan,
         ProductionStructurePlanningResult structure,
-        Guid? baselinePlanVersionId)
+        Guid? baselinePlanVersionId,
+        IReadOnlyCollection<PlanOrderRequirementSnapshot> requirementSnapshots)
     {
         var schedule = new FiniteScheduleResult("StructureInvalid", false, 0, Array.Empty<FiniteScheduleAssignment>(), structure.Issues);
         return new PlanningRunResult(planVersionId, createdOnUtc, campaignPlan, structure, schedule, false,
-            Array.Empty<PlanningTaskIdentity>(), baselinePlanVersionId);
+            Array.Empty<PlanningTaskIdentity>(), baselinePlanVersionId, null, requirementSnapshots);
     }
 
     private static IReadOnlyCollection<FiniteScheduleStabilityConstraint> BuildStabilityConstraints(
