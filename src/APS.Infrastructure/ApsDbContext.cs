@@ -64,6 +64,8 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
     public DbSet<PlanCastSequenceHeatSnapshot> PlanCastSequenceHeatSnapshots => Set<PlanCastSequenceHeatSnapshot>();
     public DbSet<PlanRollingPlanSnapshot> PlanRollingPlanSnapshots => Set<PlanRollingPlanSnapshot>();
     public DbSet<PlanRollingPlanAllocationSnapshot> PlanRollingPlanAllocationSnapshots => Set<PlanRollingPlanAllocationSnapshot>();
+    public DbSet<PlanRouteOperationSnapshot> PlanRouteOperationSnapshots => Set<PlanRouteOperationSnapshot>();
+    public DbSet<PlanRouteOperationAllocationSnapshot> PlanRouteOperationAllocationSnapshots => Set<PlanRouteOperationAllocationSnapshot>();
     public DbSet<PlanPackagingUnitSnapshot> PlanPackagingUnitSnapshots => Set<PlanPackagingUnitSnapshot>();
     public DbSet<ScheduledOperation> ScheduledOperations => Set<ScheduledOperation>();
     public DbSet<ManufacturingRoute> ManufacturingRoutes => Set<ManufacturingRoute>();
@@ -287,6 +289,8 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<PlanCastSequenceHeatSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<PlanRollingPlanSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<PlanRollingPlanAllocationSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PlanRouteOperationSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PlanRouteOperationAllocationSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<PlanPackagingUnitSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<ManufacturingRouteOperation>()
@@ -330,6 +334,8 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<PlanCastSequenceHeatSnapshot>().HasIndex(x => new { x.PlanVersionId, x.CastSequenceId, x.Position }).IsUnique();
         modelBuilder.Entity<PlanRollingPlanSnapshot>().HasIndex(x => new { x.PlanVersionId, x.RollingPlanId }).IsUnique();
         modelBuilder.Entity<PlanRollingPlanAllocationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.RollingPlanId, x.ProductionOrderId });
+        modelBuilder.Entity<PlanRouteOperationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.RouteOperationPlanId }).IsUnique();
+        modelBuilder.Entity<PlanRouteOperationAllocationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.RouteOperationPlanId, x.ProductionOrderId, x.CampaignId });
         modelBuilder.Entity<PlanPackagingUnitSnapshot>().HasIndex(x => new { x.PlanVersionId, x.PlannedPackagingUnitId }).IsUnique();
         modelBuilder.Entity<ManufacturingRoute>().HasIndex(x => x.RouteCode).IsUnique();
         modelBuilder.Entity<ManufacturingRouteOperation>().HasIndex(x => new { x.RouteCode, x.SequenceNumber }).IsUnique();
