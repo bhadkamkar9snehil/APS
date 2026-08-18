@@ -8,6 +8,9 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
     public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
     public DbSet<SalesOrderDemandState> SalesOrderDemandStates => Set<SalesOrderDemandState>();
     public DbSet<SalesOrderFinishedGoodsCoverage> SalesOrderFinishedGoodsCoverage => Set<SalesOrderFinishedGoodsCoverage>();
+    public DbSet<SalesOrderRequirementProfile> SalesOrderRequirementProfiles => Set<SalesOrderRequirementProfile>();
+    public DbSet<SalesOrderChemistryRequirement> SalesOrderChemistryRequirements => Set<SalesOrderChemistryRequirement>();
+    public DbSet<SalesOrderProcessRequirement> SalesOrderProcessRequirements => Set<SalesOrderProcessRequirement>();
     public DbSet<ProductionOrder> ProductionOrders => Set<ProductionOrder>();
     public DbSet<ProductionOrderRequirement> ProductionOrderRequirements => Set<ProductionOrderRequirement>();
     public DbSet<OrderChemistryRequirement> OrderChemistryRequirements => Set<OrderChemistryRequirement>();
@@ -82,6 +85,7 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
 
         modelBuilder.Entity<SalesOrder>().HasIndex(x => new { x.SalesOrderNumber, x.ItemNumber }).IsUnique();
         modelBuilder.Entity<SalesOrderDemandState>().HasIndex(x => x.SalesOrderId).IsUnique();
+        modelBuilder.Entity<SalesOrderRequirementProfile>().HasIndex(x => x.SalesOrderId).IsUnique();
         modelBuilder.Entity<ProductionOrder>().HasIndex(x => x.ProductionOrderNumber).IsUnique();
         modelBuilder.Entity<Campaign>().HasIndex(x => x.CampaignNumber).IsUnique();
         modelBuilder.Entity<WorkOrder>().HasIndex(x => x.WorkOrderNumber).IsUnique();
@@ -114,6 +118,24 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
             .HasMany(x => x.FinishedGoodsCoverage)
             .WithOne(x => x.SalesOrderDemandState)
             .HasForeignKey(x => x.SalesOrderDemandStateId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<SalesOrderRequirementProfile>()
+            .HasOne(x => x.SalesOrder)
+            .WithOne()
+            .HasForeignKey<SalesOrderRequirementProfile>(x => x.SalesOrderId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<SalesOrderRequirementProfile>()
+            .HasMany(x => x.ChemistryOverrides)
+            .WithOne(x => x.SalesOrderRequirementProfile)
+            .HasForeignKey(x => x.SalesOrderRequirementProfileId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<SalesOrderRequirementProfile>()
+            .HasMany(x => x.ProcessOverrides)
+            .WithOne(x => x.SalesOrderRequirementProfile)
+            .HasForeignKey(x => x.SalesOrderRequirementProfileId)
             .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<ProductionOrder>()
@@ -326,6 +348,8 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
 
         modelBuilder.Entity<ProductionOrderRequirement>().HasIndex(x => x.ProductionOrderId).IsUnique();
         modelBuilder.Entity<SalesOrderFinishedGoodsCoverage>().HasIndex(x => new { x.SalesOrderDemandStateId, x.MaterialCode, x.GradeCode, x.CrossSectionCode, x.LocationCode });
+        modelBuilder.Entity<SalesOrderChemistryRequirement>().HasIndex(x => new { x.SalesOrderRequirementProfileId, x.ElementCode }).IsUnique();
+        modelBuilder.Entity<SalesOrderProcessRequirement>().HasIndex(x => new { x.SalesOrderRequirementProfileId, x.ProcessOperationType, x.RequiredResourceId });
         modelBuilder.Entity<GradeChemistryRequirement>().HasIndex(x => new { x.SteelGradeId, x.ElementCode }).IsUnique();
         modelBuilder.Entity<GradeProcessRequirement>().HasIndex(x => new { x.SteelGradeId, x.ProcessOperationType }).IsUnique();
         modelBuilder.Entity<OrderChemistryRequirement>().HasIndex(x => new { x.ProductionOrderRequirementId, x.ElementCode }).IsUnique();
