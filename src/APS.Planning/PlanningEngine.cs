@@ -136,6 +136,7 @@ public sealed class PlanningEngine(
         }
 
         var stabilityConstraints = BuildStabilityConstraints(request, structure.SchedulingTasks, identities);
+        var serviceObligations = BuildServiceObligations(structure, heatAllocations);
         var finiteSchedule = scheduleOptimizer.Solve(new FiniteScheduleRequest(
             request.HorizonStartUtc,
             request.HorizonEndUtc,
@@ -146,7 +147,8 @@ public sealed class PlanningEngine(
             request.MaxSolverSeconds,
             stabilityConstraints,
             request.SteelGrades,
-            materialPreSchedule.ScheduleEvents));
+            materialPreSchedule.ScheduleEvents,
+            serviceObligations));
 
         var materialPlan = finiteSchedule.IsFeasible
             ? TimePhasedMaterialPlanner.ResolveAfterSchedule(planVersionId, request, campaignPlan, materialPreSchedule, finiteSchedule)
@@ -203,6 +205,68 @@ public sealed class PlanningEngine(
         var schedule = new FiniteScheduleResult("StructureInvalid", false, 0, Array.Empty<FiniteScheduleAssignment>(), structure.Issues);
         return new PlanningRunResult(planVersionId, createdOnUtc, campaignPlan, structure, schedule, false,
             Array.Empty<PlanningTaskIdentity>(), baselinePlanVersionId, null, requirementSnapshots);
+    }
+
+    private static IReadOnlyCollection<FiniteScheduleServiceObligation> BuildServiceObligations(
+        ProductionStructurePlanningResult structure,
+        IReadOnlyCollection<CampaignHeatAllocation> heatAllocations)
+    {
+        var productionOrders = new Dictionary<Guid, ProductionOrder>();
+        foreach (var allocation in heatAllocations.Where(x => x.ProductionOrder is not null))
+            productionOrders[allocation.ProductionOrderId] = allocation.ProductionOrder!;
+        foreach (var allocation in structure.RollingPlans.SelectMany(x => x.Allocations).Where(x => x.ProductionOrder is not null))
+            productionOrders[allocation.ProductionOrderId] = allocation.ProductionOrder!;
+
+        var heatById = heatAllocations
+            .GroupBy(x => x.CampaignHeatId)
+            .ToDictionary(x => x.Key, x => x.ToArray());
+        var rollingById = structure.RollingPlans.ToDictionary(x => x.Id);
+        var routeById = (structure.RouteOperationPlans ?? Array.Empty<RouteOperationPlan>()).ToDictionary(x => x.Id);
+        var result = new List<FiniteScheduleServiceObligation>();
+
+        foreach (var task in structure.SchedulingTasks)
+        {
+            IEnumerable<(Guid ProductionOrderId, decimal QuantityMt)> allocationQuantities;
+
+            if (heatById.TryGetValue(task.SourceEntityId, out var heat))
+            {
+                allocationQuantities = heat.Select(x => (x.ProductionOrderId, x.PlannedOutputQuantityMt));
+            }
+            else if (rollingById.TryGetValue(task.SourceEntityId, out var rolling))
+            {
+                var scale = rolling.PlannedQuantityMt <= 0m
+                    ? 1m
+                    : Math.Min(1m, task.QuantityMt / rolling.PlannedQuantityMt);
+                allocationQuantities = rolling.Allocations.Select(x => (x.ProductionOrderId, x.PlannedQuantityMt * scale));
+            }
+            else if (routeById.TryGetValue(task.SourceEntityId, out var route))
+            {
+                var scale = route.PlannedQuantityMt <= 0m
+                    ? 1m
+                    : Math.Min(1m, task.QuantityMt / route.PlannedQuantityMt);
+                allocationQuantities = route.Allocations.Select(x => (x.ProductionOrderId, x.PlannedQuantityMt * scale));
+            }
+            else
+            {
+                continue;
+            }
+
+            foreach (var allocation in allocationQuantities
+                         .Where(x => x.QuantityMt > 0m)
+                         .GroupBy(x => x.ProductionOrderId)
+                         .Select(x => (ProductionOrderId: x.Key, QuantityMt: x.Sum(y => y.QuantityMt))))
+            {
+                if (!productionOrders.TryGetValue(allocation.ProductionOrderId, out var po)) continue;
+                result.Add(new FiniteScheduleServiceObligation(
+                    task.TaskId,
+                    po.Id,
+                    allocation.QuantityMt,
+                    po.RequiredDate,
+                    po.Priority));
+            }
+        }
+
+        return result;
     }
 
     private static ResourceOverrideApplicationResult ApplyResourceOverrides(
