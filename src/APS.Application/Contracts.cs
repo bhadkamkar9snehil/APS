@@ -45,7 +45,8 @@ public sealed record CampaignPlanningRequest(
     IReadOnlyCollection<MaterialSourcingRule>? MaterialSourcingRules = null,
     DateTime? PlanningReferenceTimeUtc = null,
     RoutePlanningInput? RoutePlanning = null,
-    IReadOnlyCollection<CommittedMaterialSupply>? CommittedMaterialSupplies = null);
+    IReadOnlyCollection<CommittedMaterialSupply>? CommittedMaterialSupplies = null,
+    IReadOnlyCollection<PlantFlowLink>? FlowLinks = null);
 
 public enum PlanningInventoryUse
 {
