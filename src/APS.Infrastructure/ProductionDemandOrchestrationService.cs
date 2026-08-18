@@ -108,6 +108,8 @@ public sealed class ProductionDemandOrchestrationService(
             state.ConfirmedDeliveryDate = input.ConfirmedDeliveryDate;
             state.Priority = Math.Max(0, input.Priority);
             state.CalculatedOnUtc = DateTime.UtcNow;
+            await ReconcileRequirementProfileAsync(order, input, isNew, cancellationToken);
+
             if (IsClosed(input.ExternalStatus)) closed++;
             ids.Add(order.Id);
         }
@@ -135,9 +137,6 @@ public sealed class ProductionDemandOrchestrationService(
             ? selection.SalesOrderIds.ToHashSet()
             : null;
 
-        // Active MTOs are deliberately included even when current SO open quantity is now zero or the due
-        // date moved outside the current horizon. That is the only safe way to cancel a Planned PO or flag
-        // a Firmed/Released PO for planner attention after an SAP demand change.
         var activeMtoQuery = db.ProductionOrders
             .Where(x => x.DemandSource == DemandSourceType.MakeToOrder &&
                         x.SalesOrderId.HasValue &&
@@ -171,6 +170,15 @@ public sealed class ProductionDemandOrchestrationService(
                 .Where(x => salesOrderIds.Contains(x.SalesOrderId))
                 .ToListAsync(cancellationToken);
         var stateBySalesOrder = states.ToDictionary(x => x.SalesOrderId);
+
+        var requirementProfiles = salesOrderIds.Length == 0
+            ? new List<SalesOrderRequirementProfile>()
+            : await db.SalesOrderRequirementProfiles
+                .Include(x => x.ChemistryOverrides)
+                .Include(x => x.ProcessOverrides)
+                .Where(x => salesOrderIds.Contains(x.SalesOrderId))
+                .ToListAsync(cancellationToken);
+        var requirementBySalesOrder = requirementProfiles.ToDictionary(x => x.SalesOrderId);
 
         var existingMto = salesOrderIds.Length == 0
             ? new List<ProductionOrder>()
@@ -213,9 +221,10 @@ public sealed class ProductionDemandOrchestrationService(
                 stateBySalesOrder[so.Id] = state;
             }
 
+            requirementBySalesOrder.TryGetValue(so.Id, out var requirementProfile);
             var serviceDate = ServiceDate(so, state);
             var productionRequiredBy = servicePolicy.ProductionRequiredBy(serviceDate);
-            var coverage = AllocateFinishedGoods(so, serviceDate, fgPool);
+            var coverage = AllocateFinishedGoods(so, serviceDate, fgPool, requirementProfile);
             var openDemand = Math.Max(0m, so.OpenQuantityMt);
             var covered = coverage.Sum(x => x.QuantityMt);
             var manufacturingRequirement = Math.Max(0m, openDemand - covered);
@@ -229,7 +238,6 @@ public sealed class ProductionDemandOrchestrationService(
             state.CalculatedOnUtc = referenceTimeUtc;
             state.PlannerAttentionRequired = false;
             state.ReasonCode = null;
-
             ReplaceCoverage(state, coverage);
 
             var active = poBySalesOrder.GetValueOrDefault(so.Id)?
@@ -249,7 +257,7 @@ public sealed class ProductionDemandOrchestrationService(
                     $"SO {so.SalesOrderNumber}/{so.ItemNumber} has {active.Length} active MTO Production Orders; automatic reconciliation is unsafe.",
                     so.Id));
                 activeMto.AddRange(active);
-                items.Add(ToItem(so, state));
+                items.Add(ToItem(so, state, requirementProfile));
                 continue;
             }
 
@@ -286,25 +294,27 @@ public sealed class ProductionDemandOrchestrationService(
             }
             else if (po is null)
             {
-                var resolved = ResolveManufacturingDefinition(so, masters, issues);
+                var resolved = ResolveManufacturingDefinition(so, requirementProfile, masters, issues);
                 if (resolved is not null)
                 {
-                    po = CreateProductionOrder(so, resolved, manufacturingRequirement, productionRequiredBy, priority, existingMto);
+                    po = CreateProductionOrder(so, requirementProfile, resolved, manufacturingRequirement, productionRequiredBy, priority, existingMto);
                     db.ProductionOrders.Add(po);
                     existingMto.Add(po);
                     state.ProductionOrderId = po.Id;
                     state.ProductionOrder = po;
                     state.Disposition = DemandReconciliationDisposition.ProductionOrderCreated;
-                    state.ReasonCode = "MTO_CREATED_FROM_UNCOVERED_SO_DEMAND";
+                    state.ReasonCode = requirementProfile?.QualificationFingerprint is not null
+                        ? "MTO_CREATED_AFTER_CONSERVATIVE_CERTIFIED_FG_QUALIFICATION"
+                        : "MTO_CREATED_FROM_UNCOVERED_SO_DEMAND";
                     activeMto.Add(po);
                 }
             }
             else if (po.Status == ProductionOrderStatus.Planned)
             {
-                var resolved = ResolveManufacturingDefinition(so, masters, issues);
+                var resolved = ResolveManufacturingDefinition(so, requirementProfile, masters, issues);
                 if (resolved is not null)
                 {
-                    UpdatePlannedProductionOrder(po, so, resolved, manufacturingRequirement, productionRequiredBy, priority);
+                    UpdatePlannedProductionOrder(po, so, requirementProfile, resolved, manufacturingRequirement, productionRequiredBy, priority);
                     state.ProductionOrderId = po.Id;
                     state.ProductionOrder = po;
                     state.Disposition = DemandReconciliationDisposition.ProductionOrderUpdated;
@@ -318,9 +328,10 @@ public sealed class ProductionDemandOrchestrationService(
                                po.RequiredDate != productionRequiredBy ||
                                !Same(po.MaterialCode, so.MaterialCode) ||
                                !Same(po.GradeCode, so.GradeCode) ||
-                               !Same(po.FinalCrossSectionCode, so.FinalCrossSectionCode);
+                               !Same(po.FinalCrossSectionCode, so.FinalCrossSectionCode) ||
+                               !RequirementsEquivalent(po.Requirement, requirementProfile);
                 if (mismatch)
-                    ProtectCommittedPo(state, po, "COMMITTED_MTO_DIFFERS_FROM_CURRENT_SO_OR_FG_DERIVATION");
+                    ProtectCommittedPo(state, po, "COMMITTED_MTO_DIFFERS_FROM_CURRENT_SO_FG_OR_REQUIREMENT_DERIVATION");
                 else
                 {
                     state.ProductionOrderId = po.Id;
@@ -331,7 +342,7 @@ public sealed class ProductionDemandOrchestrationService(
                 activeMto.Add(po);
             }
 
-            items.Add(ToItem(so, state));
+            items.Add(ToItem(so, state, requirementProfile));
         }
 
         await db.SaveChangesAsync(cancellationToken);
@@ -360,13 +371,14 @@ public sealed class ProductionDemandOrchestrationService(
             .ToArray();
 
         logger.LogInformation(
-            "Prepared manufacturing demand at {ReferenceTimeUtc}. SOs={SalesOrderCount} MTO={MtoCount} MTS={MtsCount} FGCoveredMt={FgCoveredMt} ManufacturingMt={ManufacturingMt} Attention={AttentionCount}",
+            "Prepared manufacturing demand at {ReferenceTimeUtc}. SOs={SalesOrderCount} MTO={MtoCount} MTS={MtsCount} FGCoveredMt={FgCoveredMt} ManufacturingMt={ManufacturingMt} CertifiedDemand={CertifiedDemandCount} Attention={AttentionCount}",
             referenceTimeUtc,
             items.Count,
             activeMto.DistinctBy(x => x.Id).Count(),
             mts.Count,
             items.Sum(x => x.FinishedGoodsCoveredQuantityMt),
             items.Sum(x => x.ManufacturingRequirementQuantityMt),
+            items.Count(x => x.RequiresCertifiedFinishedGoodsMatch),
             items.Count(x => x.PlannerAttentionRequired));
 
         return new DemandOrchestrationResult(productionOrders, items, mts, issues);
@@ -383,11 +395,106 @@ public sealed class ProductionDemandOrchestrationService(
             .OrderByDescending(x => x.Priority)
             .ThenBy(x => x.ProductionRequiredByDate)
             .ToListAsync(cancellationToken);
+        var ids = states.Select(x => x.SalesOrderId).ToArray();
+        var profiles = ids.Length == 0
+            ? new List<SalesOrderRequirementProfile>()
+            : await db.SalesOrderRequirementProfiles.AsNoTracking()
+                .Where(x => ids.Contains(x.SalesOrderId))
+                .ToListAsync(cancellationToken);
+        var profileBySalesOrder = profiles.ToDictionary(x => x.SalesOrderId);
 
         return states
             .Where(x => x.SalesOrder is not null)
-            .Select(x => ToItem(x.SalesOrder!, x))
+            .Select(x =>
+            {
+                profileBySalesOrder.TryGetValue(x.SalesOrderId, out var profile);
+                return ToItem(x.SalesOrder!, x, profile);
+            })
             .ToArray();
+    }
+
+    private async Task ReconcileRequirementProfileAsync(
+        SalesOrder order,
+        SalesOrderDemandInput input,
+        bool isNewOrder,
+        CancellationToken cancellationToken)
+    {
+        var profile = isNewOrder
+            ? null
+            : await db.SalesOrderRequirementProfiles
+                .Include(x => x.ChemistryOverrides)
+                .Include(x => x.ProcessOverrides)
+                .SingleOrDefaultAsync(x => x.SalesOrderId == order.Id, cancellationToken);
+
+        if (input.Requirement is null)
+        {
+            if (profile is not null) db.SalesOrderRequirementProfiles.Remove(profile);
+            return;
+        }
+
+        profile ??= new SalesOrderRequirementProfile
+        {
+            SalesOrderId = order.Id,
+            SalesOrder = order
+        };
+        if (db.Entry(profile).State == EntityState.Detached) db.SalesOrderRequirementProfiles.Add(profile);
+
+        var requirement = input.Requirement;
+        profile.QualityClassCode = Normalize(requirement.QualityClassCode);
+        profile.SegregationPolicy = requirement.SegregationPolicy;
+        profile.RequireVd = requirement.RequireVd;
+        profile.ForbidVd = requirement.ForbidVd;
+        profile.RequireReheating = requirement.RequireReheating;
+        profile.ForbidHotCharge = requirement.ForbidHotCharge;
+        profile.RequireTmt = requirement.RequireTmt;
+        profile.RequiredRouteCode = Normalize(requirement.RequiredRouteCode);
+        profile.RequiredResourceId = requirement.RequiredResourceId;
+        profile.RequiredResourceGroupCode = Normalize(requirement.RequiredResourceGroupCode);
+        profile.MinimumSuperheatC = requirement.MinimumSuperheatC;
+        profile.TargetSuperheatC = requirement.TargetSuperheatC;
+        profile.MaximumSuperheatC = requirement.MaximumSuperheatC;
+        profile.MinimumCastingTemperatureC = requirement.MinimumCastingTemperatureC;
+        profile.MaximumCastingTemperatureC = requirement.MaximumCastingTemperatureC;
+        profile.CutLengthM = requirement.CutLengthM;
+        profile.TargetBundleWeightMt = requirement.TargetBundleWeightMt;
+        profile.MinimumBundleWeightMt = requirement.MinimumBundleWeightMt;
+        profile.MaximumBundleWeightMt = requirement.MaximumBundleWeightMt;
+        profile.TargetCoilWeightMt = requirement.TargetCoilWeightMt;
+        profile.MinimumCoilWeightMt = requirement.MinimumCoilWeightMt;
+        profile.MaximumCoilWeightMt = requirement.MaximumCoilWeightMt;
+        profile.AllowMixedHeatBundle = requirement.AllowMixedHeatBundle;
+        profile.MarkingRequirementCode = Normalize(requirement.MarkingRequirementCode);
+        profile.InspectionRequirementCode = Normalize(requirement.InspectionRequirementCode);
+        profile.QualificationFingerprint = SalesOrderRequirementFingerprint.Compute(input, requirement);
+
+        profile.ChemistryOverrides.Clear();
+        foreach (var chemistry in requirement.ChemistryOverrides ?? Array.Empty<SalesOrderChemistryRequirementInput>())
+        {
+            profile.ChemistryOverrides.Add(new SalesOrderChemistryRequirement
+            {
+                SalesOrderRequirementProfileId = profile.Id,
+                SalesOrderRequirementProfile = profile,
+                ElementCode = chemistry.ElementCode.Trim(),
+                MinimumPct = chemistry.MinimumPct,
+                TargetPct = chemistry.TargetPct,
+                MaximumPct = chemistry.MaximumPct
+            });
+        }
+
+        profile.ProcessOverrides.Clear();
+        foreach (var process in requirement.ProcessOverrides ?? Array.Empty<SalesOrderProcessRequirementInput>())
+        {
+            profile.ProcessOverrides.Add(new SalesOrderProcessRequirement
+            {
+                SalesOrderRequirementProfileId = profile.Id,
+                SalesOrderRequirementProfile = profile,
+                ProcessOperationType = process.ProcessOperationType,
+                Requirement = process.Requirement,
+                CapabilityClassCode = Normalize(process.CapabilityClassCode),
+                RequiredResourceId = process.RequiredResourceId,
+                MaximumQueueMinutes = process.MaximumQueueMinutes
+            });
+        }
     }
 
     private static List<FinishedGoodsPoolRow> BuildFinishedGoodsPool(IReadOnlyCollection<InventoryPosition> inventory) =>
@@ -403,8 +510,15 @@ public sealed class ProductionDemandOrchestrationService(
     private static IReadOnlyCollection<DemandCoverageEvidence> AllocateFinishedGoods(
         SalesOrder so,
         DateTime serviceDate,
-        IReadOnlyCollection<FinishedGoodsPoolRow> pool)
+        IReadOnlyCollection<FinishedGoodsPoolRow> pool,
+        SalesOrderRequirementProfile? requirementProfile)
     {
+        // Current inventory positions do not yet carry the complete certified requirement fingerprint.
+        // Never guess customer-specific equivalence. #14/#18 can later enrich lot qualification evidence;
+        // until then special-demand FG remains visible inventory but is not auto-consumed for the SO.
+        if (!string.IsNullOrWhiteSpace(requirementProfile?.QualificationFingerprint))
+            return Array.Empty<DemandCoverageEvidence>();
+
         var remaining = Math.Max(0m, so.OpenQuantityMt);
         var result = new List<DemandCoverageEvidence>();
         foreach (var row in pool)
@@ -454,6 +568,7 @@ public sealed class ProductionDemandOrchestrationService(
 
     private static ManufacturingDefinition? ResolveManufacturingDefinition(
         SalesOrder so,
+        SalesOrderRequirementProfile? requirementProfile,
         PlanningMasterDataSnapshot masters,
         ICollection<PlanningIssue> issues)
     {
@@ -472,7 +587,7 @@ public sealed class ProductionDemandOrchestrationService(
         var material = masters.EffectiveMaterialSpecifications.FirstOrDefault(x =>
             x.IsActive && (Same(x.MaterialSpecificationCode, so.MaterialCode) || Same(x.SapMaterialCode, so.MaterialCode)));
         var casterSection = Normalize(grade.DefaultCasterSectionCode);
-        var routeCode = Normalize(grade.DefaultRouteCode);
+        var routeCode = Normalize(requirementProfile?.RequiredRouteCode) ?? Normalize(grade.DefaultRouteCode);
 
         if (string.IsNullOrWhiteSpace(casterSection))
         {
@@ -487,7 +602,7 @@ public sealed class ProductionDemandOrchestrationService(
             issues.Add(new PlanningIssue(
                 PlanningIssueSeverity.Error,
                 "SO_ROUTE_UNRESOLVED",
-                $"SO {so.SalesOrderNumber}/{so.ItemNumber} cannot derive an MTO PO because grade {so.GradeCode} has no default manufacturing route.",
+                $"SO {so.SalesOrderNumber}/{so.ItemNumber} cannot derive an MTO PO because neither the SO requirement nor grade {so.GradeCode} resolves a manufacturing route.",
                 so.Id));
         }
         if (!string.IsNullOrWhiteSpace(routeCode) &&
@@ -501,15 +616,12 @@ public sealed class ProductionDemandOrchestrationService(
         }
         if (string.IsNullOrWhiteSpace(casterSection) || string.IsNullOrWhiteSpace(routeCode)) return null;
 
-        return new ManufacturingDefinition(
-            grade,
-            casterSection!,
-            routeCode!,
-            material?.ProductFamilyCode);
+        return new ManufacturingDefinition(grade, casterSection!, routeCode!, material?.ProductFamilyCode);
     }
 
     private static ProductionOrder CreateProductionOrder(
         SalesOrder so,
+        SalesOrderRequirementProfile? sourceRequirement,
         ManufacturingDefinition definition,
         decimal manufacturingRequirement,
         DateTime productionRequiredBy,
@@ -538,21 +650,14 @@ public sealed class ProductionDemandOrchestrationService(
             SalesOrderId = so.Id,
             SalesOrder = so
         };
-        po.Requirement = new ProductionOrderRequirement
-        {
-            ProductionOrderId = po.Id,
-            ProductionOrder = po,
-            CustomerCode = so.CustomerCode,
-            CustomerGroupCode = so.CustomerGroupCode,
-            RequirementReference = $"SO:{so.SalesOrderNumber}/{so.ItemNumber}",
-            RequiredRouteCode = definition.RouteCode
-        };
+        po.Requirement = BuildProductionRequirement(po, so, sourceRequirement, definition.RouteCode);
         return po;
     }
 
     private static void UpdatePlannedProductionOrder(
         ProductionOrder po,
         SalesOrder so,
+        SalesOrderRequirementProfile? sourceRequirement,
         ManufacturingDefinition definition,
         decimal manufacturingRequirement,
         DateTime productionRequiredBy,
@@ -574,15 +679,96 @@ public sealed class ProductionDemandOrchestrationService(
         po.Priority = priority;
         po.SalesOrderId = so.Id;
         po.SalesOrder = so;
-        po.Requirement ??= new ProductionOrderRequirement
+
+        if (po.Requirement is not null) db.Entry(po.Requirement).State = EntityState.Deleted;
+        po.Requirement = BuildProductionRequirement(po, so, sourceRequirement, definition.RouteCode);
+    }
+
+    private static ProductionOrderRequirement BuildProductionRequirement(
+        ProductionOrder po,
+        SalesOrder so,
+        SalesOrderRequirementProfile? source,
+        string routeCode)
+    {
+        var requirement = new ProductionOrderRequirement
         {
             ProductionOrderId = po.Id,
-            ProductionOrder = po
+            ProductionOrder = po,
+            CustomerCode = so.CustomerCode,
+            CustomerGroupCode = so.CustomerGroupCode,
+            RequirementReference = $"SO:{so.SalesOrderNumber}/{so.ItemNumber}",
+            QualityClassCode = source?.QualityClassCode,
+            SegregationPolicy = source?.SegregationPolicy ?? SegregationPolicy.None,
+            RequireVd = source?.RequireVd,
+            ForbidVd = source?.ForbidVd,
+            RequireReheating = source?.RequireReheating,
+            ForbidHotCharge = source?.ForbidHotCharge,
+            RequireTmt = source?.RequireTmt,
+            RequiredRouteCode = source?.RequiredRouteCode ?? routeCode,
+            RequiredResourceId = source?.RequiredResourceId,
+            RequiredResourceGroupCode = source?.RequiredResourceGroupCode,
+            MinimumSuperheatC = source?.MinimumSuperheatC,
+            TargetSuperheatC = source?.TargetSuperheatC,
+            MaximumSuperheatC = source?.MaximumSuperheatC,
+            MinimumCastingTemperatureC = source?.MinimumCastingTemperatureC,
+            MaximumCastingTemperatureC = source?.MaximumCastingTemperatureC,
+            CutLengthM = source?.CutLengthM,
+            TargetBundleWeightMt = source?.TargetBundleWeightMt,
+            MinimumBundleWeightMt = source?.MinimumBundleWeightMt,
+            MaximumBundleWeightMt = source?.MaximumBundleWeightMt,
+            TargetCoilWeightMt = source?.TargetCoilWeightMt,
+            MinimumCoilWeightMt = source?.MinimumCoilWeightMt,
+            MaximumCoilWeightMt = source?.MaximumCoilWeightMt,
+            AllowMixedHeatBundle = source?.AllowMixedHeatBundle,
+            MarkingRequirementCode = source?.MarkingRequirementCode,
+            InspectionRequirementCode = source?.InspectionRequirementCode
         };
-        po.Requirement.CustomerCode = so.CustomerCode;
-        po.Requirement.CustomerGroupCode = so.CustomerGroupCode;
-        po.Requirement.RequirementReference ??= $"SO:{so.SalesOrderNumber}/{so.ItemNumber}";
-        po.Requirement.RequiredRouteCode ??= definition.RouteCode;
+
+        foreach (var chemistry in source?.ChemistryOverrides ?? Array.Empty<SalesOrderChemistryRequirement>())
+        {
+            requirement.ChemistryOverrides.Add(new OrderChemistryRequirement
+            {
+                ProductionOrderRequirementId = requirement.Id,
+                ElementCode = chemistry.ElementCode,
+                MinimumPct = chemistry.MinimumPct,
+                TargetPct = chemistry.TargetPct,
+                MaximumPct = chemistry.MaximumPct
+            });
+        }
+        foreach (var process in source?.ProcessOverrides ?? Array.Empty<SalesOrderProcessRequirement>())
+        {
+            requirement.ProcessOverrides.Add(new OrderProcessRequirement
+            {
+                ProductionOrderRequirementId = requirement.Id,
+                ProcessOperationType = process.ProcessOperationType,
+                Requirement = process.Requirement,
+                CapabilityClassCode = process.CapabilityClassCode,
+                RequiredResourceId = process.RequiredResourceId,
+                MaximumQueueMinutes = process.MaximumQueueMinutes
+            });
+        }
+        return requirement;
+    }
+
+    private static bool RequirementsEquivalent(ProductionOrderRequirement? po, SalesOrderRequirementProfile? source)
+    {
+        if (po is null && source is null) return true;
+        if (po is null) return false;
+        if (source is null)
+        {
+            return po.SegregationPolicy == SegregationPolicy.None &&
+                   string.IsNullOrWhiteSpace(po.QualityClassCode) &&
+                   po.ChemistryOverrides.Count == 0 && po.ProcessOverrides.Count == 0;
+        }
+        return Same(po.QualityClassCode, source.QualityClassCode) &&
+               po.SegregationPolicy == source.SegregationPolicy &&
+               po.RequireVd == source.RequireVd && po.ForbidVd == source.ForbidVd &&
+               po.RequireReheating == source.RequireReheating && po.ForbidHotCharge == source.ForbidHotCharge &&
+               po.RequireTmt == source.RequireTmt && Same(po.RequiredRouteCode, source.RequiredRouteCode) &&
+               po.RequiredResourceId == source.RequiredResourceId &&
+               Same(po.RequiredResourceGroupCode, source.RequiredResourceGroupCode) &&
+               po.ChemistryOverrides.Count == source.ChemistryOverrides.Count &&
+               po.ProcessOverrides.Count == source.ProcessOverrides.Count;
     }
 
     private static void ProtectCommittedPo(SalesOrderDemandState state, ProductionOrder po, string reasonCode)
@@ -594,7 +780,10 @@ public sealed class ProductionDemandOrchestrationService(
         state.ReasonCode = reasonCode;
     }
 
-    private static DemandOrchestrationItem ToItem(SalesOrder so, SalesOrderDemandState state) => new(
+    private static DemandOrchestrationItem ToItem(
+        SalesOrder so,
+        SalesOrderDemandState state,
+        SalesOrderRequirementProfile? requirement) => new(
         so.Id,
         so.SalesOrderNumber,
         so.ItemNumber,
@@ -622,7 +811,9 @@ public sealed class ProductionDemandOrchestrationService(
             x.LocationCode,
             x.AvailableFromUtc,
             x.QualityStatus,
-            x.QuantityMt)).ToArray());
+            x.QuantityMt)).ToArray(),
+        requirement?.QualificationFingerprint,
+        !string.IsNullOrWhiteSpace(requirement?.QualificationFingerprint));
 
     private static DateTime ServiceDate(SalesOrder so, SalesOrderDemandState? state) =>
         state?.ConfirmedDeliveryDate ?? so.RequiredDate;
