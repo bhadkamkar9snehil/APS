@@ -10,7 +10,8 @@ internal static class PlanStructureSnapshotProjector
         PlanningRunRequest request,
         PlanningRunResult result)
     {
-        AddProductionOrders(db, request, result);
+        AddProductionOrders(db, request, result.PlanVersionId);
+        AddRequirementSnapshots(db, result);
         AddCampaignStructure(db, result);
         AddPhysicalStructure(db, result);
         AddPackaging(db, result);
@@ -19,18 +20,13 @@ internal static class PlanStructureSnapshotProjector
     private static void AddProductionOrders(
         ApsDbContext db,
         PlanningRunRequest request,
-        PlanningRunResult result)
+        Guid planVersionId)
     {
-        var requirements = (result.RequirementSnapshots ?? Array.Empty<PlanOrderRequirementSnapshot>())
-            .GroupBy(x => x.ProductionOrderId)
-            .ToDictionary(x => x.Key, x => x.First());
-
         foreach (var po in request.ProductionOrders.DistinctBy(x => x.Id))
         {
-            requirements.TryGetValue(po.Id, out var requirement);
             db.PlanProductionOrderSnapshots.Add(new PlanProductionOrderSnapshot
             {
-                PlanVersionId = result.PlanVersionId,
+                PlanVersionId = planVersionId,
                 ProductionOrderId = po.Id,
                 ProductionOrderNumber = po.ProductionOrderNumber,
                 DemandSource = po.DemandSource,
@@ -54,10 +50,16 @@ internal static class PlanStructureSnapshotProjector
                 Status = po.Status,
                 TargetStockMt = po.TargetStockMt,
                 ProjectedAvailableStockMt = po.ProjectedAvailableStockMt,
-                StockPolicyCode = po.StockPolicyCode,
-                RequirementSnapshotId = requirement?.Id,
-                RequirementSnapshot = requirement
+                StockPolicyCode = po.StockPolicyCode
             });
+        }
+    }
+
+    private static void AddRequirementSnapshots(ApsDbContext db, PlanningRunResult result)
+    {
+        foreach (var requirement in result.RequirementSnapshots ?? Array.Empty<PlanOrderRequirementSnapshot>())
+        {
+            db.Set<PlanOrderRequirementSnapshot>().Add(requirement);
         }
     }
 
