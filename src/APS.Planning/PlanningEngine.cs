@@ -31,21 +31,24 @@ public sealed class PlanningEngine(
             request.CrossSections,
             request.RoutePlanning);
 
-        var campaignPlan = campaignPlanning.FormCampaigns(new CampaignPlanningRequest(
-            request.ProductionOrders,
-            request.Inventory,
-            request.CampaignPolicy,
-            request.CampaignNumberPrefix,
-            steelTopologyConfigured ? request.Resources : null,
-            steelTopologyConfigured ? request.Capabilities : null,
-            request.SteelGrades,
-            request.ExternalMaterialSupplies,
-            request.MaterialSupplyPolicy,
-            request.MaterialSourcingRules,
-            request.HorizonStartUtc,
-            request.RoutePlanning,
-            request.CommittedMaterialSupplies,
-            request.FlowLinks));
+        var campaignPlan = PrecomputedCampaignPlanningAdapter.FormCampaigns(
+            campaignPlanning,
+            new CampaignPlanningRequest(
+                request.ProductionOrders,
+                request.Inventory,
+                request.CampaignPolicy,
+                request.CampaignNumberPrefix,
+                steelTopologyConfigured ? request.Resources : null,
+                steelTopologyConfigured ? request.Capabilities : null,
+                request.SteelGrades,
+                request.ExternalMaterialSupplies,
+                request.MaterialSupplyPolicy,
+                request.MaterialSourcingRules,
+                request.HorizonStartUtc,
+                request.RoutePlanning,
+                request.CommittedMaterialSupplies,
+                request.FlowLinks,
+                request.PrecomputedCampaignMaterialDemand));
 
         var heatAllocations = CampaignHeatAllocationBuilder.Build(campaignPlan.Campaigns);
         campaignPlan = campaignPlan with { HeatAllocations = heatAllocations };
