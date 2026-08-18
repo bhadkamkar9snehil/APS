@@ -1,0 +1,147 @@
+@page "/decide/compare"
+@inject IPlannerWorkspaceQueryService PlannerQuery
+@inject PlannerWorkspaceState WorkspaceState
+
+<PageTitle>Plan Compare - APS</PageTitle>
+
+<div class="planner-page compare-workspace">
+    <header class="workspace-titlebar">
+        <div>
+            <span class="workspace-eyebrow">DECIDE / PLAN COMPARE</span>
+            <h1>Plan Versions</h1>
+            <p>See exactly what moved, changed resource, appeared or disappeared between two persisted schedules.</p>
+        </div>
+    </header>
+
+    @if (loading)
+    {
+        <div class="planner-empty-state"><strong>Loading Plan Version history…</strong></div>
+    }
+    else if (plans.Count < 2)
+    {
+        <div class="planner-empty-state planner-empty-state-major">
+            <strong>At least two Plan Versions are required</strong>
+            <p>Replanning or scenario runs create the history needed for comparison.</p>
+        </div>
+    }
+    else
+    {
+        <section class="compare-picker">
+            <label>
+                <span>BASELINE</span>
+                <select @bind="baselineSelection">
+                    @foreach (var plan in plans)
+                    {
+                        <option value="@plan.PlanVersionId">@plan.VersionNumber · @plan.CreatedOnUtc.ToString("dd MMM HH:mm")</option>
+                    }
+                </select>
+            </label>
+            <div class="compare-arrow">→</div>
+            <label>
+                <span>NEW PLAN</span>
+                <select @bind="newSelection">
+                    @foreach (var plan in plans)
+                    {
+                        <option value="@plan.PlanVersionId">@plan.VersionNumber · @plan.CreatedOnUtc.ToString("dd MMM HH:mm")</option>
+                    }
+                </select>
+            </label>
+            <button type="button" class="compare-run" @onclick="CompareAsync">Compare</button>
+        </section>
+
+        @if (comparing)
+        {
+            <div class="planner-empty-state"><strong>Comparing persisted operations…</strong></div>
+        }
+        else if (comparison is not null)
+        {
+            <section class="compare-summary">
+                <div class="compare-plan-card baseline">
+                    <span>BASELINE</span>
+                    <strong>@comparison.Baseline.VersionNumber</strong>
+                    <small>@comparison.Baseline.CreatedOnUtc.ToString("dd MMM yyyy HH:mm") · @comparison.Baseline.Status</small>
+                </div>
+                <div class="compare-metric"><span>Added</span><strong>@comparison.AddedOperations</strong></div>
+                <div class="compare-metric"><span>Removed</span><strong>@comparison.RemovedOperations</strong></div>
+                <div class="compare-metric"><span>Moved</span><strong>@comparison.MovedOperations</strong></div>
+                <div class="compare-metric"><span>Resource changes</span><strong>@comparison.ResourceChangedOperations</strong></div>
+                <div class="compare-metric"><span>Max movement</span><strong>@comparison.MaximumStartMovementMinutes min</strong></div>
+                <div class="compare-plan-card new-plan">
+                    <span>NEW</span>
+                    <strong>@comparison.NewPlan.VersionNumber</strong>
+                    <small>@comparison.NewPlan.CreatedOnUtc.ToString("dd MMM yyyy HH:mm") · @comparison.NewPlan.Status</small>
+                </div>
+            </section>
+
+            <section class="compare-ledger">
+                <div class="compare-ledger-head">
+                    <span>Operation</span><span>Change</span><span>Resource</span><span>Start</span><span>Movement</span>
+                </div>
+                @foreach (var change in comparison.Changes)
+                {
+                    <div class="compare-ledger-row @(change.ChangeType == PlanOperationChangeType.Unchanged ? "is-unchanged" : null)">
+                        <div><strong>@change.PlanningKey</strong><span>@change.TaskType</span></div>
+                        <span class="change-badge @ChangeClass(change.ChangeType)">@change.ChangeType</span>
+                        <div class="compare-resource-change"><span>@Display(change.BaselineResourceCode)</span><i>→</i><strong>@Display(change.NewResourceCode)</strong></div>
+                        <div class="compare-time-change"><span>@Time(change.BaselineStartUtc)</span><strong>@Time(change.NewStartUtc)</strong></div>
+                        <strong class="movement-value @MovementClass(change.StartMovementMinutes)">@Movement(change.StartMovementMinutes)</strong>
+                    </div>
+                }
+            </section>
+        }
+    }
+</div>
+
+@code {
+    private IReadOnlyCollection<PlanVersionListItemView> plans = Array.Empty<PlanVersionListItemView>();
+    private PlanComparisonWorkspaceView? comparison;
+    private string baselineSelection = string.Empty;
+    private string newSelection = string.Empty;
+    private bool loading = true;
+    private bool comparing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        plans = await PlannerQuery.GetRecentPlanVersionsAsync(40);
+        var current = plans.FirstOrDefault(x => x.PlanVersionId == WorkspaceState.CurrentPlanVersionId)
+                      ?? plans.FirstOrDefault(x => x.IsActive)
+                      ?? plans.FirstOrDefault();
+        var baseline = current?.ParentPlanVersionId.HasValue == true
+            ? plans.FirstOrDefault(x => x.PlanVersionId == current.ParentPlanVersionId.Value)
+            : plans.Skip(1).FirstOrDefault();
+        if (current is not null) newSelection = current.PlanVersionId.ToString();
+        if (baseline is not null) baselineSelection = baseline.PlanVersionId.ToString();
+        loading = false;
+        if (!string.IsNullOrWhiteSpace(baselineSelection) && !string.IsNullOrWhiteSpace(newSelection))
+            await CompareAsync();
+    }
+
+    private async Task CompareAsync()
+    {
+        if (!Guid.TryParse(baselineSelection, out var baselineId) ||
+            !Guid.TryParse(newSelection, out var newId) ||
+            baselineId == newId)
+        {
+            comparison = null;
+            return;
+        }
+
+        comparing = true;
+        comparison = await PlannerQuery.GetPlanComparisonAsync(baselineId, newId);
+        comparing = false;
+    }
+
+    private static string Display(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+    private static string Time(DateTime? value) => value.HasValue ? value.Value.ToString("dd MMM HH:mm") : "—";
+    private static string Movement(int minutes) => minutes == 0 ? "—" : minutes > 0 ? $"+{minutes}m" : $"{minutes}m";
+    private static string MovementClass(int minutes) => minutes > 0 ? "later" : minutes < 0 ? "earlier" : "same";
+    private static string ChangeClass(PlanOperationChangeType change) => change switch
+    {
+        PlanOperationChangeType.Added => "added",
+        PlanOperationChangeType.Removed => "removed",
+        PlanOperationChangeType.Moved => "moved",
+        PlanOperationChangeType.ResourceChanged => "resource",
+        PlanOperationChangeType.MovedAndResourceChanged => "moved-resource",
+        _ => "unchanged"
+    };
+}
