@@ -202,7 +202,10 @@ public sealed class PlanningEngine(
             false,
             0,
             Array.Empty<FiniteScheduleAssignment>(),
-            errors.Select(message => new PlanningIssue("STRUCTURE_INFEASIBLE", PlanningIssueSeverity.Error, message)).ToArray());
+            errors.Select(message => new PlanningIssue(
+                PlanningIssueSeverity.Error,
+                "STRUCTURE_INFEASIBLE",
+                message)).ToArray());
         return new PlanningRunResult(
             planVersionId,
             createdOnUtc,
@@ -278,8 +281,8 @@ public sealed class PlanningEngine(
             if (selected is null)
             {
                 issues.Add(new PlanningIssue(
-                    "RESOURCE_OVERRIDE_NOT_ELIGIBLE",
                     PlanningIssueSeverity.Error,
+                    "RESOURCE_OVERRIDE_NOT_ELIGIBLE",
                     $"Operation {identity.PlanningKey} cannot be dispatched to resource {resourceOverride.ResourceId}; that resource was not an eligible alternative.",
                     identity.SourceEntityId));
                 output.Add(task);
@@ -294,8 +297,8 @@ public sealed class PlanningEngine(
             if (identities.All(x => !string.Equals(x.PlanningKey, resourceOverride.PlanningKey, StringComparison.OrdinalIgnoreCase)))
             {
                 issues.Add(new PlanningIssue(
-                    "RESOURCE_OVERRIDE_OPERATION_NOT_FOUND",
                     PlanningIssueSeverity.Error,
+                    "RESOURCE_OVERRIDE_OPERATION_NOT_FOUND",
                     $"Resource override references planning operation {resourceOverride.PlanningKey}, which does not exist in the recalculated plan."));
             }
         }
