@@ -22,6 +22,7 @@ internal static class DemandSnapshotProjector
                 SalesOrderNumber = item.SalesOrderNumber,
                 SalesOrderItemNumber = item.SalesOrderItemNumber,
                 CustomerCode = item.CustomerCode,
+                CustomerGroupCode = item.CustomerGroupCode,
                 MaterialCode = item.MaterialCode,
                 GradeCode = item.GradeCode,
                 FinalCrossSectionCode = item.FinalCrossSectionCode,
