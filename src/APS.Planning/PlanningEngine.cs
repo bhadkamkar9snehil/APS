@@ -105,7 +105,8 @@ public sealed class PlanningEngine(
                 request.Resources,
                 request.Capabilities,
                 request.FlowLinks,
-                request.ExternalMaterialSupplies);
+                request.ExternalMaterialSupplies,
+                request.CommittedMaterialSupplies);
             if (HasErrors(structure))
                 return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
 

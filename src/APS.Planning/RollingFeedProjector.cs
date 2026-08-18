@@ -3,7 +3,7 @@ using APS.Domain;
 
 namespace APS.Planning;
 
-internal static class RollingFeedProjector
+public static class RollingFeedProjector
 {
     public static ProductionStructurePlanningResult Apply(
         ProductionStructurePlanningResult structure,
@@ -12,12 +12,16 @@ internal static class RollingFeedProjector
         IReadOnlyCollection<Resource> resources,
         IReadOnlyCollection<ResourceCapability> capabilities,
         IReadOnlyCollection<PlantFlowLink> flowLinks,
-        IReadOnlyCollection<ExternalMaterialSupply>? externalSupplies)
+        IReadOnlyCollection<ExternalMaterialSupply>? externalSupplies,
+        IReadOnlyCollection<CommittedMaterialSupply>? committedSupplies = null)
     {
         var tasks = structure.SchedulingTasks.ToList();
         var issues = structure.Issues.ToList();
         var capabilitiesByResource = capabilities.GroupBy(x => x.ResourceId).ToDictionary(x => x.Key, x => x.ToArray());
         var externalByReference = (externalSupplies ?? Array.Empty<ExternalMaterialSupply>())
+            .GroupBy(x => x.SupplyReference, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
+        var committedByReference = (committedSupplies ?? Array.Empty<CommittedMaterialSupply>())
             .GroupBy(x => x.SupplyReference, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
         var routeByCode = routePlanning.Operations
@@ -72,8 +76,8 @@ internal static class RollingFeedProjector
             }
 
             // Existing, committed baseline production, confirmed external, planned purchase/transfer and
-            // planner-authorized billet are legitimate feed paths. Committed baseline material is cold by
-            // default here because this projection deliberately does not invent a thermal state from a past plan.
+            // planner-authorized billet are legitimate feed paths. Feed with no traceable thermal-state fact
+            // (e.g. yard inventory) is treated as cold by default rather than inventing a thermal state.
             var sourceAllocations = plan.Allocations
                 .Where(x => x.ProductionOrder is not null)
                 .SelectMany(x => inventoryByPo.TryGetValue(x.ProductionOrderId, out var values) ? values : Array.Empty<PlanningInventoryAllocation>())
@@ -84,11 +88,7 @@ internal static class RollingFeedProjector
                 continue;
             }
 
-            var allExplicitlyHot = sourceAllocations.All(x =>
-                x.Use == PlanningInventoryUse.ExternalIntermediateFeed &&
-                x.SourceReference is not null &&
-                externalByReference.TryGetValue(x.SourceReference, out var supply) &&
-                supply.ThermalState is ChargeMode.HotDirect or ChargeMode.HotBuffered);
+            var allExplicitlyHot = sourceAllocations.All(x => IsKnownHotFeed(x, externalByReference, committedByReference));
             var needsReheat = RequiresReheat(orders) || !allExplicitlyHot;
 
             foreach (var rollingTask in rollingTasks)
@@ -221,6 +221,24 @@ internal static class RollingFeedProjector
         }
         if (pairs.Count == 0) issues.Add(Error("ROLLING_FEED_PATH_MISSING", "No enabled physical material-flow link exists for the required billet feed path.", sourceId));
         return new FiniteScheduleDependency(predecessor.TaskId, 0, null, pairs);
+    }
+
+    private static bool IsKnownHotFeed(
+        PlanningInventoryAllocation allocation,
+        IReadOnlyDictionary<string, ExternalMaterialSupply> externalByReference,
+        IReadOnlyDictionary<string, CommittedMaterialSupply> committedByReference)
+    {
+        if (allocation.SourceReference is null) return false;
+        return allocation.Use switch
+        {
+            PlanningInventoryUse.ExternalIntermediateFeed =>
+                externalByReference.TryGetValue(allocation.SourceReference, out var external) &&
+                external.ThermalState is ChargeMode.HotDirect or ChargeMode.HotBuffered,
+            PlanningInventoryUse.CommittedInternalProductionFeed =>
+                committedByReference.TryGetValue(allocation.SourceReference, out var committed) &&
+                committed.ThermalState is ChargeMode.HotDirect or ChargeMode.HotBuffered,
+            _ => false
+        };
     }
 
     private static bool CanHotCharge(
