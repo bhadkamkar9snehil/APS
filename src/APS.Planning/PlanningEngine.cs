@@ -32,7 +32,10 @@ public sealed class PlanningEngine(
             steelTopologyConfigured ? request.Resources : null,
             steelTopologyConfigured ? request.Capabilities : null,
             request.SteelGrades,
-            request.ExternalMaterialSupplies));
+            request.ExternalMaterialSupplies,
+            request.MaterialSupplyPolicy,
+            request.MaterialSourcingRules,
+            request.HorizonStartUtc));
 
         var heatAllocations = CampaignHeatAllocationBuilder.Build(campaignPlan.Campaigns);
         campaignPlan = campaignPlan with { HeatAllocations = heatAllocations };
@@ -100,8 +103,6 @@ public sealed class PlanningEngine(
                 return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
         }
 
-        // Stable identities are built before any operations override narrows a resource set. The original
-        // task options remain the immutable operational-flexibility evidence for this Plan Version.
         var identities = PlanningTaskIdentityService.Build(structure);
         var originalTasks = structure.SchedulingTasks.ToArray();
         var overrideResult = ApplyResourceOverrides(structure.SchedulingTasks, identities, request.ReplanContext?.ResourceOverrides);
@@ -135,20 +136,14 @@ public sealed class PlanningEngine(
             materialPreSchedule.ScheduleEvents));
 
         var materialPlan = finiteSchedule.IsFeasible
-            ? TimePhasedMaterialPlanner.ResolveAfterSchedule(
-                planVersionId,
-                request,
-                campaignPlan,
-                materialPreSchedule,
-                finiteSchedule)
+            ? TimePhasedMaterialPlanner.ResolveAfterSchedule(planVersionId, request, campaignPlan, materialPreSchedule, finiteSchedule)
             : materialPreSchedule;
 
         if (materialPlan.Issues.Count > materialPreSchedule.Issues.Count)
         {
             finiteSchedule = finiteSchedule with
             {
-                Issues = finiteSchedule.Issues.Concat(
-                    materialPlan.Issues.Except(materialPreSchedule.Issues)).ToArray()
+                Issues = finiteSchedule.Issues.Concat(materialPlan.Issues.Except(materialPreSchedule.Issues)).ToArray()
             };
         }
 
@@ -160,8 +155,7 @@ public sealed class PlanningEngine(
             request.PackagingSpecifications,
             request.CrossSections);
 
-        var feasible = finiteSchedule.IsFeasible &&
-                       !materialPlan.Issues.Any(x => x.Severity == PlanningIssueSeverity.Error);
+        var feasible = finiteSchedule.IsFeasible && !materialPlan.Issues.Any(x => x.Severity == PlanningIssueSeverity.Error);
 
         return new PlanningRunResult(
             planVersionId,
@@ -232,8 +226,9 @@ public sealed class PlanningEngine(
             replacement[task.TaskId] = task with { ResourceOptions = new[] { selected } };
         }
 
-        var result = tasks.Select(x => replacement.TryGetValue(x.TaskId, out var revised) ? revised : x).ToArray();
-        return new ResourceOverrideApplicationResult(result, issues);
+        return new ResourceOverrideApplicationResult(
+            tasks.Select(x => replacement.TryGetValue(x.TaskId, out var revised) ? revised : x).ToArray(),
+            issues);
     }
 
     private static IReadOnlyCollection<PlanningOperationResourceAlternative> BuildResourceAlternatives(
@@ -259,10 +254,10 @@ public sealed class PlanningEngine(
                     option.ResourceId,
                     option.DurationMinutes,
                     option.AssignmentPenalty,
-                    selected != Guid.Empty && selected == option.ResourceId));
+                    selected != Guid.Empty && selected == option.ResourceId,
+                    option.EligibilityBasisCode));
             }
         }
-
         return result;
     }
 
@@ -283,13 +278,28 @@ public sealed class PlanningEngine(
             .ToDictionary(x => x.Key, x => x.OrderBy(y => y.StartUtc).First(), StringComparer.OrdinalIgnoreCase);
         var policy = context.TimeFencePolicy;
         var constraints = new List<FiniteScheduleStabilityConstraint>();
+        var repairTaskIds = overrideKeys.Count == 0
+            ? null
+            : BuildRepairScopeTaskIds(tasks, identities, context, overrideKeys, baselineByKey);
 
         foreach (var identity in identities.Where(x => taskIds.Contains(x.TaskId)))
         {
-            // An explicit dispatch decision deliberately supersedes the baseline resource freeze for
-            // this operation. The new resource is still constrained by the entire CP-SAT model.
             if (overrideKeys.Contains(identity.PlanningKey)) continue;
             if (!baselineByKey.TryGetValue(identity.PlanningKey, out var baseline) || baseline.EndUtc <= context.ReferenceTimeUtc) continue;
+
+            // Local repair: everything outside the affected dependency/resource neighborhood remains exact.
+            if (repairTaskIds is not null && !repairTaskIds.Contains(identity.TaskId))
+            {
+                constraints.Add(new FiniteScheduleStabilityConstraint(
+                    identity.TaskId,
+                    TimeFenceZone.Frozen,
+                    baseline.ResourceId,
+                    baseline.StartUtc,
+                    0,
+                    0));
+                continue;
+            }
+
             var minutesToStart = (baseline.StartUtc - context.ReferenceTimeUtc).TotalMinutes;
             var zone = minutesToStart <= policy.FrozenMinutes ? TimeFenceZone.Frozen
                 : minutesToStart <= policy.FrozenMinutes + policy.SlushyMinutes ? TimeFenceZone.Slushy
@@ -304,6 +314,59 @@ public sealed class PlanningEngine(
                 policy.SlushyResourceChangePenalty));
         }
         return constraints;
+    }
+
+    private static HashSet<Guid> BuildRepairScopeTaskIds(
+        IReadOnlyCollection<FiniteScheduleTask> tasks,
+        IReadOnlyCollection<PlanningTaskIdentity> identities,
+        PlanningReplanContext context,
+        IReadOnlySet<string> overrideKeys,
+        IReadOnlyDictionary<string, BaselinePlanOperation> baselineByKey)
+    {
+        var scope = context.RepairScope ?? new RepairScopePolicy();
+        var identityByKey = identities.ToDictionary(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase);
+        var identityByTask = identities.ToDictionary(x => x.TaskId);
+        var taskById = tasks.ToDictionary(x => x.TaskId);
+        var successors = tasks
+            .SelectMany(task => task.Dependencies.Select(dep => (dep.PredecessorTaskId, task.TaskId)))
+            .GroupBy(x => x.PredecessorTaskId)
+            .ToDictionary(x => x.Key, x => x.Select(y => y.TaskId).Distinct().ToArray());
+
+        var affected = new HashSet<Guid>();
+        var queue = new Queue<(Guid TaskId, int Depth)>();
+        foreach (var key in overrideKeys)
+        {
+            if (!identityByKey.TryGetValue(key, out var identity)) continue;
+            if (affected.Add(identity.TaskId)) queue.Enqueue((identity.TaskId, 0));
+        }
+
+        while (queue.Count > 0)
+        {
+            var (taskId, depth) = queue.Dequeue();
+            if (depth >= Math.Max(0, scope.SuccessorDepth)) continue;
+            if (!successors.TryGetValue(taskId, out var next)) continue;
+            foreach (var successor in next)
+            {
+                if (affected.Add(successor)) queue.Enqueue((successor, depth + 1));
+            }
+        }
+
+        if (scope.IncludeSameResourceNeighbors)
+        {
+            var seedResources = affected
+                .Where(taskById.ContainsKey)
+                .SelectMany(id => taskById[id].ResourceOptions.Select(x => x.ResourceId))
+                .ToHashSet();
+            var horizonEnd = context.ReferenceTimeUtc.AddMinutes(Math.Max(0, scope.RepairHorizonMinutes));
+            foreach (var identity in identities)
+            {
+                if (!baselineByKey.TryGetValue(identity.PlanningKey, out var baseline)) continue;
+                if (baseline.StartUtc > horizonEnd || baseline.EndUtc <= context.ReferenceTimeUtc) continue;
+                if (seedResources.Contains(baseline.ResourceId)) affected.Add(identity.TaskId);
+            }
+        }
+
+        return affected;
     }
 
     private sealed record ResourceOverrideApplicationResult(
