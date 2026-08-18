@@ -1,0 +1,195 @@
+@page "/plan/demand"
+@implements IDisposable
+@inject IPlannerWorkspaceQueryService PlannerQuery
+@inject PlannerWorkspaceState WorkspaceState
+
+<PageTitle>Demand & Supply - APS</PageTitle>
+
+<div class="planner-page">
+    <header class="workspace-titlebar">
+        <div>
+            <span class="workspace-eyebrow">PLAN / DEMAND</span>
+            <h1>Demand & Supply</h1>
+            <p>How each Production Order is covered before fresh steel is created.</p>
+        </div>
+        @if (view is not null)
+        {
+            <div class="workspace-basis">
+                <span>Basis</span>
+                <strong>@view.Plan.VersionNumber snapshot</strong>
+            </div>
+        }
+    </header>
+
+    @if (loading)
+    {
+        <div class="planner-empty-state"><strong>Loading demand coverage…</strong></div>
+    }
+    else if (view is null)
+    {
+        <div class="planner-empty-state planner-empty-state-major">
+            <strong>No persisted demand snapshot</strong>
+            <p>Run and persist a Plan Version before using the production Demand & Supply workspace.</p>
+        </div>
+    }
+    else
+    {
+        <section class="demand-total-strip">
+            <div>
+                <span>Remaining demand</span>
+                <strong>@view.TotalRemainingQuantityMt.ToString("0.##") MT</strong>
+                <small>@view.MakeToOrderCount MTO · @view.MakeToStockCount MTS</small>
+            </div>
+            <div class="demand-total-flow">
+                <div class="coverage-track coverage-track-large" aria-label="Aggregate supply coverage">
+                    @CoverageSegment(view.FinishedGoodsAllocatedMt, view.TotalRemainingQuantityMt, "coverage-fg", "FG")
+                    @CoverageSegment(view.ExistingIntermediateAllocatedMt, view.TotalRemainingQuantityMt, "coverage-billet", "Billet")
+                    @CoverageSegment(view.ExternalIntermediateAllocatedMt, view.TotalRemainingQuantityMt, "coverage-external", "External")
+                    @CoverageSegment(view.FreshSteelRequirementMt, view.TotalRemainingQuantityMt, "coverage-fresh", "Fresh")
+                    @CoverageSegment(view.UncoveredQuantityMt, view.TotalRemainingQuantityMt, "coverage-uncovered", "Gap")
+                </div>
+                <div class="coverage-legend">
+                    <span><i class="coverage-fg"></i>FG @view.FinishedGoodsAllocatedMt.ToString("0.##")</span>
+                    <span><i class="coverage-billet"></i>Existing billet @view.ExistingIntermediateAllocatedMt.ToString("0.##")</span>
+                    <span><i class="coverage-external"></i>External @view.ExternalIntermediateAllocatedMt.ToString("0.##")</span>
+                    <span><i class="coverage-fresh"></i>Fresh steel @view.FreshSteelRequirementMt.ToString("0.##")</span>
+                    @if (view.UncoveredQuantityMt > 0m)
+                    {
+                        <span class="is-danger"><i class="coverage-uncovered"></i>Uncovered @view.UncoveredQuantityMt.ToString("0.##")</span>
+                    }
+                </div>
+            </div>
+        </section>
+
+        <section class="planner-ledger">
+            <div class="planner-ledger-head demand-grid">
+                <span>Demand</span>
+                <span>Requirement</span>
+                <span>Coverage</span>
+                <span>Due</span>
+                <span>Status</span>
+            </div>
+
+            @foreach (var row in view.Rows)
+            {
+                <button class="planner-ledger-row demand-grid" type="button" @onclick="() => SelectProductionOrder(row)">
+                    <div class="demand-identity">
+                        <div class="demand-id-line">
+                            <span class="source-badge @(row.DemandSource == DemandSourceType.MakeToOrder ? "mto" : "mts")">@(row.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</span>
+                            <strong>@row.ProductionOrderNumber</strong>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(row.SalesOrderNumber))
+                        {
+                            <span>SO @row.SalesOrderNumber / @row.SalesOrderItemNumber · @Display(row.CustomerCode)</span>
+                        }
+                        else
+                        {
+                            <span>@Display(row.StockPolicyCode) · target @FormatNullable(row.TargetStockMt) MT</span>
+                        }
+                    </div>
+
+                    <div class="demand-requirement">
+                        <strong>@row.GradeCode · @row.FinalCrossSectionCode</strong>
+                        <span>@row.MaterialCode · route @row.RouteCode</span>
+                        <div class="requirement-flags">
+                            @if (row.VdRequirement != RequirementDisposition.Optional)
+                            {
+                                <em>VD @row.VdRequirement</em>
+                            }
+                            @if (row.ReheatRequirement != RequirementDisposition.Optional)
+                            {
+                                <em>RHF @row.ReheatRequirement</em>
+                            }
+                            @if (row.TmtRequirement != RequirementDisposition.Optional)
+                            {
+                                <em>TMT @row.TmtRequirement</em>
+                            }
+                            @if (row.SegregationPolicy != SegregationPolicy.None)
+                            {
+                                <em>@row.SegregationPolicy</em>
+                            }
+                            @if (!row.HotChargeAllowed)
+                            {
+                                <em>NO HOT CHARGE</em>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="demand-coverage-cell">
+                        <div class="coverage-track" aria-label="@row.CoveredQuantityMt MT covered of @row.RemainingQuantityMt MT">
+                            @CoverageSegment(row.FinishedGoodsAllocatedMt, row.RemainingQuantityMt, "coverage-fg", "FG")
+                            @CoverageSegment(row.ExistingIntermediateAllocatedMt, row.RemainingQuantityMt, "coverage-billet", "Billet")
+                            @CoverageSegment(row.ExternalIntermediateAllocatedMt, row.RemainingQuantityMt, "coverage-external", "External")
+                            @CoverageSegment(row.FreshSteelRequirementMt, row.RemainingQuantityMt, "coverage-fresh", "Fresh")
+                            @CoverageSegment(row.UncoveredQuantityMt, row.RemainingQuantityMt, "coverage-uncovered", "Gap")
+                        </div>
+                        <div class="coverage-numbers">
+                            <strong>@row.RemainingQuantityMt.ToString("0.##") MT</strong>
+                            <span>FG @row.FinishedGoodsAllocatedMt.ToString("0.#") · Bil @row.ExistingIntermediateAllocatedMt.ToString("0.#") · Ext @row.ExternalIntermediateAllocatedMt.ToString("0.#") · Fresh @row.FreshSteelRequirementMt.ToString("0.#")</span>
+                        </div>
+                    </div>
+
+                    <div class="demand-due">
+                        <strong>@row.RequiredDate.ToString("dd MMM")</strong>
+                        <span>@row.RequiredDate.ToString("yyyy HH:mm")</span>
+                        <small>Priority @row.Priority</small>
+                    </div>
+
+                    <div class="demand-state">
+                        <span class="planner-status @(row.UncoveredQuantityMt > 0m ? "is-bad" : "is-good")">@(row.UncoveredQuantityMt > 0m ? "UNCOVERED" : "COVERED")</span>
+                        <small>@row.Status</small>
+                    </div>
+                </button>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    private DemandSupplyView? view;
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        WorkspaceState.Changed += OnWorkspaceChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        view = await PlannerQuery.GetDemandSupplyAsync(WorkspaceState.CurrentPlanVersionId);
+        loading = false;
+        StateHasChanged();
+    }
+
+    private void OnWorkspaceChanged()
+    {
+        if (view is not null && WorkspaceState.CurrentPlanVersionId != view.Plan.PlanVersionId)
+        {
+            _ = InvokeAsync(LoadAsync);
+        }
+    }
+
+    private void SelectProductionOrder(DemandSupplyRowView row) =>
+        WorkspaceState.Select(new PlannerEntityRef(
+            PlannerEntityType.ProductionOrder,
+            row.ProductionOrderId,
+            row.ProductionOrderNumber));
+
+    private RenderFragment CoverageSegment(decimal quantity, decimal total, string cssClass, string label) => builder =>
+    {
+        if (quantity <= 0m || total <= 0m) return;
+        var pct = Math.Clamp(quantity / total * 100m, 0m, 100m);
+        builder.OpenElement(0, "span");
+        builder.AddAttribute(1, "class", cssClass);
+        builder.AddAttribute(2, "style", $"width:{pct.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)}%");
+        builder.AddAttribute(3, "title", $"{label}: {quantity:0.##} MT");
+        builder.CloseElement();
+    };
+
+    private static string Display(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+    private static string FormatNullable(decimal? value) => value.HasValue ? value.Value.ToString("0.##") : "—";
+
+    public void Dispose() => WorkspaceState.Changed -= OnWorkspaceChanged;
+}
