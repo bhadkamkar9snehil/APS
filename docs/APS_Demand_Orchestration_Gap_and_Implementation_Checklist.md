@@ -1,33 +1,36 @@
-# APS Demand Orchestration Gap and Implementation Checklist
+# APS Demand Orchestration Implementation Checklist
 
-Status: **backend gap / implementation checklist**
+Status: **implemented on the canonical .NET production path for issue #45**
 
-## Confirmed current-state gap
+## Implemented production boundary
 
-The .NET domain has `SalesOrder` and `ProductionOrder` and supports `ProductionOrder.SalesOrderId`, but the canonical backend does not yet have one explicit MTO demand-orchestration service that owns Sales Order coverage -> derived MTO Production Order lifecycle.
+The canonical production lifecycle now owns Sales Order coverage -> derived MTO Production Order orchestration through `IProductionDemandOrchestrationService` before campaign planning.
 
-The current code therefore assumes Production Orders are already available to campaign planning.
+The authoritative path is:
 
-MTS PO generation is explicit through `IMtsProductionOrderService`; equivalent MTO derivation must be added canonically.
+`SO reconciliation -> qualified FG coverage -> MTO Production Order reconciliation -> PlanningEngine -> Plan Version snapshots -> planner read models/release`
 
-## Required implementation
+Campaign planning receives already-netted manufacturing Production Orders. Finished-goods inventory is removed from the downstream production-kernel inventory input so stock cannot be netted a second time.
 
-- authoritative SO/SO-item ingestion/read path from existing integration;
+## Implemented behavior
+
+- authoritative typed SO/SO-item reconciliation endpoint and persisted read path;
 - idempotent SO item identity `(SalesOrderNumber, ItemNumber)`;
 - open quantity/status reconciliation;
-- customer/SAP requirement normalization;
-- qualified FG allocation/reservation before MTO PO derivation;
-- internally-manufacturable finished-product check;
-- MTO PO create/update/cancel/reconcile service;
-- stable PO numbering/identity policy;
-- explicit `CustomerRequiredDate` and `ProductionRequiredBy` semantics;
-- firm/released PO change rules;
-- explanation/audit of quantity derivation;
-- Plan Version snapshots of SO demand + derived PO state;
-- read model showing SO -> stock coverage -> PO manufacturing requirement;
+- customer and requirement normalization, including chemistry/process/customer segregation constraints;
+- qualified FG coverage before MTO PO derivation;
+- conservative treatment when current inventory evidence cannot prove customer-specific qualification;
+- internally-manufacturable finished-product resolution through configured grade, caster section and route masters;
+- MTO PO create/update/cancel/reconcile lifecycle;
+- stable `MTO-{SO}-{item}` numbering with revisions only after historical cancellation/completion;
+- explicit customer-required, confirmed-delivery and production-required-by dates;
+- firm/released PO protection: changed SO/FG derivation is surfaced for planner attention rather than silently resizing committed work;
+- persisted explanation/evidence of open demand, FG coverage and manufacturing requirement;
+- Plan Version snapshots of SO demand and FG coverage plus derived PO/campaign/heat state;
+- read model/API showing SO -> stock coverage -> PO manufacturing requirement and downstream campaign/heat allocations;
 - duplicate prevention over repeated sync/planning runs;
-- cancellation/quantity/date-change behavior from SAP;
-- tests covering partial fulfilment and already-released production.
+- cancellation and quantity-change behavior from SAP inputs;
+- allocation-level service obligations carrying PO quantity, required date and priority into finite scheduling.
 
 ## Important non-responsibilities
 
@@ -35,24 +38,43 @@ The MTO PO derivation service does not:
 - create campaigns;
 - decide heat sequence;
 - choose resources;
-- explode upstream raw-material BOM beyond invoking the canonical material engine;
+- explode upstream raw-material BOM;
 - prescribe procurement.
 
-Those responsibilities remain separated.
+Recursive BOM/material requirement derivation is the next work item under issue #33, followed by the unified time-phased material ledger under issue #14.
 
-## Date rules to implement
+## Date rules implemented
 
-- preserve customer due date at SO item grain;
-- derive production-required-by using configured post-production allowance;
-- carry PO due date through every Campaign/Heat/Rolling/WO allocation;
-- do not replace allocation-level dates with campaign minimum date;
-- expose lateness/service by PO allocation.
+- customer due date remains at SO-item grain;
+- confirmed delivery date, when supplied, is the service-date basis;
+- production-required-by is derived using configured quality/packing/dispatch lead offsets;
+- PO required date is carried through campaign, heat, rolling and route-operation allocations;
+- finite scheduling receives quantity-aware `FiniteScheduleServiceObligation` records per PO allocation instead of collapsing a shared task to one campaign minimum date;
+- planner demand/campaign read models expose the allocation-level dates and priorities.
 
-## Clubbing rules to implement
+## Clubbing rules implemented
 
-- PO remains demand/manufacturing lineage unit;
-- Campaign is aggregation unit;
-- compatible POs may share campaign/heats/rolling plans;
-- customer/SO/dedicated segregation can prevent clubbing;
-- campaign optimization evaluates due-date spread and per-PO service;
-- each allocation retains PO quantity/date/customer identity.
+- PO remains the demand/manufacturing lineage unit;
+- Campaign remains the aggregation unit;
+- compatible POs can share campaigns/heats/rolling plans while retaining separate allocations;
+- customer/SO/dedicated segregation requirements remain part of the requirement signature and can prevent pooling;
+- each campaign/heat allocation retains PO quantity/date/customer lineage;
+- service/tardiness is evaluated against allocation-level quantity/date obligations.
+
+## Acceptance coverage
+
+Focused tests cover:
+
+1. SO 100 MT + qualified FG 100 MT -> no MTO PO.
+2. SO 100 MT + qualified FG 30 MT -> MTO PO 70 MT with exact SO linkage.
+3. No FG -> full manufacturing PO even with no component/raw-material availability facts supplied to demand orchestration.
+4. Compatible SOs remain separate MTO POs and can be aggregated later.
+5. Customer-specific/segregation requirements are preserved and uncertified FG is not guessed as eligible.
+6. Quantity-aware service obligations prevent an early allocation from making an entire shared task artificially due early.
+7. Repeated SO sync/planning is idempotent.
+8. Planned PO cancellation and quantity changes reconcile explicitly.
+9. Firmed/released work is protected from later FG or changed demand and requires planner attention when the current derivation differs.
+10. Held/late FG is excluded and a shared FG pool is consumed once per orchestration run.
+11. A special SO requirement with no explicit route override correctly accepts the PO's resolved default route and does not false-flag an unchanged committed PO.
+
+The repository policy for this work forbids GitHub Actions/CI for verification. Focused tests are checked in; runtime execution remains for the intended developer environment.
