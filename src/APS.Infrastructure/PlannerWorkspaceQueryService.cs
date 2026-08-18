@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace APS.Infrastructure;
 
-public sealed class PlannerWorkspaceQueryService(ApsDbContext db) : IPlannerWorkspaceQueryService
+public sealed partial class PlannerWorkspaceQueryService(ApsDbContext db) : IPlannerWorkspaceQueryService
 {
     public async Task<PlanContextView?> GetCurrentPlanAsync(CancellationToken cancellationToken = default)
     {
