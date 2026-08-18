@@ -1,16 +1,109 @@
 @inherits LayoutComponentBase
-@using Microsoft.AspNetCore.Components.Routing
+@implements IDisposable
+@inject IPlannerWorkspaceQueryService PlannerQuery
+@inject PlannerWorkspaceState WorkspaceState
 
-<div class="aps-shell">
-    <header>
-        <strong>APS Planner</strong>
-        <span>Campaign · SMS · Casting · Rolling · Inventory</span>
-    </header>
-    <nav class="aps-nav">
-        <NavLink href="/" Match="NavLinkMatch.All">Home</NavLink>
-        <NavLink href="/planning">Planning Sandbox</NavLink>
-    </nav>
-    <main>
-        @Body
-    </main>
+<div class="planner-shell">
+    <aside class="planner-rail" aria-label="APS primary navigation">
+        <div class="planner-brand">
+            <div class="planner-brand-mark">A</div>
+            <div>
+                <strong>APS</strong>
+                <span>Planning system</span>
+            </div>
+        </div>
+
+        <nav class="planner-rail-nav">
+            <NavLink class="planner-nav-link" href="/" Match="NavLinkMatch.All">
+                <span class="planner-nav-code">01</span><span>Control Tower</span>
+            </NavLink>
+
+            <div class="planner-nav-group">
+                <span class="planner-nav-label">PLAN</span>
+                <span class="planner-nav-link is-disabled"><span class="planner-nav-code">02</span><span>Demand & Supply</span></span>
+                <span class="planner-nav-link is-disabled"><span class="planner-nav-code">03</span><span>Campaign Studio</span></span>
+                <span class="planner-nav-link is-disabled"><span class="planner-nav-code">04</span><span>Steelmaking & Casting</span></span>
+                <span class="planner-nav-link is-disabled"><span class="planner-nav-code">05</span><span>Rolling & Finishing</span></span>
+                <span class="planner-nav-link is-disabled"><span class="planner-nav-code">06</span><span>Finite Schedule</span></span>
+                <span class="planner-nav-link is-disabled"><span class="planner-nav-code">07</span><span>Material Flow</span></span>
+            </div>
+
+            <div class="planner-nav-group">
+                <span class="planner-nav-label">OPERATE</span>
+                <span class="planner-nav-link is-disabled"><span class="planner-nav-code">08</span><span>Work Orders</span></span>
+                <span class="planner-nav-link is-disabled"><span class="planner-nav-code">09</span><span>Actuals & Replan</span></span>
+                <span class="planner-nav-link is-disabled"><span class="planner-nav-code">10</span><span>Traceability</span></span>
+            </div>
+
+            <div class="planner-nav-group planner-nav-secondary">
+                <span class="planner-nav-label">DECIDE</span>
+                <span class="planner-nav-link is-disabled">Scenarios / Compare</span>
+                <span class="planner-nav-link is-disabled">CTP / Promise</span>
+                <span class="planner-nav-link is-disabled">Diagnostics</span>
+                <span class="planner-nav-link is-disabled">Capacity</span>
+            </div>
+
+            <div class="planner-nav-group planner-nav-secondary">
+                <span class="planner-nav-label">CONFIGURE</span>
+                <span class="planner-nav-link is-disabled">Steel Masters</span>
+            </div>
+        </nav>
+
+        <div class="planner-rail-reference">
+            <span>REFERENCE</span>
+            <NavLink href="/planning">Planning Sandbox</NavLink>
+        </div>
+    </aside>
+
+    <section class="planner-stage">
+        <PlanContextBar Plan="currentPlan" />
+        <main class="planner-workspace">
+            @Body
+        </main>
+    </section>
+
+    <ContextInspector />
 </div>
+
+@code {
+    private PlanContextView? currentPlan;
+
+    protected override async Task OnInitializedAsync()
+    {
+        WorkspaceState.Changed += OnWorkspaceChanged;
+        currentPlan = await PlannerQuery.GetCurrentPlanAsync();
+        if (currentPlan is not null)
+        {
+            WorkspaceState.SetPlan(currentPlan.PlanVersionId, currentPlan.ParentPlanVersionId);
+            WorkspaceState.SetWindow(currentPlan.HorizonStartUtc, currentPlan.HorizonEndUtc);
+        }
+    }
+
+    private void OnWorkspaceChanged()
+    {
+        if (WorkspaceState.CurrentPlanVersionId.HasValue &&
+            WorkspaceState.CurrentPlanVersionId != currentPlan?.PlanVersionId)
+        {
+            _ = InvokeAsync(LoadSelectedPlanAsync);
+            return;
+        }
+
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadSelectedPlanAsync()
+    {
+        var planVersionId = WorkspaceState.CurrentPlanVersionId;
+        currentPlan = planVersionId.HasValue
+            ? await PlannerQuery.GetPlanContextAsync(planVersionId.Value)
+            : await PlannerQuery.GetCurrentPlanAsync();
+
+        if (currentPlan is not null)
+        {
+            WorkspaceState.SetWindow(currentPlan.HorizonStartUtc, currentPlan.HorizonEndUtc);
+        }
+        StateHasChanged();
+    }
+
+    public void Dispose() => WorkspaceState.Changed -= OnWorkspaceChanged;
+}
