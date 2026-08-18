@@ -55,7 +55,8 @@ public sealed record MaterialCoverageAllocation(
     string? LocationCode,
     decimal Quantity,
     DateTime? AvailableFromUtc,
-    MaterialQualityStatus? QualityStatus = null);
+    MaterialQualityStatus? QualityStatus = null,
+    InventoryStage? InventoryStage = null);
 
 public sealed record MaterialCoverageResult(
     decimal CoveredQuantity,
