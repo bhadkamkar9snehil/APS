@@ -15,17 +15,51 @@ public sealed record BaselinePlanOperation(
     DateTime EndUtc,
     FiniteScheduleTaskType TaskType);
 
+/// <summary>
+/// Explicit operations/dispatch decision to use a different physical resource for an operation.
+/// The planning kernel must still revalidate every route, queue, thermal, material and sequence constraint.
+/// </summary>
+public sealed record OperationResourceOverride(
+    string PlanningKey,
+    Guid ResourceId,
+    OperationAssignmentCommitmentState CommitmentState = OperationAssignmentCommitmentState.Committed,
+    string ReasonCode = "OPERATIONAL_REDISPATCH",
+    string? Comment = null);
+
 public sealed record PlanningReplanContext(
     Guid BaselinePlanVersionId,
     DateTime ReferenceTimeUtc,
     PlanningTimeFencePolicy TimeFencePolicy,
-    IReadOnlyCollection<BaselinePlanOperation> BaselineOperations);
+    IReadOnlyCollection<BaselinePlanOperation> BaselineOperations,
+    IReadOnlyCollection<OperationResourceOverride>? ResourceOverrides = null);
 
 public sealed record PlanningTaskIdentity(
     Guid TaskId,
     Guid SourceEntityId,
     string PlanningKey,
     FiniteScheduleTaskType TaskType);
+
+/// <summary>
+/// Resource alternative retained from the structure/solver input even after one resource is selected.
+/// This is the basis for late-binding operational redispatch.
+/// </summary>
+public sealed record PlanningOperationResourceAlternative(
+    Guid TaskId,
+    Guid SourceEntityId,
+    string PlanningKey,
+    ProcessOperationType ProcessOperationType,
+    Guid ResourceId,
+    int DurationMinutes,
+    int AssignmentPenalty,
+    bool WasSelected);
+
+public sealed record MaterialSupplyPlanningPolicy(
+    bool AllowInternalMake = true,
+    bool AllowExternalBuy = true,
+    bool AllowTransfer = false,
+    bool AllowManualSupply = true,
+    TimeSpan? DefaultExternalLeadTime = null,
+    bool PreserveCustomerQualifiedPools = true);
 
 public sealed record PlanningRunRequest(
     IReadOnlyCollection<ProductionOrder> ProductionOrders,
@@ -47,7 +81,8 @@ public sealed record PlanningRunRequest(
     IReadOnlyCollection<CrossSectionSpecification>? CrossSections = null,
     IReadOnlyCollection<MaterialSpecification>? MaterialSpecifications = null,
     IReadOnlyCollection<PackagingSpecification>? PackagingSpecifications = null,
-    IReadOnlyCollection<ExternalMaterialSupply>? ExternalMaterialSupplies = null);
+    IReadOnlyCollection<ExternalMaterialSupply>? ExternalMaterialSupplies = null,
+    MaterialSupplyPlanningPolicy? MaterialSupplyPolicy = null);
 
 public sealed record PlanningRunResult(
     Guid PlanVersionId,
@@ -59,7 +94,9 @@ public sealed record PlanningRunResult(
     IReadOnlyCollection<PlanningTaskIdentity>? TaskIdentities = null,
     Guid? BaselinePlanVersionId = null,
     IReadOnlyCollection<PlannedPackagingUnit>? PlannedPackagingUnits = null,
-    IReadOnlyCollection<PlanOrderRequirementSnapshot>? RequirementSnapshots = null);
+    IReadOnlyCollection<PlanOrderRequirementSnapshot>? RequirementSnapshots = null,
+    IReadOnlyCollection<PlanningOperationResourceAlternative>? ResourceAlternatives = null,
+    MaterialPlanningResult? MaterialPlan = null);
 
 public interface IPlanningEngine
 {
