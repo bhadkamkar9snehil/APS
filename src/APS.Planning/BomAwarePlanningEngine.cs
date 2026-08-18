@@ -94,9 +94,23 @@ public sealed class BomAwarePlanningEngine(
                     po.Priority,
                     RouteCode: po.RouteCode,
                     GradeFamilyCode: po.GradeFamilyCode,
-                    ProductFamilyCode: po.ProductFamilyCode);
+                    ProductFamilyCode: po.ProductFamilyCode,
+                    QualificationCode: RequiresQualifiedSupply(po) ? $"PO-QUAL:{po.Id:N}" : null);
             })
             .ToArray();
+    }
+
+    private static bool RequiresQualifiedSupply(ProductionOrder po)
+    {
+        var requirement = po.Requirement;
+        if (requirement is null) return false;
+        return requirement.SegregationPolicy != SegregationPolicy.None ||
+               !string.IsNullOrWhiteSpace(requirement.QualityClassCode) ||
+               requirement.RequireVd.HasValue || requirement.ForbidVd.HasValue ||
+               requirement.RequireReheating.HasValue || requirement.ForbidHotCharge.HasValue ||
+               requirement.RequireTmt.HasValue || requirement.RequiredResourceId.HasValue ||
+               !string.IsNullOrWhiteSpace(requirement.RequiredResourceGroupCode) ||
+               requirement.ChemistryOverrides.Count > 0 || requirement.ProcessOverrides.Count > 0;
     }
 
     private static IReadOnlyCollection<PrecomputedCampaignMaterialDemand> BuildCampaignMaterialDemand(
