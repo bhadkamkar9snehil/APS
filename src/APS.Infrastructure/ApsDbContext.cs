@@ -36,6 +36,7 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
     public DbSet<MaterialSpecification> MaterialSpecifications => Set<MaterialSpecification>();
     public DbSet<PackagingSpecification> PackagingSpecifications => Set<PackagingSpecification>();
     public DbSet<ExternalMaterialSupply> ExternalMaterialSupplies => Set<ExternalMaterialSupply>();
+    public DbSet<MaterialSourcingRule> MaterialSourcingRules => Set<MaterialSourcingRule>();
     public DbSet<PlannedPackagingUnit> PlannedPackagingUnits => Set<PlannedPackagingUnit>();
 
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
@@ -85,6 +86,8 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<MaterialSpecification>().HasIndex(x => x.MaterialSpecificationCode).IsUnique();
         modelBuilder.Entity<PackagingSpecification>().HasIndex(x => x.PackagingCode).IsUnique();
         modelBuilder.Entity<ExternalMaterialSupply>().HasIndex(x => new { x.SourceType, x.SupplyReference });
+        modelBuilder.Entity<MaterialSourcingRule>().HasIndex(x => x.RuleCode).IsUnique();
+        modelBuilder.Entity<MaterialSourcingRule>().HasIndex(x => new { x.MaterialCode, x.GradeCode, x.CrossSectionCode, x.DestinationLocationCode });
 
         modelBuilder.Entity<ProductionOrder>()
             .HasOne(x => x.SalesOrder)
