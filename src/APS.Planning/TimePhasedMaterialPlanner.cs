@@ -17,11 +17,32 @@ internal static class TimePhasedMaterialPlanner
         var heatById = campaignPlan.Campaigns.SelectMany(x => x.Heats).ToDictionary(x => x.Id);
 
         foreach (var allocation in campaignPlan.InventoryAllocations.Where(x =>
-                     x.Use is PlanningInventoryUse.IntermediateFeed or PlanningInventoryUse.ExternalIntermediateFeed))
+                     x.Use is PlanningInventoryUse.IntermediateFeed or
+                         PlanningInventoryUse.ExternalIntermediateFeed or
+                         PlanningInventoryUse.CommittedInternalProductionFeed))
         {
             if (!poById.TryGetValue(allocation.ProductionOrderId, out var po)) continue;
             var pool = PoolKey(po);
             var availability = allocation.AvailableFromUtc ?? request.HorizonStartUtc;
+            var sourceType = allocation.Use switch
+            {
+                PlanningInventoryUse.ExternalIntermediateFeed => BilletSupplySourceType.ExternalPurchased,
+                PlanningInventoryUse.CommittedInternalProductionFeed => BilletSupplySourceType.InternalCastPlanned,
+                _ => BilletSupplySourceType.ExistingInventory
+            };
+            var explanation = allocation.Use switch
+            {
+                PlanningInventoryUse.ExternalIntermediateFeed => $"Confirmed external billet {allocation.SourceReference ?? "supply"}.",
+                PlanningInventoryUse.CommittedInternalProductionFeed => $"Committed baseline internal production {allocation.SourceReference ?? "supply"}; this is already released/in-process and is not a new MAKE decision.",
+                _ => "Qualified existing billet inventory."
+            };
+            var ledgerType = allocation.Use switch
+            {
+                PlanningInventoryUse.ExternalIntermediateFeed => MaterialBalanceEventType.ExternalReceipt,
+                PlanningInventoryUse.CommittedInternalProductionFeed => MaterialBalanceEventType.PlannedProductionReceipt,
+                _ => MaterialBalanceEventType.OpeningInventory
+            };
+
             reservations.Add(new MaterialSupplyReservation
             {
                 ProductionOrderId = po.Id,
@@ -29,9 +50,7 @@ internal static class TimePhasedMaterialPlanner
                 GradeCode = allocation.GradeCode,
                 CrossSectionCode = allocation.CrossSectionCode,
                 InventoryStage = allocation.Stage,
-                ExternalSourceType = allocation.Use == PlanningInventoryUse.ExternalIntermediateFeed
-                    ? BilletSupplySourceType.ExternalPurchased
-                    : BilletSupplySourceType.ExistingInventory,
+                ExternalSourceType = sourceType,
                 SupplyReference = allocation.SourceReference,
                 LocationCode = allocation.LocationCode,
                 QuantityMt = allocation.QuantityMt,
@@ -43,9 +62,7 @@ internal static class TimePhasedMaterialPlanner
                 Kg(allocation.QuantityMt),
                 ScheduledMaterialEventTiming.FixedTime,
                 FixedTimeUtc: availability,
-                Explanation: allocation.Use == PlanningInventoryUse.ExternalIntermediateFeed
-                    ? $"Confirmed external billet {allocation.SourceReference ?? "supply"}."
-                    : "Qualified existing billet inventory.",
+                Explanation: explanation,
                 ProductionOrderId: po.Id,
                 MaterialCode: allocation.MaterialCode,
                 MaterialSpecificationCode: allocation.MaterialCode,
@@ -53,14 +70,9 @@ internal static class TimePhasedMaterialPlanner
                 CrossSectionCode: allocation.CrossSectionCode,
                 LocationCode: allocation.LocationCode,
                 SupplyReference: allocation.SourceReference,
-                LedgerEventType: allocation.Use == PlanningInventoryUse.ExternalIntermediateFeed
-                    ? MaterialBalanceEventType.ExternalReceipt
-                    : MaterialBalanceEventType.OpeningInventory));
+                LedgerEventType: ledgerType));
         }
 
-        // Planned procurement/transfer/manual supply is not current inventory. It enters the same
-        // PO-qualified reservoir only at its explicitly expected receipt time and remains auditable as
-        // a supply action required by this plan.
         foreach (var allocation in campaignPlan.PlannedSupplyAllocations ?? Array.Empty<PlanningSupplyAllocation>())
         {
             if (allocation.ActionType is MaterialSupplyActionType.Make or MaterialSupplyActionType.Unsourced) continue;
