@@ -4,12 +4,13 @@ using APS.Domain;
 namespace APS.Planning;
 
 /// <summary>
-/// Production-kernel decorator that makes recursive BOM requirements part of the Plan Version result without
-/// duplicating CampaignPlanningService's intermediate-material decision. Campaign allocations are replayed as
-/// coverage evidence first; only raw-material snapshot inventory is independently netted below that boundary.
+/// Canonical material-orchestration decorator.
 ///
-/// #14 will replace the run-scoped coverage session with the unified time-phased material ledger. The recursive
-/// BOM engine and its requirement lineage remain unchanged.
+/// Order of authority for BOM-enabled production runs:
+/// PO manufacturing demand -> recursive BOM -> single-use time-phased supply coverage -> precomputed Campaign
+/// material demand -> Campaign/heat/route/schedule -> persisted material tree/ledger.
+///
+/// Campaign therefore no longer reserves the same intermediate stock independently when BOM masters are active.
 /// </summary>
 public sealed class BomAwarePlanningEngine(
     PlanningEngine inner,
@@ -19,35 +20,41 @@ public sealed class BomAwarePlanningEngine(
 
     public PlanningRunResult Run(PlanningRunRequest request)
     {
-        var result = inner.Run(request);
         if (request.BillsOfMaterial is not { Count: > 0 } || request.ProductionOrders.Count == 0)
-            return result;
+            return inner.Run(request);
 
         var materialSpecifications = request.MaterialSpecifications ?? Array.Empty<MaterialSpecification>();
         var seeds = BuildDemandSeeds(request.ProductionOrders, materialSpecifications);
-        if (seeds.Count == 0) return result;
+        if (seeds.Count == 0) return inner.Run(request);
 
-        var coverage = new CampaignAwareMaterialCoverageSession(
-            result.CampaignPlan.InventoryAllocations,
-            request.Inventory);
+        var coverage = new UnifiedTimePhasedMaterialCoverageSession(
+            request.HorizonStartUtc,
+            request.Inventory,
+            materialSpecifications,
+            request.ExternalMaterialSupplies,
+            request.CommittedMaterialSupplies);
         var recursive = recursiveMaterialRequirements.Explode(new RecursiveMaterialRequirementRequest(
             seeds,
             request.BillsOfMaterial,
             materialSpecifications,
             coverage));
 
+        var precomputed = BuildCampaignMaterialDemand(request, recursive, materialSpecifications, out var handoffIssues);
+        var effectiveRequest = request with { PrecomputedCampaignMaterialDemand = precomputed };
+        var result = inner.Run(effectiveRequest);
+
         foreach (var requirement in recursive.Requirements)
             requirement.PlanVersionId = result.PlanVersionId;
 
-        var reconciliationIssues = ReconcileSteelFeedQuantities(request, result.CampaignPlan, recursive);
-        var materialPlan = MergeMaterialPlan(result, request, recursive, reconciliationIssues);
-        var materialErrors = materialPlan.Issues.Any(x => x.Severity == PlanningIssueSeverity.Error);
-
+        var materialPlan = MergeMaterialPlan(result, request, recursive, handoffIssues);
+        var allMaterialIssues = recursive.Issues
+            .Concat(handoffIssues)
+            .DistinctBy(x => (x.Code, x.Message, x.SourceId))
+            .ToArray();
         var schedule = result.Schedule with
         {
             Issues = result.Schedule.Issues
-                .Concat(recursive.Issues)
-                .Concat(reconciliationIssues)
+                .Concat(allMaterialIssues)
                 .DistinctBy(x => (x.Code, x.Message, x.SourceId))
                 .ToArray()
         };
@@ -56,7 +63,7 @@ public sealed class BomAwarePlanningEngine(
         {
             MaterialPlan = materialPlan,
             Schedule = schedule,
-            IsFeasible = result.IsFeasible && !materialErrors
+            IsFeasible = result.IsFeasible && !materialPlan.Issues.Any(x => x.Severity == PlanningIssueSeverity.Error)
         };
     }
 
@@ -64,15 +71,9 @@ public sealed class BomAwarePlanningEngine(
         IReadOnlyCollection<ProductionOrder> productionOrders,
         IReadOnlyCollection<MaterialSpecification> materialSpecifications)
     {
-        var specs = new Dictionary<string, MaterialSpecification>(StringComparer.OrdinalIgnoreCase);
-        foreach (var spec in materialSpecifications.Where(x => x.IsActive))
-        {
-            specs[spec.MaterialSpecificationCode] = spec;
-            if (!string.IsNullOrWhiteSpace(spec.SapMaterialCode)) specs[spec.SapMaterialCode] = spec;
-        }
-
+        var specs = BuildSpecificationLookup(materialSpecifications);
         return productionOrders
-            .Where(x => x.Status is ProductionOrderStatus.Planned or ProductionOrderStatus.Firmed or ProductionOrderStatus.Released)
+            .Where(x => x.Status is ProductionOrderStatus.Planned or ProductionOrderStatus.Firmed)
             .Where(x => x.RemainingQuantityMt > QuantityToleranceMt)
             .OrderBy(x => x.DemandSource == DemandSourceType.MakeToOrder ? 0 : 1)
             .ThenByDescending(x => x.Priority)
@@ -93,74 +94,121 @@ public sealed class BomAwarePlanningEngine(
                     po.Priority,
                     RouteCode: po.RouteCode,
                     GradeFamilyCode: po.GradeFamilyCode,
-                    ProductFamilyCode: po.ProductFamilyCode,
-                    QualificationCode: RequiresQualifiedSupply(po) ? $"PO-QUAL:{po.Id:N}" : null);
+                    ProductFamilyCode: po.ProductFamilyCode);
             })
             .ToArray();
     }
 
-    private static bool RequiresQualifiedSupply(ProductionOrder po)
-    {
-        var requirement = po.Requirement;
-        if (requirement is null) return false;
-        return requirement.SegregationPolicy != SegregationPolicy.None ||
-               !string.IsNullOrWhiteSpace(requirement.QualityClassCode) ||
-               requirement.RequireVd.HasValue || requirement.ForbidVd.HasValue ||
-               requirement.RequireReheating.HasValue || requirement.ForbidHotCharge.HasValue ||
-               requirement.RequireTmt.HasValue || requirement.RequiredResourceId.HasValue ||
-               !string.IsNullOrWhiteSpace(requirement.RequiredResourceGroupCode) ||
-               requirement.ChemistryOverrides.Count > 0 || requirement.ProcessOverrides.Count > 0;
-    }
-
-    private static IReadOnlyCollection<PlanningIssue> ReconcileSteelFeedQuantities(
+    private static IReadOnlyCollection<PrecomputedCampaignMaterialDemand> BuildCampaignMaterialDemand(
         PlanningRunRequest request,
-        CampaignPlanningResult campaignPlan,
-        RecursiveMaterialRequirementResult recursive)
+        RecursiveMaterialRequirementResult recursive,
+        IReadOnlyCollection<MaterialSpecification> materialSpecifications,
+        out IReadOnlyCollection<PlanningIssue> issues)
     {
-        var issues = new List<PlanningIssue>();
-        var specs = new Dictionary<string, MaterialSpecification>(StringComparer.OrdinalIgnoreCase);
-        foreach (var spec in request.MaterialSpecifications ?? Array.Empty<MaterialSpecification>())
-        {
-            specs[spec.MaterialSpecificationCode] = spec;
-            if (!string.IsNullOrWhiteSpace(spec.SapMaterialCode)) specs[spec.SapMaterialCode] = spec;
-        }
+        var result = new List<PrecomputedCampaignMaterialDemand>();
+        var handoffIssues = new List<PlanningIssue>();
+        var specs = BuildSpecificationLookup(materialSpecifications);
+        var coverageByRequirement = recursive.CoverageAllocations
+            .GroupBy(x => x.RequirementId)
+            .ToDictionary(x => x.Key, x => x.ToArray());
 
-        foreach (var po in request.ProductionOrders)
+        foreach (var po in request.ProductionOrders
+                     .Where(x => x.Status is ProductionOrderStatus.Planned or ProductionOrderStatus.Firmed)
+                     .Where(x => x.RemainingQuantityMt > QuantityToleranceMt))
         {
-            var feedNodes = recursive.Requirements
-                .Where(x => x.ProductionOrderId == po.Id && x.FlowType == BomFlowType.Input && x.ParentRequirementId.HasValue)
+            var candidates = recursive.Requirements
+                .Where(x => x.ProductionOrderId == po.Id && x.FlowType == BomFlowType.Input)
                 .Where(x => IsSteelFeed(x, po, specs))
                 .ToArray();
-            if (feedNodes.Length == 0) continue;
 
-            var minimumDepth = feedNodes.Min(Depth);
-            var selectedFeed = feedNodes.Where(x => Depth(x) == minimumDepth).ToArray();
-            var bomInternal = selectedFeed.Sum(x => x.InternalProductionQuantity);
-            var bomCovered = selectedFeed.Sum(x => IsMt(x.MaterialUom) ? x.CoveredQuantityMt : 0m);
-            campaignPlan.FreshSteelRequirementsMt.TryGetValue(po.Id, out var campaignFresh);
-
-            var campaignIntermediate = campaignPlan.InventoryAllocations
-                .Where(x => x.ProductionOrderId == po.Id &&
-                            x.Use is PlanningInventoryUse.IntermediateFeed or
-                                PlanningInventoryUse.ExternalIntermediateFeed or
-                                PlanningInventoryUse.CommittedInternalProductionFeed or
-                                PlanningInventoryUse.PlannedPurchaseFeed or
-                                PlanningInventoryUse.PlannedTransferFeed or
-                                PlanningInventoryUse.ManualPlannedFeed)
-                .Sum(x => x.QuantityMt);
-
-            if (Math.Abs(bomInternal - campaignFresh) > QuantityToleranceMt ||
-                Math.Abs(bomCovered - campaignIntermediate) > QuantityToleranceMt)
+            MaterialRequirement[] feed;
+            if (candidates.Length == 0)
             {
-                issues.Add(new PlanningIssue(
-                    PlanningIssueSeverity.Warning,
-                    "BOM_CAMPAIGN_STEEL_REQUIREMENT_MISMATCH",
-                    $"PO {po.ProductionOrderNumber}: recursive BOM steel-feed basis is internal={bomInternal:0.####} MT, covered={bomCovered:0.####} MT while current Campaign planning is fresh={campaignFresh:0.####} MT, covered={campaignIntermediate:0.####} MT. The BOM tree is persisted explicitly; #14/#33 integration must resolve this before Campaign material arithmetic can be retired.",
+                handoffIssues.Add(new PlanningIssue(
+                    PlanningIssueSeverity.Error,
+                    "BOM_STEEL_FEED_UNRESOLVED",
+                    $"PO {po.ProductionOrderNumber} has no recursively-derived billet/bloom/slab feed node matching caster section {po.CasterSectionCode}. The rolling requirement remains visible as uncovered material; Campaign must not invent steel supply.",
+                    po.Id));
+                result.Add(new PrecomputedCampaignMaterialDemand(
+                    po.Id,
+                    po.RemainingQuantityMt,
+                    po.RemainingQuantityMt,
+                    0m,
+                    0m,
+                    po.RemainingQuantityMt,
+                    Array.Empty<PlanningInventoryAllocation>()));
+                continue;
+            }
+
+            var minimumDepth = candidates.Min(Depth);
+            feed = candidates.Where(x => Depth(x) == minimumDepth).ToArray();
+            if (feed.Any(x => !IsMt(x.MaterialUom)))
+            {
+                handoffIssues.Add(new PlanningIssue(
+                    PlanningIssueSeverity.Error,
+                    "BOM_STEEL_FEED_UOM_INVALID",
+                    $"PO {po.ProductionOrderNumber} resolved a steel-feed node whose UOM is not MT; Campaign steel quantities cannot silently convert UOM.",
                     po.Id));
             }
+
+            var feedRequired = feed.Sum(x => x.GrossQuantity);
+            var covered = feed.Sum(x => x.CoveredQuantity);
+            var fresh = feed.Sum(x => x.InternalProductionQuantity);
+            var shortfall = feed.Sum(x => x.ShortfallQuantity);
+            var balance = covered + fresh + shortfall;
+            if (Math.Abs(feedRequired - balance) > QuantityToleranceMt)
+            {
+                handoffIssues.Add(new PlanningIssue(
+                    PlanningIssueSeverity.Error,
+                    "BOM_STEEL_FEED_BALANCE_INVALID",
+                    $"PO {po.ProductionOrderNumber} steel-feed tree does not conserve quantity: required={feedRequired:0.####}, covered={covered:0.####}, internal={fresh:0.####}, shortfall={shortfall:0.####} MT.",
+                    po.Id));
+            }
+
+            var feedIds = feed.Select(x => x.Id).ToHashSet();
+            var allocations = feed
+                .SelectMany(node => coverageByRequirement.GetValueOrDefault(node.Id) ?? Array.Empty<MaterialCoverageAllocation>())
+                .Where(x => x.Quantity > QuantityToleranceMt)
+                .Select(x => ToCampaignAllocation(po, x))
+                .ToArray();
+
+            result.Add(new PrecomputedCampaignMaterialDemand(
+                po.Id,
+                po.RemainingQuantityMt,
+                feedRequired,
+                covered,
+                fresh,
+                shortfall,
+                allocations,
+                feedIds.ToArray()));
         }
 
-        return issues;
+        issues = handoffIssues;
+        return result;
+    }
+
+    private static PlanningInventoryAllocation ToCampaignAllocation(
+        ProductionOrder po,
+        MaterialCoverageAllocation allocation)
+    {
+        var use = allocation.SourceType switch
+        {
+            MaterialCoverageSourceType.KnownIncoming => PlanningInventoryUse.ExternalIntermediateFeed,
+            MaterialCoverageSourceType.CommittedInternalProduction => PlanningInventoryUse.CommittedInternalProductionFeed,
+            MaterialCoverageSourceType.PlannedInternalProduction => PlanningInventoryUse.CommittedInternalProductionFeed,
+            _ => PlanningInventoryUse.IntermediateFeed
+        };
+        return new PlanningInventoryAllocation(
+            po.Id,
+            allocation.InventoryStage ?? InventoryStage.CastIntermediate,
+            allocation.MaterialCode,
+            allocation.GradeCode,
+            allocation.CrossSectionCode,
+            allocation.LocationCode,
+            allocation.Quantity,
+            use,
+            allocation.SourceReference,
+            allocation.AvailableFromUtc);
     }
 
     private static bool IsSteelFeed(
@@ -179,24 +227,38 @@ public sealed class BomAwarePlanningEngine(
                string.Equals(requirement.CrossSectionCode?.Trim(), po.CasterSectionCode.Trim(), StringComparison.OrdinalIgnoreCase);
     }
 
+    private static IReadOnlyDictionary<string, MaterialSpecification> BuildSpecificationLookup(
+        IReadOnlyCollection<MaterialSpecification> materialSpecifications)
+    {
+        var specs = new Dictionary<string, MaterialSpecification>(StringComparer.OrdinalIgnoreCase);
+        foreach (var spec in materialSpecifications.Where(x => x.IsActive))
+        {
+            specs[spec.MaterialSpecificationCode] = spec;
+            if (!string.IsNullOrWhiteSpace(spec.SapMaterialCode)) specs[spec.SapMaterialCode] = spec;
+        }
+        return specs;
+    }
+
     private static MaterialPlanningResult MergeMaterialPlan(
         PlanningRunResult result,
         PlanningRunRequest request,
         RecursiveMaterialRequirementResult recursive,
-        IReadOnlyCollection<PlanningIssue> reconciliationIssues)
+        IReadOnlyCollection<PlanningIssue> handoffIssues)
     {
         var existing = result.MaterialPlan ?? new MaterialPlanningResult(
             Array.Empty<MaterialSupplyReservation>(),
             Array.Empty<ScheduledMaterialEvent>(),
             Array.Empty<MaterialBalanceEvent>(),
             Array.Empty<PlanningIssue>());
+        var requirementById = recursive.Requirements.ToDictionary(x => x.Id);
 
         var recursiveRawReservations = recursive.CoverageAllocations
             .Where(x => IsMt(x.Uom) && x.InventoryStage == InventoryStage.RawMaterial && x.Quantity > QuantityToleranceMt)
+            .Where(x => requirementById.ContainsKey(x.RequirementId))
             .Select(x => new MaterialSupplyReservation
             {
                 PlanVersionId = result.PlanVersionId,
-                ProductionOrderId = recursive.Requirements.First(r => r.Id == x.RequirementId).ProductionOrderId ?? Guid.Empty,
+                ProductionOrderId = requirementById[x.RequirementId].ProductionOrderId ?? Guid.Empty,
                 MaterialSpecificationCode = x.MaterialSpecificationCode ?? x.MaterialCode,
                 GradeCode = x.GradeCode,
                 CrossSectionCode = x.CrossSectionCode,
@@ -210,25 +272,21 @@ public sealed class BomAwarePlanningEngine(
             .Where(x => x.ProductionOrderId != Guid.Empty)
             .ToArray();
 
-        var requirements = (existing.Requirements ?? Array.Empty<MaterialRequirement>())
-            .Concat(recursive.Requirements)
-            .DistinctBy(x => x.Id)
-            .ToArray();
-        var issues = existing.Issues
-            .Concat(recursive.Issues)
-            .Concat(reconciliationIssues)
-            .DistinctBy(x => (x.Code, x.Message, x.SourceId))
-            .ToArray();
-        var reservations = existing.Reservations
-            .Concat(recursiveRawReservations)
-            .DistinctBy(x => (x.ProductionOrderId, x.MaterialSpecificationCode, x.LocationCode, x.AvailableFromUtc, x.QuantityMt))
-            .ToArray();
-
         return existing with
         {
-            Requirements = requirements,
-            Reservations = reservations,
-            Issues = issues
+            Requirements = (existing.Requirements ?? Array.Empty<MaterialRequirement>())
+                .Concat(recursive.Requirements)
+                .DistinctBy(x => x.Id)
+                .ToArray(),
+            Reservations = existing.Reservations
+                .Concat(recursiveRawReservations)
+                .DistinctBy(x => (x.ProductionOrderId, x.MaterialSpecificationCode, x.LocationCode, x.AvailableFromUtc, x.QuantityMt))
+                .ToArray(),
+            Issues = existing.Issues
+                .Concat(recursive.Issues)
+                .Concat(handoffIssues)
+                .DistinctBy(x => (x.Code, x.Message, x.SourceId))
+                .ToArray()
         };
     }
 
@@ -239,136 +297,4 @@ public sealed class BomAwarePlanningEngine(
 
     private static bool IsMt(string? uom) =>
         string.Equals(uom?.Trim(), "MT", StringComparison.OrdinalIgnoreCase);
-
-    private sealed class CampaignAwareMaterialCoverageSession : IMaterialCoverageSession
-    {
-        private readonly List<CampaignPool> _campaignPools;
-        private readonly List<InventoryPool> _rawPools;
-
-        public CampaignAwareMaterialCoverageSession(
-            IReadOnlyCollection<PlanningInventoryAllocation> campaignAllocations,
-            IReadOnlyCollection<InventoryPosition> inventory)
-        {
-            _campaignPools = campaignAllocations
-                .Where(x => x.Use != PlanningInventoryUse.FinishedGoodsFulfilment && x.QuantityMt > QuantityToleranceMt)
-                .Select(x => new CampaignPool(x, x.QuantityMt))
-                .ToList();
-            _rawPools = inventory
-                .Where(x => x.Stage == InventoryStage.RawMaterial)
-                .Where(x => x.QualityStatus is MaterialQualityStatus.Available or MaterialQualityStatus.Released)
-                .Where(x => x.ProjectedAvailableQuantityMt > QuantityToleranceMt)
-                .Select(x => new InventoryPool(x, x.ProjectedAvailableQuantityMt))
-                .ToList();
-        }
-
-        public MaterialCoverageResult Cover(MaterialCoverageRequest request)
-        {
-            if (!IsMt(request.Uom) || request.RequiredQuantity <= QuantityToleranceMt)
-                return MaterialCoverageResult.None;
-
-            // Existing campaign allocations are PO-specific decisions and are replayed rather than re-netted.
-            // If the recursive node carries a qualification that campaign allocations cannot prove, do not assume
-            // the source material is qualified; expose the resulting mismatch explicitly instead.
-            var allocations = new List<MaterialCoverageAllocation>();
-            var remaining = request.RequiredQuantity;
-            if (string.IsNullOrWhiteSpace(request.QualificationCode))
-            {
-                foreach (var pool in _campaignPools
-                             .Where(x => x.RemainingQuantityMt > QuantityToleranceMt &&
-                                         x.Allocation.ProductionOrderId == request.ProductionOrderId &&
-                                         Same(x.Allocation.MaterialCode, request.MaterialCode) &&
-                                         OptionalSame(request.GradeCode, x.Allocation.GradeCode) &&
-                                         OptionalSame(request.CrossSectionCode, x.Allocation.CrossSectionCode) &&
-                                         (!x.Allocation.AvailableFromUtc.HasValue || x.Allocation.AvailableFromUtc.Value <= request.RequiredAtUtc))
-                             .OrderBy(x => x.Allocation.AvailableFromUtc ?? DateTime.MinValue)
-                             .ThenBy(x => x.Allocation.LocationCode, StringComparer.OrdinalIgnoreCase))
-                {
-                    if (remaining <= QuantityToleranceMt) break;
-                    var quantity = Math.Min(remaining, pool.RemainingQuantityMt);
-                    pool.RemainingQuantityMt -= quantity;
-                    remaining -= quantity;
-                    allocations.Add(new MaterialCoverageAllocation(
-                        request.RequirementId,
-                        SourceType(pool.Allocation.Use),
-                        pool.Allocation.SourceReference,
-                        pool.Allocation.MaterialCode,
-                        null,
-                        pool.Allocation.GradeCode,
-                        pool.Allocation.CrossSectionCode,
-                        "MT",
-                        pool.Allocation.LocationCode,
-                        quantity,
-                        pool.Allocation.AvailableFromUtc,
-                        MaterialQualityStatus.Available,
-                        pool.Allocation.Stage));
-                }
-            }
-
-            // Campaign planning does not consume raw-material pools. Raw inventory is therefore safe to net here.
-            if (string.IsNullOrWhiteSpace(request.QualificationCode))
-            {
-                foreach (var pool in _rawPools
-                             .Where(x => x.RemainingQuantityMt > QuantityToleranceMt && MatchesRaw(x.Position, request))
-                             .OrderBy(x => x.Position.AvailableFromUtc ?? DateTime.MinValue)
-                             .ThenBy(x => x.Position.LocationCode, StringComparer.OrdinalIgnoreCase))
-                {
-                    if (remaining <= QuantityToleranceMt) break;
-                    var quantity = Math.Min(remaining, pool.RemainingQuantityMt);
-                    pool.RemainingQuantityMt -= quantity;
-                    remaining -= quantity;
-                    allocations.Add(new MaterialCoverageAllocation(
-                        request.RequirementId,
-                        MaterialCoverageSourceType.OpeningInventory,
-                        null,
-                        pool.Position.MaterialCode,
-                        null,
-                        pool.Position.GradeCode,
-                        pool.Position.CrossSectionCode,
-                        "MT",
-                        pool.Position.LocationCode,
-                        quantity,
-                        pool.Position.AvailableFromUtc,
-                        pool.Position.QualityStatus,
-                        pool.Position.Stage));
-                }
-            }
-
-            return new MaterialCoverageResult(allocations.Sum(x => x.Quantity), allocations);
-        }
-
-        private static MaterialCoverageSourceType SourceType(PlanningInventoryUse use) => use switch
-        {
-            PlanningInventoryUse.ExternalIntermediateFeed => MaterialCoverageSourceType.KnownIncoming,
-            PlanningInventoryUse.PlannedPurchaseFeed => MaterialCoverageSourceType.KnownIncoming,
-            PlanningInventoryUse.PlannedTransferFeed => MaterialCoverageSourceType.KnownIncoming,
-            PlanningInventoryUse.ManualPlannedFeed => MaterialCoverageSourceType.KnownIncoming,
-            PlanningInventoryUse.CommittedInternalProductionFeed => MaterialCoverageSourceType.CommittedInternalProduction,
-            _ => MaterialCoverageSourceType.OpeningInventory
-        };
-
-        private static bool MatchesRaw(InventoryPosition position, MaterialCoverageRequest request) =>
-            Same(position.MaterialCode, request.MaterialCode) &&
-            OptionalSame(request.GradeCode, position.GradeCode) &&
-            OptionalSame(request.CrossSectionCode, position.CrossSectionCode) &&
-            (string.IsNullOrWhiteSpace(request.LocationCode) || Same(position.LocationCode, request.LocationCode)) &&
-            (!position.AvailableFromUtc.HasValue || position.AvailableFromUtc.Value <= request.RequiredAtUtc);
-
-        private static bool OptionalSame(string? expected, string? actual) =>
-            string.IsNullOrWhiteSpace(expected) || Same(expected, actual);
-
-        private static bool Same(string? left, string? right) =>
-            string.Equals(left?.Trim(), right?.Trim(), StringComparison.OrdinalIgnoreCase);
-
-        private sealed class CampaignPool(PlanningInventoryAllocation allocation, decimal remainingQuantityMt)
-        {
-            public PlanningInventoryAllocation Allocation { get; } = allocation;
-            public decimal RemainingQuantityMt { get; set; } = remainingQuantityMt;
-        }
-
-        private sealed class InventoryPool(InventoryPosition position, decimal remainingQuantityMt)
-        {
-            public InventoryPosition Position { get; } = position;
-            public decimal RemainingQuantityMt { get; set; } = remainingQuantityMt;
-        }
-    }
 }
