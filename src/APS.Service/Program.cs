@@ -30,7 +30,9 @@ builder.Services.AddScoped<IMtsProductionOrderService, MtsProductionOrderService
 builder.Services.AddScoped<ICampaignPlanningService, CampaignPlanningService>();
 builder.Services.AddScoped<IProductionStructurePlanningService, ProductionStructurePlanningService>();
 builder.Services.AddScoped<IFiniteScheduleOptimizer, FiniteScheduleOptimizer>();
-builder.Services.AddScoped<IPlanningEngine, PlanningEngine>();
+builder.Services.AddScoped<IRecursiveMaterialRequirementEngine, RecursiveMaterialRequirementEngine>();
+builder.Services.AddScoped<PlanningEngine>();
+builder.Services.AddScoped<IPlanningEngine, BomAwarePlanningEngine>();
 builder.Services.AddScoped<IPlanReleaseBuilder, PlanReleaseBuilder>();
 
 var apsConnection = builder.Configuration.GetConnectionString("APS");
