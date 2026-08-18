@@ -113,12 +113,47 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
             return new FiniteScheduleResult("InvalidInput", false, 0, Array.Empty<FiniteScheduleAssignment>(), issues);
         }
 
+        var obligationsByTask = (request.ServiceObligations ?? Array.Empty<FiniteScheduleServiceObligation>())
+            .Where(x => x.QuantityMt > 0m)
+            .GroupBy(x => x.TaskId)
+            .ToDictionary(x => x.Key, x => x.ToArray());
+
+        foreach (var obligation in request.ServiceObligations ?? Array.Empty<FiniteScheduleServiceObligation>())
+        {
+            if (taskVars.ContainsKey(obligation.TaskId)) continue;
+            issues.Add(new PlanningIssue(
+                PlanningIssueSeverity.Error,
+                "SERVICE_OBLIGATION_TASK_NOT_FOUND",
+                $"Service obligation for Production Order {obligation.ProductionOrderId} references missing task {obligation.TaskId}.",
+                obligation.TaskId));
+        }
+        if (issues.Any(i => i.Severity == PlanningIssueSeverity.Error))
+        {
+            return new FiniteScheduleResult("InvalidInput", false, 0, Array.Empty<FiniteScheduleAssignment>(), issues);
+        }
+
         foreach (var task in request.Tasks)
         {
             if (!taskVars.TryGetValue(task.TaskId, out var variables)) continue;
 
-            if (task.DueUtc.HasValue)
+            if (obligationsByTask.TryGetValue(task.TaskId, out var obligations) && obligations.Length > 0)
             {
+                for (var i = 0; i < obligations.Length; i++)
+                {
+                    var obligation = obligations[i];
+                    var dueMinute = ToMinute(obligation.DueUtc, request.HorizonStartUtc, horizonMinutes);
+                    var tardiness = model.NewIntVar(0, horizonMinutes, $"late_{task.TaskId:N}_{i:000}");
+                    model.Add(tardiness >= variables.End - dueMinute);
+
+                    // 0.1 MT service units keep the objective quantity-sensitive without excessive coefficients.
+                    var quantityUnits = Math.Max(1L, (long)Math.Ceiling((double)(obligation.QuantityMt * 10m)));
+                    var priorityWeight = Math.Max(1L, obligation.Priority + 1L);
+                    objectiveTerms.Add(tardiness * (quantityUnits * priorityWeight * 100L));
+                }
+            }
+            else if (task.DueUtc.HasValue)
+            {
+                // Compatibility fallback for tasks with no explicit PO allocation obligation.
                 var dueMinute = ToMinute(task.DueUtc.Value, request.HorizonStartUtc, horizonMinutes);
                 var tardiness = model.NewIntVar(0, horizonMinutes, $"late_{task.TaskId:N}");
                 model.Add(tardiness >= variables.End - dueMinute);
