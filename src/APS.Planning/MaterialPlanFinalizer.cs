@@ -48,7 +48,32 @@ internal static class MaterialPlanFinalizer
             }
         }
 
-        return materialPlan with { SupplyRequirements = actions };
+        // The finite solver intentionally receives only the quantity reserved to the originating demand,
+        // so MOQ excess cannot be consumed opportunistically by another order during the same solve.
+        // Once the commercial source action is finalized, however, the Plan Version ledger must show the
+        // full receipt. The difference remains positive unreserved projected inventory.
+        var ledger = (materialPlan.LedgerEvents ?? Array.Empty<MaterialBalanceEvent>()).ToList();
+        foreach (var action in actions.Where(x =>
+                     x.ActionType is MaterialSupplyActionType.Buy or MaterialSupplyActionType.Transfer &&
+                     x.PlannedOrderQuantityMt > x.QuantityMt &&
+                     !string.IsNullOrWhiteSpace(x.SupplyReference)))
+        {
+            var expectedType = action.ActionType == MaterialSupplyActionType.Buy
+                ? MaterialBalanceEventType.PlannedPurchaseReceipt
+                : MaterialBalanceEventType.PlannedTransferReceipt;
+            var receipt = ledger.FirstOrDefault(x =>
+                x.EventType == expectedType &&
+                x.ProductionOrderId == action.ProductionOrderId &&
+                string.Equals(x.SupplyReference, action.SupplyReference, StringComparison.OrdinalIgnoreCase));
+            if (receipt is null) continue;
+
+            receipt.QuantityDeltaMt = action.PlannedOrderQuantityMt;
+            receipt.Explanation = string.Concat(
+                receipt.Explanation,
+                $" Commercial receipt quantity is {action.PlannedOrderQuantityMt:0.####} MT; {action.ExcessQuantityMt:0.####} MT remains projected unreserved inventory.");
+        }
+
+        return materialPlan with { SupplyRequirements = actions, LedgerEvents = ledger };
     }
 
     private static IEnumerable<MaterialSupplyRequirement> DeduplicateMakeActions(
