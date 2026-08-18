@@ -116,8 +116,15 @@ public sealed class MaterialRequirement : Entity
     /// </summary>
     public string MaterialUom { get; set; } = "MT";
     public decimal GrossQuantity { get; set; }
+    public decimal CoveredQuantity { get; set; }
+    public decimal OpeningInventoryCoveredQuantity { get; set; }
+    public decimal KnownIncomingCoveredQuantity { get; set; }
+    public decimal CommittedProductionCoveredQuantity { get; set; }
+    public decimal PlannedProductionCoveredQuantity { get; set; }
+    public decimal ActualProductionCoveredQuantity { get; set; }
     public decimal NetRequirementQuantity { get; set; }
     public decimal InternalProductionQuantity { get; set; }
+    public decimal ShortfallQuantity { get; set; }
     public decimal ProducedQuantity { get; set; }
     public BomFlowType FlowType { get; set; } = BomFlowType.Input;
 
