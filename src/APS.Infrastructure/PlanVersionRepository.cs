@@ -58,10 +58,7 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             foreach (var active in activeStates)
             {
                 active.IsActive = false;
-                if (active.Status == PlanVersionStatus.Feasible)
-                {
-                    active.Status = PlanVersionStatus.Superseded;
-                }
+                if (active.Status == PlanVersionStatus.Feasible) active.Status = PlanVersionStatus.Superseded;
             }
         }
 
@@ -69,8 +66,7 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
         db.PlanVersionStates.Add(state);
 
         var tasksById = result.ProductionStructure.SchedulingTasks.ToDictionary(x => x.TaskId);
-        var identitiesById = (result.TaskIdentities ?? Array.Empty<PlanningTaskIdentity>())
-            .ToDictionary(x => x.TaskId);
+        var identitiesById = (result.TaskIdentities ?? Array.Empty<PlanningTaskIdentity>()).ToDictionary(x => x.TaskId);
         var alternativesByKey = (result.ResourceAlternatives ?? Array.Empty<PlanningOperationResourceAlternative>())
             .GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.OrderBy(y => y.AssignmentPenalty).ThenBy(y => y.ResourceId).ToArray(), StringComparer.OrdinalIgnoreCase);
@@ -89,7 +85,12 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             overridesByKey.TryGetValue(identity.PlanningKey, out var resourceOverride);
             baselineByKey.TryGetValue(identity.PlanningKey, out var baseline);
             alternativesByKey.TryGetValue(identity.PlanningKey, out var alternatives);
-            var commitment = resourceOverride?.CommitmentState ?? OperationAssignmentCommitmentState.Flexible;
+            var processType = ResolveProcessOperationType(task);
+            var commitment = resourceOverride?.CommitmentState ?? ResolveCommitmentState(
+                processType,
+                assignment.StartUtc,
+                request.ReferenceTimeUtc,
+                request.PlanningRequest.AssignmentPolicies);
 
             db.PlanOperationSnapshots.Add(new PlanOperationSnapshot
             {
@@ -97,9 +98,9 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
                 PlanningKey = identity.PlanningKey,
                 SourceEntityId = assignment.SourceEntityId,
                 OperationType = MapOperationType(task.TaskType),
-                ProcessOperationType = ResolveProcessOperationType(task),
+                ProcessOperationType = processType,
                 ResourceId = assignment.ResourceId,
-                CommittedResourceId = commitment is OperationAssignmentCommitmentState.Firm or OperationAssignmentCommitmentState.Committed
+                CommittedResourceId = commitment is OperationAssignmentCommitmentState.Committed or OperationAssignmentCommitmentState.Running or OperationAssignmentCommitmentState.Completed
                     ? assignment.ResourceId
                     : null,
                 ActualResourceId = null,
@@ -163,18 +164,11 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
                ?? throw new InvalidOperationException("Saved plan version could not be reloaded.");
     }
 
-    public async Task<PlanVersionSnapshot?> GetAsync(
-        Guid planVersionId,
-        CancellationToken cancellationToken = default)
+    public async Task<PlanVersionSnapshot?> GetAsync(Guid planVersionId, CancellationToken cancellationToken = default)
     {
-        var version = await db.PlanVersions
-            .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == planVersionId, cancellationToken);
+        var version = await db.PlanVersions.AsNoTracking().SingleOrDefaultAsync(x => x.Id == planVersionId, cancellationToken);
         if (version is null) return null;
-
-        var state = await db.PlanVersionStates
-            .AsNoTracking()
-            .SingleAsync(x => x.PlanVersionId == planVersionId, cancellationToken);
+        var state = await db.PlanVersionStates.AsNoTracking().SingleAsync(x => x.PlanVersionId == planVersionId, cancellationToken);
         var operations = await GetBaselineOperationsAsync(planVersionId, cancellationToken);
 
         return new PlanVersionSnapshot(
@@ -197,8 +191,7 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
         Guid planVersionId,
         CancellationToken cancellationToken = default)
     {
-        var rows = await db.PlanOperationSnapshots
-            .AsNoTracking()
+        var rows = await db.PlanOperationSnapshots.AsNoTracking()
             .Where(x => x.PlanVersionId == planVersionId)
             .OrderBy(x => x.StartUtc)
             .ToListAsync(cancellationToken);
@@ -210,6 +203,20 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
                 x.EndUtc,
                 MapTaskType(x.OperationType)))
             .ToArray();
+    }
+
+    private static OperationAssignmentCommitmentState ResolveCommitmentState(
+        ProcessOperationType processType,
+        DateTime plannedStartUtc,
+        DateTime referenceTimeUtc,
+        IReadOnlyCollection<OperationAssignmentPolicy>? policies)
+    {
+        var policy = policies?.FirstOrDefault(x => x.ProcessOperationType == processType);
+        if (policy is null) return OperationAssignmentCommitmentState.Flexible;
+        var minutes = (plannedStartUtc - referenceTimeUtc).TotalMinutes;
+        if (minutes <= policy.CommitMinutesBeforeStart) return OperationAssignmentCommitmentState.Committed;
+        if (minutes <= policy.FirmMinutesBeforeStart) return OperationAssignmentCommitmentState.Firm;
+        return OperationAssignmentCommitmentState.Flexible;
     }
 
     private static string? Serialize<T>(IReadOnlyCollection<T>? values) =>
