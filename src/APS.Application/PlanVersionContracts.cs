@@ -22,7 +22,14 @@ public sealed record PlanVersionSnapshot(
     string? SolverStatus,
     long? ObjectiveValue,
     bool IsActive,
-    IReadOnlyCollection<BaselinePlanOperation> Operations);
+    IReadOnlyCollection<BaselinePlanOperation> Operations,
+    IReadOnlyCollection<PlanOperationResourceOptionSnapshot>? ResourceAlternatives = null,
+    IReadOnlyCollection<OperationDispatchRevision>? DispatchRevisions = null,
+    IReadOnlyCollection<MaterialRequirement>? MaterialRequirements = null,
+    IReadOnlyCollection<MaterialSupplyRequirement>? MaterialSupplyRequirements = null,
+    IReadOnlyCollection<MaterialSupplyReservation>? MaterialReservations = null,
+    IReadOnlyCollection<MaterialBalanceEvent>? MaterialLedger = null,
+    IReadOnlyCollection<PlanningSupplyAlternative>? SourcingAlternatives = null);
 
 public interface IPlanVersionRepository
 {
