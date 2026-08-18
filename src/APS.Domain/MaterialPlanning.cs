@@ -35,7 +35,12 @@ public enum MaterialRequirementStatus
     SupplyActionRequired = 3,
     Shortfall = 4,
     LateSupply = 5,
-    Unsourced = 6
+    Unsourced = 6,
+    Covered = 7,
+    InternalProductionRequired = 8,
+    NotManufacturableHere = 9,
+    ProjectedOutput = 10,
+    CycleBlocked = 11
 }
 
 public enum MaterialSupplyActionType
@@ -53,7 +58,8 @@ public enum MaterialRequirementSourceType
     Campaign = 2,
     RollingPlan = 3,
     ProcessOperation = 4,
-    StockPolicy = 5
+    StockPolicy = 5,
+    BomComponent = 6
 }
 
 public sealed class MaterialSourcingRule : Entity
@@ -90,6 +96,8 @@ public sealed class MaterialRequirement : Entity
 {
     public Guid? PlanVersionId { get; set; }
     public required string RequirementKey { get; set; }
+    public Guid? ParentRequirementId { get; set; }
+    public string? RequirementPath { get; set; }
     public MaterialRequirementSourceType SourceType { get; set; }
     public Guid SourceEntityId { get; set; }
     public Guid? ProductionOrderId { get; set; }
@@ -101,6 +109,27 @@ public sealed class MaterialRequirement : Entity
     public required string CrossSectionCode { get; set; }
     public SteelProductForm ProductForm { get; set; } = SteelProductForm.Other;
     public string? LocationCode { get; set; }
+
+    /// <summary>
+    /// Generic quantity/UOM facts used by recursive BOM planning. These fields are authoritative for non-MT flows.
+    /// Legacy *Mt properties remain populated when MaterialUom is MT so existing steel-route consumers stay compatible.
+    /// </summary>
+    public string MaterialUom { get; set; } = "MT";
+    public decimal GrossQuantity { get; set; }
+    public decimal NetRequirementQuantity { get; set; }
+    public decimal InternalProductionQuantity { get; set; }
+    public decimal ProducedQuantity { get; set; }
+    public BomFlowType FlowType { get; set; } = BomFlowType.Input;
+
+    public Guid? SelectedBomId { get; set; }
+    public string? SelectedBomCode { get; set; }
+    public int? SelectedBomVersion { get; set; }
+    public decimal? EffectiveYieldPct { get; set; }
+    public decimal? EffectiveScrapPct { get; set; }
+    public bool IsInternallyManufacturable { get; set; }
+    public string? TimingBasisCode { get; set; }
+    public string? QualificationCode { get; set; }
+
     public decimal RequiredQuantityMt { get; set; }
 
     /// <summary>Actual planned material-consumption time after finite scheduling.</summary>
