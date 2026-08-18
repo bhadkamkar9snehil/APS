@@ -37,6 +37,19 @@ public sealed class OperationExecutionService(ApsDbContext db) : IOperationExecu
         }
 
         var resource = update.ActualResourceId ?? operation.ActualResourceId ?? operation.CommittedResourceId ?? operation.ResourceId;
+        var resourceWasEligible = IsEligibleResource(operation, resource);
+
+        // READY is a dispatch/commitment decision, not yet immutable execution truth. Reject an invalid
+        // resource and require the operator/planner to create a real redispatch/replan instead of bypassing APS.
+        if (update.Status == OperationExecutionStatus.Ready &&
+            update.ActualResourceId.HasValue &&
+            !resourceWasEligible &&
+            !update.IsCorrection)
+        {
+            throw new InvalidOperationException(
+                $"Resource {resource} was not an eligible alternative for {operation.PlanningKey}. Create an operational redispatch/replan rather than committing an infeasible assignment.");
+        }
+
         operation.ExecutionStatus = update.Status;
         operation.LastExecutionChangedOnUtc = update.ChangedOnUtc;
         operation.ActualStartUtc = update.ActualStartUtc ?? operation.ActualStartUtc ??
@@ -75,6 +88,21 @@ public sealed class OperationExecutionService(ApsDbContext db) : IOperationExecu
                 break;
         }
 
+        // Running/completed actuals are facts, even when the plant executed outside the APS-approved
+        // option set. Record the fact, flag the deviation, and let replanning/diagnostics repair the future.
+        if (update.Status is OperationExecutionStatus.Running or OperationExecutionStatus.Completed &&
+            update.ActualResourceId.HasValue &&
+            !resourceWasEligible)
+        {
+            operation.IsOffPlanActualResource = true;
+            operation.OffPlanActualReasonCode = "ACTUAL_RESOURCE_NOT_IN_PLANNED_ELIGIBLE_SET";
+        }
+        else if (update.IsCorrection && resourceWasEligible)
+        {
+            operation.IsOffPlanActualResource = false;
+            operation.OffPlanActualReasonCode = null;
+        }
+
         history.Add(new OperationExecutionEventSnapshot(
             previous,
             update.Status,
@@ -87,6 +115,23 @@ public sealed class OperationExecutionService(ApsDbContext db) : IOperationExecu
 
         await db.SaveChangesAsync(cancellationToken);
         return Snapshot(operation);
+    }
+
+    private static bool IsEligibleResource(PlanOperationSnapshot operation, Guid resourceId)
+    {
+        if (resourceId == operation.ResourceId || resourceId == operation.CommittedResourceId) return true;
+        if (string.IsNullOrWhiteSpace(operation.EligibleResourceOptionsJson)) return false;
+        try
+        {
+            var alternatives = JsonSerializer.Deserialize<List<PlanningOperationResourceAlternative>>(
+                operation.EligibleResourceOptionsJson,
+                JsonOptions) ?? new List<PlanningOperationResourceAlternative>();
+            return alternatives.Any(x => x.ResourceId == resourceId);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static List<OperationExecutionEventSnapshot> DeserializeHistory(string? json)
@@ -111,7 +156,9 @@ public sealed class OperationExecutionService(ApsDbContext db) : IOperationExecu
         operation.ActualEndUtc,
         operation.QuantityMt,
         operation.ActualQuantityMt,
-        operation.LastExecutionChangedOnUtc);
+        operation.LastExecutionChangedOnUtc,
+        operation.IsOffPlanActualResource,
+        operation.OffPlanActualReasonCode);
 
     private static void Validate(OperationExecutionUpdate update)
     {
