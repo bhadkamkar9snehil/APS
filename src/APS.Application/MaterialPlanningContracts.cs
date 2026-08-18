@@ -11,7 +11,7 @@ public enum ScheduledMaterialEventTiming
 
 /// <summary>
 /// Solver-level material event. QuantityDeltaKg is positive for receipts and negative for consumption.
-/// Using kilograms keeps CP-SAT reservoir arithmetic integral while retaining tonne-level domain values elsewhere.
+/// Qualification metadata is retained so the same event stream can become the auditable Plan Version ledger.
 /// </summary>
 public sealed record ScheduledMaterialEvent(
     string MaterialPoolKey,
@@ -19,7 +19,16 @@ public sealed record ScheduledMaterialEvent(
     ScheduledMaterialEventTiming Timing,
     Guid? TaskId = null,
     DateTime? FixedTimeUtc = null,
-    string? Explanation = null);
+    string? Explanation = null,
+    Guid? ProductionOrderId = null,
+    string? MaterialCode = null,
+    string? MaterialSpecificationCode = null,
+    string? GradeCode = null,
+    string? CrossSectionCode = null,
+    string? LocationCode = null,
+    string? SupplyReference = null,
+    Guid? CampaignHeatId = null,
+    MaterialBalanceEventType? LedgerEventType = null);
 
 public sealed record MaterialPlanningResult(
     IReadOnlyCollection<MaterialSupplyReservation> Reservations,
