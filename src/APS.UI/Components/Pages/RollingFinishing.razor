@@ -1,0 +1,254 @@
+@page "/plan/rolling"
+@implements IDisposable
+@inject IPlannerWorkspaceQueryService PlannerQuery
+@inject PlannerWorkspaceState WorkspaceState
+
+<PageTitle>Rolling & Finishing - APS</PageTitle>
+
+<div class="planner-page rolling-workspace">
+    <header class="workspace-titlebar">
+        <div>
+            <span class="workspace-eyebrow">PLAN / ROLLING</span>
+            <h1>Rolling & Finishing</h1>
+            <p>Billet feed, RHF/RM assignment, downstream transformation chain and planned finished-unit output.</p>
+        </div>
+        @if (view is not null)
+        {
+            <div class="workspace-basis"><span>Basis</span><strong>@view.Plan.VersionNumber snapshot</strong></div>
+        }
+    </header>
+
+    @if (loading)
+    {
+        <div class="planner-empty-state"><strong>Loading rolling route…</strong></div>
+    }
+    else if (view is null)
+    {
+        <div class="planner-empty-state planner-empty-state-major"><strong>No persisted rolling-plan snapshot</strong></div>
+    }
+    else
+    {
+        <section class="campaign-summary-strip rolling-summary-strip">
+            <div><span>Rolling plans</span><strong>@view.RollingPlanCount</strong></div>
+            <div><span>Rolling quantity</span><strong>@view.PlannedRollingQuantityMt.ToString("0.##") MT</strong></div>
+            <div><span>Existing billet</span><strong>@view.ExistingIntermediateQuantityMt.ToString("0.##") MT</strong></div>
+            <div><span>Fresh steel</span><strong>@view.FreshSteelQuantityMt.ToString("0.##") MT</strong></div>
+            <div><span>Planned units</span><strong>@view.PlannedBundleCount bundles · @view.PlannedCoilCount coils</strong></div>
+        </section>
+
+        <div class="rolling-layout">
+            <aside class="rolling-register">
+                <div class="campaign-register-head">
+                    <span class="planner-section-label">ROLLING REGISTER</span>
+                    <strong>@view.RollingPlanCount production flows</strong>
+                </div>
+                <div class="rolling-register-list">
+                    @foreach (var plan in view.RollingPlans)
+                    {
+                        <button type="button" class="rolling-register-row @(selectedPlan?.RollingPlanId == plan.RollingPlanId ? "is-selected" : null)" @onclick="() => SelectPlan(plan)">
+                            <div>
+                                <strong>RP-@plan.SequenceNumber.ToString("00") · @plan.GradeCode</strong>
+                                <span>@plan.InputCrossSectionCode → @plan.OutputCrossSectionCode</span>
+                            </div>
+                            <div class="rolling-register-qty"><strong>@plan.PlannedQuantityMt.ToString("0.#")</strong><span>MT</span></div>
+                            <small>@(plan.RollingMillResourceCode ?? "mill selected in schedule") · @plan.Allocations.Count PO allocations</small>
+                        </button>
+                    }
+                </div>
+            </aside>
+
+            <section class="rolling-canvas">
+                @if (selectedPlan is null)
+                {
+                    <div class="planner-empty-state"><strong>Select a rolling plan</strong></div>
+                }
+                else
+                {
+                    <div class="rolling-hero">
+                        <div>
+                            <span class="planner-section-label">SELECTED FLOW</span>
+                            <h2>RP-@selectedPlan.SequenceNumber.ToString("00") · @selectedPlan.GradeCode</h2>
+                            <p>@selectedPlan.RouteCode · @selectedPlan.InputCrossSectionCode → @selectedPlan.OutputCrossSectionCode</p>
+                        </div>
+                        <div class="rolling-feed-gauge">
+                            <div><span>Existing billet</span><strong>@selectedPlan.ExistingIntermediateInventoryMt.ToString("0.##")</strong></div>
+                            <div><span>Fresh steel</span><strong>@selectedPlan.FreshSteelQuantityMt.ToString("0.##")</strong></div>
+                            <div><span>Total</span><strong>@selectedPlan.PlannedQuantityMt.ToString("0.##") MT</strong></div>
+                        </div>
+                    </div>
+
+                    <section class="campaign-section">
+                        <div class="campaign-section-head">
+                            <div><span class="planner-section-label">FEED & ROLL</span><h3>Selected RHF / rolling operations</h3></div>
+                        </div>
+                        @if (selectedPlan.FeedAndRollingOperations.Count == 0)
+                        {
+                            <p class="aps-empty">No persisted feed/rolling operations for this plan.</p>
+                        }
+                        else
+                        {
+                            <div class="rolling-primary-train">
+                                @foreach (var op in selectedPlan.FeedAndRollingOperations.OrderBy(x => x.StartUtc))
+                                {
+                                    <button type="button" class="process-train-node process-@ProcessClass(op.ProcessOperationType)" @onclick="() => SelectOperation(op)">
+                                        <span>@op.ProcessOperationType</span>
+                                        <strong>@op.ResourceCode</strong>
+                                        <small>@op.StartUtc.ToString("dd MMM HH:mm") → @op.EndUtc.ToString("HH:mm")</small>
+                                        <em>@op.QuantityMt.ToString("0.##") MT</em>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </section>
+
+                    <section class="campaign-section">
+                        <div class="campaign-section-head">
+                            <div><span class="planner-section-label">DOWNSTREAM ROUTE</span><h3>TMT, cooling, cutting and finished-unit formation</h3></div>
+                            <span class="planner-basis-badge">@selectedPlan.DownstreamOperations.Count STEPS</span>
+                        </div>
+                        @if (selectedPlan.DownstreamOperations.Count == 0)
+                        {
+                            <p class="aps-empty">No downstream route-operation snapshot for this rolling plan.</p>
+                        }
+                        else
+                        {
+                            <div class="downstream-route-grid">
+                                @foreach (var route in selectedPlan.DownstreamOperations.OrderBy(x => x.SequenceNumber))
+                                {
+                                    <button type="button" class="downstream-route-node @(route.IsInventoryDecouplingPoint ? "is-buffer" : null)" @onclick="() => SelectRouteOperation(route)">
+                                        <div class="downstream-route-number">@route.SequenceNumber.ToString("00")</div>
+                                        <div class="downstream-route-main">
+                                            <span>@route.ProcessOperationType</span>
+                                            <strong>@(route.ScheduledOperation?.ResourceCode ?? "Resource unresolved")</strong>
+                                            <small>@route.InputCrossSectionCode → @route.OutputCrossSectionCode · @route.PlannedQuantityMt.ToString("0.##") MT</small>
+                                        </div>
+                                        <div class="downstream-route-time">
+                                            @if (route.ScheduledOperation is not null)
+                                            {
+                                                <strong>@route.ScheduledOperation.StartUtc.ToString("dd MMM HH:mm")</strong>
+                                                <span>@Math.Max(0, (route.ScheduledOperation.EndUtc - route.ScheduledOperation.StartUtc).TotalMinutes).ToString("0") min</span>
+                                            }
+                                            else
+                                            {
+                                                <strong>—</strong><span>not scheduled</span>
+                                            }
+                                        </div>
+                                        <div class="downstream-route-rules">
+                                            <span>queue ≥ @route.MinimumQueueTime.TotalMinutes.ToString("0")m</span>
+                                            <span>max @(route.MaximumQueueTime.HasValue ? $"{route.MaximumQueueTime.Value.TotalMinutes:0}m" : "—")</span>
+                                            @if (route.IsInventoryDecouplingPoint)
+                                            {
+                                                <em>BUFFER</em>
+                                            }
+                                        </div>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </section>
+
+                    <section class="campaign-section rolling-allocation-section">
+                        <div class="campaign-section-head">
+                            <div><span class="planner-section-label">DEMAND PEGGING</span><h3>PO quantities carried by this rolling plan</h3></div>
+                        </div>
+                        <div class="campaign-allocation-table">
+                            <div class="rolling-allocation-head"><span>PO</span><span>Demand</span><span>Qty</span><span>Existing</span><span>Fresh</span></div>
+                            @foreach (var allocation in selectedPlan.Allocations)
+                            {
+                                <button type="button" class="rolling-allocation-row" @onclick="() => SelectProductionOrder(allocation)">
+                                    <span><strong>@allocation.ProductionOrderNumber</strong><small>@(allocation.SalesOrderNumber is null ? "Stock replenishment" : $"SO {allocation.SalesOrderNumber}")</small></span>
+                                    <span><em class="source-badge @(allocation.DemandSource == DemandSourceType.MakeToOrder ? "mto" : "mts")">@(allocation.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</em></span>
+                                    <strong>@allocation.PlannedQuantityMt.ToString("0.##")</strong>
+                                    <strong>@allocation.ExistingIntermediateInventoryMt.ToString("0.##")</strong>
+                                    <strong>@allocation.FreshSteelQuantityMt.ToString("0.##")</strong>
+                                </button>
+                            }
+                        </div>
+                    </section>
+
+                    <section class="campaign-section packaging-section">
+                        <div class="campaign-section-head">
+                            <div><span class="planner-section-label">PLANNED UNITIZATION</span><h3>Bundle / coil output expected from this route</h3></div>
+                            <span class="planner-basis-badge">@selectedPlan.PackagingUnits.Count UNITS</span>
+                        </div>
+                        @if (selectedPlan.PackagingUnits.Count == 0)
+                        {
+                            <p class="aps-empty">No planned packaging units for this rolling plan.</p>
+                        }
+                        else
+                        {
+                            <div class="packaging-unit-grid">
+                                @foreach (var unit in selectedPlan.PackagingUnits.Take(80))
+                                {
+                                    <button type="button" class="packaging-unit" @onclick="() => SelectPackaging(unit)">
+                                        <span>@unit.PackagingUnitType</span>
+                                        <strong>@(unit.PlannedIdentifier ?? $"#{unit.SequenceNumber:000}")</strong>
+                                        <small>@unit.PlannedWeightMt.ToString("0.###") MT</small>
+                                        @if (unit.PlannedPieceCount.HasValue)
+                                        {
+                                            <small>@unit.PlannedPieceCount pieces · @FormatLength(unit.CutLengthM)</small>
+                                        }
+                                    </button>
+                                }
+                            </div>
+                            @if (selectedPlan.PackagingUnits.Count > 80)
+                            {
+                                <p class="control-footnote">Showing first 80 of @selectedPlan.PackagingUnits.Count planned units. Large unit populations will use virtualized drill-down.</p>
+                            }
+                        }
+                    </section>
+                }
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private RollingFinishingWorkspaceView? view;
+    private RollingPlanView? selectedPlan;
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        WorkspaceState.Changed += OnWorkspaceChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        view = await PlannerQuery.GetRollingFinishingAsync(WorkspaceState.CurrentPlanVersionId);
+        selectedPlan = view?.RollingPlans.FirstOrDefault();
+        loading = false;
+        StateHasChanged();
+    }
+
+    private void OnWorkspaceChanged()
+    {
+        if (view is not null && WorkspaceState.CurrentPlanVersionId != view.Plan.PlanVersionId)
+            _ = InvokeAsync(LoadAsync);
+    }
+
+    private void SelectPlan(RollingPlanView plan)
+    {
+        selectedPlan = plan;
+        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Operation, plan.RollingPlanId, $"RP-{plan.SequenceNumber:00}"));
+    }
+
+    private void SelectOperation(ScheduledProcessOperationView operation) =>
+        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Operation, operation.OperationSnapshotId, operation.PlanningKey));
+
+    private void SelectRouteOperation(DownstreamRouteOperationView operation) =>
+        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Operation, operation.RouteOperationPlanId, $"{operation.ProcessOperationType}-{operation.SequenceNumber:00}"));
+
+    private void SelectProductionOrder(RollingAllocationView allocation) =>
+        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.ProductionOrder, allocation.ProductionOrderId, allocation.ProductionOrderNumber));
+
+    private void SelectPackaging(PlannedPackagingUnitView unit) =>
+        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.MaterialSupply, unit.PlannedPackagingUnitId, unit.PlannedIdentifier ?? $"{unit.PackagingUnitType}-{unit.SequenceNumber:000}"));
+
+    private static string ProcessClass(ProcessOperationType type) => type.ToString().ToLowerInvariant();
+    private static string FormatLength(decimal? length) => length.HasValue ? $"{length.Value:0.###} m" : "length —";
+
+    public void Dispose() => WorkspaceState.Changed -= OnWorkspaceChanged;
+}
