@@ -40,8 +40,7 @@ public static class PrecomputedCampaignPlanningAdapter
 
         // Run only Campaign compatibility/grouping logic. All supply pools are removed so the legacy service cannot
         // reserve inventory, committed receipts or external supply a second time. The legacy material answer is then
-        // replaced by the canonical answer below; heat construction still sees FreshSteelQuantityMt and therefore
-        // applies configured casting yield/furnace envelopes exactly once.
+        // replaced by the canonical answer below.
         var groupingRequest = request with
         {
             Inventory = Array.Empty<InventoryPosition>(),
@@ -95,7 +94,7 @@ public static class PrecomputedCampaignPlanningAdapter
                 }
             }
 
-            RebuildGradeSequenceAndHeats(campaign, request);
+            CanonicalCampaignHeatBuilder.Rebuild(campaign, request);
         }
 
         var rolling = rows.ToDictionary(x => x.Key, x => x.Value.RollingRequirementMt);
@@ -131,80 +130,5 @@ public static class PrecomputedCampaignPlanningAdapter
             activeOrders.ToDictionary(x => x.Id, _ => 0m),
             activeOrders.ToDictionary(x => x.Id, _ => 0m),
             Array.Empty<PlanningSupplyAlternative>());
-    }
-
-    private static void RebuildGradeSequenceAndHeats(Campaign campaign, CampaignPlanningRequest request)
-    {
-        // CampaignPlanningService's heat builder is private. Rebuild only the quantity-dependent projection here,
-        // preserving the same grade grouping semantics. Production EAF envelopes are enforced later by configured
-        // structure/resource feasibility; this adapter does not invent alternate furnace capacities.
-        campaign.GradeSequence.Clear();
-        campaign.Heats.Clear();
-
-        var groups = campaign.Allocations
-            .Where(x => x.ProductionOrder is not null && x.FreshSteelQuantityMt > QuantityToleranceMt)
-            .GroupBy(x => x.ProductionOrder!.GradeCode)
-            .OrderBy(x => x.Min(a => a.ProductionOrder!.RequiredDate))
-            .ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        var gradeSequenceNo = 1;
-        var heatSequenceNo = 1;
-        foreach (var group in groups)
-        {
-            var productionOrders = group.Select(x => x.ProductionOrder!).DistinctBy(x => x.Id).ToArray();
-            var grade = productionOrders.Select(x => x.SteelGrade).FirstOrDefault(x => x is not null);
-            var yieldPct = grade?.ProcessRequirements
-                               .FirstOrDefault(x => x.ProcessOperationType == ProcessOperationType.Ccm)
-                               ?.ExpectedYieldPct
-                           ?? request.Policy.ExpectedCastingYieldPct;
-            if (yieldPct <= 0m || yieldPct > 100m)
-                throw new InvalidOperationException($"Grade {group.Key} has invalid casting yield {yieldPct}.");
-
-            var requiredCastOutput = group.Sum(x => x.FreshSteelQuantityMt);
-            var liquidInput = decimal.Round(requiredCastOutput / (yieldPct / 100m), 4, MidpointRounding.AwayFromZero);
-            var gradeSequence = new CampaignGradeSequence
-            {
-                CampaignId = campaign.Id,
-                Campaign = campaign,
-                SequenceNumber = gradeSequenceNo++,
-                GradeCode = group.Key,
-                PlannedQuantityMt = liquidInput
-            };
-            campaign.GradeSequence.Add(gradeSequence);
-
-            foreach (var heatQty in DistributeHeatQuantities(liquidInput, request.Policy))
-            {
-                campaign.Heats.Add(new CampaignHeat
-                {
-                    CampaignId = campaign.Id,
-                    Campaign = campaign,
-                    CampaignGradeSequenceId = gradeSequence.Id,
-                    CampaignGradeSequence = gradeSequence,
-                    SequenceNumber = heatSequenceNo++,
-                    GradeCode = group.Key,
-                    PlannedQuantityMt = heatQty,
-                    MinimumFeasibleQuantityMt = request.Policy.MinimumHeatSizeMt,
-                    TargetQuantityMt = request.Policy.NominalHeatSizeMt,
-                    MaximumFeasibleQuantityMt = request.Policy.MaximumHeatSizeMt
-                });
-            }
-        }
-    }
-
-    private static IReadOnlyCollection<decimal> DistributeHeatQuantities(decimal totalMt, CampaignPlanningPolicy policy)
-    {
-        if (totalMt <= QuantityToleranceMt) return Array.Empty<decimal>();
-        var max = Math.Max(policy.MaximumHeatSizeMt, QuantityToleranceMt);
-        var min = Math.Max(0m, policy.MinimumHeatSizeMt);
-        var count = Math.Max(1, (int)Math.Ceiling(totalMt / max));
-        while (count > 1 && totalMt / count < min) count--;
-
-        var baseQty = decimal.Round(totalMt / count, 4, MidpointRounding.AwayFromZero);
-        var result = Enumerable.Repeat(baseQty, count).ToArray();
-        result[^1] += totalMt - result.Sum();
-        if (result.Any(x => x < min - QuantityToleranceMt || x > max + QuantityToleranceMt))
-            throw new InvalidOperationException($"Canonical fresh-steel requirement {totalMt:0.####} MT cannot be split within configured heat range {min:0.####}-{max:0.####} MT.");
-        return result;
     }
 }
