@@ -1,3 +1,4 @@
+using System.Text.Json;
 using APS.Application;
 using APS.Domain;
 using Microsoft.EntityFrameworkCore;
@@ -6,6 +7,8 @@ namespace APS.Infrastructure;
 
 public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionRepository
 {
+    private static readonly JsonSerializerOptions SnapshotJsonOptions = new(JsonSerializerDefaults.Web);
+
     public async Task<PlanVersionSnapshot> SaveAsync(
         PersistPlanningRunRequest request,
         CancellationToken cancellationToken = default)
@@ -40,7 +43,11 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             HorizonEndUtc = request.PlanningRequest.HorizonEndUtc,
             SolverStatus = result.Schedule.SolverStatus,
             ObjectiveValue = result.IsFeasible ? result.Schedule.ObjectiveValue : null,
-            IsActive = result.IsFeasible
+            IsActive = result.IsFeasible,
+            MaterialRequirementsJson = Serialize(result.MaterialPlan?.Requirements),
+            MaterialSupplyRequirementsJson = Serialize(result.MaterialPlan?.SupplyRequirements),
+            MaterialReservationsJson = Serialize(result.MaterialPlan?.Reservations),
+            MaterialLedgerJson = Serialize(result.MaterialPlan?.LedgerEvents)
         };
 
         if (result.IsFeasible)
@@ -64,11 +71,25 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
         var tasksById = result.ProductionStructure.SchedulingTasks.ToDictionary(x => x.TaskId);
         var identitiesById = (result.TaskIdentities ?? Array.Empty<PlanningTaskIdentity>())
             .ToDictionary(x => x.TaskId);
+        var alternativesByKey = (result.ResourceAlternatives ?? Array.Empty<PlanningOperationResourceAlternative>())
+            .GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.OrderBy(y => y.AssignmentPenalty).ThenBy(y => y.ResourceId).ToArray(), StringComparer.OrdinalIgnoreCase);
+        var overridesByKey = (request.PlanningRequest.ReplanContext?.ResourceOverrides ?? Array.Empty<OperationResourceOverride>())
+            .GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.Last(), StringComparer.OrdinalIgnoreCase);
+        var baselineByKey = (request.PlanningRequest.ReplanContext?.BaselineOperations ?? Array.Empty<BaselinePlanOperation>())
+            .GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.OrderBy(y => y.StartUtc).First(), StringComparer.OrdinalIgnoreCase);
 
         foreach (var assignment in result.Schedule.Assignments)
         {
             if (!tasksById.TryGetValue(assignment.TaskId, out var task)) continue;
             if (!identitiesById.TryGetValue(assignment.TaskId, out var identity)) continue;
+
+            overridesByKey.TryGetValue(identity.PlanningKey, out var resourceOverride);
+            baselineByKey.TryGetValue(identity.PlanningKey, out var baseline);
+            alternativesByKey.TryGetValue(identity.PlanningKey, out var alternatives);
+            var commitment = resourceOverride?.CommitmentState ?? OperationAssignmentCommitmentState.Flexible;
 
             db.PlanOperationSnapshots.Add(new PlanOperationSnapshot
             {
@@ -78,6 +99,18 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
                 OperationType = MapOperationType(task.TaskType),
                 ProcessOperationType = ResolveProcessOperationType(task),
                 ResourceId = assignment.ResourceId,
+                CommittedResourceId = commitment is OperationAssignmentCommitmentState.Firm or OperationAssignmentCommitmentState.Committed
+                    ? assignment.ResourceId
+                    : null,
+                ActualResourceId = null,
+                AssignmentCommitmentState = commitment,
+                EligibleResourceOptionsJson = Serialize(alternatives),
+                PreviousPlannedResourceId = resourceOverride is not null && baseline is not null && baseline.ResourceId != assignment.ResourceId
+                    ? baseline.ResourceId
+                    : null,
+                RedispatchReasonCode = resourceOverride?.ReasonCode,
+                RedispatchComment = resourceOverride?.Comment,
+                RedispatchedOnUtc = resourceOverride is null ? null : request.ReferenceTimeUtc,
                 StartUtc = assignment.StartUtc,
                 EndUtc = assignment.EndUtc,
                 QuantityMt = task.QuantityMt,
@@ -172,12 +205,15 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
 
         return rows.Select(x => new BaselinePlanOperation(
                 x.PlanningKey,
-                x.ResourceId,
+                x.ActualResourceId ?? x.CommittedResourceId ?? x.ResourceId,
                 x.StartUtc,
                 x.EndUtc,
                 MapTaskType(x.OperationType)))
             .ToArray();
     }
+
+    private static string? Serialize<T>(IReadOnlyCollection<T>? values) =>
+        values is null ? null : JsonSerializer.Serialize(values, SnapshotJsonOptions);
 
     private static ProcessOperationType ResolveProcessOperationType(FiniteScheduleTask task)
     {
