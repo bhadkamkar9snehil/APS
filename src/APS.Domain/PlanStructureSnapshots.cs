@@ -2,8 +2,8 @@ namespace APS.Domain;
 
 /// <summary>
 /// Immutable commercial/quantity identity retained with a Plan Version.
-/// Resolved customer, chemistry, process and thermal constraints are stored separately in
-/// PlanOrderRequirementSnapshot and correlate through PlanVersionId + ProductionOrderId.
+/// Resolved customer, chemistry, process and thermal constraints are stored in a separate
+/// PlanOrderRequirementSnapshot fact and referenced here for direct historical navigation.
 /// Supply coverage fields are copied from CampaignPlanningResult rather than recomputed by UI/query code.
 /// </summary>
 public sealed class PlanProductionOrderSnapshot : Entity
@@ -39,6 +39,9 @@ public sealed class PlanProductionOrderSnapshot : Entity
     public decimal ExistingIntermediateAllocatedMt { get; set; }
     public decimal ExternalIntermediateAllocatedMt { get; set; }
     public decimal FreshSteelRequirementMt { get; set; }
+
+    public Guid? RequirementSnapshotId { get; set; }
+    public PlanOrderRequirementSnapshot? RequirementSnapshot { get; set; }
 }
 
 public sealed class PlanCampaignSnapshot : Entity
