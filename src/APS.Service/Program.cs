@@ -4,12 +4,14 @@ using APS.Domain;
 using APS.Infrastructure;
 using APS.Planning;
 using APS.Service.Components;
+using APS.UI.State;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.AddScoped<PlannerWorkspaceState>();
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
@@ -36,6 +38,11 @@ if (hasApsDatabase)
     builder.Services.AddScoped<IPlanVersionRepository, PlanVersionRepository>();
     builder.Services.AddScoped<IPlanReleaseRepository, PlanReleaseRepository>();
     builder.Services.AddScoped<IPlanComparisonService, PlanComparisonService>();
+    builder.Services.AddScoped<IPlannerWorkspaceQueryService, PlannerWorkspaceQueryService>();
+}
+else
+{
+    builder.Services.AddScoped<IPlannerWorkspaceQueryService, UnavailablePlannerWorkspaceQueryService>();
 }
 
 var app = builder.Build();
@@ -57,6 +64,38 @@ if (hasApsDatabase)
     app.MapGet("/api/inventory/snapshot",
         async (IInventorySnapshotProvider inventory, CancellationToken cancellationToken) =>
             Results.Ok(await inventory.GetInventoryAsync(cancellationToken)));
+
+    app.MapGet("/api/ui/planner/current",
+        async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var current = await planner.GetCurrentPlanAsync(cancellationToken);
+            return current is null ? Results.NotFound() : Results.Ok(current);
+        });
+
+    app.MapGet("/api/ui/planner/versions",
+        async (int? take, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+            Results.Ok(await planner.GetRecentPlanVersionsAsync(take ?? 20, cancellationToken)));
+
+    app.MapGet("/api/ui/planner/versions/{planVersionId:guid}/context",
+        async (Guid planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var context = await planner.GetPlanContextAsync(planVersionId, cancellationToken);
+            return context is null ? Results.NotFound() : Results.Ok(context);
+        });
+
+    app.MapGet("/api/ui/planner/control-tower",
+        async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var view = await planner.GetControlTowerAsync(null, cancellationToken);
+            return view is null ? Results.NotFound() : Results.Ok(view);
+        });
+
+    app.MapGet("/api/ui/planner/control-tower/{planVersionId:guid}",
+        async (Guid planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var view = await planner.GetControlTowerAsync(planVersionId, cancellationToken);
+            return view is null ? Results.NotFound() : Results.Ok(view);
+        });
 
     app.MapPost("/api/planning/run",
         async (PlanningRunRequest request, IPlanningEngine planningEngine, IPlanVersionRepository plans, CancellationToken cancellationToken) =>
