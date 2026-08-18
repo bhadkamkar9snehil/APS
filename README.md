@@ -29,10 +29,11 @@ The primary backend documents are:
 1. [`docs/APS_Backend_Acceptance_Audit_2026-08-18.md`](docs/APS_Backend_Acceptance_Audit_2026-08-18.md)
 2. [`docs/APS_End_to_End_Manufacturing_Planning_Flow.md`](docs/APS_End_to_End_Manufacturing_Planning_Flow.md)
 3. [`docs/APS_Backend_Work_Program.md`](docs/APS_Backend_Work_Program.md)
-4. [`docs/APS_Demand_to_Production_Order_and_Due_Date_Model.md`](docs/APS_Demand_to_Production_Order_and_Due_Date_Model.md)
-5. [`docs/APS_Backend_Visibility_Contract.md`](docs/APS_Backend_Visibility_Contract.md)
-6. [`docs/APS_Steel_Domain_Architecture_Roadmap.md`](docs/APS_Steel_Domain_Architecture_Roadmap.md)
-7. [`docs/dotnet-planning-core.md`](docs/dotnet-planning-core.md) — current implementation note, subordinate to the architecture/audit documents above.
+4. [`docs/APS_Backend_Canonical_Path_Inventory.md`](docs/APS_Backend_Canonical_Path_Inventory.md) — authoritative production planning/query/release/execution lifecycle and demo/compatibility classifications.
+5. [`docs/APS_Demand_to_Production_Order_and_Due_Date_Model.md`](docs/APS_Demand_to_Production_Order_and_Due_Date_Model.md)
+6. [`docs/APS_Backend_Visibility_Contract.md`](docs/APS_Backend_Visibility_Contract.md)
+7. [`docs/APS_Steel_Domain_Architecture_Roadmap.md`](docs/APS_Steel_Domain_Architecture_Roadmap.md)
+8. [`docs/dotnet-planning-core.md`](docs/dotnet-planning-core.md) — current implementation note, subordinate to the architecture/audit documents above.
 
 Documentation authority is deliberately separated:
 
@@ -53,7 +54,7 @@ For any requirement:
 ```text
 Requirement
    ↓
-Inventory / known incoming / committed or planned internal production
+Inventory / known incoming / committed or APS-planned internal production
    ↓
 Remaining requirement
    ↓
@@ -75,7 +76,7 @@ MTO/MTS Production Order manufacturing requirement
         ↓
 recursive BOM/material requirements
         ↓
-time-phased inventory / incoming / WIP / planned-supply netting
+time-phased inventory / incoming / WIP / planned-internal-supply netting
         ↓
 internal production requirements or explicit shortfall
         ↓
@@ -87,7 +88,9 @@ configured ManufacturingRoute operations
         ↓
 finite resource/material/thermal schedule
         ↓
-Plan Version
+immutable Plan Version
+        ↓
+identity-only release from persisted plan truth
         ↓
 Work Orders / process operations
         ↓
@@ -95,10 +98,28 @@ execution actuals + material genealogy
         ↓
 current inventory/WIP/remaining demand
         ↓
-local repair / replan
+local repair / replan through the same lifecycle
 ```
 
 Demand/material requirement is causality. Campaign is manufacturing aggregation/optimization. Resource is an assignment, not the identity of the production requirement. Work Orders are downstream of the solved production graph.
+
+## Canonical production lifecycle
+
+Production APIs do not independently run campaign, structure, scheduling and release logic. The production path is:
+
+```text
+IPlanningLifecycleService
+ -> authoritative master/inventory providers
+ -> IPlanningEngine (Production mode)
+ -> IPlanVersionRepository
+ -> IPlannerWorkspaceQueryService
+ -> IPersistedPlanReleaseService
+ -> canonical execution services
+ -> IReplanningActualStateProvider
+ -> IPlanningLifecycleService.ReplanAsync
+```
+
+Component-level calculation APIs and the direct-kernel Blazor sandbox are demo-only, disabled by default and isolated under `/api/demo/planning/*` and `/demo/planning`.
 
 ## Backend implementation order
 
