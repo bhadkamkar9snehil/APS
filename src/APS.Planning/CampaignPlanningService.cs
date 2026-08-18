@@ -55,6 +55,7 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
         var plannedTransferAllocated = new Dictionary<Guid, decimal>();
         var inventoryAllocations = new List<PlanningInventoryAllocation>();
         var plannedSupplyAllocations = new List<PlanningSupplyAllocation>();
+        var sourcingAlternatives = new List<PlanningSupplyAlternative>();
 
         var finishedGoodsPools = request.Inventory
             .Where(i => i.Stage == InventoryStage.FinishedGoods &&
@@ -139,6 +140,7 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
             freshSteelRequirements[po.Id] = sourcing.MakeQuantityMt;
             plannedPurchaseAllocated[po.Id] = sourcing.BuyQuantityMt;
             plannedTransferAllocated[po.Id] = sourcing.TransferQuantityMt;
+            sourcingAlternatives.AddRange(sourcing.Alternatives);
 
             foreach (var allocation in sourcing.Allocations)
             {
@@ -254,7 +256,8 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
             null,
             plannedSupplyAllocations,
             plannedPurchaseAllocated,
-            plannedTransferAllocated);
+            plannedTransferAllocated,
+            sourcingAlternatives);
     }
 
     private static void ResolveGradeMasters(CampaignPlanningRequest request)
@@ -382,52 +385,165 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
         var allowTransfer = rule?.AllowTransfer ?? policy.AllowTransfer;
         var allowManual = rule?.AllowManualSupply ?? policy.AllowManualSupply;
         var makeFeasible = allowMake && HasInternalMakePath(po, request);
+        var reference = request.PlanningReferenceTimeUtc ?? DateTime.UtcNow;
 
-        var candidates = new List<(MaterialSupplyActionType Action, int Penalty)>();
-        if (makeFeasible) candidates.Add((MaterialSupplyActionType.Make, rule?.MakePenalty ?? 0));
-        if (allowBuy) candidates.Add((MaterialSupplyActionType.Buy, rule?.BuyPenalty ?? 100));
-        if (allowTransfer) candidates.Add((MaterialSupplyActionType.Transfer, rule?.TransferPenalty ?? 50));
-        if (allowManual) candidates.Add((MaterialSupplyActionType.Manual, 1000));
+        var buyReceipt = CommercialReceiptQuantity(quantityMt, rule?.MinimumBuyQuantityMt, rule?.BuyOrderMultipleMt);
+        var transferReceipt = Math.Max(quantityMt, rule?.MinimumTransferQuantityMt ?? quantityMt);
+        var buyEta = reference + (rule?.PurchaseLeadTime ?? policy.DefaultExternalLeadTime ?? TimeSpan.Zero);
+        var transferEta = reference + (rule?.TransferLeadTime ?? TimeSpan.Zero);
+
+        var candidates = new List<SourcingCandidate>
+        {
+            new(
+                MaterialSupplyActionType.Make,
+                allowMake,
+                makeFeasible,
+                rule?.MakePenalty ?? 0,
+                quantityMt,
+                null,
+                allowMake ? (makeFeasible ? null : "Configured internal steelmaking route has no complete active eligible resource path.") : "Internal MAKE is not approved by the sourcing rule/policy."),
+            new(
+                MaterialSupplyActionType.Buy,
+                allowBuy,
+                allowBuy,
+                rule?.BuyPenalty ?? 100,
+                buyReceipt,
+                buyEta,
+                allowBuy ? null : "External BUY is not approved by the sourcing rule/policy."),
+            new(
+                MaterialSupplyActionType.Transfer,
+                allowTransfer,
+                allowTransfer,
+                rule?.TransferPenalty ?? 50,
+                transferReceipt,
+                transferEta,
+                allowTransfer ? null : "TRANSFER is not approved by the sourcing rule/policy."),
+            new(
+                MaterialSupplyActionType.Manual,
+                allowManual,
+                allowManual,
+                1000,
+                quantityMt,
+                reference,
+                allowManual ? null : "Manual/planner supply is not approved by the sourcing rule/policy.")
+        };
 
         var preferred = rule?.PreferredAction ?? (makeFeasible ? MaterialSupplyActionType.Make : MaterialSupplyActionType.Buy);
-        var selected = candidates.Any(x => x.Action == preferred)
-            ? preferred
-            : candidates.OrderBy(x => x.Penalty).ThenBy(x => x.Action).Select(x => x.Action).FirstOrDefault(MaterialSupplyActionType.Unsourced);
+        var selected = candidates.FirstOrDefault(x => x.Action == preferred && x.IsAllowed && x.IsFeasible)
+                       ?? candidates
+                           .Where(x => x.IsAllowed && x.IsFeasible)
+                           .OrderBy(x => x.ExpectedReceiptUtc.HasValue && x.ExpectedReceiptUtc.Value > po.RequiredDate ? 1 : 0)
+                           .ThenBy(x => x.Penalty)
+                           .ThenBy(x => x.ExpectedReceiptUtc ?? DateTime.MinValue)
+                           .ThenBy(x => x.Action)
+                           .FirstOrDefault();
 
-        var reference = request.PlanningReferenceTimeUtc ?? DateTime.UtcNow;
-        var expected = selected switch
+        if (selected is null)
         {
-            MaterialSupplyActionType.Buy => reference + (rule?.PurchaseLeadTime ?? policy.DefaultExternalLeadTime ?? TimeSpan.Zero),
-            MaterialSupplyActionType.Transfer => reference + (rule?.TransferLeadTime ?? TimeSpan.Zero),
-            MaterialSupplyActionType.Manual => reference,
-            _ => (DateTime?)null
-        };
-        var supplyReference = selected switch
+            var unsourced = new PlanningSupplyAllocation(
+                po.Id,
+                MaterialSupplyActionType.Unsourced,
+                quantityMt,
+                po.RequiredDate,
+                null,
+                null,
+                null,
+                null,
+                rule?.DestinationLocationCode,
+                false,
+                rule?.RuleCode,
+                0m,
+                0m,
+                int.MaxValue);
+
+            var alternatives = candidates.Select(x => ToAlternative(po, quantityMt, rule, x, false)).Append(
+                new PlanningSupplyAlternative(
+                    po.Id,
+                    MaterialSupplyActionType.Unsourced,
+                    true,
+                    true,
+                    true,
+                    quantityMt,
+                    0m,
+                    0m,
+                    po.RequiredDate,
+                    null,
+                    int.MaxValue,
+                    rule?.RuleCode,
+                    DestinationLocationCode: rule?.DestinationLocationCode,
+                    RejectionReason: "No approved feasible MAKE/BUY/TRANSFER/MANUAL path exists."))
+                .ToArray();
+            return new ResidualSourcingDecision(0m, 0m, 0m, new[] { unsourced }, alternatives);
+        }
+
+        var supplyReference = selected.Action switch
         {
             MaterialSupplyActionType.Buy => $"PLAN-BUY:{po.Id:N}",
             MaterialSupplyActionType.Transfer => $"PLAN-XFER:{po.Id:N}",
             MaterialSupplyActionType.Manual => $"PLAN-MANUAL:{po.Id:N}",
             _ => null
         };
-
+        var excess = Math.Max(0m, selected.PlannedReceiptQuantityMt - quantityMt);
         var allocation = new PlanningSupplyAllocation(
             po.Id,
-            selected,
+            selected.Action,
             quantityMt,
             po.RequiredDate,
-            expected,
+            selected.ExpectedReceiptUtc,
             supplyReference,
-            selected == MaterialSupplyActionType.Buy ? rule?.PreferredSupplierCode : null,
-            selected == MaterialSupplyActionType.Transfer ? rule?.TransferSourceLocationCode : null,
+            selected.Action == MaterialSupplyActionType.Buy ? rule?.PreferredSupplierCode : null,
+            selected.Action == MaterialSupplyActionType.Transfer ? rule?.TransferSourceLocationCode : null,
             rule?.DestinationLocationCode,
             false,
-            rule?.RuleCode);
+            rule?.RuleCode,
+            selected.PlannedReceiptQuantityMt,
+            excess,
+            selected.Penalty);
+
+        var projectedAlternatives = candidates
+            .Select(x => ToAlternative(po, quantityMt, rule, x, x.Action == selected.Action))
+            .ToArray();
 
         return new ResidualSourcingDecision(
-            selected == MaterialSupplyActionType.Make ? quantityMt : 0m,
-            selected == MaterialSupplyActionType.Buy ? quantityMt : 0m,
-            selected == MaterialSupplyActionType.Transfer ? quantityMt : 0m,
-            new[] { allocation });
+            selected.Action == MaterialSupplyActionType.Make ? quantityMt : 0m,
+            selected.Action == MaterialSupplyActionType.Buy ? quantityMt : 0m,
+            selected.Action == MaterialSupplyActionType.Transfer ? quantityMt : 0m,
+            new[] { allocation },
+            projectedAlternatives);
+    }
+
+    private static PlanningSupplyAlternative ToAlternative(
+        ProductionOrder po,
+        decimal requiredQuantityMt,
+        MaterialSourcingRule? rule,
+        SourcingCandidate candidate,
+        bool selected)
+    {
+        var excess = Math.Max(0m, candidate.PlannedReceiptQuantityMt - requiredQuantityMt);
+        return new PlanningSupplyAlternative(
+            po.Id,
+            candidate.Action,
+            candidate.IsAllowed,
+            candidate.IsFeasible,
+            selected,
+            requiredQuantityMt,
+            candidate.PlannedReceiptQuantityMt,
+            excess,
+            po.RequiredDate,
+            candidate.ExpectedReceiptUtc,
+            candidate.Penalty,
+            rule?.RuleCode,
+            candidate.Action == MaterialSupplyActionType.Buy ? rule?.PreferredSupplierCode : null,
+            candidate.Action == MaterialSupplyActionType.Transfer ? rule?.TransferSourceLocationCode : null,
+            rule?.DestinationLocationCode,
+            candidate.RejectionReason);
+    }
+
+    private static decimal CommercialReceiptQuantity(decimal required, decimal? minimum, decimal? multiple)
+    {
+        var quantity = Math.Max(required, minimum ?? required);
+        if (multiple is > 0m) quantity = Math.Ceiling(quantity / multiple.Value) * multiple.Value;
+        return decimal.Round(quantity, 4, MidpointRounding.AwayFromZero);
     }
 
     private static MaterialSourcingRule? SelectSourcingRule(
@@ -459,30 +575,111 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
     private static bool HasInternalMakePath(ProductionOrder po, CampaignPlanningRequest request)
     {
         if (request.Resources is null || request.Resources.Count == 0) return true;
-        var active = request.Resources.Where(x =>
-            x.IsActive && x.OperatingState is ResourceOperatingState.Available or ResourceOperatingState.CapacityDerated or ResourceOperatingState.QualityRestricted).ToArray();
-        var explicitSteel = active.Any(x => x.ProcessUnitType != ProcessUnitType.Unknown);
-        if (!explicitSteel) return active.Any(x => x.ResourceType == ResourceType.Furnace) && active.Any(x => x.ResourceType == ResourceType.Caster);
 
-        return HasEligibleUnit(ProcessUnitType.Eaf, ProcessOperationType.Eaf) && HasEligibleUnit(ProcessUnitType.Ccm, ProcessOperationType.Ccm);
-
-        bool HasEligibleUnit(ProcessUnitType unit, ProcessOperationType operation)
-        {
-            var candidates = active.Where(x => x.ProcessUnitType == unit).ToArray();
-            if (candidates.Length == 0) return false;
-            var capabilities = request.ResourceCapabilities ?? Array.Empty<ResourceCapability>();
-            return candidates.Any(resource =>
-            {
-                var configured = capabilities.Where(x => x.ResourceId == resource.Id).ToArray();
-                if (configured.Length == 0) return true;
-                return configured.Any(x =>
-                    (!x.ProcessOperationType.HasValue || x.ProcessOperationType == operation) &&
-                    Matches(x.RouteCode, po.RouteCode) &&
-                    Matches(x.GradeCode, po.GradeCode) &&
-                    Matches(x.GradeFamilyCode, po.GradeFamilyCode));
-            });
-        }
+        var requiredOperations = RequiredSteelmakingOperations(po, request.RoutePlanning);
+        return requiredOperations.All(operation => HasEligibleOperation(operation, po, request));
     }
+
+    private static IReadOnlyCollection<ProcessOperationType> RequiredSteelmakingOperations(
+        ProductionOrder po,
+        RoutePlanningInput? routePlanning)
+    {
+        var required = new HashSet<ProcessOperationType> { ProcessOperationType.Eaf, ProcessOperationType.Ccm };
+
+        if (routePlanning is not null)
+        {
+            foreach (var operation in routePlanning.Operations.Where(x =>
+                         Same(x.RouteCode, po.RouteCode) &&
+                         IsSteelmakingOperation(x.ProcessOperationType) &&
+                         x.Requirement == RequirementDisposition.Required))
+            {
+                required.Add(operation.ProcessOperationType);
+            }
+        }
+
+        foreach (var gradeRequirement in po.SteelGrade?.ProcessRequirements ?? Array.Empty<GradeProcessRequirement>())
+        {
+            if (IsSteelmakingOperation(gradeRequirement.ProcessOperationType) &&
+                gradeRequirement.Requirement == RequirementDisposition.Required)
+                required.Add(gradeRequirement.ProcessOperationType);
+        }
+
+        foreach (var overrideRequirement in po.Requirement?.ProcessOverrides ?? Array.Empty<OrderProcessRequirement>())
+        {
+            if (IsSteelmakingOperation(overrideRequirement.ProcessOperationType) &&
+                overrideRequirement.Requirement == RequirementDisposition.Required)
+                required.Add(overrideRequirement.ProcessOperationType);
+        }
+
+        if (po.Requirement?.RequireVd == true) required.Add(ProcessOperationType.Vd);
+        if (po.Requirement?.ForbidVd == true) required.Remove(ProcessOperationType.Vd);
+        return required;
+    }
+
+    private static bool HasEligibleOperation(
+        ProcessOperationType operation,
+        ProductionOrder po,
+        CampaignPlanningRequest request)
+    {
+        var resources = request.Resources ?? Array.Empty<Resource>();
+        var active = resources.Where(x =>
+            x.IsActive &&
+            x.OperatingState is ResourceOperatingState.Available or ResourceOperatingState.CapacityDerated or ResourceOperatingState.QualityRestricted &&
+            ResourceMatchesOperation(x, operation)).ToArray();
+        if (active.Length == 0) return false;
+
+        var routeCaps = request.RoutePlanning?.ResourceCapabilities
+            .Where(x => Same(x.RouteCode, po.RouteCode) && x.ProcessOperationType == operation)
+            .ToArray() ?? Array.Empty<RouteResourceCapability>();
+        var generalCaps = request.ResourceCapabilities ?? Array.Empty<ResourceCapability>();
+
+        return active.Any(resource =>
+        {
+            if (routeCaps.Length > 0)
+            {
+                var routeMatch = routeCaps.Any(x =>
+                    x.ResourceId == resource.Id &&
+                    Matches(x.GradeCode, po.GradeCode) &&
+                    Matches(x.GradeFamilyCode, po.GradeFamilyCode) &&
+                    Matches(x.ProductFamilyCode, po.ProductFamilyCode));
+                if (!routeMatch) return false;
+            }
+
+            var configured = generalCaps.Where(x => x.ResourceId == resource.Id).ToArray();
+            if (configured.Length == 0) return true;
+            return configured.Any(x =>
+                (!x.ProcessOperationType.HasValue || x.ProcessOperationType == operation) &&
+                Matches(x.RouteCode, po.RouteCode) &&
+                Matches(x.GradeCode, po.GradeCode) &&
+                Matches(x.GradeFamilyCode, po.GradeFamilyCode));
+        });
+    }
+
+    private static bool ResourceMatchesOperation(Resource resource, ProcessOperationType operation)
+    {
+        if (resource.ProcessUnitType != ProcessUnitType.Unknown)
+        {
+            return operation switch
+            {
+                ProcessOperationType.Eaf => resource.ProcessUnitType == ProcessUnitType.Eaf,
+                ProcessOperationType.Lrf => resource.ProcessUnitType == ProcessUnitType.Lrf,
+                ProcessOperationType.Vd => resource.ProcessUnitType == ProcessUnitType.Vd,
+                ProcessOperationType.Ccm => resource.ProcessUnitType == ProcessUnitType.Ccm,
+                _ => false
+            };
+        }
+
+        return operation switch
+        {
+            ProcessOperationType.Eaf => resource.ResourceType == ResourceType.Furnace,
+            ProcessOperationType.Lrf or ProcessOperationType.Vd => resource.ResourceType == ResourceType.Refining,
+            ProcessOperationType.Ccm => resource.ResourceType == ResourceType.Caster,
+            _ => false
+        };
+    }
+
+    private static bool IsSteelmakingOperation(ProcessOperationType operation) =>
+        operation is ProcessOperationType.Eaf or ProcessOperationType.Lrf or ProcessOperationType.Vd or ProcessOperationType.Ccm;
 
     private static CampaignCompatibilityKey CampaignKey(ProductionOrder po, CampaignPlanningPolicy policy)
     {
@@ -846,13 +1043,28 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
     private sealed record FurnaceEnvelope(Guid ResourceId, decimal MinimumMt, decimal TargetMt, decimal MaximumMt);
     private sealed record HeatQuantityPlan(decimal QuantityMt, decimal MinimumMt, decimal TargetMt, decimal MaximumMt);
     private sealed record HeatPlanCandidate(IReadOnlyList<HeatQuantityPlan> Heats, decimal Score);
+    private sealed record SourcingCandidate(
+        MaterialSupplyActionType Action,
+        bool IsAllowed,
+        bool IsFeasible,
+        int Penalty,
+        decimal PlannedReceiptQuantityMt,
+        DateTime? ExpectedReceiptUtc,
+        string? RejectionReason);
+
     private sealed record ResidualSourcingDecision(
         decimal MakeQuantityMt,
         decimal BuyQuantityMt,
         decimal TransferQuantityMt,
-        IReadOnlyCollection<PlanningSupplyAllocation> Allocations)
+        IReadOnlyCollection<PlanningSupplyAllocation> Allocations,
+        IReadOnlyCollection<PlanningSupplyAlternative> Alternatives)
     {
-        public static ResidualSourcingDecision Empty { get; } = new(0m, 0m, 0m, Array.Empty<PlanningSupplyAllocation>());
+        public static ResidualSourcingDecision Empty { get; } = new(
+            0m,
+            0m,
+            0m,
+            Array.Empty<PlanningSupplyAllocation>(),
+            Array.Empty<PlanningSupplyAlternative>());
     }
 
     private sealed class MutableHeatPlan(FurnaceEnvelope envelope, decimal quantityMt)
