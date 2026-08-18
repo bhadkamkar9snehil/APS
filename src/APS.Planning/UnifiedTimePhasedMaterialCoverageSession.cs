@@ -6,8 +6,8 @@ namespace APS.Planning;
 /// <summary>
 /// Run-scoped material availability ledger used before Campaign formation.
 /// Every pool is mutable inside one planning run, so the same physical/committed quantity can be reserved only once.
-/// Only supply available by the requirement time covers that requirement. Future supply remains visible to the later
-/// schedule/ledger layer but is not pulled forward or treated as available early.
+/// Only supply available by the requirement time covers that requirement. Future matching supply is reported as
+/// late evidence but is not consumed/reserved early, so it remains available to later requirements.
 /// </summary>
 public sealed class UnifiedTimePhasedMaterialCoverageSession : IMaterialCoverageSession
 {
@@ -21,13 +21,14 @@ public sealed class UnifiedTimePhasedMaterialCoverageSession : IMaterialCoverage
         IReadOnlyCollection<ExternalMaterialSupply>? externalMaterialSupplies = null,
         IReadOnlyCollection<CommittedMaterialSupply>? committedMaterialSupplies = null)
     {
-        var materialCodeBySpecification = materialSpecifications
+        var specByCode = materialSpecifications
             .Where(x => x.IsActive)
             .GroupBy(x => x.MaterialSpecificationCode, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                x => x.Key,
-                x => x.First().SapMaterialCode ?? x.First().MaterialSpecificationCode,
-                StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
+        var materialCodeBySpecification = specByCode.ToDictionary(
+            x => x.Key,
+            x => x.Value.SapMaterialCode ?? x.Value.MaterialSpecificationCode,
+            StringComparer.OrdinalIgnoreCase);
 
         _pools = new List<Pool>();
         foreach (var position in inventory)
@@ -84,6 +85,7 @@ public sealed class UnifiedTimePhasedMaterialCoverageSession : IMaterialCoverage
             var quantity = Math.Max(0m, supply.QuantityMt - supply.ReservedQuantityMt);
             if (quantity <= QuantityTolerance) continue;
             materialCodeBySpecification.TryGetValue(supply.MaterialSpecificationCode, out var materialCode);
+            specByCode.TryGetValue(supply.MaterialSpecificationCode, out var spec);
             _pools.Add(new Pool(
                 null,
                 materialCode ?? supply.MaterialSpecificationCode,
@@ -92,7 +94,7 @@ public sealed class UnifiedTimePhasedMaterialCoverageSession : IMaterialCoverage
                 supply.CrossSectionCode,
                 "MT",
                 supply.LocationCode,
-                SupplyStage(supply.ProductForm),
+                SupplyStage(spec?.ProductForm ?? SteelProductForm.Other),
                 quantity,
                 supply.AvailableFromUtc,
                 MaterialCoverageSourceType.KnownIncoming,
@@ -102,7 +104,6 @@ public sealed class UnifiedTimePhasedMaterialCoverageSession : IMaterialCoverage
 
         foreach (var supply in committedMaterialSupplies ?? Array.Empty<CommittedMaterialSupply>())
         {
-            if (supply.QualityStatus is not (MaterialQualityStatus.Available or MaterialQualityStatus.Released)) continue;
             if (supply.QuantityMt <= QuantityTolerance) continue;
             var materialCode = supply.MaterialSpecificationCode;
             if (!string.IsNullOrWhiteSpace(supply.MaterialSpecificationCode) &&
@@ -117,11 +118,11 @@ public sealed class UnifiedTimePhasedMaterialCoverageSession : IMaterialCoverage
                 supply.CrossSectionCode,
                 "MT",
                 supply.LocationCode,
-                SupplyStage(supply.ProductForm),
+                InventoryStage.CastIntermediate,
                 supply.QuantityMt,
                 supply.AvailableFromUtc,
                 MaterialCoverageSourceType.CommittedInternalProduction,
-                supply.QualityStatus,
+                MaterialQualityStatus.Released,
                 supply.SupplyReference));
         }
     }
@@ -139,11 +140,8 @@ public sealed class UnifiedTimePhasedMaterialCoverageSession : IMaterialCoverage
 
         var remaining = request.RequiredQuantity;
         var allocations = new List<MaterialCoverageAllocation>();
-        foreach (var pool in _pools
-                     .Where(x => x.RemainingQuantity > QuantityTolerance)
-                     .Where(x => !x.ProductionOrderId.HasValue || x.ProductionOrderId == request.ProductionOrderId)
+        foreach (var pool in EligiblePools(request)
                      .Where(x => x.AvailableFromUtc <= request.RequiredAtUtc)
-                     .Where(x => Matches(x, request))
                      .OrderBy(x => x.AvailableFromUtc)
                      .ThenBy(x => SourceRank(x.SourceType))
                      .ThenBy(x => x.LocationCode, StringComparer.OrdinalIgnoreCase)
@@ -169,8 +167,35 @@ public sealed class UnifiedTimePhasedMaterialCoverageSession : IMaterialCoverage
                 pool.InventoryStage));
         }
 
-        return new MaterialCoverageResult(allocations.Sum(x => x.Quantity), allocations);
+        var lateRemaining = remaining;
+        decimal lateQuantity = 0m;
+        DateTime? earliestLate = null;
+        foreach (var pool in EligiblePools(request)
+                     .Where(x => x.AvailableFromUtc > request.RequiredAtUtc)
+                     .OrderBy(x => x.AvailableFromUtc)
+                     .ThenBy(x => SourceRank(x.SourceType))
+                     .ThenBy(x => x.LocationCode, StringComparer.OrdinalIgnoreCase))
+        {
+            if (lateRemaining <= QuantityTolerance) break;
+            var quantity = Math.Min(lateRemaining, pool.RemainingQuantity);
+            if (quantity <= QuantityTolerance) continue;
+            lateQuantity += quantity;
+            lateRemaining -= quantity;
+            earliestLate ??= pool.AvailableFromUtc;
+        }
+
+        return new MaterialCoverageResult(
+            allocations.Sum(x => x.Quantity),
+            allocations,
+            lateQuantity,
+            earliestLate);
     }
+
+    private IEnumerable<Pool> EligiblePools(MaterialCoverageRequest request) =>
+        _pools
+            .Where(x => x.RemainingQuantity > QuantityTolerance)
+            .Where(x => !x.ProductionOrderId.HasValue || x.ProductionOrderId == request.ProductionOrderId)
+            .Where(x => Matches(x, request));
 
     private static bool Matches(Pool pool, MaterialCoverageRequest request)
     {
