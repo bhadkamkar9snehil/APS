@@ -122,6 +122,7 @@ public sealed class MaterialRequirement : Entity
     public decimal CommittedProductionCoveredQuantity { get; set; }
     public decimal PlannedProductionCoveredQuantity { get; set; }
     public decimal ActualProductionCoveredQuantity { get; set; }
+    public decimal LateSupplyQuantity { get; set; }
     public decimal NetRequirementQuantity { get; set; }
     public decimal InternalProductionQuantity { get; set; }
     public decimal ShortfallQuantity { get; set; }
