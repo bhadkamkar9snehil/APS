@@ -15,7 +15,9 @@ public enum PlanTriggerType
     ExecutionFeedback = 2,
     InventoryRefresh = 3,
     DemandRefresh = 4,
-    MasterDataRefresh = 5
+    MasterDataRefresh = 5,
+    OperationalRedispatch = 6,
+    SupplyPlanRefresh = 7
 }
 
 public enum PlanOperationType
@@ -33,6 +35,19 @@ public enum PlanOperationType
     Cutting = 11,
     Bundling = 12,
     Coiling = 13
+}
+
+/// <summary>
+/// Physical-resource assignment deliberately hardens later than the production identity.
+/// A planned assignment is an optimizer preference until the operation is explicitly firmed/committed.
+/// </summary>
+public enum OperationAssignmentCommitmentState
+{
+    Flexible = 1,
+    Firm = 2,
+    Committed = 3,
+    Running = 4,
+    Completed = 5
 }
 
 public sealed class PlanVersionState : Entity
@@ -56,12 +71,57 @@ public sealed class PlanOperationSnapshot : Entity
     public Guid SourceEntityId { get; set; }
     public PlanOperationType OperationType { get; set; }
     public ProcessOperationType ProcessOperationType { get; set; } = ProcessOperationType.Unknown;
+
+    /// <summary>Resource selected by the optimizer for this Plan Version.</summary>
     public Guid ResourceId { get; set; }
+
+    /// <summary>Explicit dispatch commitment, if operations has firmed a physical resource after planning.</summary>
+    public Guid? CommittedResourceId { get; set; }
+
+    /// <summary>Actual physical resource from execution. Once running/completed this is historical truth.</summary>
+    public Guid? ActualResourceId { get; set; }
+
+    public OperationAssignmentCommitmentState AssignmentCommitmentState { get; set; } = OperationAssignmentCommitmentState.Flexible;
     public DateTime StartUtc { get; set; }
     public DateTime EndUtc { get; set; }
     public decimal QuantityMt { get; set; }
     public required string GradeCode { get; set; }
     public required string CrossSectionCode { get; set; }
+}
+
+/// <summary>
+/// Immutable evidence of every physical resource that remained feasible for an operation when the plan was solved.
+/// This is retained even when an alternative is rarely used operationally.
+/// </summary>
+public sealed class PlanOperationResourceOptionSnapshot : Entity
+{
+    public Guid PlanVersionId { get; set; }
+    public required string PlanningKey { get; set; }
+    public Guid SourceEntityId { get; set; }
+    public ProcessOperationType ProcessOperationType { get; set; }
+    public Guid ResourceId { get; set; }
+    public int DurationMinutes { get; set; }
+    public int AssignmentPenalty { get; set; }
+    public bool WasSelected { get; set; }
+    public string? EligibilityBasisCode { get; set; }
+    public DateTime CapturedOnUtc { get; set; } = DateTime.UtcNow;
+}
+
+/// <summary>
+/// Audit row for a post-plan physical-resource reassignment. The revised assignment should normally
+/// be materialized through a child plan/replan so all route, thermal, queue, material and sequencing
+/// constraints are revalidated by the planning kernel.
+/// </summary>
+public sealed class OperationDispatchRevision : Entity
+{
+    public Guid PlanVersionId { get; set; }
+    public required string PlanningKey { get; set; }
+    public Guid PreviousResourceId { get; set; }
+    public Guid RevisedResourceId { get; set; }
+    public DateTime ChangedOnUtc { get; set; } = DateTime.UtcNow;
+    public required string ReasonCode { get; set; }
+    public string? Comment { get; set; }
+    public ExecutionUpdateSource Source { get; set; } = ExecutionUpdateSource.Manual;
 }
 
 public sealed class PlanInventoryAllocationSnapshot : Entity
