@@ -109,6 +109,14 @@ public sealed class PlanOperationSnapshot : Entity
     public DateTime? LastExecutionChangedOnUtc { get; set; }
     public string? ExecutionHistoryJson { get; set; }
 
+    /// <summary>
+    /// True when execution reports a physical resource that was not in the Plan Version's retained
+    /// eligible-resource set. Actual history is still recorded, but this becomes an explicit deviation
+    /// requiring diagnostics/replanning rather than being normalized into a valid planned redispatch.
+    /// </summary>
+    public bool IsOffPlanActualResource { get; set; }
+    public string? OffPlanActualReasonCode { get; set; }
+
     public DateTime StartUtc { get; set; }
     public DateTime EndUtc { get; set; }
     public decimal QuantityMt { get; set; }
