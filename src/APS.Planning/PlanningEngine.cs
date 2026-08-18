@@ -138,6 +138,10 @@ public sealed class PlanningEngine(
         var materialPlan = finiteSchedule.IsFeasible
             ? TimePhasedMaterialPlanner.ResolveAfterSchedule(planVersionId, request, campaignPlan, materialPreSchedule, finiteSchedule)
             : materialPreSchedule;
+        if (finiteSchedule.IsFeasible)
+        {
+            materialPlan = MaterialPlanFinalizer.Finalize(request, structure, materialPlan, finiteSchedule);
+        }
 
         if (materialPlan.Issues.Count > materialPreSchedule.Issues.Count)
         {
