@@ -21,12 +21,10 @@ internal static class DemandSnapshotProjector
                 ProductionOrderId = item.ProductionOrderId,
                 SalesOrderNumber = item.SalesOrderNumber,
                 SalesOrderItemNumber = item.SalesOrderItemNumber,
-                MaterialCode = item.FinishedGoodsCoverage.FirstOrDefault()?.MaterialCode ??
-                               demand.ProductionOrders.FirstOrDefault(x => x.Id == item.ProductionOrderId)?.MaterialCode ?? string.Empty,
-                GradeCode = item.FinishedGoodsCoverage.FirstOrDefault()?.GradeCode ??
-                            demand.ProductionOrders.FirstOrDefault(x => x.Id == item.ProductionOrderId)?.GradeCode ?? string.Empty,
-                FinalCrossSectionCode = item.FinishedGoodsCoverage.FirstOrDefault()?.CrossSectionCode ??
-                                        demand.ProductionOrders.FirstOrDefault(x => x.Id == item.ProductionOrderId)?.FinalCrossSectionCode ?? string.Empty,
+                CustomerCode = item.CustomerCode,
+                MaterialCode = item.MaterialCode,
+                GradeCode = item.GradeCode,
+                FinalCrossSectionCode = item.FinalCrossSectionCode,
                 OpenDemandQuantityMt = item.OpenDemandQuantityMt,
                 FinishedGoodsCoveredQuantityMt = item.FinishedGoodsCoveredQuantityMt,
                 ManufacturingRequirementQuantityMt = item.ManufacturingRequirementQuantityMt,
