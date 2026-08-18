@@ -141,8 +141,12 @@ public sealed class RecursiveMaterialRequirementEngine : IRecursiveMaterialRequi
         }
         var covered = Math.Min(context.Quantity, reportedCovered);
         var net = Math.Max(0m, context.Quantity - covered);
+        var lateSupply = Math.Min(net, Math.Max(0m, coverage.LateSupplyQuantity));
         ApplyCoverageBreakdown(requirement, coverage.Allocations, covered, context.Uom);
         requirement.NetRequirementQuantity = net;
+        requirement.LateSupplyQuantity = lateSupply;
+        if (coverage.EarliestLateSupplyUtc.HasValue)
+            requirement.ExpectedFullyAvailableAtUtc = coverage.EarliestLateSupplyUtc;
         foreach (var allocation in coverage.Allocations)
             coverageAllocations.Add(allocation);
 
@@ -159,11 +163,15 @@ public sealed class RecursiveMaterialRequirementEngine : IRecursiveMaterialRequi
         var selection = SelectBom(context, boms);
         if (selection.Selected is null)
         {
-            requirement.Status = MaterialRequirementStatus.NotManufacturableHere;
+            requirement.Status = lateSupply > QuantityTolerance
+                ? MaterialRequirementStatus.LateSupply
+                : MaterialRequirementStatus.NotManufacturableHere;
             requirement.IsInternallyManufacturable = false;
             requirement.InternalProductionQuantity = 0m;
             SetShortfall(requirement, net, context.Uom);
-            requirement.Explanation = $"{net:0.######} {context.Uom} remains uncovered and no effective internal BOM is configured. APS records shortfall; it does not invent BUY/TRANSFER supply.";
+            requirement.Explanation = lateSupply > QuantityTolerance
+                ? $"{net:0.######} {context.Uom} is not available by {context.RequiredAtUtc:O}. Matching supply of {lateSupply:0.######} {context.Uom} exists from {coverage.EarliestLateSupplyUtc:O}, but it is late and was not reserved early. No effective internal BOM is configured."
+                : $"{net:0.######} {context.Uom} remains uncovered and no effective internal BOM is configured. APS records shortfall; it does not invent BUY/TRANSFER supply.";
             return;
         }
 
@@ -198,7 +206,9 @@ public sealed class RecursiveMaterialRequirementEngine : IRecursiveMaterialRequi
         requirement.SelectedBomId = bom.Id;
         requirement.SelectedBomCode = bom.BomCode;
         requirement.SelectedBomVersion = bom.VersionNumber;
-        requirement.Explanation = $"{net:0.######} {context.Uom} uncovered quantity will be manufactured internally using BOM {bom.BomCode} v{bom.VersionNumber}.";
+        requirement.Explanation = lateSupply > QuantityTolerance
+            ? $"{net:0.######} {context.Uom} is uncovered on time and will be manufactured internally using BOM {bom.BomCode} v{bom.VersionNumber}. Matching future supply of {lateSupply:0.######} {context.Uom} from {coverage.EarliestLateSupplyUtc:O} is late and is not used to suppress required production."
+            : $"{net:0.######} {context.Uom} uncovered quantity will be manufactured internally using BOM {bom.BomCode} v{bom.VersionNumber}.";
 
         var nextAncestry = ancestryKeys.Concat(new[] { identity }).ToArray();
         foreach (var component in bom.Components.OrderBy(x => x.SequenceNumber).ThenBy(x => x.ComponentMaterialCode, StringComparer.OrdinalIgnoreCase))
