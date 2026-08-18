@@ -2,6 +2,7 @@ using APS.Application;
 using APS.Domain;
 using APS.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace APS.Planning.Tests;
@@ -9,7 +10,7 @@ namespace APS.Planning.Tests;
 public sealed class CanonicalBackendBoundaryTests
 {
     [Fact]
-    public async Task Production_lifecycle_owns_master_inventory_and_plan_version_persistence()
+    public async Task Production_lifecycle_derives_demand_before_the_production_kernel_and_does_not_double_net_fg()
     {
         var resource = NewResource("RM-1", ProcessUnitType.HotRollingMill, ResourceType.RollingMill);
         var routeOperation = new ManufacturingRouteOperation
@@ -26,6 +27,7 @@ public sealed class CanonicalBackendBoundaryTests
             MaterialCode = "FG-16",
             GradeCode = "G1",
             CrossSectionCode = "16MM",
+            Stage = InventoryStage.FinishedGoods,
             AvailableQuantityMt = 25m
         };
         var masters = new FakeMasterProvider(new PlanningMasterDataSnapshot(
@@ -40,20 +42,23 @@ public sealed class CanonicalBackendBoundaryTests
             new[] { routeOperation },
             Array.Empty<RouteResourceCapability>()));
         var inventory = new FakeInventoryProvider(new[] { inventoryRow });
+        var demand = new CapturingDemandService();
         var engine = new CapturingPlanningEngine();
         var plans = new FakePlanRepository();
-        var lifecycle = new PlanningLifecycleService(engine, plans, masters, inventory, new EmptyActualStateProvider());
+        var lifecycle = NewLifecycle(engine, plans, masters, inventory, demand);
 
         var outcome = await lifecycle.CalculateAsync(NewCalculationRequest());
 
         Assert.NotNull(engine.LastRequest);
         Assert.Equal(PlanningExecutionMode.Production, engine.LastRequest!.ExecutionMode);
-        Assert.Same(inventoryRow, Assert.Single(engine.LastRequest.Inventory));
+        Assert.Same(inventoryRow, Assert.Single(demand.LastInventory!));
+        Assert.Empty(engine.LastRequest.Inventory); // FG has already been consumed by demand orchestration.
         Assert.Equal(resource.Id, Assert.Single(engine.LastRequest.Resources).Id);
         Assert.NotNull(engine.LastRequest.RoutePlanning);
         Assert.Equal(engine.LastResult!.PlanVersionId, outcome.Version.PlanVersionId);
         Assert.NotNull(plans.LastPersistRequest);
-        Assert.Equal(engine.LastResult.PlanVersionId, plans.LastPersistRequest!.PlanningResult.PlanVersionId);
+        Assert.Same(demand.LastResult, plans.LastPersistRequest!.Demand);
+        Assert.Equal(engine.LastResult.PlanVersionId, plans.LastPersistRequest.PlanningResult.PlanVersionId);
     }
 
     [Fact]
@@ -71,12 +76,12 @@ public sealed class CanonicalBackendBoundaryTests
             Array.Empty<ManufacturingRoute>(),
             Array.Empty<ManufacturingRouteOperation>(),
             Array.Empty<RouteResourceCapability>()));
-        var lifecycle = new PlanningLifecycleService(
+        var lifecycle = NewLifecycle(
             new CapturingPlanningEngine(),
             new FakePlanRepository(),
             masters,
             new FakeInventoryProvider(Array.Empty<InventoryPosition>()),
-            new EmptyActualStateProvider());
+            new CapturingDemandService());
 
         var exception = await Assert.ThrowsAsync<PlanningConfigurationException>(
             () => lifecycle.CalculateAsync(NewCalculationRequest()));
@@ -109,12 +114,12 @@ public sealed class CanonicalBackendBoundaryTests
                 }
             },
             Array.Empty<RouteResourceCapability>()));
-        var lifecycle = new PlanningLifecycleService(
+        var lifecycle = NewLifecycle(
             new CapturingPlanningEngine(),
             new FakePlanRepository(),
             masters,
             new FakeInventoryProvider(Array.Empty<InventoryPosition>()),
-            new EmptyActualStateProvider());
+            new CapturingDemandService());
         var request = NewCalculationRequest() with
         {
             MaterialSupplyPolicy = new MaterialSupplyPlanningPolicy(AllowExternalBuy: true)
@@ -160,12 +165,7 @@ public sealed class CanonicalBackendBoundaryTests
         var resourceId = Guid.NewGuid();
         var start = new DateTime(2026, 8, 20, 8, 0, 0, DateTimeKind.Utc);
 
-        db.PlanVersions.Add(new PlanVersion
-        {
-            Id = planVersionId,
-            VersionNumber = "PLAN-TEST",
-            IsReleased = false
-        });
+        db.PlanVersions.Add(new PlanVersion { Id = planVersionId, VersionNumber = "PLAN-TEST", IsReleased = false });
         db.PlanVersionStates.Add(new PlanVersionState
         {
             PlanVersionId = planVersionId,
@@ -293,8 +293,7 @@ public sealed class CanonicalBackendBoundaryTests
         });
         await db.SaveChangesAsync();
 
-        var release = await new PersistedPlanReleaseService(db, new PlanReleaseRepository(db))
-            .ReleaseAsync(planVersionId);
+        var release = await new PersistedPlanReleaseService(db, new PlanReleaseRepository(db)).ReleaseAsync(planVersionId);
 
         var workOrder = Assert.Single(release.WorkOrders);
         Assert.Equal(WorkOrderType.Finishing, workOrder.WorkOrderType);
@@ -305,8 +304,22 @@ public sealed class CanonicalBackendBoundaryTests
         Assert.True(scheduled.IsFrozen);
     }
 
+    private static PlanningLifecycleService NewLifecycle(
+        IPlanningEngine engine,
+        IPlanVersionRepository plans,
+        IPlanningMasterDataProvider masters,
+        IInventorySnapshotProvider inventory,
+        IProductionDemandOrchestrationService demand) => new(
+            engine,
+            plans,
+            masters,
+            inventory,
+            new EmptyActualStateProvider(),
+            demand,
+            NullLogger<PlanningLifecycleService>.Instance);
+
     private static PlanningCalculationRequest NewCalculationRequest() => new(
-        Array.Empty<ProductionOrder>(),
+        new PlanningDemandSelection(),
         new CampaignPlanningPolicy(100m, 90m, 110m, 500m, 600m),
         new ProductionStructurePlanningPolicy(),
         new DateTime(2026, 8, 20, 0, 0, 0, DateTimeKind.Utc),
@@ -381,16 +394,45 @@ public sealed class CanonicalBackendBoundaryTests
         }
     }
 
+    private sealed class CapturingDemandService : IProductionDemandOrchestrationService
+    {
+        public IReadOnlyCollection<InventoryPosition>? LastInventory { get; private set; }
+        public DemandOrchestrationResult? LastResult { get; private set; }
+
+        public Task<SalesOrderReconciliationResult> ReconcileSalesOrdersAsync(
+            IReadOnlyCollection<SalesOrderDemandInput> salesOrders,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SalesOrderReconciliationResult(0, 0, salesOrders.Count, 0, Array.Empty<Guid>()));
+
+        public Task<DemandOrchestrationResult> PrepareAsync(
+            PlanningDemandSelection selection,
+            IReadOnlyCollection<InventoryPosition> inventory,
+            PlanningMasterDataSnapshot masters,
+            DateTime referenceTimeUtc,
+            DateTime horizonEndUtc,
+            CancellationToken cancellationToken = default)
+        {
+            LastInventory = inventory;
+            LastResult = new DemandOrchestrationResult(
+                Array.Empty<ProductionOrder>(),
+                Array.Empty<DemandOrchestrationItem>(),
+                Array.Empty<ProductionOrder>(),
+                Array.Empty<PlanningIssue>());
+            return Task.FromResult(LastResult);
+        }
+
+        public Task<IReadOnlyCollection<DemandOrchestrationItem>> GetCurrentMtoDemandAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyCollection<DemandOrchestrationItem>>(Array.Empty<DemandOrchestrationItem>());
+    }
+
     private sealed class FakeMasterProvider(PlanningMasterDataSnapshot snapshot) : IPlanningMasterDataProvider
     {
-        public Task<PlanningMasterDataSnapshot> GetAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(snapshot);
+        public Task<PlanningMasterDataSnapshot> GetAsync(CancellationToken cancellationToken = default) => Task.FromResult(snapshot);
     }
 
     private sealed class FakeInventoryProvider(IReadOnlyCollection<InventoryPosition> rows) : IInventorySnapshotProvider
     {
-        public Task<IReadOnlyCollection<InventoryPosition>> GetInventoryAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(rows);
+        public Task<IReadOnlyCollection<InventoryPosition>> GetInventoryAsync(CancellationToken cancellationToken = default) => Task.FromResult(rows);
     }
 
     private sealed class FakePlanRepository : IPlanVersionRepository
