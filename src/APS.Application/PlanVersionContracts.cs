@@ -30,7 +30,18 @@ public sealed record PlanVersionSnapshot(
     IReadOnlyCollection<MaterialSupplyRequirement>? MaterialSupplyRequirements = null,
     IReadOnlyCollection<MaterialSupplyReservation>? MaterialReservations = null,
     IReadOnlyCollection<MaterialBalanceEvent>? MaterialLedger = null,
-    IReadOnlyCollection<PlanningSupplyAlternative>? SourcingAlternatives = null);
+    IReadOnlyCollection<PlanningSupplyAlternative>? SourcingAlternatives = null)
+{
+    /// <summary>
+    /// Tree projection over the same persisted MaterialRequirements facts. The existing MaterialRequirements
+    /// collection remains the flattened read model, so Plan-Version API consumers can use either representation
+    /// without recomputing BOM lineage in the UI.
+    /// </summary>
+    public IReadOnlyCollection<MaterialRequirementTreeNode> MaterialRequirementTree =>
+        MaterialRequirementReadModelBuilder.Build(
+            PlanVersionId,
+            MaterialRequirements ?? Array.Empty<MaterialRequirement>()).Roots;
+}
 
 public interface IPlanVersionRepository
 {
