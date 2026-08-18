@@ -29,7 +29,9 @@ public sealed class SqlInventorySnapshotProvider(ApsDbContext db) : IInventorySn
                 x.GradeCode,
                 x.CrossSectionCode,
                 x.Stage,
-                x.LocationCode))
+                x.LocationCode,
+                x.AvailableFromUtc,
+                x.QualityStatus))
             .Select(group =>
             {
                 var available = group.Sum(x => x.QuantityMt);
@@ -48,11 +50,14 @@ public sealed class SqlInventorySnapshotProvider(ApsDbContext db) : IInventorySn
                     CrossSectionCode = group.Key.CrossSectionCode,
                     Stage = group.Key.Stage,
                     LocationCode = group.Key.LocationCode,
+                    AvailableFromUtc = group.Key.AvailableFromUtc,
+                    QualityStatus = group.Key.QualityStatus,
                     AvailableQuantityMt = available,
                     ReservedQuantityMt = reserved
                 };
             })
             .OrderBy(x => x.Stage)
+            .ThenBy(x => x.AvailableFromUtc ?? DateTime.MinValue)
             .ThenBy(x => x.MaterialCode)
             .ThenBy(x => x.GradeCode)
             .ThenBy(x => x.CrossSectionCode)
@@ -65,5 +70,7 @@ public sealed class SqlInventorySnapshotProvider(ApsDbContext db) : IInventorySn
         string GradeCode,
         string CrossSectionCode,
         InventoryStage Stage,
-        string? LocationCode);
+        string? LocationCode,
+        DateTime? AvailableFromUtc,
+        MaterialQualityStatus QualityStatus);
 }
