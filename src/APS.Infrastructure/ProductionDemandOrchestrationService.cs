@@ -779,11 +779,17 @@ public sealed class ProductionDemandOrchestrationService(
                    po.ChemistryOverrides.Count == 0 && po.ProcessOverrides.Count == 0;
         }
 
+        // RequiredRouteCode on a Production Order is the resolved manufacturing route. When the SO does
+        // not explicitly override the route, the PO legitimately stores the grade/master-data default.
+        // A null SO route override therefore must not make an otherwise unchanged firm/released PO look stale.
+        var explicitRouteMismatch = !string.IsNullOrWhiteSpace(source.RequiredRouteCode) &&
+                                    !Same(po.RequiredRouteCode, source.RequiredRouteCode);
+
         if (!Same(po.QualityClassCode, source.QualityClassCode) ||
             po.SegregationPolicy != source.SegregationPolicy ||
             po.RequireVd != source.RequireVd || po.ForbidVd != source.ForbidVd ||
             po.RequireReheating != source.RequireReheating || po.ForbidHotCharge != source.ForbidHotCharge ||
-            po.RequireTmt != source.RequireTmt || !Same(po.RequiredRouteCode, source.RequiredRouteCode) ||
+            po.RequireTmt != source.RequireTmt || explicitRouteMismatch ||
             po.RequiredResourceId != source.RequiredResourceId ||
             !Same(po.RequiredResourceGroupCode, source.RequiredResourceGroupCode) ||
             po.MinimumSuperheatC != source.MinimumSuperheatC || po.TargetSuperheatC != source.TargetSuperheatC || po.MaximumSuperheatC != source.MaximumSuperheatC ||
