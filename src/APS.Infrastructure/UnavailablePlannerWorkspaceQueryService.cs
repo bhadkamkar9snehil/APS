@@ -41,4 +41,15 @@ public sealed class UnavailablePlannerWorkspaceQueryService : IPlannerWorkspaceQ
         Guid? planVersionId = null,
         CancellationToken cancellationToken = default) =>
         Task.FromResult<FiniteScheduleWorkspaceView?>(null);
+
+    public Task<WorkOrdersWorkspaceView?> GetWorkOrdersAsync(
+        Guid? planVersionId = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<WorkOrdersWorkspaceView?>(null);
+
+    public Task<PlanComparisonWorkspaceView?> GetPlanComparisonAsync(
+        Guid baselinePlanVersionId,
+        Guid newPlanVersionId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<PlanComparisonWorkspaceView?>(null);
 }
