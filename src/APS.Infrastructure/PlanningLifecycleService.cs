@@ -158,9 +158,16 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
         IReadOnlyCollection<CommittedMaterialSupply>? committedSupplies = null,
         PlanningReplanContext? replanContext = null)
     {
+        // MTO/MTS POs entering the production kernel are already net manufacturing requirements.
+        // Finished-goods coverage is owned by demand orchestration and snapshotted separately; passing FG
+        // positions downstream would allow CampaignPlanningService compatibility logic to net the same stock twice.
+        var productionInventory = inventory
+            .Where(x => x.Stage != InventoryStage.FinishedGoods)
+            .ToArray();
+
         return new PlanningRunRequest(
             ProductionOrders: productionOrders,
-            Inventory: inventory,
+            Inventory: productionInventory,
             Resources: masterData.Resources,
             Capabilities: masterData.ResourceCapabilities,
             ResourceCalendars: masterData.ResourceCalendars,
