@@ -102,6 +102,7 @@ public sealed record PlanningRunRequest(
     IReadOnlyCollection<OperationAssignmentPolicy>? AssignmentPolicies = null,
     IReadOnlyCollection<MaterialSourcingRule>? MaterialSourcingRules = null,
     IReadOnlyCollection<CommittedMaterialSupply>? CommittedMaterialSupplies = null,
+    IReadOnlyCollection<BillOfMaterial>? BillsOfMaterial = null,
     PlanningExecutionMode ExecutionMode = PlanningExecutionMode.Compatibility);
 
 public sealed record PlanningRunResult(
