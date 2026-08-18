@@ -53,7 +53,8 @@ public sealed class PlanningEngine(
             ? structurePlanning.Build(structureRequest)
             : ConfiguredRouteProductionStructureBuilder.Build(structureRequest);
 
-        if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
+        if (HasErrors(structure))
+            return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
 
         structure = HeatLevelScheduleProjector.Apply(
             structure,
@@ -62,7 +63,8 @@ public sealed class PlanningEngine(
             request.FlowLinks,
             request.StructurePolicy,
             heatAllocations);
-        if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
+        if (HasErrors(structure))
+            return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
 
         if (request.RoutePlanning is not null)
         {
@@ -74,7 +76,8 @@ public sealed class PlanningEngine(
                 request.FlowLinks,
                 request.SteelGrades,
                 heatAllocations);
-            if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
+            if (HasErrors(structure))
+                return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
 
             structure = RollingFeedProjector.Apply(
                 structure,
@@ -84,7 +87,8 @@ public sealed class PlanningEngine(
                 request.Capabilities,
                 request.FlowLinks,
                 request.ExternalMaterialSupplies);
-            if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
+            if (HasErrors(structure))
+                return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
 
             structure = MultiStageRouteProjector.Apply(
                 structure,
@@ -92,10 +96,31 @@ public sealed class PlanningEngine(
                 request.Resources,
                 effectiveTransitionRules,
                 request.FlowLinks);
-            if (HasErrors(structure)) return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
+            if (HasErrors(structure))
+                return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
         }
 
+        // Stable identities are built before any operations override narrows a resource set. The original
+        // task options remain the immutable operational-flexibility evidence for this Plan Version.
         var identities = PlanningTaskIdentityService.Build(structure);
+        var originalTasks = structure.SchedulingTasks.ToArray();
+        var overrideResult = ApplyResourceOverrides(structure.SchedulingTasks, identities, request.ReplanContext?.ResourceOverrides);
+        if (overrideResult.Issues.Count > 0)
+        {
+            structure = structure with { Issues = structure.Issues.Concat(overrideResult.Issues).ToArray() };
+            return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
+        }
+        structure = structure with { SchedulingTasks = overrideResult.Tasks };
+
+        var materialPreSchedule = TimePhasedMaterialPlanner.BuildPreSchedule(request, campaignPlan, structure);
+        if (materialPreSchedule.Issues.Any(x => x.Severity == PlanningIssueSeverity.Error))
+        {
+            var issues = structure.Issues.Concat(materialPreSchedule.Issues).ToArray();
+            structure = structure with { Issues = issues };
+            var invalid = InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
+            return invalid with { MaterialPlan = materialPreSchedule };
+        }
+
         var stabilityConstraints = BuildStabilityConstraints(request, structure.SchedulingTasks, identities);
         var finiteSchedule = scheduleOptimizer.Solve(new FiniteScheduleRequest(
             request.HorizonStartUtc,
@@ -106,8 +131,28 @@ public sealed class PlanningEngine(
             effectiveTransitionRules,
             request.MaxSolverSeconds,
             stabilityConstraints,
-            request.SteelGrades));
+            request.SteelGrades,
+            materialPreSchedule.ScheduleEvents));
 
+        var materialPlan = finiteSchedule.IsFeasible
+            ? TimePhasedMaterialPlanner.ResolveAfterSchedule(
+                planVersionId,
+                request,
+                campaignPlan,
+                materialPreSchedule,
+                finiteSchedule)
+            : materialPreSchedule;
+
+        if (materialPlan.Issues.Count > materialPreSchedule.Issues.Count)
+        {
+            finiteSchedule = finiteSchedule with
+            {
+                Issues = finiteSchedule.Issues.Concat(
+                    materialPlan.Issues.Except(materialPreSchedule.Issues)).ToArray()
+            };
+        }
+
+        var alternatives = BuildResourceAlternatives(originalTasks, identities, finiteSchedule);
         var packagingUnits = PackagingProjectionService.Build(
             request.ProductionOrders,
             campaignPlan,
@@ -115,17 +160,22 @@ public sealed class PlanningEngine(
             request.PackagingSpecifications,
             request.CrossSections);
 
+        var feasible = finiteSchedule.IsFeasible &&
+                       !materialPlan.Issues.Any(x => x.Severity == PlanningIssueSeverity.Error);
+
         return new PlanningRunResult(
             planVersionId,
             createdOnUtc,
             campaignPlan,
             structure,
             finiteSchedule,
-            finiteSchedule.IsFeasible,
+            feasible,
             identities,
             request.ReplanContext?.BaselinePlanVersionId,
             packagingUnits,
-            requirementSnapshots);
+            requirementSnapshots,
+            alternatives,
+            materialPlan);
     }
 
     private static bool HasErrors(ProductionStructurePlanningResult structure) =>
@@ -144,6 +194,78 @@ public sealed class PlanningEngine(
             Array.Empty<PlanningTaskIdentity>(), baselinePlanVersionId, null, requirementSnapshots);
     }
 
+    private static ResourceOverrideApplicationResult ApplyResourceOverrides(
+        IReadOnlyCollection<FiniteScheduleTask> tasks,
+        IReadOnlyCollection<PlanningTaskIdentity> identities,
+        IReadOnlyCollection<OperationResourceOverride>? overrides)
+    {
+        if (overrides is not { Count: > 0 }) return new ResourceOverrideApplicationResult(tasks, Array.Empty<PlanningIssue>());
+
+        var identityByKey = identities.ToDictionary(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase);
+        var taskById = tasks.ToDictionary(x => x.TaskId);
+        var issues = new List<PlanningIssue>();
+        var replacement = new Dictionary<Guid, FiniteScheduleTask>();
+
+        foreach (var resourceOverride in overrides)
+        {
+            if (!identityByKey.TryGetValue(resourceOverride.PlanningKey, out var identity) ||
+                !taskById.TryGetValue(identity.TaskId, out var task))
+            {
+                issues.Add(new PlanningIssue(
+                    PlanningIssueSeverity.Error,
+                    "DISPATCH_OPERATION_NOT_FOUND",
+                    $"Operational redispatch references unknown planning key {resourceOverride.PlanningKey}."));
+                continue;
+            }
+
+            var selected = task.ResourceOptions.FirstOrDefault(x => x.ResourceId == resourceOverride.ResourceId);
+            if (selected is null)
+            {
+                issues.Add(new PlanningIssue(
+                    PlanningIssueSeverity.Error,
+                    "DISPATCH_RESOURCE_NOT_ELIGIBLE",
+                    $"Resource {resourceOverride.ResourceId} was not an eligible alternative for {resourceOverride.PlanningKey}; redispatch is rejected before solve.",
+                    task.TaskId));
+                continue;
+            }
+
+            replacement[task.TaskId] = task with { ResourceOptions = new[] { selected } };
+        }
+
+        var result = tasks.Select(x => replacement.TryGetValue(x.TaskId, out var revised) ? revised : x).ToArray();
+        return new ResourceOverrideApplicationResult(result, issues);
+    }
+
+    private static IReadOnlyCollection<PlanningOperationResourceAlternative> BuildResourceAlternatives(
+        IReadOnlyCollection<FiniteScheduleTask> originalTasks,
+        IReadOnlyCollection<PlanningTaskIdentity> identities,
+        FiniteScheduleResult schedule)
+    {
+        var keyByTask = identities.ToDictionary(x => x.TaskId);
+        var selectedByTask = schedule.Assignments.ToDictionary(x => x.TaskId, x => x.ResourceId);
+        var result = new List<PlanningOperationResourceAlternative>();
+
+        foreach (var task in originalTasks)
+        {
+            if (!keyByTask.TryGetValue(task.TaskId, out var identity)) continue;
+            selectedByTask.TryGetValue(task.TaskId, out var selected);
+            foreach (var option in task.ResourceOptions)
+            {
+                result.Add(new PlanningOperationResourceAlternative(
+                    task.TaskId,
+                    task.SourceEntityId,
+                    identity.PlanningKey,
+                    task.ProcessOperationType,
+                    option.ResourceId,
+                    option.DurationMinutes,
+                    option.AssignmentPenalty,
+                    selected != Guid.Empty && selected == option.ResourceId));
+            }
+        }
+
+        return result;
+    }
+
     private static IReadOnlyCollection<FiniteScheduleStabilityConstraint> BuildStabilityConstraints(
         PlanningRunRequest request,
         IReadOnlyCollection<FiniteScheduleTask> tasks,
@@ -152,6 +274,9 @@ public sealed class PlanningEngine(
         var context = request.ReplanContext;
         if (context is null || context.BaselineOperations.Count == 0) return Array.Empty<FiniteScheduleStabilityConstraint>();
 
+        var overrideKeys = (context.ResourceOverrides ?? Array.Empty<OperationResourceOverride>())
+            .Select(x => x.PlanningKey)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var taskIds = tasks.Select(x => x.TaskId).ToHashSet();
         var baselineByKey = context.BaselineOperations
             .GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
@@ -161,6 +286,9 @@ public sealed class PlanningEngine(
 
         foreach (var identity in identities.Where(x => taskIds.Contains(x.TaskId)))
         {
+            // An explicit dispatch decision deliberately supersedes the baseline resource freeze for
+            // this operation. The new resource is still constrained by the entire CP-SAT model.
+            if (overrideKeys.Contains(identity.PlanningKey)) continue;
             if (!baselineByKey.TryGetValue(identity.PlanningKey, out var baseline) || baseline.EndUtc <= context.ReferenceTimeUtc) continue;
             var minutesToStart = (baseline.StartUtc - context.ReferenceTimeUtc).TotalMinutes;
             var zone = minutesToStart <= policy.FrozenMinutes ? TimeFenceZone.Frozen
@@ -177,4 +305,8 @@ public sealed class PlanningEngine(
         }
         return constraints;
     }
+
+    private sealed record ResourceOverrideApplicationResult(
+        IReadOnlyCollection<FiniteScheduleTask> Tasks,
+        IReadOnlyCollection<PlanningIssue> Issues);
 }
