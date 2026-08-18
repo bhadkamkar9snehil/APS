@@ -5,6 +5,7 @@ using APS.Infrastructure;
 using APS.Planning;
 using APS.Service.Components;
 using APS.UI.State;
+using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 
@@ -52,6 +53,7 @@ if (hasApsDatabase)
     builder.Services.AddScoped<IPlanComparisonService, PlanComparisonService>();
     builder.Services.AddScoped<IPlannerWorkspaceQueryService, PlannerWorkspaceQueryService>();
     builder.Services.AddScoped<IPlanningMasterDataProvider, SqlPlanningMasterDataProvider>();
+    builder.Services.AddScoped<IProductionDemandOrchestrationService, ProductionDemandOrchestrationService>();
     builder.Services.AddScoped<IPlanningLifecycleService, PlanningLifecycleService>();
 }
 else
@@ -86,6 +88,27 @@ if (hasApsDatabase)
     app.MapGet("/api/planning/master-data",
         async (IPlanningMasterDataProvider masters, CancellationToken cancellationToken) =>
             Results.Ok(await masters.GetAsync(cancellationToken)));
+
+    app.MapPost("/api/demand/sales-orders/reconcile",
+        async (IReadOnlyCollection<SalesOrderDemandInput> salesOrders,
+            IProductionDemandOrchestrationService demand,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await demand.ReconcileSalesOrdersAsync(salesOrders, cancellationToken));
+            }
+            catch (ValidationException ex)
+            {
+                return Results.ValidationProblem(ex.Errors
+                    .GroupBy(x => x.PropertyName)
+                    .ToDictionary(x => x.Key, x => x.Select(y => y.ErrorMessage).ToArray()));
+            }
+        });
+
+    app.MapGet("/api/demand/mto",
+        async (IProductionDemandOrchestrationService demand, CancellationToken cancellationToken) =>
+            Results.Ok(await demand.GetCurrentMtoDemandAsync(cancellationToken)));
 
     var plannerApi = app.MapGroup("/api/ui/planner");
 
@@ -208,6 +231,12 @@ if (hasApsDatabase)
             var outcome = await lifecycle.CalculateAsync(request, cancellationToken);
             return outcome.Plan.IsFeasible ? Results.Ok(outcome) : Results.UnprocessableEntity(outcome);
         }
+        catch (ValidationException ex)
+        {
+            return Results.ValidationProblem(ex.Errors
+                .GroupBy(x => x.PropertyName)
+                .ToDictionary(x => x.Key, x => x.Select(y => y.ErrorMessage).ToArray()));
+        }
         catch (PlanningConfigurationException ex)
         {
             return Results.Problem(
@@ -232,6 +261,12 @@ if (hasApsDatabase)
             {
                 var outcome = await lifecycle.ReplanAsync(baselinePlanVersionId, request, cancellationToken);
                 return outcome.Plan.IsFeasible ? Results.Ok(outcome) : Results.UnprocessableEntity(outcome);
+            }
+            catch (ValidationException ex)
+            {
+                return Results.ValidationProblem(ex.Errors
+                    .GroupBy(x => x.PropertyName)
+                    .ToDictionary(x => x.Key, x => x.Select(y => y.ErrorMessage).ToArray()));
             }
             catch (KeyNotFoundException ex)
             {
@@ -286,8 +321,10 @@ else
     static IResult PlanningUnavailable() => Results.Problem(
         statusCode: StatusCodes.Status503ServiceUnavailable,
         title: "APS production planning is unavailable",
-        detail: "The APS SQL database is not configured. Production calculation, Plan Version persistence, release and replanning require the canonical persisted backend.");
+        detail: "The APS SQL database is not configured. Production calculation, Plan Version persistence, release, replanning and demand orchestration require the canonical persisted backend.");
 
+    app.MapPost("/api/demand/sales-orders/reconcile", () => PlanningUnavailable());
+    app.MapGet("/api/demand/mto", () => PlanningUnavailable());
     app.MapPost("/api/planning/calculate", () => PlanningUnavailable());
     app.MapPost("/api/planning/run", () => PlanningUnavailable());
     app.MapPost("/api/planning/replan/{baselinePlanVersionId:guid}", (Guid baselinePlanVersionId) => PlanningUnavailable());
