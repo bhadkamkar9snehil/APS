@@ -56,10 +56,6 @@ public enum MaterialRequirementSourceType
     StockPolicy = 5
 }
 
-/// <summary>
-/// A time-phased qualified material need. This remains in the plan even when the material does not
-/// currently exist; supply planning decides how and when the requirement will be satisfied.
-/// </summary>
 public sealed class MaterialRequirement : Entity
 {
     public Guid? PlanVersionId { get; set; }
@@ -85,14 +81,15 @@ public sealed class MaterialRequirement : Entity
     public string? Explanation { get; set; }
 }
 
-/// <summary>
-/// Explicit action generated when time-phased qualified supply is insufficient. A MAKE action is
-/// normally satisfied by an APS-planned upstream campaign/heat; BUY/TRANSFER become external expected receipts.
-/// </summary>
 public sealed class MaterialSupplyRequirement : Entity
 {
     public Guid? PlanVersionId { get; set; }
     public Guid MaterialRequirementId { get; set; }
+    public Guid? ProductionOrderId { get; set; }
+    public string? MaterialSpecificationCode { get; set; }
+    public required string MaterialCode { get; set; }
+    public required string GradeCode { get; set; }
+    public required string CrossSectionCode { get; set; }
     public MaterialSupplyActionType ActionType { get; set; }
     public decimal QuantityMt { get; set; }
     public DateTime RequiredReceiptUtc { get; set; }
@@ -107,11 +104,6 @@ public sealed class MaterialSupplyRequirement : Entity
     public string? Explanation { get; set; }
 }
 
-/// <summary>
-/// A plan's explicit claim on one qualified material supply. The same supply quantity cannot be
-/// committed twice inside an authoritative plan, and released-plan reservations can be carried
-/// forward into replanning.
-/// </summary>
 public sealed class MaterialSupplyReservation : Entity
 {
     public Guid? PlanVersionId { get; set; }
@@ -129,10 +121,6 @@ public sealed class MaterialSupplyReservation : Entity
     public DateTime CreatedOnUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>
-/// Auditable time-phased material movement. Positive quantity is receipt; negative quantity is
-/// consumption/withdrawal. Task-linked events use the scheduled task start/end as their effective time.
-/// </summary>
 public sealed class MaterialBalanceEvent : Entity
 {
     public Guid? PlanVersionId { get; set; }
