@@ -37,10 +37,6 @@ public enum PlanOperationType
     Coiling = 13
 }
 
-/// <summary>
-/// Physical-resource assignment deliberately hardens later than the production identity.
-/// A planned assignment is an optimizer preference until the operation is explicitly firmed/committed.
-/// </summary>
 public enum OperationAssignmentCommitmentState
 {
     Flexible = 1,
@@ -62,6 +58,12 @@ public sealed class PlanVersionState : Entity
     public string? SolverStatus { get; set; }
     public long? ObjectiveValue { get; set; }
     public bool IsActive { get; set; }
+
+    // Immutable serialized Plan Version facts. These are snapshots, not live-master references.
+    public string? MaterialRequirementsJson { get; set; }
+    public string? MaterialSupplyRequirementsJson { get; set; }
+    public string? MaterialReservationsJson { get; set; }
+    public string? MaterialLedgerJson { get; set; }
 }
 
 public sealed class PlanOperationSnapshot : Entity
@@ -82,6 +84,16 @@ public sealed class PlanOperationSnapshot : Entity
     public Guid? ActualResourceId { get; set; }
 
     public OperationAssignmentCommitmentState AssignmentCommitmentState { get; set; } = OperationAssignmentCommitmentState.Flexible;
+
+    /// <summary>Immutable serialized set of all alternatives that were feasible when this plan was solved.</summary>
+    public string? EligibleResourceOptionsJson { get; set; }
+
+    /// <summary>For child plans created by an operational redispatch, records the displaced resource.</summary>
+    public Guid? PreviousPlannedResourceId { get; set; }
+    public string? RedispatchReasonCode { get; set; }
+    public string? RedispatchComment { get; set; }
+    public DateTime? RedispatchedOnUtc { get; set; }
+
     public DateTime StartUtc { get; set; }
     public DateTime EndUtc { get; set; }
     public decimal QuantityMt { get; set; }
@@ -90,8 +102,8 @@ public sealed class PlanOperationSnapshot : Entity
 }
 
 /// <summary>
-/// Immutable evidence of every physical resource that remained feasible for an operation when the plan was solved.
-/// This is retained even when an alternative is rarely used operationally.
+/// Typed in-memory representation of one retained resource option. PlanOperationSnapshot stores the
+/// immutable set as JSON so historical alternatives remain part of the operation snapshot aggregate.
 /// </summary>
 public sealed class PlanOperationResourceOptionSnapshot : Entity
 {
@@ -107,11 +119,6 @@ public sealed class PlanOperationResourceOptionSnapshot : Entity
     public DateTime CapturedOnUtc { get; set; } = DateTime.UtcNow;
 }
 
-/// <summary>
-/// Audit row for a post-plan physical-resource reassignment. The revised assignment should normally
-/// be materialized through a child plan/replan so all route, thermal, queue, material and sequencing
-/// constraints are revalidated by the planning kernel.
-/// </summary>
 public sealed class OperationDispatchRevision : Entity
 {
     public Guid PlanVersionId { get; set; }
