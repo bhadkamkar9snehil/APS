@@ -31,4 +31,14 @@ public sealed class UnavailablePlannerWorkspaceQueryService : IPlannerWorkspaceQ
         Guid? planVersionId = null,
         CancellationToken cancellationToken = default) =>
         Task.FromResult<CampaignStudioView?>(null);
+
+    public Task<SteelmakingCastingWorkspaceView?> GetSteelmakingCastingAsync(
+        Guid? planVersionId = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<SteelmakingCastingWorkspaceView?>(null);
+
+    public Task<FiniteScheduleWorkspaceView?> GetFiniteScheduleAsync(
+        Guid? planVersionId = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<FiniteScheduleWorkspaceView?>(null);
 }
