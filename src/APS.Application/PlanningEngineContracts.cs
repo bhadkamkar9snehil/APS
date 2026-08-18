@@ -103,7 +103,8 @@ public sealed record PlanningRunRequest(
     IReadOnlyCollection<MaterialSourcingRule>? MaterialSourcingRules = null,
     IReadOnlyCollection<CommittedMaterialSupply>? CommittedMaterialSupplies = null,
     PlanningExecutionMode ExecutionMode = PlanningExecutionMode.Compatibility,
-    IReadOnlyCollection<BillOfMaterial>? BillsOfMaterial = null);
+    IReadOnlyCollection<BillOfMaterial>? BillsOfMaterial = null,
+    IReadOnlyCollection<PrecomputedCampaignMaterialDemand>? PrecomputedCampaignMaterialDemand = null);
 
 public sealed record PlanningRunResult(
     Guid PlanVersionId,
