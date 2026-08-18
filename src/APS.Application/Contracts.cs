@@ -246,6 +246,17 @@ public sealed record FiniteScheduleTask(
     IReadOnlyCollection<FiniteScheduleDependency> Dependencies,
     ProcessOperationType ProcessOperationType = ProcessOperationType.Unknown);
 
+/// <summary>
+/// Quantity/date service obligation attached to a physical scheduling task. Multiple POs may share
+/// one heat/rolling/finishing task without collapsing their individual required dates into one date.
+/// </summary>
+public sealed record FiniteScheduleServiceObligation(
+    Guid TaskId,
+    Guid ProductionOrderId,
+    decimal QuantityMt,
+    DateTime DueUtc,
+    int Priority);
+
 public sealed record FiniteScheduleStabilityConstraint(
     Guid TaskId,
     TimeFenceZone Zone,
@@ -264,7 +275,8 @@ public sealed record FiniteScheduleRequest(
     int MaxSolverSeconds = 20,
     IReadOnlyCollection<FiniteScheduleStabilityConstraint>? StabilityConstraints = null,
     IReadOnlyCollection<SteelGrade>? SteelGrades = null,
-    IReadOnlyCollection<ScheduledMaterialEvent>? MaterialEvents = null);
+    IReadOnlyCollection<ScheduledMaterialEvent>? MaterialEvents = null,
+    IReadOnlyCollection<FiniteScheduleServiceObligation>? ServiceObligations = null);
 
 public sealed record FiniteScheduleAssignment(
     Guid TaskId,
