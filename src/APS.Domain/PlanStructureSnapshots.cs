@@ -33,13 +33,11 @@ public sealed class PlanProductionOrderSnapshot : Entity
     public decimal? TargetStockMt { get; set; }
     public decimal? ProjectedAvailableStockMt { get; set; }
     public string? StockPolicyCode { get; set; }
-
     public decimal FinishedGoodsAllocatedMt { get; set; }
     public decimal RollingRequirementMt { get; set; }
     public decimal ExistingIntermediateAllocatedMt { get; set; }
     public decimal ExternalIntermediateAllocatedMt { get; set; }
     public decimal FreshSteelRequirementMt { get; set; }
-
     public Guid? RequirementSnapshotId { get; set; }
     public PlanOrderRequirementSnapshot? RequirementSnapshot { get; set; }
 }
@@ -151,6 +149,36 @@ public sealed class PlanRollingPlanAllocationSnapshot : Entity
     public decimal PlannedQuantityMt { get; set; }
     public decimal ExistingIntermediateInventoryMt { get; set; }
     public decimal FreshSteelQuantityMt { get; set; }
+}
+
+public sealed class PlanRouteOperationSnapshot : Entity
+{
+    public Guid PlanVersionId { get; set; }
+    public Guid RouteOperationPlanId { get; set; }
+    public required string RouteCode { get; set; }
+    public Guid UpstreamPlanId { get; set; }
+    public ProcessOperationType ProcessOperationType { get; set; }
+    public WorkOrderType ReleaseWorkOrderType { get; set; }
+    public int SequenceNumber { get; set; }
+    public Guid? ResourceId { get; set; }
+    public required string GradeCode { get; set; }
+    public string? InputMaterialSpecificationCode { get; set; }
+    public string? OutputMaterialSpecificationCode { get; set; }
+    public required string InputCrossSectionCode { get; set; }
+    public required string OutputCrossSectionCode { get; set; }
+    public decimal PlannedQuantityMt { get; set; }
+    public TimeSpan MinimumQueueTime { get; set; }
+    public TimeSpan? MaximumQueueTime { get; set; }
+    public bool IsInventoryDecouplingPoint { get; set; }
+}
+
+public sealed class PlanRouteOperationAllocationSnapshot : Entity
+{
+    public Guid PlanVersionId { get; set; }
+    public Guid RouteOperationPlanId { get; set; }
+    public Guid CampaignId { get; set; }
+    public Guid ProductionOrderId { get; set; }
+    public decimal PlannedQuantityMt { get; set; }
 }
 
 public sealed class PlanPackagingUnitSnapshot : Entity
