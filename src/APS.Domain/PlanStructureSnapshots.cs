@@ -1,8 +1,8 @@
 namespace APS.Domain;
 
 /// <summary>
-/// Immutable commercial requirement snapshot retained with a Plan Version.
-/// This prevents later SO/PO/master changes from rewriting what the planner actually planned.
+/// Immutable commercial/quantity identity retained with a Plan Version.
+/// Detailed customer, chemistry, process and thermal constraints belong to PlanOrderRequirementSnapshot.
 /// </summary>
 public sealed class PlanProductionOrderSnapshot : Entity
 {
@@ -31,26 +31,6 @@ public sealed class PlanProductionOrderSnapshot : Entity
     public decimal? TargetStockMt { get; set; }
     public decimal? ProjectedAvailableStockMt { get; set; }
     public string? StockPolicyCode { get; set; }
-    public string? RequirementReference { get; set; }
-    public string? QualityClassCode { get; set; }
-    public SegregationPolicy SegregationPolicy { get; set; }
-    public bool? RequireVd { get; set; }
-    public bool? ForbidVd { get; set; }
-    public bool? RequireReheating { get; set; }
-    public bool? ForbidHotCharge { get; set; }
-    public bool? RequireTmt { get; set; }
-    public string? RequiredRouteCode { get; set; }
-    public Guid? RequiredResourceId { get; set; }
-    public decimal? MinimumSuperheatC { get; set; }
-    public decimal? TargetSuperheatC { get; set; }
-    public decimal? MaximumSuperheatC { get; set; }
-    public decimal? MinimumCastingTemperatureC { get; set; }
-    public decimal? MaximumCastingTemperatureC { get; set; }
-    public decimal? CutLengthM { get; set; }
-    public decimal? TargetBundleWeightMt { get; set; }
-    public decimal? TargetCoilWeightMt { get; set; }
-    public string? MarkingRequirementCode { get; set; }
-    public string? InspectionRequirementCode { get; set; }
 }
 
 public sealed class PlanCampaignSnapshot : Entity
