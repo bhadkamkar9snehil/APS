@@ -86,11 +86,19 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             baselineByKey.TryGetValue(identity.PlanningKey, out var baseline);
             alternativesByKey.TryGetValue(identity.PlanningKey, out var alternatives);
             var processType = ResolveProcessOperationType(task);
+            var assignmentPolicy = request.PlanningRequest.AssignmentPolicies?
+                .FirstOrDefault(x => x.ProcessOperationType == processType);
             var commitment = resourceOverride?.CommitmentState ?? ResolveCommitmentState(
-                processType,
+                assignmentPolicy,
                 assignment.StartUtc,
-                request.ReferenceTimeUtc,
-                request.PlanningRequest.AssignmentPolicies);
+                request.ReferenceTimeUtc);
+            var predecessorKeys = task.Dependencies
+                .Select(x => identitiesById.TryGetValue(x.PredecessorTaskId, out var predecessor) ? predecessor.PlanningKey : null)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x!)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
 
             db.PlanOperationSnapshots.Add(new PlanOperationSnapshot
             {
@@ -106,6 +114,9 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
                 ActualResourceId = null,
                 AssignmentCommitmentState = commitment,
                 EligibleResourceOptionsJson = Serialize(alternatives),
+                PredecessorPlanningKeysJson = Serialize(predecessorKeys),
+                AssignmentPolicyJson = assignmentPolicy is null ? null : SerializeObject(assignmentPolicy),
+                CommitmentLastEvaluatedOnUtc = request.ReferenceTimeUtc,
                 PreviousPlannedResourceId = resourceOverride is not null && baseline is not null && baseline.ResourceId != assignment.ResourceId
                     ? baseline.ResourceId
                     : null,
@@ -206,21 +217,26 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
     }
 
     private static OperationAssignmentCommitmentState ResolveCommitmentState(
-        ProcessOperationType processType,
+        OperationAssignmentPolicy? policy,
         DateTime plannedStartUtc,
-        DateTime referenceTimeUtc,
-        IReadOnlyCollection<OperationAssignmentPolicy>? policies)
+        DateTime referenceTimeUtc)
     {
-        var policy = policies?.FirstOrDefault(x => x.ProcessOperationType == processType);
         if (policy is null) return OperationAssignmentCommitmentState.Flexible;
         var minutes = (plannedStartUtc - referenceTimeUtc).TotalMinutes;
-        if (minutes <= policy.CommitMinutesBeforeStart) return OperationAssignmentCommitmentState.Committed;
+        if (minutes <= policy.CommitMinutesBeforeStart)
+        {
+            return policy.RequireDispatchAcknowledgement
+                ? OperationAssignmentCommitmentState.Firm
+                : OperationAssignmentCommitmentState.Committed;
+        }
         if (minutes <= policy.FirmMinutesBeforeStart) return OperationAssignmentCommitmentState.Firm;
         return OperationAssignmentCommitmentState.Flexible;
     }
 
     private static string? Serialize<T>(IReadOnlyCollection<T>? values) =>
         values is null ? null : JsonSerializer.Serialize(values, SnapshotJsonOptions);
+
+    private static string SerializeObject<T>(T value) => JsonSerializer.Serialize(value, SnapshotJsonOptions);
 
     private static ProcessOperationType ResolveProcessOperationType(FiniteScheduleTask task)
     {
