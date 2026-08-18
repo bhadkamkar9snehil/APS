@@ -48,6 +48,7 @@ if (hasApsDatabase)
     builder.Services.AddScoped<IReplanningActualStateProvider, ReplanningActualStateProvider>();
     builder.Services.AddScoped<IPlanVersionRepository, PlanVersionRepository>();
     builder.Services.AddScoped<IPlanReleaseRepository, PlanReleaseRepository>();
+    builder.Services.AddScoped<IPersistedPlanReleaseService, PersistedPlanReleaseService>();
     builder.Services.AddScoped<IPlanComparisonService, PlanComparisonService>();
     builder.Services.AddScoped<IPlannerWorkspaceQueryService, PlannerWorkspaceQueryService>();
     builder.Services.AddScoped<IPlanningMasterDataProvider, SqlPlanningMasterDataProvider>();
@@ -55,7 +56,8 @@ if (hasApsDatabase)
 }
 else
 {
-    builder.Services.AddScoped<IPlannerWorkspaceQueryService, UnavailablePlannerWorkspaceQueryService>();
+    builder.Services.AddScoped<IPlannerWorkspaceQueryService>(
+        _ => new UnavailablePlannerWorkspaceQueryService(demoModeEnabled));
 }
 
 var app = builder.Build();
@@ -254,6 +256,30 @@ if (hasApsDatabase)
     app.MapGet("/api/planning/versions/{newPlanVersionId:guid}/compare/{baselinePlanVersionId:guid}",
         async (Guid newPlanVersionId, Guid baselinePlanVersionId, IPlanComparisonService comparison, CancellationToken cancellationToken) =>
             Results.Ok(await comparison.CompareAsync(baselinePlanVersionId, newPlanVersionId, cancellationToken)));
+
+    async Task<IResult> ReleasePersistedPlanAsync(
+        Guid planVersionId,
+        IPersistedPlanReleaseService releaseService,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Results.Ok(await releaseService.ReleaseAsync(planVersionId, cancellationToken));
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return Results.NotFound(new { message = ex.Message });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Results.UnprocessableEntity(new { message = ex.Message });
+        }
+    }
+
+    app.MapPost("/api/planning/versions/{planVersionId:guid}/release", ReleasePersistedPlanAsync);
+
+    // Compatibility alias; still identity-only and backed by persisted Plan Version truth.
+    app.MapPost("/api/planning/release/{planVersionId:guid}", ReleasePersistedPlanAsync);
 }
 else
 {
@@ -265,6 +291,8 @@ else
     app.MapPost("/api/planning/calculate", () => PlanningUnavailable());
     app.MapPost("/api/planning/run", () => PlanningUnavailable());
     app.MapPost("/api/planning/replan/{baselinePlanVersionId:guid}", (Guid baselinePlanVersionId) => PlanningUnavailable());
+    app.MapPost("/api/planning/versions/{planVersionId:guid}/release", (Guid planVersionId) => PlanningUnavailable());
+    app.MapPost("/api/planning/release/{planVersionId:guid}", (Guid planVersionId) => PlanningUnavailable());
 }
 
 if (demoModeEnabled)
