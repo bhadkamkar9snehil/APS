@@ -31,7 +31,9 @@ public sealed record OperationExecutionSnapshot(
     DateTime? ActualEndUtc,
     decimal PlannedQuantityMt,
     decimal ActualQuantityMt,
-    DateTime? LastChangedOnUtc);
+    DateTime? LastChangedOnUtc,
+    bool IsOffPlanActualResource,
+    string? OffPlanActualReasonCode);
 
 public interface IOperationExecutionService
 {
