@@ -34,6 +34,8 @@ builder.Services.AddScoped<IPlanReleaseBuilder, PlanReleaseBuilder>();
 
 var apsConnection = builder.Configuration.GetConnectionString("APS");
 var hasApsDatabase = !string.IsNullOrWhiteSpace(apsConnection);
+var demoModeEnabled = builder.Configuration.GetValue<bool>("APS:DemoModeEnabled");
+
 if (hasApsDatabase)
 {
     builder.Services.AddDbContext<ApsDbContext>(options => options.UseSqlServer(apsConnection));
@@ -49,6 +51,7 @@ if (hasApsDatabase)
     builder.Services.AddScoped<IPlanComparisonService, PlanComparisonService>();
     builder.Services.AddScoped<IPlannerWorkspaceQueryService, PlannerWorkspaceQueryService>();
     builder.Services.AddScoped<IPlanningMasterDataProvider, SqlPlanningMasterDataProvider>();
+    builder.Services.AddScoped<IPlanningLifecycleService, PlanningLifecycleService>();
 }
 else
 {
@@ -67,6 +70,8 @@ app.MapGet("/api/health", () => Results.Ok(new
     service = "APS.Service",
     status = "ok",
     databaseConfigured = hasApsDatabase,
+    productionPlanningAvailable = hasApsDatabase,
+    demoModeEnabled,
     utc = DateTime.UtcNow
 }));
 
@@ -191,79 +196,52 @@ if (hasApsDatabase)
             return view is null ? Results.NotFound() : Results.Ok(view);
         });
 
-    app.MapPost("/api/planning/run",
-        async (PlanningRunRequest request, IPlanningEngine planningEngine, IPlanVersionRepository plans, CancellationToken cancellationToken) =>
+    async Task<IResult> CalculateProductionAsync(
+        PlanningCalculationRequest request,
+        IPlanningLifecycleService lifecycle,
+        CancellationToken cancellationToken)
+    {
+        try
         {
-            var result = planningEngine.Run(request);
-            var persisted = await plans.SaveAsync(new PersistPlanningRunRequest(
-                request, result, PlanTriggerType.Manual, DateTime.UtcNow, "Manual planning run"), cancellationToken);
-            return result.IsFeasible
-                ? Results.Ok(new { plan = result, version = persisted })
-                : Results.UnprocessableEntity(new { plan = result, version = persisted });
-        });
+            var outcome = await lifecycle.CalculateAsync(request, cancellationToken);
+            return outcome.Plan.IsFeasible ? Results.Ok(outcome) : Results.UnprocessableEntity(outcome);
+        }
+        catch (PlanningConfigurationException ex)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status503ServiceUnavailable,
+                title: "APS production planning configuration is incomplete",
+                detail: string.Join(" ", ex.Issues));
+        }
+    }
+
+    app.MapPost("/api/planning/calculate", CalculateProductionAsync);
+
+    // Compatibility alias only. It uses the exact same canonical lifecycle as /calculate.
+    app.MapPost("/api/planning/run", CalculateProductionAsync);
 
     app.MapPost("/api/planning/replan/{baselinePlanVersionId:guid}",
         async (Guid baselinePlanVersionId,
-            ReplanApiRequest request,
-            IPlanningEngine planningEngine,
-            IPlanVersionRepository plans,
-            IReplanningActualStateProvider actualStateProvider,
+            PlanningRecalculationRequest request,
+            IPlanningLifecycleService lifecycle,
             CancellationToken cancellationToken) =>
         {
-            var baseline = await plans.GetAsync(baselinePlanVersionId, cancellationToken);
-            if (baseline is null) return Results.NotFound(new { message = "Baseline plan version was not found." });
-
-            var referenceTime = request.ReferenceTimeUtc ?? DateTime.UtcNow;
-            var actualState = await actualStateProvider.GetAsync(
-                baselinePlanVersionId,
-                referenceTime,
-                baseline.Operations,
-                cancellationToken);
-            var committedSupplies = (request.Planning.CommittedMaterialSupplies ?? Array.Empty<CommittedMaterialSupply>())
-                .Concat(actualState.EffectiveCommittedFutureSupplies)
-                .GroupBy(x => x.SupplyReference, StringComparer.OrdinalIgnoreCase)
-                .Select(x => x.Last())
-                .OrderBy(x => x.AvailableFromUtc)
-                .ThenBy(x => x.SupplyReference, StringComparer.OrdinalIgnoreCase)
-                .ToArray();
-            var planningRequest = request.Planning with
+            try
             {
-                Inventory = request.RefreshInventoryFromProvider ? actualState.Inventory : request.Planning.Inventory,
-                CommittedMaterialSupplies = committedSupplies,
-                ReplanContext = new PlanningReplanContext(
-                    baselinePlanVersionId,
-                    referenceTime,
-                    request.TimeFencePolicy,
-                    actualState.BaselineOperations,
-                    request.ResourceOverrides)
-            };
-
-            var result = planningEngine.Run(planningRequest);
-            var trigger = request.ResourceOverrides is { Count: > 0 }
-                ? PlanTriggerType.OperationalRedispatch
-                : request.Trigger;
-            var persisted = await plans.SaveAsync(new PersistPlanningRunRequest(
-                planningRequest,
-                result,
-                trigger,
-                referenceTime,
-                request.Reason ?? (trigger == PlanTriggerType.OperationalRedispatch
-                    ? "Operational resource redispatch"
-                    : "Replanning from current manufacturing and inventory state")), cancellationToken);
-
-            var response = new
+                var outcome = await lifecycle.ReplanAsync(baselinePlanVersionId, request, cancellationToken);
+                return outcome.Plan.IsFeasible ? Results.Ok(outcome) : Results.UnprocessableEntity(outcome);
+            }
+            catch (KeyNotFoundException ex)
             {
-                plan = result,
-                version = persisted,
-                executionState = new
-                {
-                    actualState.CompletedPlanningKeys,
-                    actualState.RunningPlanningKeys,
-                    InventoryPositions = actualState.Inventory.Count,
-                    CommittedFutureSupplies = committedSupplies.Length
-                }
-            };
-            return result.IsFeasible ? Results.Ok(response) : Results.UnprocessableEntity(response);
+                return Results.NotFound(new { message = ex.Message });
+            }
+            catch (PlanningConfigurationException ex)
+            {
+                return Results.Problem(
+                    statusCode: StatusCodes.Status503ServiceUnavailable,
+                    title: "APS production planning configuration is incomplete",
+                    detail: string.Join(" ", ex.Issues));
+            }
         });
 
     app.MapGet("/api/planning/versions/{planVersionId:guid}",
@@ -276,53 +254,57 @@ if (hasApsDatabase)
     app.MapGet("/api/planning/versions/{newPlanVersionId:guid}/compare/{baselinePlanVersionId:guid}",
         async (Guid newPlanVersionId, Guid baselinePlanVersionId, IPlanComparisonService comparison, CancellationToken cancellationToken) =>
             Results.Ok(await comparison.CompareAsync(baselinePlanVersionId, newPlanVersionId, cancellationToken)));
-
-    app.MapPost("/api/planning/release",
-        async (PlanReleaseBuildRequest request, IPlanReleaseBuilder releaseBuilder, IPlanReleaseRepository releases, CancellationToken cancellationToken) =>
-        {
-            if (!request.Schedule.IsFeasible)
-                return Results.UnprocessableEntity(new { message = "Cannot release Work Orders from an infeasible schedule." });
-            var release = releaseBuilder.Build(request);
-            var persisted = await releases.PersistAsync(release, cancellationToken);
-            return Results.Ok(persisted);
-        });
 }
 else
 {
-    app.MapPost("/api/planning/run",
+    static IResult PlanningUnavailable() => Results.Problem(
+        statusCode: StatusCodes.Status503ServiceUnavailable,
+        title: "APS production planning is unavailable",
+        detail: "The APS SQL database is not configured. Production calculation, Plan Version persistence, release and replanning require the canonical persisted backend.");
+
+    app.MapPost("/api/planning/calculate", () => PlanningUnavailable());
+    app.MapPost("/api/planning/run", () => PlanningUnavailable());
+    app.MapPost("/api/planning/replan/{baselinePlanVersionId:guid}", (Guid baselinePlanVersionId) => PlanningUnavailable());
+}
+
+if (demoModeEnabled)
+{
+    var demoPlanning = app.MapGroup("/api/demo/planning");
+
+    demoPlanning.MapPost("/run",
         (PlanningRunRequest request, IPlanningEngine planningEngine) =>
         {
             var result = planningEngine.Run(request);
             return result.IsFeasible ? Results.Ok(result) : Results.UnprocessableEntity(result);
         });
+
+    demoPlanning.MapPost("/mts/production-order",
+        (MtsProductionOrderRequest request, IMtsProductionOrderService service) =>
+            Results.Ok(service.Propose(request.Policy, request.Inventory, request.AlreadyFirmedSupplyMt)));
+
+    demoPlanning.MapPost("/campaigns/form",
+        (CampaignPlanningRequest request, ICampaignPlanningService service) =>
+            Results.Ok(service.FormCampaigns(request)));
+
+    demoPlanning.MapPost("/structure/build",
+        (ProductionStructurePlanningRequest request, IProductionStructurePlanningService service) =>
+            Results.Ok(service.Build(request)));
+
+    demoPlanning.MapPost("/schedule/solve",
+        (FiniteScheduleRequest request, IFiniteScheduleOptimizer optimizer) =>
+        {
+            var result = optimizer.Solve(request);
+            return result.IsFeasible ? Results.Ok(result) : Results.UnprocessableEntity(result);
+        });
+
+    demoPlanning.MapPost("/release/build",
+        (PlanReleaseBuildRequest request, IPlanReleaseBuilder releaseBuilder) =>
+        {
+            if (!request.Schedule.IsFeasible)
+                return Results.UnprocessableEntity(new { message = "Cannot build Work Orders from an infeasible demo schedule." });
+            return Results.Ok(releaseBuilder.Build(request));
+        });
 }
-
-app.MapPost("/api/planning/mts/production-order",
-    (MtsProductionOrderRequest request, IMtsProductionOrderService service) =>
-        Results.Ok(service.Propose(request.Policy, request.Inventory, request.AlreadyFirmedSupplyMt)));
-
-app.MapPost("/api/planning/campaigns/form",
-    (CampaignPlanningRequest request, ICampaignPlanningService service) =>
-        Results.Ok(service.FormCampaigns(request)));
-
-app.MapPost("/api/planning/structure/build",
-    (ProductionStructurePlanningRequest request, IProductionStructurePlanningService service) =>
-        Results.Ok(service.Build(request)));
-
-app.MapPost("/api/planning/schedule/solve",
-    (FiniteScheduleRequest request, IFiniteScheduleOptimizer optimizer) =>
-    {
-        var result = optimizer.Solve(request);
-        return result.IsFeasible ? Results.Ok(result) : Results.UnprocessableEntity(result);
-    });
-
-app.MapPost("/api/planning/release/build",
-    (PlanReleaseBuildRequest request, IPlanReleaseBuilder releaseBuilder) =>
-    {
-        if (!request.Schedule.IsFeasible)
-            return Results.UnprocessableEntity(new { message = "Cannot build Work Orders from an infeasible schedule." });
-        return Results.Ok(releaseBuilder.Build(request));
-    });
 
 if (hasApsDatabase)
 {
@@ -403,15 +385,6 @@ public sealed record MtsProductionOrderRequest(
     StockPolicy Policy,
     InventoryPosition Inventory,
     decimal AlreadyFirmedSupplyMt = 0m);
-
-public sealed record ReplanApiRequest(
-    PlanningRunRequest Planning,
-    PlanningTimeFencePolicy TimeFencePolicy,
-    DateTime? ReferenceTimeUtc = null,
-    PlanTriggerType Trigger = PlanTriggerType.ExecutionFeedback,
-    string? Reason = null,
-    bool RefreshInventoryFromProvider = true,
-    IReadOnlyCollection<OperationResourceOverride>? ResourceOverrides = null);
 
 public sealed record ManualHeatExecutionRequest(
     Guid PlanVersionId,
