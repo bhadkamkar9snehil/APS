@@ -73,6 +73,7 @@
                 }
                 else
                 {
+                    var gradeSequence = selectedCampaign.GradeSequence.OrderBy(x => x.SequenceNumber).ToArray();
                     <div class="campaign-hero">
                         <div>
                             <span class="planner-section-label">SELECTED CAMPAIGN</span>
@@ -95,14 +96,15 @@
                             <span class="planner-basis-badge">@selectedCampaign.GradeSequenceClassCode</span>
                         </div>
                         <div class="grade-sequence-rail">
-                            @foreach (var grade in selectedCampaign.GradeSequence.OrderBy(x => x.SequenceNumber))
+                            @for (var i = 0; i < gradeSequence.Length; i++)
                             {
+                                var grade = gradeSequence[i];
                                 <div class="grade-sequence-node">
                                     <span>@grade.SequenceNumber.ToString("00")</span>
                                     <strong>@grade.GradeCode</strong>
                                     <small>@grade.PlannedQuantityMt.ToString("0.#") MT</small>
                                 </div>
-                                @if (grade != selectedCampaign.GradeSequence.OrderBy(x => x.SequenceNumber).Last())
+                                @if (i < gradeSequence.Length - 1)
                                 {
                                     <div class="grade-sequence-link">→</div>
                                 }
@@ -141,7 +143,7 @@
                                         {
                                             @foreach (var allocation in heat.Allocations)
                                             {
-                                                <span title="Input @allocation.PlannedInputQuantityMt.ToString("0.##") MT">@allocation.ProductionOrderNumber · @allocation.PlannedOutputQuantityMt.ToString("0.#")</span>
+                                                <span title="@HeatAllocationTitle(allocation)">@allocation.ProductionOrderNumber · @allocation.PlannedOutputQuantityMt.ToString("0.#") MT</span>
                                             }
                                         }
                                     </div>
@@ -228,6 +230,8 @@
             allocation.ProductionOrderNumber));
 
     private static string FormatNullable(decimal? value) => value.HasValue ? value.Value.ToString("0.##") : "—";
+    private static string HeatAllocationTitle(HeatAllocationView allocation) =>
+        $"Output {allocation.PlannedOutputQuantityMt:0.##} MT · steelmaking input {allocation.PlannedInputQuantityMt:0.##} MT";
 
     public void Dispose() => WorkspaceState.Changed -= OnWorkspaceChanged;
 }
