@@ -9,11 +9,12 @@ Canonical/current documents intentionally remain at the `docs/` root so existing
 1. [`../APS_Backend_Acceptance_Audit_2026-08-18.md`](../APS_Backend_Acceptance_Audit_2026-08-18.md) — current backend acceptance audit and implementation-state truth.
 2. [`../APS_End_to_End_Manufacturing_Planning_Flow.md`](../APS_End_to_End_Manufacturing_Planning_Flow.md) — canonical causal flow from demand through material, manufacture, execution and replan.
 3. [`../APS_Backend_Work_Program.md`](../APS_Backend_Work_Program.md) — dependency-ordered one-primary-issue-at-a-time backend implementation program.
-4. [`../APS_Demand_to_Production_Order_and_Due_Date_Model.md`](../APS_Demand_to_Production_Order_and_Due_Date_Model.md) — Sales Order / Production Order / service-date semantics.
-5. [`../APS_Backend_Visibility_Contract.md`](../APS_Backend_Visibility_Contract.md) — backend facts, controls and read/command visibility required before production UI.
-6. [`../APS_Backend_Audit_Remediation_Map.md`](../APS_Backend_Audit_Remediation_Map.md) — audit finding to issue/dependency map.
-7. [`../APS_Steel_Domain_Architecture_Roadmap.md`](../APS_Steel_Domain_Architecture_Roadmap.md) — steel-domain architecture and solver direction.
-8. [`../dotnet-planning-core.md`](../dotnet-planning-core.md) — current implementation note for the .NET planning core; subordinate to the canonical architecture/audit documents above.
+4. [`../APS_Backend_Canonical_Path_Inventory.md`](../APS_Backend_Canonical_Path_Inventory.md) — canonical production planning/query/release/execution path and explicit demo/compatibility/legacy classifications established by #38.
+5. [`../APS_Demand_to_Production_Order_and_Due_Date_Model.md`](../APS_Demand_to_Production_Order_and_Due_Date_Model.md) — Sales Order / Production Order / service-date semantics.
+6. [`../APS_Backend_Visibility_Contract.md`](../APS_Backend_Visibility_Contract.md) — backend facts, controls and read/command visibility required before production UI.
+7. [`../APS_Backend_Audit_Remediation_Map.md`](../APS_Backend_Audit_Remediation_Map.md) — audit finding to issue/dependency map.
+8. [`../APS_Steel_Domain_Architecture_Roadmap.md`](../APS_Steel_Domain_Architecture_Roadmap.md) — steel-domain architecture and solver direction.
+9. [`../dotnet-planning-core.md`](../dotnet-planning-core.md) — current implementation note for the .NET planning core; subordinate to the canonical architecture/audit documents above.
 
 ## Demand and service-date working documents
 
@@ -39,6 +40,8 @@ These are the current product/UI design references, but UI implementation waits 
 
 - [`../APS_UI_UX_Product_Blueprint.md`](../APS_UI_UX_Product_Blueprint.md)
 - [`../APS_UI_Implementation_Plan.md`](../APS_UI_Implementation_Plan.md)
+
+The in-process direct-kernel planning sandbox is explicitly isolated at `/demo/planning` and is available only when `APS:DemoModeEnabled=true`; it is not a production planner surface.
 
 ## Authority rule
 
