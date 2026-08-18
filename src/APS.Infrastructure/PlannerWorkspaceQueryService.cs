@@ -218,6 +218,55 @@ public sealed partial class PlannerWorkspaceQueryService(ApsDbContext db) : IPla
                 requirement?.HotChargeAllowed ?? true);
         }).ToArray();
 
+        var demandSnapshots = await db.PlanDemandSnapshots.AsNoTracking()
+            .Where(x => x.PlanVersionId == plan.PlanVersionId)
+            .OrderByDescending(x => x.Priority)
+            .ThenBy(x => x.ProductionRequiredByDate)
+            .ThenBy(x => x.SalesOrderNumber)
+            .ThenBy(x => x.SalesOrderItemNumber)
+            .ToListAsync(cancellationToken);
+        var demandCoverage = await db.PlanDemandCoverageSnapshots.AsNoTracking()
+            .Where(x => x.PlanVersionId == plan.PlanVersionId)
+            .OrderBy(x => x.AvailableFromUtc)
+            .ThenBy(x => x.LocationCode)
+            .ToListAsync(cancellationToken);
+        var poNumberById = productionOrders.ToDictionary(x => x.ProductionOrderId, x => x.ProductionOrderNumber);
+
+        var salesOrderRows = demandSnapshots.Select(demand => new SalesOrderDemandRowView(
+            demand.SalesOrderId,
+            demand.SalesOrderNumber,
+            demand.SalesOrderItemNumber,
+            demand.CustomerCode,
+            demand.CustomerGroupCode,
+            demand.MaterialCode,
+            demand.GradeCode,
+            demand.FinalCrossSectionCode,
+            demand.OpenDemandQuantityMt,
+            demand.FinishedGoodsCoveredQuantityMt,
+            demand.ManufacturingRequirementQuantityMt,
+            demand.ProductionOrderId,
+            demand.ProductionOrderId.HasValue && poNumberById.TryGetValue(demand.ProductionOrderId.Value, out var poNumber)
+                ? poNumber
+                : null,
+            demand.CustomerRequiredDate,
+            demand.ConfirmedDeliveryDate,
+            demand.ProductionRequiredByDate,
+            demand.Priority,
+            demand.Disposition,
+            demand.PlannerAttentionRequired,
+            demand.ReasonCode,
+            demandCoverage
+                .Where(x => x.SalesOrderId == demand.SalesOrderId)
+                .Select(x => new SalesOrderDemandCoverageView(
+                    x.MaterialCode,
+                    x.GradeCode,
+                    x.CrossSectionCode,
+                    x.LocationCode,
+                    x.AvailableFromUtc,
+                    x.QualityStatus,
+                    x.QuantityMt))
+                .ToArray())).ToArray();
+
         return new DemandSupplyView(
             plan,
             rows.Sum(x => x.RemainingQuantityMt),
@@ -228,7 +277,12 @@ public sealed partial class PlannerWorkspaceQueryService(ApsDbContext db) : IPla
             rows.Sum(x => x.UncoveredQuantityMt),
             rows.Count(x => x.DemandSource == DemandSourceType.MakeToOrder),
             rows.Count(x => x.DemandSource == DemandSourceType.MakeToStock),
-            rows);
+            rows,
+            salesOrderRows,
+            salesOrderRows.Sum(x => x.OpenDemandQuantityMt),
+            salesOrderRows.Sum(x => x.FinishedGoodsCoveredQuantityMt),
+            salesOrderRows.Sum(x => x.ManufacturingRequirementQuantityMt),
+            salesOrderRows.Count(x => x.PlannerAttentionRequired));
     }
 
     public async Task<CampaignStudioView?> GetCampaignStudioAsync(
@@ -276,9 +330,14 @@ public sealed partial class PlannerWorkspaceQueryService(ApsDbContext db) : IPla
                         po?.SalesOrderNumber,
                         x.PlannedQuantityMt,
                         x.ExistingIntermediateInventoryMt,
-                        x.FreshSteelQuantityMt);
+                        x.FreshSteelQuantityMt,
+                        po?.RequiredDate,
+                        po?.Priority ?? 0,
+                        po?.SalesOrderItemNumber);
                 })
                 .OrderByDescending(x => x.DemandSource == DemandSourceType.MakeToOrder)
+                .ThenBy(x => x.RequiredDate)
+                .ThenByDescending(x => x.Priority)
                 .ThenBy(x => x.ProductionOrderNumber)
                 .ToArray();
 
@@ -303,8 +362,14 @@ public sealed partial class PlannerWorkspaceQueryService(ApsDbContext db) : IPla
                                 po?.ProductionOrderNumber ?? x.ProductionOrderId.ToString("N")[..8],
                                 po?.SalesOrderNumber,
                                 x.PlannedOutputQuantityMt,
-                                x.PlannedInputQuantityMt);
+                                x.PlannedInputQuantityMt,
+                                po?.RequiredDate,
+                                po?.Priority ?? 0,
+                                po?.SalesOrderItemNumber);
                         })
+                        .OrderBy(x => x.RequiredDate)
+                        .ThenByDescending(x => x.Priority)
+                        .ThenBy(x => x.ProductionOrderNumber)
                         .ToArray();
                     return new CampaignHeatView(
                         heat.CampaignHeatId,
