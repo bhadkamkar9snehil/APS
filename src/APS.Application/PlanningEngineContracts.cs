@@ -94,7 +94,8 @@ public sealed record PlanningRunRequest(
     IReadOnlyCollection<ExternalMaterialSupply>? ExternalMaterialSupplies = null,
     MaterialSupplyPlanningPolicy? MaterialSupplyPolicy = null,
     IReadOnlyCollection<OperationAssignmentPolicy>? AssignmentPolicies = null,
-    IReadOnlyCollection<MaterialSourcingRule>? MaterialSourcingRules = null);
+    IReadOnlyCollection<MaterialSourcingRule>? MaterialSourcingRules = null,
+    IReadOnlyCollection<CommittedMaterialSupply>? CommittedMaterialSupplies = null);
 
 public sealed record PlanningRunResult(
     Guid PlanVersionId,
