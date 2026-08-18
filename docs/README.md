@@ -21,7 +21,6 @@ Governing GitHub trackers:
 - **Issue #37** — backend acceptance-audit remediation/canonicalization epic.
 - **Issue #44** — final end-to-end manufacturing-planning acceptance gate.
 - **Issue #47** — one-primary-issue-at-a-time implementation governance.
-- **Issue #48** — backend issue documentation quality gate.
 - **Issue #49** — backend dependency/completion-evidence index.
 - **Issue #46** — repository documentation cleanup/archive pass.
 
@@ -73,20 +72,21 @@ The canonical order is maintained in `APS_Backend_Work_Program.md` and GitHub Is
 5. #14 one time-phased material ledger/reservation engine.
 6. #11 billet/known incoming/SMS-down contingency through #14.
 
-### Phase 3 — Campaigns/routes/finite schedule
+### Phase 3 — Campaigns/routes/finite schedule/scenarios
 7. #15 Campaign/grade-sequence/heat candidate optimization.
 8. #34 route-driven manufacturing topology.
 9. #9 thermal/superheat/transfer constraints.
 10. #35 resource scheduling modes.
 11. #16 late-binding resource assignment/commitment/redispatch.
+12. #17 operating-state scenarios/outages using the same canonical planner.
 
 ### Phase 4 — execution/explanation
-12. #18 complete execution/material genealogy.
-13. #19 planner-grade diagnostics.
+13. #18 complete execution/material genealogy.
+14. #19 planner-grade diagnostics.
 
 ### Phase 5 — decision services/visibility
-14. #43 CTP/scenario/capacity convergence.
-15. #36 complete backend read/command surface.
+15. #43 CTP/scenario/capacity convergence.
+16. #36 complete backend read/command surface.
 
 Cross-cutting gates #39 (master wiring), #40 (logging), #41 (validation), #42 (effective rule consistency), #32 (operational/material fidelity) and #44 (end-to-end acceptance) are satisfied incrementally while implementing the active primary issue; they are not separate parallel redesign programs.
 
