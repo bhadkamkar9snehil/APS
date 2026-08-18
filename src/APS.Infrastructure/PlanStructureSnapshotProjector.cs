@@ -218,6 +218,42 @@ internal static class PlanStructureSnapshotProjector
                 });
             }
         }
+
+        foreach (var routeOperation in result.ProductionStructure.RouteOperationPlans ?? Array.Empty<RouteOperationPlan>())
+        {
+            db.PlanRouteOperationSnapshots.Add(new PlanRouteOperationSnapshot
+            {
+                PlanVersionId = result.PlanVersionId,
+                RouteOperationPlanId = routeOperation.Id,
+                RouteCode = routeOperation.RouteCode,
+                UpstreamPlanId = routeOperation.UpstreamPlanId,
+                ProcessOperationType = routeOperation.ProcessOperationType,
+                ReleaseWorkOrderType = routeOperation.ReleaseWorkOrderType,
+                SequenceNumber = routeOperation.SequenceNumber,
+                ResourceId = routeOperation.ResourceId,
+                GradeCode = routeOperation.GradeCode,
+                InputMaterialSpecificationCode = routeOperation.InputMaterialSpecificationCode,
+                OutputMaterialSpecificationCode = routeOperation.OutputMaterialSpecificationCode,
+                InputCrossSectionCode = routeOperation.InputCrossSectionCode,
+                OutputCrossSectionCode = routeOperation.OutputCrossSectionCode,
+                PlannedQuantityMt = routeOperation.PlannedQuantityMt,
+                MinimumQueueTime = routeOperation.MinimumQueueTime,
+                MaximumQueueTime = routeOperation.MaximumQueueTime,
+                IsInventoryDecouplingPoint = routeOperation.IsInventoryDecouplingPoint
+            });
+
+            foreach (var allocation in routeOperation.Allocations)
+            {
+                db.PlanRouteOperationAllocationSnapshots.Add(new PlanRouteOperationAllocationSnapshot
+                {
+                    PlanVersionId = result.PlanVersionId,
+                    RouteOperationPlanId = routeOperation.Id,
+                    CampaignId = allocation.CampaignId,
+                    ProductionOrderId = allocation.ProductionOrderId,
+                    PlannedQuantityMt = allocation.PlannedQuantityMt
+                });
+            }
+        }
     }
 
     private static void AddPackaging(ApsDbContext db, PlanningRunResult result)
