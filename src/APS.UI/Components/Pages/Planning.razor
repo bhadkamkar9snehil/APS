@@ -1,39 +1,47 @@
-@page "/planning"
+@page "/demo/planning"
 @using APS.UI.Sample
 @using APS.UI.Components.Shared
 @inject IPlanningEngine PlanningEngine
 @inject IPlanReleaseBuilder ReleaseBuilder
+@inject IConfiguration Configuration
 
-<PageTitle>Planning Sandbox - APS Planner</PageTitle>
+<PageTitle>Planning Sandbox - APS Demo</PageTitle>
 
 <div class="aps-panel">
     <h2>Planning Sandbox</h2>
     <p style="color:var(--aps-muted); margin-top:-0.4rem;">
-        Runs the real campaign &rarr; caster/mill structure &rarr; CP-SAT finite schedule pipeline
-        (<code>IPlanningEngine</code>) against a built-in long-products sample scenario
-        (2 casters, 2 mills, rebar + structural grades). No database connection required.
+        Explicit demo/reference surface. Runs the real campaign &rarr; structure &rarr; CP-SAT calculation kernel
+        (<code>IPlanningEngine</code>) against a built-in long-products sample scenario.
+        It does not create authoritative production Plan Versions or Work Orders.
     </p>
+
+    @if (!demoModeEnabled)
+    {
+        <div class="aps-issue error">
+            Demo mode is disabled. Set <code>APS:DemoModeEnabled=true</code> explicitly to use this sandbox.
+        </div>
+    }
 
     <div class="aps-controls">
         <div class="aps-field">
             <label for="horizonDays">Horizon (days)</label>
-            <input id="horizonDays" type="number" min="1" max="21" @bind="horizonDays" />
+            <input id="horizonDays" type="number" min="1" max="21" @bind="horizonDays" disabled="@(!demoModeEnabled)" />
         </div>
         <div class="aps-field">
             <label for="solverSeconds">Max solver seconds</label>
-            <input id="solverSeconds" type="number" min="1" max="60" @bind="maxSolverSeconds" />
+            <input id="solverSeconds" type="number" min="1" max="60" @bind="maxSolverSeconds" disabled="@(!demoModeEnabled)" />
         </div>
         <div class="aps-checkbox">
-            <input id="infeasible" type="checkbox" @bind="includeInfeasibleOrder" />
+            <input id="infeasible" type="checkbox" @bind="includeInfeasibleOrder" disabled="@(!demoModeEnabled)" />
             <label for="infeasible">Include an order with no eligible resource (demonstrates issue reporting)</label>
         </div>
-        <button class="aps-btn" @onclick="RunPlanningAsync" disabled="@isRunning">
-            @(isRunning ? "Running..." : "Run Planning")
+        <button class="aps-btn" @onclick="RunPlanningAsync" disabled="@(!demoModeEnabled || isRunning)">
+            @(isRunning ? "Running..." : "Run Demo Planning")
         </button>
         @if (result is not null)
         {
-            <button class="aps-btn secondary" @onclick="BuildReleaseAsync" disabled="@(isRunning || !result.IsFeasible)">
-                Build Release (Work Orders)
+            <button class="aps-btn secondary" @onclick="BuildReleaseAsync" disabled="@(!demoModeEnabled || isRunning || !result.IsFeasible)">
+                Build Demo Release
             </button>
         }
     </div>
@@ -52,13 +60,13 @@
 {
     <div class="aps-panel">
         <h2>
-            Plan result
+            Demo plan result
             <span class="aps-badge @(result.IsFeasible ? "feasible" : "infeasible")">
                 @(result.IsFeasible ? "Feasible" : "Infeasible")
             </span>
         </h2>
         <p style="color:var(--aps-muted)">
-            Plan version @result.PlanVersionId &middot; solver status @result.Schedule.SolverStatus
+            Ephemeral calculation ID @result.PlanVersionId &middot; solver status @result.Schedule.SolverStatus
             &middot; objective @result.Schedule.ObjectiveValue &middot; generated @result.CreatedOnUtc.ToString("u")
         </p>
 
@@ -190,7 +198,7 @@
 @if (release is not null)
 {
     <div class="aps-panel">
-        <h3>Released work orders</h3>
+        <h3>Demo work orders</h3>
         <table class="aps-table">
             <thead><tr><th>WO number</th><th>Type</th><th>Resource</th><th>Grade</th><th>Section</th><th>Planned MT</th><th>Start</th><th>End</th><th>Sources</th></tr></thead>
             <tbody>
@@ -216,8 +224,8 @@
 @code {
     private int horizonDays = 7;
     private int maxSolverSeconds = 10;
-    private bool includeInfeasibleOrder = false;
-    private bool isRunning = false;
+    private bool includeInfeasibleOrder;
+    private bool isRunning;
     private string? errorMessage;
 
     private DateTime horizonStartUtc = DateTime.UtcNow.Date.AddHours(6);
@@ -227,11 +235,19 @@
     private Dictionary<Guid, Resource> resourcesById = new();
     private IReadOnlyList<ScheduleGantt.GanttRow> ganttRows = Array.Empty<ScheduleGantt.GanttRow>();
 
+    private bool demoModeEnabled => Configuration.GetValue<bool>("APS:DemoModeEnabled");
+
     private string ResourceName(Guid? resourceId) =>
         resourceId is Guid id && resourcesById.TryGetValue(id, out var resource) ? resource.Name : "-";
 
     private async Task RunPlanningAsync()
     {
+        if (!demoModeEnabled)
+        {
+            errorMessage = "Demo planning is disabled by configuration.";
+            return;
+        }
+
         isRunning = true;
         errorMessage = null;
         result = null;
@@ -242,15 +258,15 @@
         {
             horizonStartUtc = DateTime.UtcNow.Date.AddHours(6);
             var request = SteelPlantSampleScenario.BuildRequest(horizonStartUtc, horizonDays, maxSolverSeconds, includeInfeasibleOrder);
-            lastRequest = request;
-            resourcesById = request.Resources.ToDictionary(r => r.Id);
+            lastRequest = request with { ExecutionMode = PlanningExecutionMode.Compatibility };
+            resourcesById = lastRequest.Resources.ToDictionary(r => r.Id);
 
-            result = await Task.Run(() => PlanningEngine.Run(request));
-            ganttRows = BuildGanttRows(result, request);
+            result = await Task.Run(() => PlanningEngine.Run(lastRequest));
+            ganttRows = BuildGanttRows(result, lastRequest);
         }
         catch (Exception ex)
         {
-            errorMessage = $"Planning run failed: {ex.Message}";
+            errorMessage = $"Demo planning run failed: {ex.Message}";
         }
         finally
         {
@@ -260,7 +276,13 @@
 
     private async Task BuildReleaseAsync()
     {
+        if (!demoModeEnabled)
+        {
+            errorMessage = "Demo release is disabled by configuration.";
+            return;
+        }
         if (result is null || lastRequest is null) return;
+
         isRunning = true;
         errorMessage = null;
         StateHasChanged();
@@ -276,7 +298,7 @@
         }
         catch (Exception ex)
         {
-            errorMessage = $"Release build failed: {ex.Message}";
+            errorMessage = $"Demo release build failed: {ex.Message}";
         }
         finally
         {
