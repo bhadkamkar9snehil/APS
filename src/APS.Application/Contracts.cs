@@ -214,7 +214,8 @@ public sealed record FiniteScheduleRequest(
     IReadOnlyCollection<TransitionRule> TransitionRules,
     int MaxSolverSeconds = 20,
     IReadOnlyCollection<FiniteScheduleStabilityConstraint>? StabilityConstraints = null,
-    IReadOnlyCollection<SteelGrade>? SteelGrades = null);
+    IReadOnlyCollection<SteelGrade>? SteelGrades = null,
+    IReadOnlyCollection<ScheduledMaterialEvent>? MaterialEvents = null);
 
 public sealed record FiniteScheduleAssignment(
     Guid TaskId,
