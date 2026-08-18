@@ -50,6 +50,10 @@ public sealed class SqlPlanningMasterDataProvider(ApsDbContext db) : IPlanningMa
             await db.ExternalMaterialSupplies.AsNoTracking()
                 .Where(x => x.IsFirm && x.QualityStatus != APS.Domain.MaterialQualityStatus.Rejected && x.QualityStatus != APS.Domain.MaterialQualityStatus.Blocked)
                 .OrderBy(x => x.AvailableFromUtc)
+                .ToListAsync(cancellationToken),
+            await db.MaterialSourcingRules.AsNoTracking()
+                .Where(x => x.IsActive)
+                .OrderBy(x => x.RuleCode)
                 .ToListAsync(cancellationToken));
     }
 }
