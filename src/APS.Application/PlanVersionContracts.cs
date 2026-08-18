@@ -7,7 +7,8 @@ public sealed record PersistPlanningRunRequest(
     PlanningRunResult PlanningResult,
     PlanTriggerType Trigger,
     DateTime ReferenceTimeUtc,
-    string? Reason = null);
+    string? Reason = null,
+    DemandOrchestrationResult? Demand = null);
 
 public sealed record PlanVersionSnapshot(
     Guid PlanVersionId,
