@@ -123,6 +123,8 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             });
         }
 
+        PlanStructureSnapshotProjector.AddToContext(db, request.PlanningRequest, result);
+
         await db.SaveChangesAsync(cancellationToken);
         return await GetAsync(result.PlanVersionId, cancellationToken)
                ?? throw new InvalidOperationException("Saved plan version could not be reloaded.");
