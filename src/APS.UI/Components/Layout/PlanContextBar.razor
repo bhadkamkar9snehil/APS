@@ -1,0 +1,60 @@
+@using APS.Application
+
+<header class="planner-context-bar">
+    <div class="planner-context-identity">
+        <span class="planner-context-kicker">PLAN CONTEXT</span>
+        @if (Plan is null)
+        {
+            <strong>No persisted plan</strong>
+            <span class="planner-context-muted">Reference sandbox remains available</span>
+        }
+        else
+        {
+            <strong>@Plan.VersionNumber</strong>
+            <span class="planner-status @StatusClass(Plan.Status)">@Plan.Status</span>
+            @if (Plan.IsActive)
+            {
+                <span class="planner-context-tag">ACTIVE</span>
+            }
+            @if (Plan.IsReleased)
+            {
+                <span class="planner-context-tag">RELEASED</span>
+            }
+        }
+    </div>
+
+    @if (Plan is not null)
+    {
+        <div class="planner-context-facts">
+            <div>
+                <span>Horizon</span>
+                <strong>@Plan.HorizonStartUtc.ToString("dd MMM HH:mm") → @Plan.HorizonEndUtc.ToString("dd MMM HH:mm")</strong>
+            </div>
+            <div>
+                <span>Reference</span>
+                <strong>@Plan.ReferenceTimeUtc.ToString("dd MMM HH:mm") UTC</strong>
+            </div>
+            <div>
+                <span>Solver</span>
+                <strong>@(Plan.SolverStatus ?? "—")</strong>
+            </div>
+            <div>
+                <span>Trigger</span>
+                <strong>@Plan.Trigger</strong>
+            </div>
+        </div>
+    }
+</header>
+
+@code {
+    [Parameter] public PlanContextView? Plan { get; set; }
+
+    private static string StatusClass(APS.Domain.PlanVersionStatus status) => status switch
+    {
+        APS.Domain.PlanVersionStatus.Feasible => "is-good",
+        APS.Domain.PlanVersionStatus.Released => "is-good",
+        APS.Domain.PlanVersionStatus.Failed => "is-bad",
+        APS.Domain.PlanVersionStatus.Superseded => "is-muted",
+        _ => "is-neutral"
+    };
+}
