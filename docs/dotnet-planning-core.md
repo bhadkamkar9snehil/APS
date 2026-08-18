@@ -1,298 +1,291 @@
 # .NET Planning Core
 
-This branch introduces the production architecture for APS without deleting the existing prototype.
+**Status:** Current implementation note  
+**Authority:** Subordinate to `APS_Backend_Acceptance_Audit_2026-08-18.md`, `APS_End_to_End_Manufacturing_Planning_Flow.md`, `APS_Backend_Work_Program.md`, and `APS_Backend_Canonical_Path_Inventory.md`.
 
-## Ownership
+This branch contains the production .NET architecture for APS while retaining the Python/workbook prototype strictly as migration/reference material.
 
-- SAP/XStudio MES supplies sales orders, inventory/master state, execution actuals and downstream manufacturing truth.
-- APS owns Production Orders used for planning, campaigns, campaign allocations, heat structure, caster/mill planning, finite schedules, plan versions and replanning decisions.
-- XStudio MES remains the execution system for released Work Orders and physical production/genealogy.
+## Production ownership boundary
 
-## Planning lineage
+- SAP/MES-facing integrations provide customer demand, authoritative inventory/incoming-material facts, execution actuals and manufacturing truth.
+- APS owns manufacturing Production Orders, campaigns, heat/route planning, finite schedules, immutable Plan Versions, Work Order release and replanning decisions.
+- APS is a **manufacturing planner**. It does not recommend procurement or transfer decisions. Material that cannot be covered by qualified authoritative supply or manufactured by configured plant routes is a shortfall.
+- MES remains the execution system for released Work Orders and physical production events; APS retains the planning/execution-feedback model needed to replan.
 
-```text
-MTO: Sales Order -> Production Order -+
-                                      +-> Campaign -> Work Orders -> execution
-MTS: Stock Policy -> Production Order -+
+## Canonical production lifecycle
 
-Execution genealogy:
-Work Order -> produced lot -> consumed by downstream Work Order -> child lot -> finished bundle/coil
-```
-
-Production Orders retain their source semantics. MTO orders link to a Sales Order/item; MTS Production Orders are generated internally from stock policy and inventory position.
-
-## Inventory feedback
-
-Inventory participates before new SMS production is calculated:
+Production planning no longer consists of a public collection of independently callable campaign/structure/schedule/release APIs.
 
 ```text
-PO quantity
-  - compatible finished-goods inventory
-  = rolling requirement
-
-rolling requirement
-  - compatible billet/slab/intermediate inventory
-  = fresh steel output requirement
+production planning command
+  -> IPlanningLifecycleService
+       -> IPlanningMasterDataProvider
+       -> IInventorySnapshotProvider
+       -> IPlanningEngine (Production mode)
+       -> IPlanVersionRepository
+  -> IPlannerWorkspaceQueryService
+  -> IPersistedPlanReleaseService
+       -> IPlanReleaseRepository
+  -> execution services / MES event adapters
+  -> IReplanningActualStateProvider
+  -> IPlanningLifecycleService.ReplanAsync
 ```
 
-The campaign plan retains each inventory allocation by Production Order, stage, material, grade, section, location and quantity. Existing intermediate inventory can create a rolling-only planning block without creating new heats.
+`IPlanningEngine` remains the reusable calculation kernel. It is not, by itself, a production lifecycle because it does not own authoritative input resolution or persistence.
 
-Persisted `MaterialLot` records are also exposed through `IInventorySnapshotProvider`. Heat/cast execution creates `CastIntermediate` lots, so manufactured material becomes inventory feedback for the next plan. The provider abstraction can later be backed by XStudio inventory synchronization without changing the planning kernel.
+### Production vs compatibility mode
 
-## Campaign planning and heat formation
+`PlanningRunRequest` carries `PlanningExecutionMode`:
 
-Campaign formation currently:
+- `Production` — used by the canonical lifecycle; configured manufacturing-route operations are mandatory.
+- `Compatibility` — retained for focused tests and the explicitly enabled demo sandbox. The simplified legacy structure builder may run only in this mode.
 
-1. Nets finished-goods inventory against open Production Order quantity.
-2. Gives MTO precedence over MTS during inventory allocation.
-3. Nets compatible cast/intermediate inventory before calculating fresh steel.
-4. Records the exact inventory positions allocated to each Production Order.
-5. Groups residual production by configurable manufacturing compatibility.
-6. Allocates multiple Production Orders into campaigns without losing lineage.
-7. Forms grade sequence and heat structure inside campaign planning.
+A direct Production-mode engine call without configured route planning fails explicitly instead of silently falling back.
 
-Expected casting yield is owned by `CampaignPlanningPolicy`. Heat quantity represents required steelmaking/casting input; the fresh-steel requirement represents required usable cast output. Heat input is inflated during campaign planning so expected cast output is sufficient for rolling demand.
+## Authoritative input resolution
 
-Compatible exact grades may share a campaign through a configured grade-sequence class. MTO/MTS mixing is policy controlled.
+Production callers provide demand and planning controls. They do **not** provide arbitrary plant/resource/calendar/inventory snapshots.
 
-## Coupled production structure
+The lifecycle resolves:
 
-`ProductionStructurePlanningService` converts campaigns into linked production structures:
+- physical resources, capabilities, calendars, flow links, transition rules and configured manufacturing routes from `IPlanningMasterDataProvider`;
+- grade/section/material/packaging masters that are currently wired into that provider;
+- current qualified inventory from `IInventorySnapshotProvider`;
+- known authoritative incoming material facts from the integration/master path;
+- released/running future internal supply during replan from `IReplanningActualStateProvider`.
+
+Remaining end-to-end master-data wiring is tracked by issue #39.
+
+## Demand and material boundary
+
+The current .NET domain already has Sales Orders and Production Orders, but canonical MTO SO-item -> FG coverage -> Production Order orchestration remains issue #45.
+
+Likewise, current campaign/material logic can net FG/intermediate supply and create fresh-steel requirements, but the canonical recursive BOM/material-requirement graph remains issue #33 and the single time-phased material ledger remains issue #14.
+
+Target causality remains:
 
 ```text
-Campaign heats
-  -> caster eligibility
-  -> cast sequences
-  -> expected billet supply
-  -> rolling requirements
-  -> mill eligibility/allocation
-  -> rolling sequence blocks
+SO/MTS demand
+  -> Production Order manufacturing requirement
+  -> recursive BOM/material requirements
+  -> one time-phased supply/shortfall ledger
+  -> internal production requirements
+  -> campaigns/heats/routes
+  -> finite schedule
 ```
 
-Casters and mills are capability driven rather than hard-coded. Resource capability can constrain grade/family, route, input/output cross-section and product family. Transition rules provide allowed/forbidden and penalized grade/section changes.
+Campaign is an aggregation/optimization construct; it is not the original cause of production.
 
-Expected billet quantity for each heat is derived from the yield-aware campaign heat structure so the output across the grade sequence reconciles back to the fresh-steel requirement.
+## Campaign and heat planning
 
-## Configured multi-stage routes
+Current campaign planning can:
 
-When `RoutePlanningInput` is supplied, APS uses the configured-route planning path instead of the legacy single-stage rolling path.
+- preserve MTO/MTS Production Order lineage;
+- net qualified FG and compatible intermediate supply;
+- allocate multiple Production Orders into campaigns;
+- respect grade/sequence/route/segregation compatibility;
+- create grade sequence and heat structure;
+- use yield-aware heat input quantities;
+- form heats using equipment-aware envelopes where configured.
 
-`ConfiguredRouteProductionStructureBuilder` selects the hot-rolling stage against the route's configured hot-stage input/output sections and stage-specific `RouteResourceCapability` records. This avoids treating the Production Order's final section as though it were necessarily the hot-mill output.
+Campaign candidate/set selection is still too deterministic and is tracked by issue #15.
 
-`MultiStageRouteProjector` then expands the hot-rolling plan through configured downstream operations such as ColdRolling and Finishing. Each downstream route stage:
+## Configured manufacturing routes
 
-- validates section continuity from the upstream stage,
-- selects an eligible active resource from route-specific capability master data,
-- creates its own `RouteOperationPlan`,
-- preserves Production Order lineage,
-- creates one dependent finite-schedule task per upstream material/feed block,
-- enforces configured minimum/maximum queue time to its predecessor,
-- can be marked as an inventory-decoupling point.
+Production mode requires configured route operations rather than treating a hard-coded EAF/LRF/VD/CCM chain as universal plant truth.
 
-Optional route operations are skipped when their configured output is not required by the Production Order.
+Current route-domain structures support ordered `ManufacturingRouteOperation` records with:
 
-The current route implementation deliberately rejects downstream stage yields other than 100% with `DOWNSTREAM_ROUTE_YIELD_NOT_YET_PROPAGATED`; backward quantity propagation through multi-stage routes is not implemented yet.
+- `ProcessOperationType`;
+- release WO type;
+- input/output material and cross-section semantics;
+- required/optional operation semantics;
+- capability class;
+- minimum/maximum queue time;
+- inventory-decoupling metadata;
+- charge/hot-material requirements;
+- yield.
 
-Resource selection for caster, hot rolling and downstream route stages is still performed heuristically before CP-SAT. The selected resource is therefore normally presented to the finite scheduler as one fixed resource option even though `FiniteScheduleOptimizer` itself supports alternative-resource presence variables.
+`RouteResourceCapability` binds physical resource eligibility to route/process/grade/material/section/product attributes.
 
-## Heat, strand and progressive rolling availability
-
-`HeatLevelScheduleProjector` projects each cast sequence into individual heat tasks. Each heat generates planned strand material units using the configured caster strand count.
-
-Fresh rolling is then split into material-feed blocks. Each block consumes planned output from a specific earlier heat and inherits the relevant caster-to-mill transfer constraints. The mill can therefore start consuming material from an earlier heat while later heats in the cast sequence are still being produced.
-
-The projector maintains a remaining-supply pool per heat so planned billet cannot be double-consumed by multiple rolling plans. If expected cast output is insufficient after yield and prior allocations, planning stops with `INSUFFICIENT_PLANNED_CAST_OUTPUT` before CP-SAT scheduling.
-
-Existing-intermediate-inventory rolling blocks have no fresh-cast predecessor.
+The route-driven topology still needs deeper generalization for different long-product steel plants; that work is issue #34. Downstream non-100% backward yield propagation is also not complete.
 
 ## Finite scheduling
 
-`FiniteScheduleOptimizer` uses Google OR-Tools CP-SAT for exact time placement:
+`FiniteScheduleOptimizer` uses Google OR-Tools CP-SAT and currently models:
 
-- resource assignment from eligible options,
-- unary finite capacity through `NoOverlap`,
-- resource-calendar downtime blocks,
-- explicit process/material/queue precedence,
-- minimum transfer lag,
-- optional maximum transfer/hot-charge lag,
-- solver-owned fixed-resource sequencing through `AddCircuit`,
-- sequence-dependent transition/setup time and penalty only on selected adjacency,
-- forbidden directional transitions represented by omitted circuit arcs,
-- weighted tardiness,
-- assignment penalties,
-- makespan minimization,
-- frozen-operation hard constraints,
-- slushy-zone movement and resource-change penalties.
+- optional resource assignment variables and `AddExactlyOne`;
+- unary finite capacity through `NoOverlap`;
+- resource calendars/downtime;
+- explicit route/material/process dependencies;
+- minimum and optional maximum transfer/queue lags;
+- frozen/slushy plan-stability constraints;
+- weighted tardiness;
+- assignment penalties;
+- makespan;
+- sequence-dependent setup and transition rules.
 
-The optimizer models one presence variable per `(task, resource option)` and `AddExactlyOne` over eligible options. At present, upstream production-structure builders normally collapse those options to one selected caster/mill/resource before solve, so alternative-resource assignment is still largely unused by the end-to-end path.
+### Solver-owned physical-resource sequencing
 
-### Solver-owned fixed-resource sequence
-
-For tasks that currently have exactly one `FiniteScheduleResourceOption`, ordering is no longer imposed by a pre-solver insertion-order sequencer. `FiniteScheduleOptimizer` creates an independent circuit for each physical `ResourceId`.
-
-This boundary is deliberate and load-bearing:
+For fixed-resource queues, solver ordering uses `AddCircuit` **per physical `ResourceId`**, never per resource type.
 
 ```text
-CCM-1 -> its own circuit / queue
-CCM-2 -> its own circuit / queue
-RM-1  -> its own circuit / queue
-RM-2  -> its own circuit / queue
+CCM-1 -> independent circuit
+CCM-2 -> independent circuit
+RM-1  -> independent circuit
+RM-2  -> independent circuit
 ```
 
-Resources are never pooled by `ResourceType`. Two casters or two rolling mills therefore remain independently and simultaneously schedulable; no circuit arc can create precedence between different physical resources.
+Therefore different casters/mills remain independently and simultaneously schedulable.
 
-Each fixed-resource scheduling task is a circuit node and node `0` is a dummy depot. The resulting circuit represents one linear physical-machine queue. For a selected adjacency `A -> B` between distinct source plans, CP-SAT enforces:
+For selected adjacent distinct plans `A -> B` on one physical machine:
 
 ```text
-Start(B) >= End(A) + TransitionTime(A, B)
+Start(B) >= End(A) + TransitionTime(A,B)
 ```
 
-Only that selected adjacency literal receives the configured transition penalty. Non-adjacent pairs receive neither setup time nor transition penalty. If either the grade or cross-section transition is explicitly forbidden, the directional arc is omitted and cannot be selected.
+Transition time/penalty is charged only on the selected adjacency. Forbidden directional transitions omit the corresponding arc. Same-`SourceEntityId` progressive feed-block siblings receive no artificial transition/setup charge; their real material/predecessor constraints remain authoritative.
 
-Tasks with the same `SourceEntityId` are progressive/feed-block siblings belonging to the same upstream plan or route operation. Their mutual circuit arcs carry zero transition time and zero transition penalty. No fixed sibling order is injected before solve; the solver can choose their actual machine order from material readiness and other real dependencies, and another plan may run between sibling feed blocks when that produces the better feasible schedule. `NoOverlap` remains the physical-capacity constraint.
+Alternative-resource late binding and commitment/redispatch are tracked by issue #16. Resource scheduling modes beyond universal unary `NoOverlap` are tracked by issue #35.
 
-The former `FiniteScheduleTaskSequencer` has been removed. Existing explicit cast/material/route dependencies remain authoritative and coexist with the selected machine adjacency constraints.
+## Plan Versions
 
-Focused regression tests have been added for per-resource parallelism, same-source feed-block interleaving, adjacency-only transition/setup charging and directional forbidden transitions. These current solver-owned-sequencing changes still require local `dotnet build APS.slnx` and `dotnet test` verification; the last locally verified green checkpoint predates this tranche.
+Every production calculation/replan creates an immutable persisted Plan Version.
 
-Infeasible plans return an explicit non-feasible result and are not silently converted to a heuristic schedule.
+Plan Version persistence includes, among other current facts:
 
-## Plan versions and replanning
+- parent/baseline relationship and trigger;
+- horizon and solver result;
+- stable operation planning keys;
+- planned resource/start/end;
+- eligible resource-option snapshots and dispatch revisions;
+- inventory/material-plan facts currently implemented;
+- Production Order snapshots;
+- Campaign, allocation, grade-sequence and heat snapshots;
+- cast-sequence snapshots;
+- rolling-plan snapshots;
+- **configured route-operation and route-operation-allocation snapshots**;
+- planned packaging/material-unit snapshots.
 
-Every database-backed planning run is persisted as a Plan Version. The stored snapshot includes:
+Route-operation snapshots were registered and added to persistence during #38 because production release must not reconstruct downstream work from live masters after the approved plan has changed.
 
-- parent/baseline Plan Version,
-- trigger and reference time,
-- horizon and solver result,
-- stable planning-operation identity,
-- assigned resource/start/end,
-- inventory allocations used by the plan,
-- planned strand material units and planned availability.
+## Canonical production release
 
-Stable planning keys are derived from business content rather than transient solver GUIDs. Progressive rolling feed blocks receive separate stable identities.
-
-Time fences are applied against the baseline plan:
+Production release is now **identity-only**.
 
 ```text
-Frozen -> resource and start remain fixed
-Slushy -> movement is allowed but penalized
-Liquid -> operation is freely replanned
+PlanVersionId
+  -> immutable persisted Plan Version snapshots
+  -> IPersistedPlanReleaseService
+  -> PlanRelease
+  -> IPlanReleaseRepository
+  -> released Work Orders + ScheduledOperations
 ```
 
-`POST /api/planning/replan/{baselinePlanVersionId}` creates a child Plan Version rather than overwriting history.
+A caller can no longer submit campaigns, production structure and schedule in the production release request.
 
-Before the replan is solved, `IReplanningActualStateProvider` overlays persisted execution state onto the baseline:
+`IPersistedPlanReleaseService` builds SMS/casting, rolling and configured downstream Work Orders from persisted plan structure/operation/allocation snapshots and uses the persisted effective resource assignment. The release is idempotent: an already-released Plan Version returns its existing persisted WOs/operations.
 
-- completed heat/WO operations are removed from the stability baseline,
-- running heat/WO operations override planned start/resource with actual execution state,
-- current inventory is refreshed through `IInventorySnapshotProvider` by default.
+The old `PlanReleaseBuildRequest` and `IPlanReleaseBuilder` remain for demo/test in-memory release construction only.
 
-The Production Order open/remaining quantities supplied to the replan are still expected to reflect the latest commercial/production confirmations.
+## Execution and replanning
 
-## Plan differences
+Canonical execution services are:
 
-Persisted versions can be compared by stable planning key. The comparison reports:
+- `IOperationExecutionService` — operation-grain planned/committed/actual state;
+- `IWorkOrderExecutionService` — WO lifecycle and external execution linkage;
+- `IHeatExecutionService` — casting specialization that also materializes strand/billet output.
 
-- added operations,
-- removed operations,
-- moved operations,
-- resource changes,
-- combined move/resource changes,
-- unchanged operations,
-- start-time movement in minutes and maximum movement.
+Manual endpoints and MES event endpoints are adapters into those same services; they are not separate state stores.
 
-This provides a schedule-stability view for every replan instead of forcing planners to visually compare two schedules.
+Replan loads:
 
-## Release and traceability
+- persisted baseline Plan Version;
+- current inventory;
+- completed/running operation state;
+- protected remaining output from committed/released/running upstream production;
+- time-fence/resource-override policy;
+- current authoritative masters.
 
-An approved feasible plan is converted into Work Orders:
+It then invokes the same Production-mode `IPlanningEngine` and persists a child Plan Version.
 
-- SMS Work Orders carry campaign/grade steelmaking input quantity and are timed from scheduled heats.
-- An SMS WO can contain multiple heat-level scheduled operations.
-- Hot-rolling Work Orders carry rolling quantities and can contain multiple progressive feed-block operations.
-- Configured ColdRolling and Finishing route stages release as their own Work Orders.
-- Work Order allocations retain the Production Order contribution.
-- MTO Production Orders retain their Sales Order/item link.
+## Query/read model
 
-Every released `ScheduledOperation` carries the same stable planning key used by plan versions. Database-backed release persists Work Orders, allocations and scheduled operations and marks the Plan Version `Released`.
+`IPlannerWorkspaceQueryService` is the one planner query facade.
 
-The XStudio release envelope contains both Work Orders and cast-sequence/heat details.
+Its view contracts are split across several files (`PlannerWorkspaceContracts`, `PhysicalWorkspaceContracts`, `ExecutionWorkspaceContracts`, `DecisionWorkspaceContracts`) for organization, but these are not competing query implementations.
 
-## Execution feedback
+Current mapped planner read surfaces include current context, recent versions, control tower, demand/supply, campaigns, steelmaking/casting, finite schedule, work orders and plan comparison. Full backend visibility remains issue #36.
 
-Two execution grains are deliberately separate.
+## Demo isolation
 
-### Work Order execution
+Demo/reference calculation is explicit opt-in:
 
-Manual execution and MES events use the same Work Order execution service. It stores lifecycle status, actual start/end, actual quantity, audit history, source and idempotent external event IDs.
+```json
+{
+  "APS": {
+    "DemoModeEnabled": false
+  }
+}
+```
 
-### Heat/cast execution
+When enabled, component/demo endpoints live under:
 
-Heat execution is tracked independently because one SMS Work Order can contain multiple heats. Heat updates can carry:
+```text
+/api/demo/planning/*
+```
 
-- actual heat/cast identifiers,
-- actual caster,
-- actual start/end and quantity,
-- strand/unit output,
-- material, grade and cross-section,
-- produced lot number and location.
+and the Blazor calculation sandbox is at:
 
-Completed strand outputs are materialized as available `CastIntermediate` material lots. MES retries are idempotent by external event ID and existing lot number.
+```text
+/demo/planning
+```
+
+The sandbox directly uses the calculation kernel in Compatibility mode and may build an in-memory demo release. Its results are deliberately non-authoritative and non-persisted.
+
+Without a configured APS database, production calculate/replan/release endpoints return a service/configuration failure rather than an ephemeral production-looking result.
 
 ## Integration boundary
 
-`APS.Integrations` contains the XStudio boundary. APS planning code must not reference XStudio table names or REST details. Deployments may use:
+`APS.Integrations` maps transport/vendor-specific data into APS contracts. Planning code does not reference vendor-specific REST/table details.
 
-- API events for WO and heat/cast execution changes,
-- controlled MES stored procedures/APIs for released plan writes,
-- read-only SQL reconciliation for bulk recovery and inventory/actual snapshots.
+Current inbound execution events flow through the canonical execution services. `ExecutionActual` remains a transport-neutral mapping DTO. `IExecutionActualProvider` and `IPlanPublisher` currently have no production implementation and are classified future-only ports, not alternate production paths.
 
-## Blazor host and planning sandbox
+## Runtime/API surface after #38
 
-The Blazor application shell lives in `APS.Service`, while reusable layouts and feature pages live in `APS.UI`.
-
-`APS.Service` owns `App.razor` and `Routes.razor`, maps static assets, hosts `_framework/blazor.web.js`, and adds the `APS.UI` assembly to both Razor component endpoint discovery and the client `Router`. This is required for interactive-server behavior and for `@page` routes compiled into the class library to be discoverable.
-
-`/planning` is a working reference/demo page that runs `IPlanningEngine` end-to-end against the built-in long-products sample scenario and can build the corresponding release Work Orders. It is not yet the production planner workspace; DB-backed plan-history, replanning and execution-management pages remain to be built.
-
-## Runtime
-
-- .NET 10
-- ASP.NET Core service
-- Blazor interactive-server UI
-- SQL Server / EF Core
-- Google OR-Tools CP-SAT
-
-Current APIs include:
+Core production APIs include:
 
 - `GET /api/health`
 - `GET /api/inventory/snapshot`
-- `POST /api/planning/run`
+- `GET /api/planning/master-data`
+- `POST /api/planning/calculate` — canonical production calculation + persistence
+- `POST /api/planning/run` — compatibility alias to the same lifecycle
 - `POST /api/planning/replan/{baselinePlanVersionId}`
 - `GET /api/planning/versions/{planVersionId}`
-- `GET /api/planning/versions/{newPlanVersionId}/compare/{baselinePlanVersionId}`
-- `POST /api/planning/mts/production-order`
-- `POST /api/planning/campaigns/form`
-- `POST /api/planning/structure/build`
-- `POST /api/planning/schedule/solve`
-- `POST /api/planning/release/build`
-- `POST /api/planning/release`
-- `POST /api/execution/work-orders/{workOrderId}`
-- `POST /api/execution/heats`
-- `POST /api/integration/xstudio/execution-events`
-- `POST /api/integration/xstudio/heat-events`
-- traceability endpoints for Work Orders and material lots
+- plan comparison endpoints
+- `POST /api/planning/versions/{planVersionId}/release` — canonical persisted-plan release
+- `POST /api/planning/release/{planVersionId}` — identity-only compatibility alias
+- `/api/ui/planner/*` read surfaces
+- `/api/execution/*` canonical manual/operations adapters
+- `/api/integration/*` MES/integration event adapters
+- traceability endpoints.
 
-`POST /api/planning/calculate` is **not** currently mapped by `APS.Service`; any higher-level 'load current master data and inventory, then solve' endpoint remains future service work.
+When demo mode is enabled, non-authoritative component endpoints are available only under `/api/demo/planning/*`.
 
-## Current boundary / next refinements
+## Verification status
 
-Solver-owned fixed-resource sequencing is now implemented. The next solver work should deepen resource choice without weakening the physical-resource separation introduced above:
+Focused #38 boundary tests have been checked in for:
 
-1. Expose multiple eligible rolling-mill/resource options from production-structure planning so the existing CP-SAT alternative-resource variables are used end-to-end. Resource assignment and sequencing will then need to be coupled conditionally to the selected machine.
-2. Extend alternative-resource choice to caster assignment while preserving cast-sequence continuity, heat identity, strand/material-source identity and caster-to-mill flow constraints.
-3. Propagate non-100% yields backward through configured downstream route stages.
-4. Improve active-operation remaining-duration treatment during replanning.
-5. Add richer infeasibility/relaxation explanations.
-6. Model individual billet-piece sizing/cut patterns where required rather than only aggregate strand material units.
-7. Build DB-backed planner/replanning/execution UI pages on top of the working Blazor host.
+- authoritative master/inventory lifecycle ownership;
+- Plan Version persistence;
+- missing-route production failure;
+- manufacturing-only supply policy enforcement;
+- direct Production-mode compatibility-fallback rejection;
+- identity-only/idempotent persisted release;
+- configured downstream route-operation release.
+
+They have **not been executed in this environment**. Per project rule, GitHub Actions/CI is not used for APS verification. Build/test execution is deferred to the intended developer environment.
+
+## Next backend work
+
+After #38 canonicalization, the ordered backend program continues with #45: authoritative MTO SO-item -> qualified FG coverage -> Production Order/service-date orchestration. See `APS_Backend_Work_Program.md` for the full sequence.
