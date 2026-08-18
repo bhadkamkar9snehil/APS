@@ -2,6 +2,12 @@ using APS.Domain;
 
 namespace APS.Application;
 
+public enum PlanningExecutionMode
+{
+    Compatibility = 0,
+    Production = 1
+}
+
 public sealed record PlanningTimeFencePolicy(
     int FrozenMinutes = 120,
     int SlushyMinutes = 720,
@@ -95,7 +101,8 @@ public sealed record PlanningRunRequest(
     MaterialSupplyPlanningPolicy? MaterialSupplyPolicy = null,
     IReadOnlyCollection<OperationAssignmentPolicy>? AssignmentPolicies = null,
     IReadOnlyCollection<MaterialSourcingRule>? MaterialSourcingRules = null,
-    IReadOnlyCollection<CommittedMaterialSupply>? CommittedMaterialSupplies = null);
+    IReadOnlyCollection<CommittedMaterialSupply>? CommittedMaterialSupplies = null,
+    PlanningExecutionMode ExecutionMode = PlanningExecutionMode.Compatibility);
 
 public sealed record PlanningRunResult(
     Guid PlanVersionId,
