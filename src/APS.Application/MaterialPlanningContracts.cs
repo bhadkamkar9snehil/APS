@@ -25,4 +25,6 @@ public sealed record MaterialPlanningResult(
     IReadOnlyCollection<MaterialSupplyReservation> Reservations,
     IReadOnlyCollection<ScheduledMaterialEvent> ScheduleEvents,
     IReadOnlyCollection<MaterialBalanceEvent> LedgerEvents,
-    IReadOnlyCollection<PlanningIssue> Issues);
+    IReadOnlyCollection<PlanningIssue> Issues,
+    IReadOnlyCollection<MaterialRequirement>? Requirements = null,
+    IReadOnlyCollection<MaterialSupplyRequirement>? SupplyRequirements = null);
