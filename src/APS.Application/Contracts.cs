@@ -78,7 +78,28 @@ public sealed record PlanningSupplyAllocation(
     string? SourceLocationCode = null,
     string? DestinationLocationCode = null,
     bool IsFirm = false,
-    string? RuleCode = null);
+    string? RuleCode = null,
+    decimal? PlannedReceiptQuantityMt = null,
+    decimal ProjectedExcessQuantityMt = 0m,
+    int SelectionPenalty = 0);
+
+public sealed record PlanningSupplyAlternative(
+    Guid ProductionOrderId,
+    MaterialSupplyActionType ActionType,
+    bool IsAllowed,
+    bool IsFeasible,
+    bool IsSelected,
+    decimal RequiredQuantityMt,
+    decimal PlannedReceiptQuantityMt,
+    decimal ProjectedExcessQuantityMt,
+    DateTime RequiredReceiptUtc,
+    DateTime? ExpectedReceiptUtc,
+    int Penalty,
+    string? RuleCode,
+    string? SupplierCode = null,
+    string? SourceLocationCode = null,
+    string? DestinationLocationCode = null,
+    string? RejectionReason = null);
 
 public sealed record CampaignPlanningResult(
     IReadOnlyCollection<Campaign> Campaigns,
@@ -91,7 +112,8 @@ public sealed record CampaignPlanningResult(
     IReadOnlyCollection<CampaignHeatAllocation>? HeatAllocations = null,
     IReadOnlyCollection<PlanningSupplyAllocation>? PlannedSupplyAllocations = null,
     IReadOnlyDictionary<Guid, decimal>? PlannedPurchaseAllocatedMt = null,
-    IReadOnlyDictionary<Guid, decimal>? PlannedTransferAllocatedMt = null);
+    IReadOnlyDictionary<Guid, decimal>? PlannedTransferAllocatedMt = null,
+    IReadOnlyCollection<PlanningSupplyAlternative>? SourcingAlternatives = null);
 
 public interface IMtsProductionOrderService
 {
