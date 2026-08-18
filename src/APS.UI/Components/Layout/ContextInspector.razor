@@ -1,0 +1,44 @@
+@implements IDisposable
+@inject PlannerWorkspaceState WorkspaceState
+
+<aside class="planner-inspector @(WorkspaceState.SelectedEntity is null ? "is-empty" : "is-open")" aria-label="Selected entity details">
+    @if (WorkspaceState.SelectedEntity is null)
+    {
+        <div class="planner-inspector-empty">
+            <span class="planner-inspector-mark">↗</span>
+            <strong>Context</strong>
+            <p>Select an order, campaign, heat, operation, resource or material object to keep its lineage in view.</p>
+        </div>
+    }
+    else
+    {
+        var selected = WorkspaceState.SelectedEntity;
+        <div class="planner-inspector-head">
+            <div>
+                <span class="planner-context-kicker">@selected.EntityType</span>
+                <strong>@selected.DisplayCode</strong>
+            </div>
+            <button class="planner-icon-button" type="button" title="Close inspector" @onclick="WorkspaceState.ClearSelection">×</button>
+        </div>
+        <div class="planner-inspector-body">
+            <section>
+                <span class="planner-section-label">Identity</span>
+                <dl class="planner-definition-list">
+                    <div><dt>Type</dt><dd>@selected.EntityType</dd></div>
+                    <div><dt>ID</dt><dd class="planner-mono">@selected.EntityId</dd></div>
+                </dl>
+            </section>
+            <section class="planner-inspector-note">
+                Type-specific lineage, requirements, diagnostics and safe actions are populated by the workspace read models as each production surface is implemented.
+            </section>
+        </div>
+    }
+</aside>
+
+@code {
+    protected override void OnInitialized() => WorkspaceState.Changed += OnWorkspaceChanged;
+
+    private void OnWorkspaceChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => WorkspaceState.Changed -= OnWorkspaceChanged;
+}
