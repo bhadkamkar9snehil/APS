@@ -58,10 +58,7 @@ public sealed class PlannerWorkspaceQueryService(ApsDbContext db) : IPlannerWork
         Guid? planVersionId = null,
         CancellationToken cancellationToken = default)
     {
-        var plan = planVersionId.HasValue
-            ? await BuildPlanContextAsync(planVersionId.Value, cancellationToken)
-            : await GetCurrentPlanAsync(cancellationToken);
-
+        var plan = await ResolvePlanAsync(planVersionId, cancellationToken);
         if (plan is null) return null;
 
         var operations = await db.PlanOperationSnapshots
@@ -160,6 +157,199 @@ public sealed class PlannerWorkspaceQueryService(ApsDbContext db) : IPlannerWork
             materialSummary,
             DateTime.UtcNow);
     }
+
+    public async Task<DemandSupplyView?> GetDemandSupplyAsync(
+        Guid? planVersionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var plan = await ResolvePlanAsync(planVersionId, cancellationToken);
+        if (plan is null) return null;
+
+        var productionOrders = await db.PlanProductionOrderSnapshots
+            .AsNoTracking()
+            .Include(x => x.RequirementSnapshot)
+            .Where(x => x.PlanVersionId == plan.PlanVersionId)
+            .OrderByDescending(x => x.Priority)
+            .ThenBy(x => x.RequiredDate)
+            .ThenBy(x => x.ProductionOrderNumber)
+            .ToListAsync(cancellationToken);
+
+        var rows = productionOrders.Select(po =>
+        {
+            var covered = po.FinishedGoodsAllocatedMt +
+                          po.ExistingIntermediateAllocatedMt +
+                          po.ExternalIntermediateAllocatedMt +
+                          po.FreshSteelRequirementMt;
+            var uncovered = Math.Max(0m, po.RemainingQuantityMt - covered);
+            var requirement = po.RequirementSnapshot;
+            return new DemandSupplyRowView(
+                po.ProductionOrderId,
+                po.ProductionOrderNumber,
+                po.DemandSource,
+                po.SalesOrderNumber,
+                po.SalesOrderItemNumber,
+                po.CustomerCode,
+                po.MaterialCode,
+                po.GradeCode,
+                po.FinalCrossSectionCode,
+                po.CasterSectionCode,
+                po.RouteCode,
+                po.PlannedQuantityMt,
+                po.RemainingQuantityMt,
+                po.RequiredDate,
+                po.Priority,
+                po.Status,
+                po.FinishedGoodsAllocatedMt,
+                po.RollingRequirementMt,
+                po.ExistingIntermediateAllocatedMt,
+                po.ExternalIntermediateAllocatedMt,
+                po.FreshSteelRequirementMt,
+                covered,
+                uncovered,
+                po.TargetStockMt,
+                po.ProjectedAvailableStockMt,
+                po.StockPolicyCode,
+                requirement?.RequirementFingerprint,
+                requirement?.QualityClassCode,
+                requirement?.SegregationPolicy ?? SegregationPolicy.None,
+                requirement?.VdRequirement ?? RequirementDisposition.Optional,
+                requirement?.ReheatRequirement ?? RequirementDisposition.Optional,
+                requirement?.TmtRequirement ?? RequirementDisposition.Optional,
+                requirement?.HotChargeAllowed ?? true);
+        }).ToArray();
+
+        return new DemandSupplyView(
+            plan,
+            rows.Sum(x => x.RemainingQuantityMt),
+            rows.Sum(x => x.FinishedGoodsAllocatedMt),
+            rows.Sum(x => x.ExistingIntermediateAllocatedMt),
+            rows.Sum(x => x.ExternalIntermediateAllocatedMt),
+            rows.Sum(x => x.FreshSteelRequirementMt),
+            rows.Sum(x => x.UncoveredQuantityMt),
+            rows.Count(x => x.DemandSource == DemandSourceType.MakeToOrder),
+            rows.Count(x => x.DemandSource == DemandSourceType.MakeToStock),
+            rows);
+    }
+
+    public async Task<CampaignStudioView?> GetCampaignStudioAsync(
+        Guid? planVersionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var plan = await ResolvePlanAsync(planVersionId, cancellationToken);
+        if (plan is null) return null;
+
+        var campaigns = await db.PlanCampaignSnapshots.AsNoTracking()
+            .Where(x => x.PlanVersionId == plan.PlanVersionId)
+            .OrderBy(x => x.RequiredDate)
+            .ThenBy(x => x.CampaignNumber)
+            .ToListAsync(cancellationToken);
+        var allocations = await db.PlanCampaignAllocationSnapshots.AsNoTracking()
+            .Where(x => x.PlanVersionId == plan.PlanVersionId)
+            .ToListAsync(cancellationToken);
+        var grades = await db.PlanCampaignGradeSequenceSnapshots.AsNoTracking()
+            .Where(x => x.PlanVersionId == plan.PlanVersionId)
+            .OrderBy(x => x.SequenceNumber)
+            .ToListAsync(cancellationToken);
+        var heats = await db.PlanHeatSnapshots.AsNoTracking()
+            .Where(x => x.PlanVersionId == plan.PlanVersionId)
+            .OrderBy(x => x.SequenceNumber)
+            .ToListAsync(cancellationToken);
+        var heatAllocations = await db.PlanHeatAllocationSnapshots.AsNoTracking()
+            .Where(x => x.PlanVersionId == plan.PlanVersionId)
+            .ToListAsync(cancellationToken);
+        var productionOrders = await db.PlanProductionOrderSnapshots.AsNoTracking()
+            .Where(x => x.PlanVersionId == plan.PlanVersionId)
+            .ToListAsync(cancellationToken);
+        var poById = productionOrders.ToDictionary(x => x.ProductionOrderId);
+
+        var result = campaigns.Select(campaign =>
+        {
+            var campaignAllocations = allocations
+                .Where(x => x.CampaignId == campaign.CampaignId)
+                .Select(x =>
+                {
+                    poById.TryGetValue(x.ProductionOrderId, out var po);
+                    return new CampaignAllocationView(
+                        x.ProductionOrderId,
+                        po?.ProductionOrderNumber ?? x.ProductionOrderId.ToString("N")[..8],
+                        po?.DemandSource ?? DemandSourceType.MakeToOrder,
+                        po?.SalesOrderNumber,
+                        x.PlannedQuantityMt,
+                        x.ExistingIntermediateInventoryMt,
+                        x.FreshSteelQuantityMt);
+                })
+                .OrderByDescending(x => x.DemandSource == DemandSourceType.MakeToOrder)
+                .ThenBy(x => x.ProductionOrderNumber)
+                .ToArray();
+
+            var gradeSequence = grades
+                .Where(x => x.CampaignId == campaign.CampaignId)
+                .OrderBy(x => x.SequenceNumber)
+                .Select(x => new CampaignGradeSequenceItemView(x.SequenceNumber, x.GradeCode, x.PlannedQuantityMt))
+                .ToArray();
+
+            var campaignHeats = heats
+                .Where(x => x.CampaignId == campaign.CampaignId)
+                .OrderBy(x => x.SequenceNumber)
+                .Select(heat =>
+                {
+                    var allocationsForHeat = heatAllocations
+                        .Where(x => x.CampaignHeatId == heat.CampaignHeatId)
+                        .Select(x =>
+                        {
+                            poById.TryGetValue(x.ProductionOrderId, out var po);
+                            return new HeatAllocationView(
+                                x.ProductionOrderId,
+                                po?.ProductionOrderNumber ?? x.ProductionOrderId.ToString("N")[..8],
+                                po?.SalesOrderNumber,
+                                x.PlannedOutputQuantityMt,
+                                x.PlannedInputQuantityMt);
+                        })
+                        .ToArray();
+                    return new CampaignHeatView(
+                        heat.CampaignHeatId,
+                        heat.SequenceNumber,
+                        heat.GradeCode,
+                        heat.PlannedQuantityMt,
+                        heat.MinimumFeasibleQuantityMt,
+                        heat.TargetQuantityMt,
+                        heat.MaximumFeasibleQuantityMt,
+                        heat.PreferredSteelmakingResourceId,
+                        heat.PreferredCasterResourceId,
+                        allocationsForHeat);
+                })
+                .ToArray();
+
+            return new CampaignView(
+                campaign.CampaignId,
+                campaign.CampaignNumber,
+                campaign.GradeSequenceClassCode,
+                campaign.CasterSectionCode,
+                campaign.RouteCode,
+                campaign.PlannedQuantityMt,
+                campaign.FreshSteelRequirementMt,
+                campaign.ExistingIntermediateInventoryMt,
+                campaign.RequiredDate,
+                campaign.Status,
+                campaignAllocations,
+                gradeSequence,
+                campaignHeats);
+        }).ToArray();
+
+        return new CampaignStudioView(
+            plan,
+            result.Length,
+            result.Sum(x => x.Heats.Count),
+            result.Sum(x => x.PlannedQuantityMt),
+            result.Sum(x => x.FreshSteelRequirementMt),
+            result.Sum(x => x.ExistingIntermediateInventoryMt),
+            result);
+    }
+
+    private async Task<PlanContextView?> ResolvePlanAsync(Guid? planVersionId, CancellationToken cancellationToken) =>
+        planVersionId.HasValue
+            ? await BuildPlanContextAsync(planVersionId.Value, cancellationToken)
+            : await GetCurrentPlanAsync(cancellationToken);
 
     private async Task<PlanContextView?> BuildPlanContextAsync(
         Guid planVersionId,
