@@ -2,7 +2,8 @@ namespace APS.Domain;
 
 /// <summary>
 /// Immutable commercial/quantity identity retained with a Plan Version.
-/// Detailed customer, chemistry, process and thermal constraints belong to the attached requirement snapshot.
+/// Resolved customer, chemistry, process and thermal constraints are stored separately in
+/// PlanOrderRequirementSnapshot and correlate through PlanVersionId + ProductionOrderId.
 /// </summary>
 public sealed class PlanProductionOrderSnapshot : Entity
 {
@@ -31,8 +32,6 @@ public sealed class PlanProductionOrderSnapshot : Entity
     public decimal? TargetStockMt { get; set; }
     public decimal? ProjectedAvailableStockMt { get; set; }
     public string? StockPolicyCode { get; set; }
-    public Guid? RequirementSnapshotId { get; set; }
-    public PlanOrderRequirementSnapshot? RequirementSnapshot { get; set; }
 }
 
 public sealed class PlanCampaignSnapshot : Entity
