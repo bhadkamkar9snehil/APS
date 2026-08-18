@@ -76,6 +76,7 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
                 PlanningKey = identity.PlanningKey,
                 SourceEntityId = assignment.SourceEntityId,
                 OperationType = MapOperationType(task.TaskType),
+                ProcessOperationType = ResolveProcessOperationType(task),
                 ResourceId = assignment.ResourceId,
                 StartUtc = assignment.StartUtc,
                 EndUtc = assignment.EndUtc,
@@ -176,12 +177,43 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             .ToArray();
     }
 
+    private static ProcessOperationType ResolveProcessOperationType(FiniteScheduleTask task)
+    {
+        if (task.ProcessOperationType != ProcessOperationType.Unknown) return task.ProcessOperationType;
+        return task.TaskType switch
+        {
+            FiniteScheduleTaskType.Eaf => ProcessOperationType.Eaf,
+            FiniteScheduleTaskType.Lrf => ProcessOperationType.Lrf,
+            FiniteScheduleTaskType.Vd => ProcessOperationType.Vd,
+            FiniteScheduleTaskType.Casting => ProcessOperationType.Ccm,
+            FiniteScheduleTaskType.Reheating => ProcessOperationType.Reheat,
+            FiniteScheduleTaskType.HotRolling => ProcessOperationType.HotRoll,
+            FiniteScheduleTaskType.ColdRolling => ProcessOperationType.ColdRoll,
+            FiniteScheduleTaskType.Tmt => ProcessOperationType.Tmt,
+            FiniteScheduleTaskType.Cooling => ProcessOperationType.Cool,
+            FiniteScheduleTaskType.Cutting => ProcessOperationType.Cut,
+            FiniteScheduleTaskType.Bundling => ProcessOperationType.Bundle,
+            FiniteScheduleTaskType.Coiling => ProcessOperationType.Coil,
+            FiniteScheduleTaskType.Finishing => ProcessOperationType.Finish,
+            _ => ProcessOperationType.Unknown
+        };
+    }
+
     private static PlanOperationType MapOperationType(FiniteScheduleTaskType type) => type switch
     {
         FiniteScheduleTaskType.Casting => PlanOperationType.Casting,
         FiniteScheduleTaskType.HotRolling => PlanOperationType.HotRolling,
         FiniteScheduleTaskType.ColdRolling => PlanOperationType.ColdRolling,
         FiniteScheduleTaskType.Finishing => PlanOperationType.Finishing,
+        FiniteScheduleTaskType.Eaf => PlanOperationType.Eaf,
+        FiniteScheduleTaskType.Lrf => PlanOperationType.Lrf,
+        FiniteScheduleTaskType.Vd => PlanOperationType.Vd,
+        FiniteScheduleTaskType.Reheating => PlanOperationType.Reheating,
+        FiniteScheduleTaskType.Tmt => PlanOperationType.Tmt,
+        FiniteScheduleTaskType.Cooling => PlanOperationType.Cooling,
+        FiniteScheduleTaskType.Cutting => PlanOperationType.Cutting,
+        FiniteScheduleTaskType.Bundling => PlanOperationType.Bundling,
+        FiniteScheduleTaskType.Coiling => PlanOperationType.Coiling,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
     };
 
@@ -191,6 +223,15 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
         PlanOperationType.HotRolling => FiniteScheduleTaskType.HotRolling,
         PlanOperationType.ColdRolling => FiniteScheduleTaskType.ColdRolling,
         PlanOperationType.Finishing => FiniteScheduleTaskType.Finishing,
+        PlanOperationType.Eaf => FiniteScheduleTaskType.Eaf,
+        PlanOperationType.Lrf => FiniteScheduleTaskType.Lrf,
+        PlanOperationType.Vd => FiniteScheduleTaskType.Vd,
+        PlanOperationType.Reheating => FiniteScheduleTaskType.Reheating,
+        PlanOperationType.Tmt => FiniteScheduleTaskType.Tmt,
+        PlanOperationType.Cooling => FiniteScheduleTaskType.Cooling,
+        PlanOperationType.Cutting => FiniteScheduleTaskType.Cutting,
+        PlanOperationType.Bundling => FiniteScheduleTaskType.Bundling,
+        PlanOperationType.Coiling => FiniteScheduleTaskType.Coiling,
         _ => throw new ArgumentOutOfRangeException(nameof(type), type, null)
     };
 }
