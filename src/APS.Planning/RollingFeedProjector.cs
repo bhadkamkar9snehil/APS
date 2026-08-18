@@ -29,7 +29,8 @@ internal static class RollingFeedProjector
                 PlanningInventoryUse.ExternalIntermediateFeed or
                 PlanningInventoryUse.PlannedPurchaseFeed or
                 PlanningInventoryUse.PlannedTransferFeed or
-                PlanningInventoryUse.ManualPlannedFeed)
+                PlanningInventoryUse.ManualPlannedFeed or
+                PlanningInventoryUse.CommittedInternalProductionFeed)
             .GroupBy(x => x.ProductionOrderId)
             .ToDictionary(x => x.Key, x => x.ToArray());
 
@@ -70,9 +71,9 @@ internal static class RollingFeedProjector
                 continue;
             }
 
-            // Existing, confirmed external, planned purchase/transfer and planner-authorized billet are
-            // all legitimate feed paths. Anything other than an explicitly-hot confirmed external supply
-            // defaults to cold charge and therefore uses RHF when the route requires one.
+            // Existing, committed baseline production, confirmed external, planned purchase/transfer and
+            // planner-authorized billet are legitimate feed paths. Committed baseline material is cold by
+            // default here because this projection deliberately does not invent a thermal state from a past plan.
             var sourceAllocations = plan.Allocations
                 .Where(x => x.ProductionOrder is not null)
                 .SelectMany(x => inventoryByPo.TryGetValue(x.ProductionOrderId, out var values) ? values : Array.Empty<PlanningInventoryAllocation>())
@@ -94,8 +95,6 @@ internal static class RollingFeedProjector
             {
                 if (!needsReheat)
                 {
-                    // Do not use one max ETA for the whole plan. The material reservoir contains the
-                    // actual receipt times and allows progressive feed as qualified material becomes available.
                     Replace(tasks, rollingTask with { EarliestStartUtc = null, ProcessOperationType = ProcessOperationType.HotRoll });
                     continue;
                 }
