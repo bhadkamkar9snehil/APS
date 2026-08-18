@@ -1,0 +1,233 @@
+@page "/plan/campaigns"
+@implements IDisposable
+@inject IPlannerWorkspaceQueryService PlannerQuery
+@inject PlannerWorkspaceState WorkspaceState
+
+<PageTitle>Campaign Studio - APS</PageTitle>
+
+<div class="planner-page campaign-studio">
+    <header class="workspace-titlebar">
+        <div>
+            <span class="workspace-eyebrow">PLAN / CAMPAIGNS</span>
+            <h1>Campaign Studio</h1>
+            <p>PO allocation, grade order and furnace-feasible heat structure for the selected Plan Version.</p>
+        </div>
+        @if (view is not null)
+        {
+            <div class="workspace-basis">
+                <span>Basis</span>
+                <strong>@view.Plan.VersionNumber snapshot</strong>
+            </div>
+        }
+    </header>
+
+    @if (loading)
+    {
+        <div class="planner-empty-state"><strong>Loading campaign structure…</strong></div>
+    }
+    else if (view is null)
+    {
+        <div class="planner-empty-state planner-empty-state-major">
+            <strong>No persisted campaign snapshot</strong>
+            <p>Run and persist a Plan Version before using Campaign Studio.</p>
+        </div>
+    }
+    else
+    {
+        <section class="campaign-summary-strip">
+            <div><span>Campaigns</span><strong>@view.CampaignCount</strong></div>
+            <div><span>Heats</span><strong>@view.HeatCount</strong></div>
+            <div><span>Rolling quantity</span><strong>@view.PlannedRollingQuantityMt.ToString("0.##") MT</strong></div>
+            <div><span>Existing billet</span><strong>@view.ExistingIntermediateQuantityMt.ToString("0.##") MT</strong></div>
+            <div><span>Fresh steel</span><strong>@view.FreshSteelRequirementMt.ToString("0.##") MT</strong></div>
+        </section>
+
+        <div class="campaign-layout">
+            <aside class="campaign-register">
+                <div class="campaign-register-head">
+                    <span class="planner-section-label">CAMPAIGN REGISTER</span>
+                    <strong>@view.CampaignCount selected by optimizer</strong>
+                </div>
+                <div class="campaign-register-list">
+                    @foreach (var campaign in view.Campaigns)
+                    {
+                        <button type="button" class="campaign-register-row @(selectedCampaign?.CampaignId == campaign.CampaignId ? "is-selected" : null)" @onclick="() => SelectCampaign(campaign)">
+                            <div>
+                                <strong>@campaign.CampaignNumber</strong>
+                                <span>@campaign.GradeSequenceClassCode · @campaign.CasterSectionCode</span>
+                            </div>
+                            <div class="campaign-register-qty">
+                                <strong>@campaign.PlannedQuantityMt.ToString("0.#")</strong>
+                                <span>MT</span>
+                            </div>
+                            <small>@campaign.Heats.Count heats · due @campaign.RequiredDate.ToString("dd MMM")</small>
+                        </button>
+                    }
+                </div>
+            </aside>
+
+            <section class="campaign-canvas">
+                @if (selectedCampaign is null)
+                {
+                    <div class="planner-empty-state"><strong>Select a campaign</strong></div>
+                }
+                else
+                {
+                    <div class="campaign-hero">
+                        <div>
+                            <span class="planner-section-label">SELECTED CAMPAIGN</span>
+                            <h2>@selectedCampaign.CampaignNumber</h2>
+                            <p>@selectedCampaign.RouteCode · caster section @selectedCampaign.CasterSectionCode · due @selectedCampaign.RequiredDate.ToString("dd MMM yyyy HH:mm")</p>
+                        </div>
+                        <div class="campaign-hero-numbers">
+                            <div><span>Total</span><strong>@selectedCampaign.PlannedQuantityMt.ToString("0.##") MT</strong></div>
+                            <div><span>Existing billet</span><strong>@selectedCampaign.ExistingIntermediateInventoryMt.ToString("0.##")</strong></div>
+                            <div><span>Fresh steel</span><strong>@selectedCampaign.FreshSteelRequirementMt.ToString("0.##")</strong></div>
+                        </div>
+                    </div>
+
+                    <section class="campaign-section">
+                        <div class="campaign-section-head">
+                            <div>
+                                <span class="planner-section-label">GRADE ORDER</span>
+                                <h3>Sequence selected for this campaign</h3>
+                            </div>
+                            <span class="planner-basis-badge">@selectedCampaign.GradeSequenceClassCode</span>
+                        </div>
+                        <div class="grade-sequence-rail">
+                            @foreach (var grade in selectedCampaign.GradeSequence.OrderBy(x => x.SequenceNumber))
+                            {
+                                <div class="grade-sequence-node">
+                                    <span>@grade.SequenceNumber.ToString("00")</span>
+                                    <strong>@grade.GradeCode</strong>
+                                    <small>@grade.PlannedQuantityMt.ToString("0.#") MT</small>
+                                </div>
+                                @if (grade != selectedCampaign.GradeSequence.OrderBy(x => x.SequenceNumber).Last())
+                                {
+                                    <div class="grade-sequence-link">→</div>
+                                }
+                            }
+                        </div>
+                    </section>
+
+                    <section class="campaign-section">
+                        <div class="campaign-section-head">
+                            <div>
+                                <span class="planner-section-label">HEAT STRUCTURE</span>
+                                <h3>Furnace-feasible heats and PO pegging</h3>
+                            </div>
+                            <span class="planner-basis-badge">@selectedCampaign.Heats.Count HEATS</span>
+                        </div>
+                        <div class="heat-ribbon">
+                            @foreach (var heat in selectedCampaign.Heats.OrderBy(x => x.SequenceNumber))
+                            {
+                                <button type="button" class="heat-ribbon-block" @onclick="() => SelectHeat(heat)">
+                                    <div class="heat-ribbon-head">
+                                        <span>H@heat.SequenceNumber.ToString("00")</span>
+                                        <strong>@heat.GradeCode</strong>
+                                    </div>
+                                    <div class="heat-ribbon-qty">@heat.PlannedQuantityMt.ToString("0.##") MT</div>
+                                    <div class="heat-envelope">
+                                        <span>min @FormatNullable(heat.MinimumFeasibleQuantityMt)</span>
+                                        <span>target @FormatNullable(heat.TargetQuantityMt)</span>
+                                        <span>max @FormatNullable(heat.MaximumFeasibleQuantityMt)</span>
+                                    </div>
+                                    <div class="heat-allocations">
+                                        @if (heat.Allocations.Count == 0)
+                                        {
+                                            <span>No PO pegging snapshot</span>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var allocation in heat.Allocations)
+                                            {
+                                                <span title="Input @allocation.PlannedInputQuantityMt.ToString("0.##") MT">@allocation.ProductionOrderNumber · @allocation.PlannedOutputQuantityMt.ToString("0.#")</span>
+                                            }
+                                        }
+                                    </div>
+                                </button>
+                            }
+                        </div>
+                    </section>
+
+                    <section class="campaign-section">
+                        <div class="campaign-section-head">
+                            <div>
+                                <span class="planner-section-label">PO ALLOCATION</span>
+                                <h3>Why this campaign exists</h3>
+                            </div>
+                        </div>
+                        <div class="campaign-allocation-table">
+                            <div class="campaign-allocation-head">
+                                <span>Production Order</span><span>Demand</span><span>Total</span><span>Existing billet</span><span>Fresh steel</span>
+                            </div>
+                            @foreach (var allocation in selectedCampaign.Allocations)
+                            {
+                                <button type="button" class="campaign-allocation-row" @onclick="() => SelectProductionOrder(allocation)">
+                                    <span><strong>@allocation.ProductionOrderNumber</strong><small>@(allocation.SalesOrderNumber is null ? "Stock replenishment" : $"SO {allocation.SalesOrderNumber}")</small></span>
+                                    <span><em class="source-badge @(allocation.DemandSource == DemandSourceType.MakeToOrder ? "mto" : "mts")">@(allocation.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</em></span>
+                                    <strong>@allocation.PlannedQuantityMt.ToString("0.##")</strong>
+                                    <strong>@allocation.ExistingIntermediateInventoryMt.ToString("0.##")</strong>
+                                    <strong>@allocation.FreshSteelQuantityMt.ToString("0.##")</strong>
+                                </button>
+                            }
+                        </div>
+                    </section>
+                }
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private CampaignStudioView? view;
+    private CampaignView? selectedCampaign;
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        WorkspaceState.Changed += OnWorkspaceChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        view = await PlannerQuery.GetCampaignStudioAsync(WorkspaceState.CurrentPlanVersionId);
+        selectedCampaign = view?.Campaigns.FirstOrDefault();
+        loading = false;
+        StateHasChanged();
+    }
+
+    private void OnWorkspaceChanged()
+    {
+        if (view is not null && WorkspaceState.CurrentPlanVersionId != view.Plan.PlanVersionId)
+        {
+            _ = InvokeAsync(LoadAsync);
+        }
+    }
+
+    private void SelectCampaign(CampaignView campaign)
+    {
+        selectedCampaign = campaign;
+        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Campaign, campaign.CampaignId, campaign.CampaignNumber));
+    }
+
+    private void SelectHeat(CampaignHeatView heat)
+    {
+        WorkspaceState.Select(new PlannerEntityRef(
+            PlannerEntityType.Heat,
+            heat.CampaignHeatId,
+            $"{selectedCampaign?.CampaignNumber}/H{heat.SequenceNumber:00}"));
+    }
+
+    private void SelectProductionOrder(CampaignAllocationView allocation) =>
+        WorkspaceState.Select(new PlannerEntityRef(
+            PlannerEntityType.ProductionOrder,
+            allocation.ProductionOrderId,
+            allocation.ProductionOrderNumber));
+
+    private static string FormatNullable(decimal? value) => value.HasValue ? value.Value.ToString("0.##") : "—";
+
+    public void Dispose() => WorkspaceState.Changed -= OnWorkspaceChanged;
+}
