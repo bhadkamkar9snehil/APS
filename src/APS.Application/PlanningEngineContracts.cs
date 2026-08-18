@@ -8,6 +8,18 @@ public sealed record PlanningTimeFencePolicy(
     int SlushyMovementPenaltyPerMinute = 50,
     int SlushyResourceChangePenalty = 5000);
 
+/// <summary>
+/// Controls how late a physical-resource assignment remains operationally flexible for each process.
+/// This is deliberately separate from schedule movement time fences: a heat may be firm in sequence/time
+/// while its next LRF/VD/CCM remains redispatchable until a much later operational commitment point.
+/// </summary>
+public sealed record OperationAssignmentPolicy(
+    ProcessOperationType ProcessOperationType,
+    int FirmMinutesBeforeStart = 120,
+    int CommitMinutesBeforeStart = 30,
+    bool AllowRedispatchWhenFirm = true,
+    bool AllowRedispatchWhenCommittedForDisruption = true);
+
 public sealed record BaselinePlanOperation(
     string PlanningKey,
     Guid ResourceId,
@@ -15,10 +27,6 @@ public sealed record BaselinePlanOperation(
     DateTime EndUtc,
     FiniteScheduleTaskType TaskType);
 
-/// <summary>
-/// Explicit operations/dispatch decision to use a different physical resource for an operation.
-/// The planning kernel must still revalidate every route, queue, thermal, material and sequence constraint.
-/// </summary>
 public sealed record OperationResourceOverride(
     string PlanningKey,
     Guid ResourceId,
@@ -39,10 +47,6 @@ public sealed record PlanningTaskIdentity(
     string PlanningKey,
     FiniteScheduleTaskType TaskType);
 
-/// <summary>
-/// Resource alternative retained from the structure/solver input even after one resource is selected.
-/// This is the basis for late-binding operational redispatch.
-/// </summary>
 public sealed record PlanningOperationResourceAlternative(
     Guid TaskId,
     Guid SourceEntityId,
@@ -82,7 +86,8 @@ public sealed record PlanningRunRequest(
     IReadOnlyCollection<MaterialSpecification>? MaterialSpecifications = null,
     IReadOnlyCollection<PackagingSpecification>? PackagingSpecifications = null,
     IReadOnlyCollection<ExternalMaterialSupply>? ExternalMaterialSupplies = null,
-    MaterialSupplyPlanningPolicy? MaterialSupplyPolicy = null);
+    MaterialSupplyPlanningPolicy? MaterialSupplyPolicy = null,
+    IReadOnlyCollection<OperationAssignmentPolicy>? AssignmentPolicies = null);
 
 public sealed record PlanningRunResult(
     Guid PlanVersionId,
