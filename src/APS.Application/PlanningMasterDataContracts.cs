@@ -39,8 +39,12 @@ public interface IPlanningMasterDataProvider
     Task<PlanningMasterDataSnapshot> GetAsync(CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Production planning command. Demand is selected from authoritative persisted SO/MTS state;
+/// callers do not submit ProductionOrder objects as planning truth.
+/// </summary>
 public sealed record PlanningCalculationRequest(
-    IReadOnlyCollection<ProductionOrder> ProductionOrders,
+    PlanningDemandSelection Demand,
     CampaignPlanningPolicy CampaignPolicy,
     ProductionStructurePlanningPolicy StructurePolicy,
     DateTime HorizonStartUtc,
