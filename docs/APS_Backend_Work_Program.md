@@ -1,24 +1,17 @@
 # APS Backend Work Program
 
 **Status:** Canonical backend implementation program  
-**Scope:** Backend/domain/planning only. UI implementation is deferred until backend visibility and end-to-end acceptance are complete.  
-**Process rule:** **Do not use GitHub Actions or CI for APS project verification.** Verification will be performed later in the intended development environment.
+**Scope:** Backend/domain/planning only. Dependent production UI work waits for backend visibility and end-to-end readiness.  
+**Verification rule:** **Do not use GitHub Actions or CI for APS project verification.** Verification will be performed later in the intended development environment.
 
-This document converts the backend acceptance audit into one dependency-ordered implementation program. It exists to prevent parallel half-implementations, ambiguous ownership and premature issue closure.
-
-Canonical companion references:
+Canonical companions:
 
 - `APS_Backend_Acceptance_Audit_2026-08-18.md`
 - `APS_End_to_End_Manufacturing_Planning_Flow.md`
-- `APS_Backend_Visibility_Contract.md`
-- `APS_Backend_Audit_Remediation_Map.md`
 - `APS_Demand_to_Production_Order_and_Due_Date_Model.md`
-- GitHub Epic #2
-- GitHub Epic #37
-- GitHub Issue #44 — final end-to-end acceptance gate
-- GitHub Issue #47 — one-issue-at-a-time governance
-- GitHub Issue #48 — documentation quality gate
-- GitHub Issue #49 — dependency/completion-evidence index
+- `APS_Backend_Audit_Remediation_Map.md`
+- `APS_Backend_Visibility_Contract.md`
+- GitHub #2, #37, #44, #47 and #49
 
 ---
 
@@ -26,35 +19,23 @@ Canonical companion references:
 
 APS is a **manufacturing planning and scheduling system**.
 
-It may consume authoritative facts about:
+It consumes authoritative facts about demand, qualified inventory, known incoming material, committed/released internal WIP, planned internal production, resource state and execution actuals.
 
-- customer demand / SAP Sales Orders;
-- MTS stock targets;
-- current qualified inventory;
-- known incoming material from existing integrations;
-- released/committed internal WIP and expected internal receipts;
-- current resource state/calendars;
-- actual execution/material output.
-
-For an uncovered material requirement:
+For uncovered material:
 
 ```text
-covered by inventory / known receipt / committed internal supply?
-        |
-        +-- yes --> reserve/use that supply
-        |
-        +-- no --> internally manufacturable in configured plant?
-                         |
-                         +-- yes --> create upstream internal production requirement
-                         |
-                         +-- no  --> explicit Shortfall / NotManufacturableHere
+qualified supply exists by need time?
+  yes -> reserve/use it
+  no  -> internally manufacturable in configured plant?
+            yes -> create upstream internal production requirement
+            no  -> Shortfall / NotManufacturableHere
 ```
 
-APS does **not** recommend BUY or TRANSFER actions. Procurement and logistics decisions remain outside the product boundary.
+APS does **not** recommend procurement or transfer actions. Purchased/transferred material already present in authoritative inventory/incoming integration is simply a supply fact.
 
 ---
 
-## 2. Canonical end-to-end manufacturing flow
+## 2. Canonical causal flow
 
 ```text
 SAP SO item / MTS requirement
@@ -75,140 +56,100 @@ SAP SO item / MTS requirement
  -> bounded local repair or broader replan
 ```
 
-The fundamental causal chain is:
-
-> **Demand causes material requirements. Material requirements cause internal production requirements. Campaigns organize those requirements. The solver assigns resources/times. WOs execute the solved plan. Actual material feeds the next replan.**
-
-Campaign is an optimization/aggregation construct; it is not the original cause of production.
+**Demand/material requirement is causality. Campaign is aggregation/optimization. Resource assignment is a plan/dispatch decision. WO is execution. Actual material closes the loop.**
 
 ---
 
 ## 3. Implementation-status legend
 
-All status summaries and issue completion comments should use this vocabulary.
-
 | Status | Meaning |
 |---|---|
-| **Implemented and authoritative** | The production path uses it consistently through all applicable layers. |
-| **Implemented but partial/inconsistent** | Working code exists, but one or more applicable layers or call paths disagree/omit it. |
-| **Modeled but not fully wired** | Domain/contracts exist but production persistence/provider/planner/solver/read path is incomplete. |
+| **Implemented and authoritative** | Production uses it consistently through every applicable layer. |
+| **Implemented but partial/inconsistent** | Working code exists but applicable paths/layers disagree or omit it. |
+| **Modeled but not fully wired** | Domain/contracts exist but persistence/provider/planner/solver/read path is incomplete. |
 | **Legacy/reference only** | Useful prototype/migration behavior exists but is not production authority. |
-| **Missing** | Canonical .NET capability does not exist yet. |
-| **Superseded** | Retained only for history/reference and must not drive new implementation. |
+| **Missing** | Canonical .NET capability does not yet exist. |
+| **Superseded** | Retained for history/reference only. |
 
-A domain class existing is **never** sufficient to call a capability implemented and authoritative.
-
----
-
-## 4. Issue specification standard
-
-Before implementation, every backend issue must state explicitly:
-
-1. **Current implementation state** — what checked-in .NET code actually does today.
-2. **Audit finding / gap** — the missing, contradictory, duplicate or unsafe behavior.
-3. **Target domain behavior** — desired manufacturing/planning semantics.
-4. **Canonical ownership** — which existing abstraction owns the behavior; avoid sidecars.
-5. **Inputs / masters / controls** — all configurable planning inputs.
-6. **Outputs / persisted facts** — including Plan Version facts where relevant.
-7. **Solver/material/execution interaction** — if applicable.
-8. **Visibility/read-model requirements** — what must be queryable later.
-9. **Dependencies / blockers** — exact issue dependencies.
-10. **Non-goals / scope boundary** — especially manufacturing-only material planning.
-11. **Compatibility/migration considerations** — legacy/demo behavior where relevant.
-12. **Acceptance scenarios** — domain scenarios, not only unit-level assertions.
-13. **Completion evidence required** — concrete production paths required before closure.
-14. **Process rule** — no GitHub Actions/CI.
+A class existing is never sufficient to mark a feature authoritative.
 
 ---
 
-## 5. Feature completion rule
+## 4. Engineering issue standard
 
-A feature is complete only when its **applicable** production chain is coherent:
+Before implementation, every primary backend issue documents:
+
+1. current implementation state;
+2. audit finding/gap;
+3. target domain behavior;
+4. canonical owner — evolve existing abstractions, avoid sidecars;
+5. inputs/masters/controls;
+6. outputs/persisted facts;
+7. solver/material/execution interaction where applicable;
+8. visibility/read-model requirements;
+9. dependencies/blockers;
+10. non-goals/product boundary;
+11. compatibility/migration considerations;
+12. domain acceptance scenarios;
+13. completion evidence required;
+14. no-GitHub-Actions/CI process rule.
+
+A feature closes only when its applicable chain is coherent:
 
 ```text
 Domain/master
  -> SQL persistence
- -> authoritative CRUD/import/provider
+ -> authoritative provider/import
  -> application/planning contract
  -> planner/solver enforcement
  -> Plan Version audit
- -> execution/replanning where relevant
+ -> execution/replan where relevant
  -> read model
  -> application/HTTP contract
 ```
 
-If one layer genuinely does not apply, the issue must explicitly state why.
-
-Examples:
-
-- a BOM leaf raw-material requirement may have no finite-schedule operation; solver layer is intentionally not applicable;
-- a static descriptive master may be referenced by stable version rather than copied into every Plan Version;
-- a planning-only candidate may need Plan Version decision evidence but no execution entity.
+If a layer is genuinely not applicable, the issue states why.
 
 ---
 
-## 6. One-issue-at-a-time implementation discipline
+## 5. One-primary-issue-at-a-time discipline
 
-For each primary issue:
+For each active primary issue:
 
-1. re-read current code and canonical issue specification;
-2. identify direct dependencies only;
-3. evolve the canonical abstraction at the root;
-4. complete all applicable layers for that feature;
-5. apply cross-cutting logging/validation/master/read rules while touching that path;
+1. re-audit the current code path;
+2. confirm target semantics and direct dependencies;
+3. fix the canonical root abstraction;
+4. complete all applicable layers;
+5. satisfy applicable #39/#40/#41/#42/#36 cross-cutting requirements while touching that path;
 6. document migration/fallback behavior;
-7. add focused acceptance/regression tests in code, but do not use GitHub Actions/CI;
-8. update the issue with concrete implementation evidence;
-9. close only after every acceptance scenario is satisfied;
-10. then select the next primary issue.
+7. add focused acceptance/regression tests in code without using GitHub Actions/CI;
+8. record concrete implementation evidence in the issue;
+9. close only after acceptance criteria are genuinely satisfied;
+10. then start the next primary issue.
 
-Do not run several major domain redesigns in parallel merely because they are related.
+Do not run several major domain redesigns in parallel.
 
 ---
 
-# 7. Ordered backend implementation program
+# 6. Ordered implementation program
 
-## Phase 0 — repository and documentation authority
+## Phase 0 — repository authority
 
-### 1. Issue #46 — Repository cleanup / Current-Reference-Archive structure
+### 1. #46 Repository documentation cleanup/archive
 
-**Purpose:** remove ambiguity about which documents and prototype implementations are authoritative before deeper code changes resume.
-
-Required output:
-
-- repository/document inventory;
-- cleanup manifest;
-- canonical/current/reference/archive classification;
-- legacy Python/workbook explicitly marked migration/reference;
-- root README/docs index updated;
-- stale docs archived without deleting valuable history.
+Inventory and classify all substantive documentation/code-reference artifacts as Canonical, Current Implementation Note, Reference or Archive. Produce a cleanup manifest before moving files. Preserve useful legacy Python/workbook evidence while making its non-authoritative status obvious.
 
 No backend behavior changes belong in this phase.
 
 ---
 
-## Phase 1 — authoritative backend boundaries and demand
+## Phase 1 — canonical boundaries and demand
 
-### 2. Issue #38 — One authoritative planning/query/execution path
+### 2. #38 One authoritative production path
 
-Establish the canonical production call graph and isolate demo/legacy/fallback behavior.
+Establish one documented production call graph for demand/material/Campaign/route/scheduler/PlanVersion/execution/query behavior. Isolate demo/reference/fallback paths explicitly.
 
-Key result:
-
-```text
-one production planning orchestrator
-one material engine
-one route/structure path
-one finite scheduler
-one execution lifecycle
-one Plan Version truth
-```
-
-Production mode must not silently use sample/default masters.
-
-### 3. Issue #45 — SO item -> FG coverage -> MTO Production Order
-
-Create the missing MTO demand-orchestration lifecycle.
+### 3. #45 SO item -> FG coverage -> MTO Production Order
 
 Canonical quantity rule:
 
@@ -218,323 +159,244 @@ SO open demand
 = MTO finished-product manufacturing requirement
 ```
 
-Important semantics:
-
-- different SO items normally remain separate POs;
-- component/raw-material shortage does not shrink the PO;
-- aggregation begins later at Campaign/Heat/Rolling/WO allocations;
-- customer required date and production-required-by date are preserved separately;
-- allocation-level service dates survive shared manufacturing.
+Different SO items remain separate demand/PO identities by default. Aggregation happens later through Campaign/Heat/Rolling/WO allocations. Component/raw-material shortage never silently shrinks the finished PO. Allocation-level customer service dates survive aggregation.
 
 ---
 
-## Phase 2 — canonical material requirements
+## Phase 2 — material requirements
 
-### 4. Issue #33 — Recursive BOM/material-requirement graph
+### 4. #33 Recursive BOM/material-requirement graph
 
-Port/strengthen the useful legacy recursive BOM capability into the authoritative .NET backend.
+Create the canonical .NET multi-level BOM engine, preserving useful legacy behavior while strengthening lineage/time/UOM/version semantics. BOM depth is arbitrary master data and independent from finite-scheduling depth.
 
-Support arbitrary configured depth:
+Example configured chain:
 
 ```text
-FG
- -> billet/bloom
- -> liquid steel
- -> hot metal/DRI/scrap/alloys/fluxes
- -> burden
- -> ore/pellet/sinter/coke/coal/other leaf material
+FG -> billet/bloom -> liquid steel -> hot metal/DRI/scrap/alloys
+   -> burden -> ore/pellet/sinter/coke/coal/other leaf material
 ```
 
-The BOM graph calculates requirements even when some upstream manufacturing processes are not finite-scheduled.
+### 5. #14 One time-phased material ledger/reservation engine
 
-### 5. Issue #14 — One time-phased material ledger/reservation engine
-
-This becomes the only authority for material coverage/reservations across demand, BOM, Campaigns, solver, execution and replan.
-
-Core rule:
+This becomes the sole material-coverage authority for #45, #33, #15, finite scheduling, execution and replan.
 
 ```text
-ProjectedAvailable(material, location, time)
- = opening usable inventory
+ProjectedAvailable(t)
+ = usable opening stock
  + known incoming receipts
- + committed internal production receipts
- + APS-planned internal production receipts
+ + committed internal receipts
+ + APS-planned internal receipts
  + actual receipts
  - reservations
  - planned/released consumption
  - configured reserve
 ```
 
-A material not available today may still be valid for an operation days/weeks later.
+Material absent today may still satisfy a requirement days/weeks later.
 
-### 6. Issue #11 — Billet/known-incoming/SMS-down contingency
+### 6. #11 Billet/known-incoming/SMS-down contingency
 
-Implement as a **specialized use case of #14**, not another supply engine.
-
-Required behavior:
-
-- billet stock/known incoming can feed RM without unnecessary SMS heats;
-- SMS-down + qualified billet + RHF/RM available can still produce a plan;
-- no billet and no feasible internal manufacture = shortfall;
-- no procurement suggestion.
+Implement as a specialized use case of #14. Billet stock/known receipts may feed RHF/RM without unnecessary SMS production; if SMS cannot run and no qualified billet exists, retain shortfall rather than invent supply.
 
 ---
 
-## Phase 3 — manufacturing aggregation, routes and finite scheduling
+## Phase 3 — Campaigns, routes, finite schedule and scenarios
 
-### 7. Issue #15 — Campaign / grade-sequence / heat candidate optimization
+### 7. #15 Campaign/grade-sequence/heat candidate optimization
 
-Replace production-authoritative ordered sort-and-fill with explicit candidate generation/selection.
+Replace production-authoritative sort-and-fill with candidate generation/selection considering allocation-level service, due-date spread, transition cost, Campaign/heat utilization, downstream feasibility, MTS behavior and stability.
 
-Campaign optimization must consider:
+### 8. #34 Route-driven manufacturing topology
 
-- allocation-level customer service;
-- due-date spread / early-production consequence;
-- transition cost;
-- Campaign/heat utilization;
-- downstream feasibility;
-- MTS fill/deviation;
-- replan stability.
+ManufacturingRoute controls operation order/presence. Support materially different configured long-product routes without hard-coded EAF/LRF/VD chains. Existing/intermediate material may legitimately enter at downstream route points.
 
-Campaign may aggregate POs, but each allocation retains quantity/date/customer identity.
+### 9. #9 Thermal/superheat/transfer constraints
 
-### 8. Issue #34 — Route-driven manufacturing topology
+Complete configuration-driven thermal feasibility through liquid steel and billet hot/cold routing. Separate superheat/casting constraints from billet hot-charge/RHF/rolling-entry constraints.
 
-ManufacturingRoute becomes authoritative for operation order/presence.
+### 10. #35 Resource scheduling modes
 
-Support configured variants such as EAF/LF, EAF/LF/VD, BOF/LF, induction + secondary metallurgy, RH/VD/AOD/VOD as required, and downstream-only existing-billet routes.
-
-Do not add plant-specific `if` chains.
-
-### 9. Issue #9 — Thermal/superheat/transfer constraints
-
-Complete the configuration-driven thermal envelope through liquid steel and billet hot/cold routing.
-
-Separate:
-
-- liquid steel superheat/casting constraints;
-- billet hot-charge/RHF/rolling-entry temperature constraints.
-
-Hard thermal constraints remain hard.
-
-### 10. Issue #35 — Resource scheduling modes
-
-Replace universal `NoOverlap` with master-driven scheduling semantics.
-
-Initial modes:
+Replace universal `NoOverlap` with master-driven physical scheduling semantics. Start with:
 
 - Disjunctive;
 - Cumulative.
 
-Use one CP-SAT engine. Avoid premature simulation/framework over-engineering.
+Use one CP-SAT engine; do not build plant-specific schedulers or premature simulation frameworks.
 
-### 11. Issue #16 — Late-binding resource assignment / commitment / redispatch
+### 11. #16 Late-binding resource assignment/commitment/redispatch
 
 Complete generic lifecycle:
 
 ```text
-Eligible -> Planned -> Firm/Committed -> Actual
+Eligible Resources -> Planned Resource -> Commitment State -> Committed Resource -> Actual Resource
 ```
 
-Apply uniformly to EAF/LRF/VD/CCM/RHF/RM/downstream constrained operations.
+A rarely used qualified LRF is retained exactly like an alternate CCM. Same-type resources remain independent physical ResourceId timelines.
 
-Resource usage frequency does not affect eligibility. A rarely used LRF must remain available if technically qualified.
+### 12. #17 Operating-state scenarios/outages
+
+Apply outages, derating and temporary capability restrictions as an effective-plant-state overlay consumed by the same canonical planner. Scenario planning must not introduce a second scheduler or special contingency branch.
 
 ---
 
 ## Phase 4 — execution closure and explanation
 
-### 12. Issue #18 — Full execution and physical genealogy
+### 13. #18 Full execution/material genealogy
 
-Close the real material transformation loop:
-
-```text
-heat operations
- -> cast/strand
- -> billet/bloom
- -> RHF/RM
- -> rolled intermediate
- -> TMT/cut
- -> bundle/coil/FG
-```
-
-Commercial lineage remains separate:
+Close actual transformation:
 
 ```text
-SO -> PO -> Campaign/WO allocations
+heat operations -> cast/strand -> billet/bloom -> RHF/RM
+ -> rolled intermediate -> TMT/cut -> bundle/coil/FG
 ```
 
-### 13. Issue #19 — Planner-grade diagnostics
+Commercial lineage (`SO -> PO -> Campaign/WO allocation`) remains separate from physical genealogy.
 
-Normalize validation, material, Campaign, route, thermal, capacity, sequence, time-fence and solver diagnostics.
+### 14. #19 Planner-grade diagnostics
 
-Provide domain causes and advisory restoration evidence rather than only `Infeasible`.
-
-Do not silently relax hard metallurgy/customer/quality constraints.
+Normalize domain causes across validation, BOM/material, Campaign, route, resource, thermal, capacity, sequence, stability and execution. Provide advisory restoration/minimum-relaxation evidence without weakening hard metallurgy/customer/quality rules automatically.
 
 ---
 
-## Phase 5 — decision services and complete backend exposure
+## Phase 5 — decision services and full backend exposure
 
-### 14. Issue #43 — CTP / scenario / capacity convergence
+### 15. #43 CTP/scenario/capacity convergence
 
-CTP, scenarios and capacity analysis must use the same canonical demand/material/route/resource semantics as normal planning.
+CTP, scenario planning and capacity analysis use the same canonical demand/material/route/resource semantics as normal planning. Rough-cut capacity and finite scheduled occupancy remain explicitly different products.
 
-Keep rough-cut capacity separate from finite scheduled occupancy.
+### 16. #36 Complete backend read/command surface
 
-### 15. Issue #36 — Complete backend read/command visibility surface
+Every meaningful backend fact/decision/lever gets an intentional typed read/command contract before dependent production UI work.
 
-Every meaningful fact and lever must be queryable before dependent UI implementation begins.
-
-No UI should need to:
+The UI must never need to:
 
 - read EF tables directly;
-- parse opaque JSON for core facts;
-- recompute BOM/material balance;
-- recalculate service dates;
+- deserialize opaque JSON for core planning facts;
+- recalculate BOM/material balance;
+- derive MTO PO quantity/service dates;
 - infer resource alternatives;
-- reproduce diagnostics;
-- reconstruct genealogy.
+- recreate diagnostics or genealogy.
 
 ---
 
-# 8. Cross-cutting completion gates
+# 7. Cross-cutting gates
 
-These are **not parallel feature programs**. They are satisfied incrementally while implementing each primary issue.
+These are implemented incrementally inside the active primary issue rather than as parallel redesign programs.
 
-## Issue #39 — Master-data wiring
+## #39 Master-data wiring
 
-Every active feature must complete applicable:
+Maintain the full master chain where applicable:
 
-`Domain -> EF/SQL -> provider -> planner -> Plan Version -> read API`.
+`Domain -> EF/SQL -> provider -> planner -> PlanVersion -> read API`.
 
-Maintain a Master Data Completeness Matrix.
+## #40 Standard logging
 
-## Issue #40 — Standard logging
+Use `ILogger<T>` throughout production code and Serilog only as the host provider. Add structured correlation/lifecycle logs to touched production paths. Logs are runtime evidence, not a replacement for Plan Version audit.
 
-Use `ILogger<T>` in production code and Serilog only as the host provider. Add structured lifecycle/correlation logging to paths touched by active work.
+## #41 Validation
 
-Do not create a custom logger.
+Use FluentValidation for application/master boundary validation; domain/application services own business invariants; solver owns finite feasibility.
 
-## Issue #41 — Validation
+## #42 Effective rule consistency
 
-Use FluentValidation for application/master boundary validation; domain services own true business invariants; solver owns finite feasibility.
+Campaign, route, solver, scenario and redispatch consume one effective capability/transition interpretation. A declared planning lever must be wired, explicitly informational, or removed.
 
-## Issue #42 — Effective rule consistency
+## #32 Operational/material fidelity tracker
 
-Campaign, route, solver, scenario and redispatch consume the same resolved capability/transition semantics.
+Not an implementation owner. Closes only after #14/#16 plus execution/replan/readback prove the required behaviors.
 
-No declared planning lever may be silently ignored.
+## #44 Final end-to-end gate
 
-## Issue #32 — Operational/material fidelity tracker
-
-Closes only when #14 + #16 + execution/replan/readback demonstrate the required behavior. It is not an implementation owner.
-
-## Issue #44 — Final end-to-end gate
-
-No parent epic closes until its scenarios are demonstrated through the canonical .NET path.
+Parent epics do not close until #44 scenarios demonstrate the complete canonical .NET loop.
 
 ---
 
-# 9. Issue-by-issue acceptance matrix
+# 8. Issue acceptance matrix
 
-| Issue | Primary owner / concern | Current audit status | Key upstream dependencies | Key downstream consumers | Required historical/read evidence before closure |
+| Issue | Concern | Audit status | Upstream dependencies | Downstream consumers | Required evidence before closure |
 |---|---|---|---|---|---|
-| #46 | Repository/document authority | Missing cleanup pass | none | all work | cleanup manifest, canonical/reference/archive index |
-| #38 | Canonical production path | Partial/inconsistent | #46 | all features | authoritative call graph, explicit demo/reference classification |
-| #45 | MTO demand orchestration | Missing canonical service | #38, #14 ledger boundary | #33, #15 | SO coverage -> PO derivation + service-date readback |
-| #33 | Recursive BOM | Missing in canonical .NET; legacy reference exists | #45, #14 | #15, #36 | full requirement tree, BOM/version, coverage, shortfall |
-| #14 | Time-phased material ledger | Partial/inconsistent | #38; integrates #45/#33 | #11, #15, solver, #18 | requirements, reservations, receipts/consumption, projected availability |
-| #11 | Billet contingency | Partial; overlaps current material logic | #14, #33 | rolling/scenario | exact billet/heat supply allocation, ETA, RHF/hot-charge basis |
-| #15 | Campaign optimizer | Partial; sort-and-fill remains authoritative | #45, #33, #14, #42 | #34, finite plan | candidates, allocations, heat structure, score/rejection evidence |
-| #34 | Route-driven topology | Partial; route model richer than current projector | #15, #42, #39 | #9, #35, #16 | effective route/operations/options/queue/flow snapshots |
-| #9 | Thermal | Modeled/partial | #34, #42, #39 | #16, rolling/RHF | effective thermal requirements, pair feasibility, hot/cold decision |
-| #35 | Scheduling modes | Missing canonical master/solver switch | #34, #39 | #16, #43 | mode/capacity assumptions + occupancy readback |
-| #16 | Late-binding resources | Partial/inconsistent | #34, #9, #35, #42, #14 | #18, replan | eligible/planned/committed/actual + revision history |
-| #17 | Scenarios/outages | Partial | #14, #34, #9, #35, #16 | #43 | scenario/effective resource state + Plan Version comparison |
-| #18 | Execution/genealogy | Partial | #14, #16, #34 | replan, #36 | operation actuals + recursive material genealogy |
-| #19 | Diagnostics | Partial | all planning feature evidence | #43, #36 | stable diagnostic codes, objective breakdown, advisory relaxations |
-| #43 | CTP/scenario/capacity | Legacy/reference + partial .NET | #17 + canonical planning phases | #36 | CTP/scenario/capacity typed results tied to canonical planner |
-| #36 | Backend visibility | Partial | all functional issues | future UI | complete read/command contract inventory |
-| #39 | Master wiring gate | Partial | feature masters | all planners/readers | maintained master completeness matrix |
-| #40 | Logging gate | Partial | #38 call graph | operations/support | structured correlated runtime logs |
-| #41 | Validation gate | Partial/dormant framework | active feature contracts | all writes | central validator/error contract evidence |
+| #46 | Repository/document authority | Missing cleanup pass | none | all work | cleanup manifest + canonical/reference/archive index |
+| #38 | Canonical production path | Partial/inconsistent | #46 | all features | authoritative call graph + explicit demo/reference classification |
+| #45 | MTO demand orchestration | Missing canonical service | #38, #14 boundary | #33, #15 | SO coverage -> PO derivation + allocation-level service readback |
+| #33 | Recursive BOM | Missing canonical .NET; legacy reference exists | #45, #14 | #15, #36 | complete requirement tree/BOM/version/coverage/shortfall |
+| #14 | Time-phased material ledger | Partial/inconsistent | #38; integrates #45/#33 | #11/#15/solver/#18 | requirements/reservations/receipts/consumption/projected availability |
+| #11 | Billet contingency | Partial/overlapping | #14/#33 | rolling/#17 | exact supply allocation/ETA/RHF-hot-charge basis |
+| #15 | Campaign optimization | Partial; sort-and-fill authoritative | #45/#33/#14/#42 | #34 | candidates/allocations/heat structure/objective/rejection evidence |
+| #34 | Route topology | Partial; master richer than projector | #15/#42/#39 | #9/#35/#16 | effective route/operations/options/queue/flow |
+| #9 | Thermal | Modeled/partial | #34/#42/#39 | #16/RHF/RM | effective thermal requirements/pair feasibility/hot-cold decision |
+| #35 | Scheduling modes | Missing canonical mode switch | #34/#39 | #16/#17/#43 | mode/capacity assumptions + correct occupancy |
+| #16 | Late-binding resources | Partial/inconsistent | #34/#9/#35/#42/#14 | #17/#18/replan | eligible/planned/committed/actual + revision history |
+| #17 | Scenarios/outages | Partial | #14/#34/#9/#35/#16 | #43 | scenario/effective resource state + PlanVersion comparison |
+| #18 | Execution/genealogy | Partial | #14/#16/#34 | replan/#36 | operation actuals + recursive physical genealogy |
+| #19 | Diagnostics | Partial | all planning feature evidence | #43/#36 | stable domain codes/objective breakdown/advisory restoration |
+| #43 | CTP/scenario/capacity | Legacy/reference + partial .NET | #17 + canonical planning phases | #36 | typed decision-service results tied to canonical planner |
+| #36 | Backend visibility | Partial | all functional issues | production UI | complete typed read/command inventory |
+| #39 | Master wiring gate | Partial | feature masters | all planners/readers | master completeness matrix |
+| #40 | Logging gate | Partial | #38 call graph | support/operations | structured correlated runtime logs |
+| #41 | Validation gate | Partial | active feature contracts | all writes | central validators/stable errors |
 | #42 | Rule consistency gate | Partial | grade/section/resource masters | #15/#34/#9/#16/#19 | effective rule/capability readback |
 | #32 | Fidelity tracker | Partial | #14/#16/#18 | #44 | resource/material history round-trip |
 | #44 | End-to-end gate | Incomplete by definition | all above | parent epics/UI readiness | scenarios A-R through canonical layers |
 
 ---
 
-# 10. Backend controls and levers completion rule
+# 9. Planning controls/levers rule
 
-The backend visibility contract is the authoritative full catalog, but implementation reviews must check that all planning-affecting controls are either **enforced** or explicitly non-planning.
+All planning-affecting controls must be either **enforced** or explicitly marked non-planning. Major families include:
 
-Major control families include:
-
-- SO/MTS priority and service-date policies;
+- SO/MTS priority and service-date policy;
 - customer/segregation requirements;
 - grade chemistry/process/VD/thermal requirements;
-- route operation required/optional/forbidden semantics;
-- resource capability and preferred/forbidden resource rules;
+- route required/optional/forbidden operations;
+- resource capability/preference/prohibition;
 - resource state/calendar/derating;
-- Campaign min/target/max and mixing rules;
+- Campaign min/target/max and mixing policy;
 - furnace/heat capacity envelopes and yields;
-- grade/section/product transition rules;
-- CCM sequence/tundish/strand constraints;
-- RHF/hot-charge constraints;
+- grade/section/product transitions;
+- CCM sequence/tundish/strand rules;
+- RHF/hot-charge rules;
 - resource scheduling mode/capacity;
 - time fences/stability penalties;
-- operation assignment/commitment policy;
+- assignment/commitment policy;
 - scenario overrides;
-- solver objective priorities/time limits where exposed as controlled policy.
+- controlled solver objective/time-limit policies.
 
-A configurable property that the planner ignores is worse than having no property. Wire it, clearly mark it informational, or remove it from canonical planning controls.
-
----
-
-# 11. UI readiness gate
-
-UI implementation resumes only when the backend has sufficient authoritative visibility to support it without inventing business logic.
-
-At minimum:
-
-- #45 demand/SO->PO facts queryable;
-- #33/#14 material/BOM facts queryable;
-- #15 Campaign decisions queryable;
-- #34/#9/#35/#16 physical operation/resource facts queryable;
-- #18 execution/genealogy queryable;
-- #19 diagnostics queryable;
-- #36 backend visibility contract substantially complete;
-- #44 end-to-end scenarios demonstrated.
-
-The UI may be designed earlier, but dependent screens must not ship with client-side substitutes for missing backend truth.
+A configurable property silently ignored by the planner is unacceptable.
 
 ---
 
-# 12. Verification rule
+# 10. UI readiness gate
+
+Dependent production UI implementation resumes only when backend truth is queryable without client-side reconstruction. At minimum #45, #33/#14, #15, #34/#9/#35/#16/#17, #18, #19, #36 and #44 must provide the authoritative facts required by their workspaces.
+
+UI design may continue as planning material, but screens do not ship ahead of missing backend contracts.
+
+---
+
+# 11. Verification rule
 
 **Do not use GitHub Actions or CI for APS project verification.**
 
 During implementation:
 
-- write focused unit/integration/acceptance tests in the repository;
+- write focused unit/integration/acceptance tests;
 - perform source-level review and document expected verification;
-- run build/test/runtime verification later in the intended developer environment;
-- do not claim a branch is green without that real verification.
+- run build/test/runtime checks later in the intended developer environment;
+- never claim the branch is green without that verification.
 
 ---
 
-# 13. Final completion definition
+# 12. Final backend readiness definition
 
-The backend is ready for the full production UI only when:
+The backend is ready for the complete production UI only when:
 
-1. #44 end-to-end scenarios work through the canonical .NET path;
-2. no production path silently falls back to demo/default masters;
+1. #44 scenarios work through the canonical .NET path;
+2. production never silently uses demo/default masters;
 3. recursive material planning and finite scheduling share one material truth;
-4. customer/service obligations survive manufacturing aggregation;
-5. resource alternatives and physical parallelism survive through execution;
-6. actual production closes material genealogy and replan without double counting;
+4. customer/service obligations survive aggregation;
+5. eligible resources and physical parallelism survive through execution;
+6. actual production closes genealogy/replan without double counting;
 7. diagnostics explain failures and major decisions;
-8. all meaningful facts/levers have typed backend visibility;
-9. cross-cutting logging/validation/master/rule consistency gates are satisfied;
-10. repository authority is clear and stale documentation is archived/reference-labeled.
+8. all meaningful facts/levers are typed/queryable;
+9. master/logging/validation/rule-consistency gates are satisfied;
+10. repository authority is clear and stale docs are archived/reference-labeled.
