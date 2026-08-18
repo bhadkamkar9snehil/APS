@@ -6,9 +6,17 @@ using APS.Planning;
 using APS.Service.Components;
 using APS.UI.State;
 using Microsoft.EntityFrameworkCore;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Host.UseSerilog((context, services, logger) => logger
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext()
+    .WriteTo.Console());
+
+builder.Services.AddProblemDetails();
 builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddScoped<PlannerWorkspaceState>();
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -40,6 +48,7 @@ if (hasApsDatabase)
     builder.Services.AddScoped<IPlanReleaseRepository, PlanReleaseRepository>();
     builder.Services.AddScoped<IPlanComparisonService, PlanComparisonService>();
     builder.Services.AddScoped<IPlannerWorkspaceQueryService, PlannerWorkspaceQueryService>();
+    builder.Services.AddScoped<IPlanningMasterDataProvider, SqlPlanningMasterDataProvider>();
 }
 else
 {
@@ -47,6 +56,8 @@ else
 }
 
 var app = builder.Build();
+app.UseSerilogRequestLogging();
+app.UseExceptionHandler();
 app.UseHttpsRedirection();
 app.MapStaticAssets();
 app.UseAntiforgery();
@@ -65,35 +76,118 @@ if (hasApsDatabase)
         async (IInventorySnapshotProvider inventory, CancellationToken cancellationToken) =>
             Results.Ok(await inventory.GetInventoryAsync(cancellationToken)));
 
-    app.MapGet("/api/ui/planner/current",
+    app.MapGet("/api/planning/master-data",
+        async (IPlanningMasterDataProvider masters, CancellationToken cancellationToken) =>
+            Results.Ok(await masters.GetAsync(cancellationToken)));
+
+    var plannerApi = app.MapGroup("/api/ui/planner");
+
+    plannerApi.MapGet("/current",
         async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
         {
             var current = await planner.GetCurrentPlanAsync(cancellationToken);
             return current is null ? Results.NotFound() : Results.Ok(current);
         });
 
-    app.MapGet("/api/ui/planner/versions",
+    plannerApi.MapGet("/versions",
         async (int? take, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
             Results.Ok(await planner.GetRecentPlanVersionsAsync(take ?? 20, cancellationToken)));
 
-    app.MapGet("/api/ui/planner/versions/{planVersionId:guid}/context",
+    plannerApi.MapGet("/versions/{planVersionId:guid}/context",
         async (Guid planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
         {
             var context = await planner.GetPlanContextAsync(planVersionId, cancellationToken);
             return context is null ? Results.NotFound() : Results.Ok(context);
         });
 
-    app.MapGet("/api/ui/planner/control-tower",
+    plannerApi.MapGet("/control-tower",
         async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
         {
             var view = await planner.GetControlTowerAsync(null, cancellationToken);
             return view is null ? Results.NotFound() : Results.Ok(view);
         });
 
-    app.MapGet("/api/ui/planner/control-tower/{planVersionId:guid}",
+    plannerApi.MapGet("/control-tower/{planVersionId:guid}",
         async (Guid planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
         {
             var view = await planner.GetControlTowerAsync(planVersionId, cancellationToken);
+            return view is null ? Results.NotFound() : Results.Ok(view);
+        });
+
+    plannerApi.MapGet("/demand-supply",
+        async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var view = await planner.GetDemandSupplyAsync(null, cancellationToken);
+            return view is null ? Results.NotFound() : Results.Ok(view);
+        });
+
+    plannerApi.MapGet("/demand-supply/{planVersionId:guid}",
+        async (Guid planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var view = await planner.GetDemandSupplyAsync(planVersionId, cancellationToken);
+            return view is null ? Results.NotFound() : Results.Ok(view);
+        });
+
+    plannerApi.MapGet("/campaigns",
+        async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var view = await planner.GetCampaignStudioAsync(null, cancellationToken);
+            return view is null ? Results.NotFound() : Results.Ok(view);
+        });
+
+    plannerApi.MapGet("/campaigns/{planVersionId:guid}",
+        async (Guid planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var view = await planner.GetCampaignStudioAsync(planVersionId, cancellationToken);
+            return view is null ? Results.NotFound() : Results.Ok(view);
+        });
+
+    plannerApi.MapGet("/steelmaking-casting",
+        async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var view = await planner.GetSteelmakingCastingAsync(null, cancellationToken);
+            return view is null ? Results.NotFound() : Results.Ok(view);
+        });
+
+    plannerApi.MapGet("/steelmaking-casting/{planVersionId:guid}",
+        async (Guid planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var view = await planner.GetSteelmakingCastingAsync(planVersionId, cancellationToken);
+            return view is null ? Results.NotFound() : Results.Ok(view);
+        });
+
+    plannerApi.MapGet("/schedule",
+        async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var view = await planner.GetFiniteScheduleAsync(null, cancellationToken);
+            return view is null ? Results.NotFound() : Results.Ok(view);
+        });
+
+    plannerApi.MapGet("/schedule/{planVersionId:guid}",
+        async (Guid planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var view = await planner.GetFiniteScheduleAsync(planVersionId, cancellationToken);
+            return view is null ? Results.NotFound() : Results.Ok(view);
+        });
+
+    plannerApi.MapGet("/work-orders",
+        async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var view = await planner.GetWorkOrdersAsync(null, cancellationToken);
+            return view is null ? Results.NotFound() : Results.Ok(view);
+        });
+
+    plannerApi.MapGet("/work-orders/{planVersionId:guid}",
+        async (Guid planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var view = await planner.GetWorkOrdersAsync(planVersionId, cancellationToken);
+            return view is null ? Results.NotFound() : Results.Ok(view);
+        });
+
+    plannerApi.MapGet("/compare/{baselinePlanVersionId:guid}/{newPlanVersionId:guid}",
+        async (Guid baselinePlanVersionId, Guid newPlanVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var view = await planner.GetPlanComparisonAsync(baselinePlanVersionId, newPlanVersionId, cancellationToken);
             return view is null ? Results.NotFound() : Results.Ok(view);
         });
 
