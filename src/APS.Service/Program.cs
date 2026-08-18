@@ -32,6 +32,7 @@ if (hasApsDatabase)
     builder.Services.AddScoped<ITraceabilityService, TraceabilityService>();
     builder.Services.AddScoped<IWorkOrderExecutionService, WorkOrderExecutionService>();
     builder.Services.AddScoped<IHeatExecutionService, HeatExecutionService>();
+    builder.Services.AddScoped<IOperationExecutionService, OperationExecutionService>();
     builder.Services.AddScoped<IInventorySnapshotProvider, SqlInventorySnapshotProvider>();
     builder.Services.AddScoped<IReplanningActualStateProvider, ReplanningActualStateProvider>();
     builder.Services.AddScoped<IPlanVersionRepository, PlanVersionRepository>();
@@ -231,6 +232,10 @@ if (hasApsDatabase)
             return Results.Ok(snapshot);
         });
 
+    app.MapPost("/api/execution/operations",
+        async (OperationExecutionUpdate update, IOperationExecutionService execution, CancellationToken cancellationToken) =>
+            Results.Ok(await execution.ApplyAsync(update with { Source = ExecutionUpdateSource.Manual }, cancellationToken)));
+
     app.MapPost("/api/execution/heats",
         async (ManualHeatExecutionRequest request, IHeatExecutionService execution, CancellationToken cancellationToken) =>
         {
@@ -241,6 +246,14 @@ if (hasApsDatabase)
                 request.ActualStartUtc, request.ActualEndUtc, request.ActualQuantityMt,
                 request.MaterialOutputs, request.Comment, request.IsCorrection), cancellationToken);
             return Results.Ok(snapshot);
+        });
+
+    app.MapPost("/api/integration/xstudio/operation-events",
+        async (OperationExecutionUpdate update, IOperationExecutionService execution, CancellationToken cancellationToken) =>
+        {
+            if (string.IsNullOrWhiteSpace(update.ExternalEventId))
+                return Results.BadRequest(new { message = "ExternalEventId is required for MES operation events." });
+            return Results.Ok(await execution.ApplyAsync(update with { Source = ExecutionUpdateSource.MesApi }, cancellationToken));
         });
 
     app.MapPost("/api/integration/xstudio/execution-events",
