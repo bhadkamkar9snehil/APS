@@ -1,0 +1,178 @@
+@page "/operate/work-orders"
+@implements IDisposable
+@inject IPlannerWorkspaceQueryService PlannerQuery
+@inject PlannerWorkspaceState WorkspaceState
+
+<PageTitle>Work Orders - APS</PageTitle>
+
+<div class="planner-page workorders-workspace">
+    <header class="workspace-titlebar">
+        <div>
+            <span class="workspace-eyebrow">OPERATE / WORK ORDERS</span>
+            <h1>Work Orders</h1>
+            <p>Execution envelopes released from the plan, with the process operations and demand lineage retained inside them.</p>
+        </div>
+        @if (view is not null)
+        {
+            <div class="workspace-basis"><span>Plan</span><strong>@view.Plan.VersionNumber</strong></div>
+        }
+    </header>
+
+    @if (loading)
+    {
+        <div class="planner-empty-state"><strong>Loading released work…</strong></div>
+    }
+    else if (view is null)
+    {
+        <div class="planner-empty-state planner-empty-state-major"><strong>No persisted Work Order view</strong></div>
+    }
+    else
+    {
+        <section class="wo-summary-strip">
+            <div><span>Total</span><strong>@view.WorkOrderCount</strong></div>
+            <div><span>Released</span><strong>@view.ReleasedCount</strong></div>
+            <div><span>Running</span><strong>@view.RunningCount</strong></div>
+            <div><span>Held</span><strong>@view.HeldCount</strong></div>
+            <div><span>Completed</span><strong>@view.CompletedCount</strong></div>
+        </section>
+
+        <div class="wo-layout">
+            <aside class="wo-register">
+                <div class="campaign-register-head">
+                    <span class="planner-section-label">WORK ORDER REGISTER</span>
+                    <strong>@view.WorkOrderCount released envelopes</strong>
+                </div>
+                <div class="wo-register-list">
+                    @foreach (var wo in view.WorkOrders.OrderBy(x => x.FirstPlannedStartUtc))
+                    {
+                        <button type="button" class="wo-register-row @(selectedWorkOrder?.WorkOrderId == wo.WorkOrderId ? "is-selected" : null)" @onclick="() => SelectWorkOrder(wo)">
+                            <div><strong>@wo.WorkOrderNumber</strong><span>@wo.WorkOrderType</span></div>
+                            <span class="wo-state state-@StatusClass(wo.Status)">@wo.Status</span>
+                            <small>@TimeRange(wo) · @wo.PlannedQuantityMt.ToString("0.##") MT</small>
+                        </button>
+                    }
+                </div>
+            </aside>
+
+            <section class="wo-canvas">
+                @if (selectedWorkOrder is null)
+                {
+                    <div class="planner-empty-state"><strong>Select a Work Order</strong></div>
+                }
+                else
+                {
+                    <div class="wo-hero">
+                        <div>
+                            <span class="planner-section-label">EXECUTION ENVELOPE</span>
+                            <h2>@selectedWorkOrder.WorkOrderNumber</h2>
+                            <p>@selectedWorkOrder.WorkOrderType · @TimeRange(selectedWorkOrder)</p>
+                        </div>
+                        <div class="wo-hero-meta">
+                            <div><span>Status</span><strong>@selectedWorkOrder.Status</strong></div>
+                            <div><span>Quantity</span><strong>@selectedWorkOrder.PlannedQuantityMt.ToString("0.##") MT</strong></div>
+                            <div><span>External ref</span><strong>@Display(selectedWorkOrder.ExternalExecutionId)</strong></div>
+                        </div>
+                    </div>
+
+                    <section class="campaign-section">
+                        <div class="campaign-section-head">
+                            <div><span class="planner-section-label">PROCESS OPERATIONS</span><h3>Scheduled truth inside this Work Order</h3></div>
+                            <span class="planner-basis-badge">@selectedWorkOrder.Operations.Count OPS</span>
+                        </div>
+                        @if (selectedWorkOrder.Operations.Count == 0)
+                        {
+                            <p class="aps-empty">No persisted operation rows are linked to this Work Order.</p>
+                        }
+                        else
+                        {
+                            <div class="wo-operation-chain">
+                                @foreach (var op in selectedWorkOrder.Operations.OrderBy(x => x.PlannedStartUtc))
+                                {
+                                    <button type="button" class="wo-operation-card process-@ProcessClass(op.ProcessOperationType)" @onclick="() => SelectOperation(op)">
+                                        <div><span>@op.ProcessOperationType</span><strong>@op.ResourceCode</strong></div>
+                                        <div><strong>@op.GradeCode</strong><span>@op.CrossSectionCode</span></div>
+                                        <div><strong>@op.PlannedStartUtc.ToString("dd MMM HH:mm")</strong><span>→ @op.PlannedEndUtc.ToString("dd MMM HH:mm")</span></div>
+                                        <div><strong>@op.QuantityMt.ToString("0.##") MT</strong><span>@Math.Max(0, (op.PlannedEndUtc - op.PlannedStartUtc).TotalMinutes).ToString("0") min</span></div>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </section>
+
+                    <section class="campaign-section">
+                        <div class="campaign-section-head">
+                            <div><span class="planner-section-label">COMMERCIAL LINEAGE</span><h3>Production Orders and originating demand</h3></div>
+                            <span class="planner-basis-badge">@selectedWorkOrder.DemandReferences.Count PO</span>
+                        </div>
+                        @if (selectedWorkOrder.DemandReferences.Count == 0)
+                        {
+                            <p class="aps-empty">No PO allocation is linked to this Work Order.</p>
+                        }
+                        else
+                        {
+                            <div class="wo-demand-grid">
+                                @foreach (var demand in selectedWorkOrder.DemandReferences)
+                                {
+                                    <button type="button" class="wo-demand-row" @onclick="() => SelectProductionOrder(demand)">
+                                        <em class="source-badge @(demand.DemandSource == DemandSourceType.MakeToOrder ? "mto" : "mts")">@(demand.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</em>
+                                        <strong>@demand.ProductionOrderNumber</strong>
+                                        <span>@(demand.SalesOrderNumber is null ? "Stock replenishment" : $"SO {demand.SalesOrderNumber} / {demand.SalesOrderItemNumber}")</span>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </section>
+                }
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private WorkOrdersWorkspaceView? view;
+    private WorkOrderView? selectedWorkOrder;
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        WorkspaceState.Changed += OnWorkspaceChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        view = await PlannerQuery.GetWorkOrdersAsync(WorkspaceState.CurrentPlanVersionId);
+        selectedWorkOrder = view?.WorkOrders.FirstOrDefault();
+        loading = false;
+        StateHasChanged();
+    }
+
+    private void OnWorkspaceChanged()
+    {
+        if (view is not null && WorkspaceState.CurrentPlanVersionId != view.Plan.PlanVersionId)
+            _ = InvokeAsync(LoadAsync);
+    }
+
+    private void SelectWorkOrder(WorkOrderView wo)
+    {
+        selectedWorkOrder = wo;
+        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.WorkOrder, wo.WorkOrderId, wo.WorkOrderNumber));
+    }
+
+    private void SelectOperation(WorkOrderOperationView op) =>
+        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Operation, op.OperationSnapshotId, op.PlanningKey));
+
+    private void SelectProductionOrder(WorkOrderDemandRefView demand) =>
+        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.ProductionOrder, demand.ProductionOrderId, demand.ProductionOrderNumber));
+
+    private static string Display(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
+    private static string ProcessClass(ProcessOperationType type) => type.ToString().ToLowerInvariant();
+    private static string StatusClass(WorkOrderStatus status) => status.ToString().ToLowerInvariant().Replace(" ", "-");
+    private static string TimeRange(WorkOrderView wo) =>
+        wo.FirstPlannedStartUtc.HasValue && wo.LastPlannedEndUtc.HasValue
+            ? $"{wo.FirstPlannedStartUtc.Value:dd MMM HH:mm} → {wo.LastPlannedEndUtc.Value:dd MMM HH:mm}"
+            : "unscheduled";
+
+    public void Dispose() => WorkspaceState.Changed -= OnWorkspaceChanged;
+}
