@@ -93,6 +93,50 @@ public sealed class UnifiedTimePhasedMaterialCoverageSessionTests
     }
 
     [Fact]
+    public void Committed_supply_pegged_to_the_requirement_po_covers_qualified_demand()
+    {
+        var poId = Guid.NewGuid();
+        var session = new UnifiedTimePhasedMaterialCoverageSession(
+            ReferenceUtc,
+            Array.Empty<InventoryPosition>(),
+            Array.Empty<MaterialSpecification>(),
+            committedMaterialSupplies: new[] { CommittedSupply(poId, "BILLET", 100m) });
+
+        var result = session.Cover(Request(
+            Guid.NewGuid(),
+            poId,
+            "BILLET",
+            100m,
+            ReferenceUtc.AddHours(1),
+            qualificationCode: "PO-QUAL:TEST"));
+
+        Assert.Equal(100m, result.CoveredQuantity);
+        Assert.Single(result.Allocations);
+    }
+
+    [Fact]
+    public void Committed_supply_pegged_to_a_different_po_cannot_cover_qualified_demand()
+    {
+        var otherPoId = Guid.NewGuid();
+        var session = new UnifiedTimePhasedMaterialCoverageSession(
+            ReferenceUtc,
+            Array.Empty<InventoryPosition>(),
+            Array.Empty<MaterialSpecification>(),
+            committedMaterialSupplies: new[] { CommittedSupply(otherPoId, "BILLET", 100m) });
+
+        var result = session.Cover(Request(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "BILLET",
+            100m,
+            ReferenceUtc.AddHours(1),
+            qualificationCode: "PO-QUAL:TEST"));
+
+        Assert.Equal(0m, result.CoveredQuantity);
+        Assert.Empty(result.Allocations);
+    }
+
+    [Fact]
     public void Held_or_rejected_stock_is_not_available_to_material_coverage()
     {
         var held = Inventory("BILLET", available: 50m, qualityStatus: MaterialQualityStatus.QualityHold);
@@ -128,6 +172,19 @@ public sealed class UnifiedTimePhasedMaterialCoverageSessionTests
             null,
             qualificationCode,
             $"FG[MT] -> {material}[MT]");
+
+    private static CommittedMaterialSupply CommittedSupply(Guid poId, string material, decimal qty) =>
+        new(
+            Guid.NewGuid(),
+            poId,
+            null,
+            $"COMMIT-{poId:N}",
+            BilletSupplySourceType.InternalCastPlanned,
+            material,
+            "G1",
+            "150X150",
+            qty,
+            ReferenceUtc);
 
     private static InventoryPosition Inventory(
         string material,

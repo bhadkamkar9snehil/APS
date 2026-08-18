@@ -133,12 +133,6 @@ public sealed class UnifiedTimePhasedMaterialCoverageSession : IMaterialCoverage
         if (!SameUom(request.Uom, "MT") || request.RequiredQuantity <= QuantityTolerance)
             return MaterialCoverageResult.None;
 
-        // A generic inventory/supply fact cannot prove a customer-specific qualification fingerprint. BOM component
-        // quality classes may be used when the supply integration carries matching quality attributes in future; until
-        // then, qualified material is conservatively left uncovered rather than guessed eligible.
-        if (!string.IsNullOrWhiteSpace(request.QualificationCode))
-            return MaterialCoverageResult.None;
-
         var remaining = request.RequiredQuantity;
         var allocations = new List<MaterialCoverageAllocation>();
         foreach (var pool in EligiblePools(request)
@@ -196,6 +190,9 @@ public sealed class UnifiedTimePhasedMaterialCoverageSession : IMaterialCoverage
         _pools
             .Where(x => x.RemainingQuantity > QuantityTolerance)
             .Where(x => !x.ProductionOrderId.HasValue || x.ProductionOrderId == request.ProductionOrderId)
+            // A generic (non-PO-pegged) supply fact cannot prove a customer/process/chemistry qualification
+            // fingerprint, so qualified demand may only draw on supply already committed to this exact PO.
+            .Where(x => string.IsNullOrWhiteSpace(request.QualificationCode) || x.ProductionOrderId == request.ProductionOrderId)
             .Where(x => Matches(x, request));
 
     private static bool Matches(Pool pool, MaterialCoverageRequest request)
