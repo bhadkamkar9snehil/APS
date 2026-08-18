@@ -9,8 +9,7 @@ using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 builder.Services.AddScoped<PlannerWorkspaceState>();
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
@@ -46,7 +45,6 @@ else
 }
 
 var app = builder.Build();
-
 app.UseHttpsRedirection();
 app.MapStaticAssets();
 app.UseAntiforgery();
@@ -102,11 +100,7 @@ if (hasApsDatabase)
         {
             var result = planningEngine.Run(request);
             var persisted = await plans.SaveAsync(new PersistPlanningRunRequest(
-                request,
-                result,
-                PlanTriggerType.Manual,
-                DateTime.UtcNow,
-                "Manual planning run"), cancellationToken);
+                request, result, PlanTriggerType.Manual, DateTime.UtcNow, "Manual planning run"), cancellationToken);
             return result.IsFeasible
                 ? Results.Ok(new { plan = result, version = persisted })
                 : Results.UnprocessableEntity(new { plan = result, version = persisted });
@@ -136,16 +130,22 @@ if (hasApsDatabase)
                     baselinePlanVersionId,
                     referenceTime,
                     request.TimeFencePolicy,
-                    actualState.BaselineOperations)
+                    actualState.BaselineOperations,
+                    request.ResourceOverrides)
             };
 
             var result = planningEngine.Run(planningRequest);
+            var trigger = request.ResourceOverrides is { Count: > 0 }
+                ? PlanTriggerType.OperationalRedispatch
+                : request.Trigger;
             var persisted = await plans.SaveAsync(new PersistPlanningRunRequest(
                 planningRequest,
                 result,
-                request.Trigger,
+                trigger,
                 referenceTime,
-                request.Reason ?? "Replanning from current manufacturing and inventory state"), cancellationToken);
+                request.Reason ?? (trigger == PlanTriggerType.OperationalRedispatch
+                    ? "Operational resource redispatch"
+                    : "Replanning from current manufacturing and inventory state")), cancellationToken);
 
             var response = new
             {
@@ -176,10 +176,7 @@ if (hasApsDatabase)
         async (PlanReleaseBuildRequest request, IPlanReleaseBuilder releaseBuilder, IPlanReleaseRepository releases, CancellationToken cancellationToken) =>
         {
             if (!request.Schedule.IsFeasible)
-            {
                 return Results.UnprocessableEntity(new { message = "Cannot release Work Orders from an infeasible schedule." });
-            }
-
             var release = releaseBuilder.Build(request);
             var persisted = await releases.PersistAsync(release, cancellationToken);
             return Results.Ok(persisted);
@@ -218,10 +215,7 @@ app.MapPost("/api/planning/release/build",
     (PlanReleaseBuildRequest request, IPlanReleaseBuilder releaseBuilder) =>
     {
         if (!request.Schedule.IsFeasible)
-        {
             return Results.UnprocessableEntity(new { message = "Cannot build Work Orders from an infeasible schedule." });
-        }
-
         return Results.Ok(releaseBuilder.Build(request));
     });
 
@@ -231,17 +225,9 @@ if (hasApsDatabase)
         async (Guid workOrderId, ManualWorkOrderExecutionRequest request, IWorkOrderExecutionService execution, CancellationToken cancellationToken) =>
         {
             var snapshot = await execution.ApplyAsync(new WorkOrderExecutionUpdate(
-                workOrderId,
-                null,
-                request.Status,
-                request.ActualStart,
-                request.ActualEnd,
-                request.ActualQuantityMt,
-                request.ChangedOnUtc ?? DateTime.UtcNow,
-                ExecutionUpdateSource.Manual,
-                null,
-                request.Comment,
-                request.IsCorrection), cancellationToken);
+                workOrderId, null, request.Status, request.ActualStart, request.ActualEnd,
+                request.ActualQuantityMt, request.ChangedOnUtc ?? DateTime.UtcNow,
+                ExecutionUpdateSource.Manual, null, request.Comment, request.IsCorrection), cancellationToken);
             return Results.Ok(snapshot);
         });
 
@@ -249,21 +235,11 @@ if (hasApsDatabase)
         async (ManualHeatExecutionRequest request, IHeatExecutionService execution, CancellationToken cancellationToken) =>
         {
             var snapshot = await execution.ApplyAsync(new HeatExecutionUpdate(
-                request.PlanVersionId,
-                request.PlanningKey,
-                request.Status,
-                request.ChangedOnUtc ?? DateTime.UtcNow,
-                ExecutionUpdateSource.Manual,
-                null,
-                request.ExternalHeatNumber,
-                request.ExternalCastNumber,
-                request.CasterResourceId,
-                request.ActualStartUtc,
-                request.ActualEndUtc,
-                request.ActualQuantityMt,
-                request.MaterialOutputs,
-                request.Comment,
-                request.IsCorrection), cancellationToken);
+                request.PlanVersionId, request.PlanningKey, request.Status,
+                request.ChangedOnUtc ?? DateTime.UtcNow, ExecutionUpdateSource.Manual, null,
+                request.ExternalHeatNumber, request.ExternalCastNumber, request.CasterResourceId,
+                request.ActualStartUtc, request.ActualEndUtc, request.ActualQuantityMt,
+                request.MaterialOutputs, request.Comment, request.IsCorrection), cancellationToken);
             return Results.Ok(snapshot);
         });
 
@@ -271,15 +247,8 @@ if (hasApsDatabase)
         async (WorkOrderExecutionUpdate update, IWorkOrderExecutionService execution, CancellationToken cancellationToken) =>
         {
             if (string.IsNullOrWhiteSpace(update.ExternalExecutionId))
-            {
                 return Results.BadRequest(new { message = "ExternalExecutionId is required for MES execution events." });
-            }
-
-            var snapshot = await execution.ApplyAsync(update with
-            {
-                WorkOrderId = null,
-                Source = ExecutionUpdateSource.MesApi
-            }, cancellationToken);
+            var snapshot = await execution.ApplyAsync(update with { WorkOrderId = null, Source = ExecutionUpdateSource.MesApi }, cancellationToken);
             return Results.Ok(snapshot);
         });
 
@@ -287,14 +256,8 @@ if (hasApsDatabase)
         async (HeatExecutionUpdate update, IHeatExecutionService execution, CancellationToken cancellationToken) =>
         {
             if (string.IsNullOrWhiteSpace(update.ExternalEventId))
-            {
                 return Results.BadRequest(new { message = "ExternalEventId is required for MES heat events." });
-            }
-
-            return Results.Ok(await execution.ApplyAsync(update with
-            {
-                Source = ExecutionUpdateSource.MesApi
-            }, cancellationToken));
+            return Results.Ok(await execution.ApplyAsync(update with { Source = ExecutionUpdateSource.MesApi }, cancellationToken));
         });
 
     app.MapGet("/api/traceability/work-orders/{workOrderId:guid}",
@@ -330,7 +293,8 @@ public sealed record ReplanApiRequest(
     DateTime? ReferenceTimeUtc = null,
     PlanTriggerType Trigger = PlanTriggerType.ExecutionFeedback,
     string? Reason = null,
-    bool RefreshInventoryFromProvider = true);
+    bool RefreshInventoryFromProvider = true,
+    IReadOnlyCollection<OperationResourceOverride>? ResourceOverrides = null);
 
 public sealed record ManualHeatExecutionRequest(
     Guid PlanVersionId,
