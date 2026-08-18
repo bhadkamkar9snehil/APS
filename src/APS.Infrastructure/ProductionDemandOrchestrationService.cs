@@ -135,9 +135,27 @@ public sealed class ProductionDemandOrchestrationService(
             ? selection.SalesOrderIds.ToHashSet()
             : null;
 
+        // Active MTOs are deliberately included even when current SO open quantity is now zero or the due
+        // date moved outside the current horizon. That is the only safe way to cancel a Planned PO or flag
+        // a Firmed/Released PO for planner attention after an SAP demand change.
+        var activeMtoQuery = db.ProductionOrders
+            .Where(x => x.DemandSource == DemandSourceType.MakeToOrder &&
+                        x.SalesOrderId.HasValue &&
+                        x.Status != ProductionOrderStatus.Completed &&
+                        x.Status != ProductionOrderStatus.Cancelled);
+        if (selectedIds is not null)
+            activeMtoQuery = activeMtoQuery.Where(x => selectedIds.Contains(x.SalesOrderId!.Value));
+
+        var activeMtoSalesOrderIds = await activeMtoQuery
+            .Select(x => x.SalesOrderId!.Value)
+            .Distinct()
+            .ToArrayAsync(cancellationToken);
+
         var query = db.SalesOrders.AsQueryable();
         if (selectedIds is not null) query = query.Where(x => selectedIds.Contains(x.Id));
-        query = query.Where(x => x.OpenQuantityMt > 0m && x.RequiredDate <= requiredThrough);
+        query = query.Where(x =>
+            (x.OpenQuantityMt > 0m && x.RequiredDate <= requiredThrough) ||
+            activeMtoSalesOrderIds.Contains(x.Id));
 
         var salesOrders = await query
             .OrderBy(x => x.RequiredDate)
@@ -197,7 +215,7 @@ public sealed class ProductionDemandOrchestrationService(
 
             var serviceDate = ServiceDate(so, state);
             var productionRequiredBy = servicePolicy.ProductionRequiredBy(serviceDate);
-            var coverage = AllocateFinishedGoods(so, state, serviceDate, fgPool);
+            var coverage = AllocateFinishedGoods(so, serviceDate, fgPool);
             var openDemand = Math.Max(0m, so.OpenQuantityMt);
             var covered = coverage.Sum(x => x.QuantityMt);
             var manufacturingRequirement = Math.Max(0m, openDemand - covered);
@@ -230,6 +248,8 @@ public sealed class ProductionDemandOrchestrationService(
                     "MULTIPLE_ACTIVE_MTO_PRODUCTION_ORDERS",
                     $"SO {so.SalesOrderNumber}/{so.ItemNumber} has {active.Length} active MTO Production Orders; automatic reconciliation is unsafe.",
                     so.Id));
+                activeMto.AddRange(active);
+                items.Add(ToItem(so, state));
                 continue;
             }
 
@@ -241,7 +261,9 @@ public sealed class ProductionDemandOrchestrationService(
                     state.ProductionOrderId = null;
                     state.ProductionOrder = null;
                     state.Disposition = DemandReconciliationDisposition.FullyCoveredByFinishedGoods;
-                    state.ReasonCode = "FG_COVERS_OPEN_DEMAND";
+                    state.ReasonCode = openDemand <= QuantityToleranceMt
+                        ? "SO_HAS_NO_OPEN_DEMAND"
+                        : "FG_COVERS_OPEN_DEMAND";
                 }
                 else if (po.Status == ProductionOrderStatus.Planned)
                 {
@@ -250,11 +272,15 @@ public sealed class ProductionDemandOrchestrationService(
                     state.ProductionOrderId = po.Id;
                     state.ProductionOrder = po;
                     state.Disposition = DemandReconciliationDisposition.ProductionOrderCancelled;
-                    state.ReasonCode = "PLANNED_MTO_NO_LONGER_REQUIRED";
+                    state.ReasonCode = openDemand <= QuantityToleranceMt
+                        ? "PLANNED_MTO_CANCELLED_AFTER_SO_CLOSED"
+                        : "PLANNED_MTO_NO_LONGER_REQUIRED";
                 }
                 else
                 {
-                    ProtectCommittedPo(state, po, "COMMITTED_MTO_NOW_EXCEEDS_CURRENT_MANUFACTURING_REQUIREMENT");
+                    ProtectCommittedPo(state, po, openDemand <= QuantityToleranceMt
+                        ? "COMMITTED_MTO_REMAINS_AFTER_SO_CLOSED"
+                        : "COMMITTED_MTO_NOW_EXCEEDS_CURRENT_MANUFACTURING_REQUIREMENT");
                     activeMto.Add(po);
                 }
             }
@@ -263,7 +289,7 @@ public sealed class ProductionDemandOrchestrationService(
                 var resolved = ResolveManufacturingDefinition(so, masters, issues);
                 if (resolved is not null)
                 {
-                    po = CreateProductionOrder(so, state, resolved, manufacturingRequirement, productionRequiredBy, priority, existingMto);
+                    po = CreateProductionOrder(so, resolved, manufacturingRequirement, productionRequiredBy, priority, existingMto);
                     db.ProductionOrders.Add(po);
                     existingMto.Add(po);
                     state.ProductionOrderId = po.Id;
@@ -278,7 +304,7 @@ public sealed class ProductionDemandOrchestrationService(
                 var resolved = ResolveManufacturingDefinition(so, masters, issues);
                 if (resolved is not null)
                 {
-                    UpdatePlannedProductionOrder(po, so, state, resolved, manufacturingRequirement, productionRequiredBy, priority);
+                    UpdatePlannedProductionOrder(po, so, resolved, manufacturingRequirement, productionRequiredBy, priority);
                     state.ProductionOrderId = po.Id;
                     state.ProductionOrder = po;
                     state.Disposition = DemandReconciliationDisposition.ProductionOrderUpdated;
@@ -376,7 +402,6 @@ public sealed class ProductionDemandOrchestrationService(
 
     private static IReadOnlyCollection<DemandCoverageEvidence> AllocateFinishedGoods(
         SalesOrder so,
-        SalesOrderDemandState state,
         DateTime serviceDate,
         IReadOnlyCollection<FinishedGoodsPoolRow> pool)
     {
@@ -485,7 +510,6 @@ public sealed class ProductionDemandOrchestrationService(
 
     private static ProductionOrder CreateProductionOrder(
         SalesOrder so,
-        SalesOrderDemandState state,
         ManufacturingDefinition definition,
         decimal manufacturingRequirement,
         DateTime productionRequiredBy,
@@ -529,7 +553,6 @@ public sealed class ProductionDemandOrchestrationService(
     private static void UpdatePlannedProductionOrder(
         ProductionOrder po,
         SalesOrder so,
-        SalesOrderDemandState state,
         ManufacturingDefinition definition,
         decimal manufacturingRequirement,
         DateTime productionRequiredBy,
@@ -575,6 +598,11 @@ public sealed class ProductionDemandOrchestrationService(
         so.Id,
         so.SalesOrderNumber,
         so.ItemNumber,
+        so.MaterialCode,
+        so.GradeCode,
+        so.FinalCrossSectionCode,
+        so.CustomerCode,
+        so.CustomerGroupCode,
         state.ProductionOrderId,
         state.ProductionOrder?.ProductionOrderNumber,
         state.OpenDemandQuantityMt,
