@@ -6,6 +6,8 @@ namespace APS.Infrastructure;
 public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbContext(options)
 {
     public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
+    public DbSet<SalesOrderDemandState> SalesOrderDemandStates => Set<SalesOrderDemandState>();
+    public DbSet<SalesOrderFinishedGoodsCoverage> SalesOrderFinishedGoodsCoverage => Set<SalesOrderFinishedGoodsCoverage>();
     public DbSet<ProductionOrder> ProductionOrders => Set<ProductionOrder>();
     public DbSet<ProductionOrderRequirement> ProductionOrderRequirements => Set<ProductionOrderRequirement>();
     public DbSet<OrderChemistryRequirement> OrderChemistryRequirements => Set<OrderChemistryRequirement>();
@@ -54,6 +56,8 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
     public DbSet<OperationDispatchRevision> OperationDispatchRevisions => Set<OperationDispatchRevision>();
     public DbSet<PlanInventoryAllocationSnapshot> PlanInventoryAllocationSnapshots => Set<PlanInventoryAllocationSnapshot>();
     public DbSet<PlanMaterialUnitSnapshot> PlanMaterialUnitSnapshots => Set<PlanMaterialUnitSnapshot>();
+    public DbSet<PlanDemandSnapshot> PlanDemandSnapshots => Set<PlanDemandSnapshot>();
+    public DbSet<PlanDemandCoverageSnapshot> PlanDemandCoverageSnapshots => Set<PlanDemandCoverageSnapshot>();
     public DbSet<PlanProductionOrderSnapshot> PlanProductionOrderSnapshots => Set<PlanProductionOrderSnapshot>();
     public DbSet<PlanCampaignSnapshot> PlanCampaignSnapshots => Set<PlanCampaignSnapshot>();
     public DbSet<PlanCampaignAllocationSnapshot> PlanCampaignAllocationSnapshots => Set<PlanCampaignAllocationSnapshot>();
@@ -77,6 +81,7 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         base.OnModelCreating(modelBuilder);
 
         modelBuilder.Entity<SalesOrder>().HasIndex(x => new { x.SalesOrderNumber, x.ItemNumber }).IsUnique();
+        modelBuilder.Entity<SalesOrderDemandState>().HasIndex(x => x.SalesOrderId).IsUnique();
         modelBuilder.Entity<ProductionOrder>().HasIndex(x => x.ProductionOrderNumber).IsUnique();
         modelBuilder.Entity<Campaign>().HasIndex(x => x.CampaignNumber).IsUnique();
         modelBuilder.Entity<WorkOrder>().HasIndex(x => x.WorkOrderNumber).IsUnique();
@@ -92,6 +97,24 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<ExternalMaterialSupply>().HasIndex(x => new { x.SourceType, x.SupplyReference });
         modelBuilder.Entity<MaterialSourcingRule>().HasIndex(x => x.RuleCode).IsUnique();
         modelBuilder.Entity<MaterialSourcingRule>().HasIndex(x => new { x.MaterialCode, x.GradeCode, x.CrossSectionCode, x.DestinationLocationCode });
+
+        modelBuilder.Entity<SalesOrderDemandState>()
+            .HasOne(x => x.SalesOrder)
+            .WithOne()
+            .HasForeignKey<SalesOrderDemandState>(x => x.SalesOrderId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<SalesOrderDemandState>()
+            .HasOne(x => x.ProductionOrder)
+            .WithMany()
+            .HasForeignKey(x => x.ProductionOrderId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<SalesOrderDemandState>()
+            .HasMany(x => x.FinishedGoodsCoverage)
+            .WithOne(x => x.SalesOrderDemandState)
+            .HasForeignKey(x => x.SalesOrderDemandStateId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<ProductionOrder>()
             .HasOne(x => x.SalesOrder)
@@ -279,6 +302,8 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
             .HasForeignKey(x => x.PlanVersionId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        modelBuilder.Entity<PlanDemandSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<PlanDemandCoverageSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<PlanProductionOrderSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<PlanCampaignSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<PlanCampaignAllocationSnapshot>().HasOne<PlanVersion>().WithMany().HasForeignKey(x => x.PlanVersionId).OnDelete(DeleteBehavior.Cascade);
@@ -300,6 +325,7 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
             .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<ProductionOrderRequirement>().HasIndex(x => x.ProductionOrderId).IsUnique();
+        modelBuilder.Entity<SalesOrderFinishedGoodsCoverage>().HasIndex(x => new { x.SalesOrderDemandStateId, x.MaterialCode, x.GradeCode, x.CrossSectionCode, x.LocationCode });
         modelBuilder.Entity<GradeChemistryRequirement>().HasIndex(x => new { x.SteelGradeId, x.ElementCode }).IsUnique();
         modelBuilder.Entity<GradeProcessRequirement>().HasIndex(x => new { x.SteelGradeId, x.ProcessOperationType }).IsUnique();
         modelBuilder.Entity<OrderChemistryRequirement>().HasIndex(x => new { x.ProductionOrderRequirementId, x.ElementCode }).IsUnique();
@@ -324,6 +350,8 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<OperationDispatchRevision>().HasIndex(x => new { x.PlanVersionId, x.PlanningKey, x.ChangedOnUtc });
         modelBuilder.Entity<PlanInventoryAllocationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.ProductionOrderId, x.Stage });
         modelBuilder.Entity<PlanMaterialUnitSnapshot>().HasIndex(x => new { x.PlanVersionId, x.PlanningKey }).IsUnique();
+        modelBuilder.Entity<PlanDemandSnapshot>().HasIndex(x => new { x.PlanVersionId, x.SalesOrderId }).IsUnique();
+        modelBuilder.Entity<PlanDemandCoverageSnapshot>().HasIndex(x => new { x.PlanVersionId, x.SalesOrderId, x.MaterialCode, x.GradeCode, x.CrossSectionCode, x.LocationCode });
         modelBuilder.Entity<PlanProductionOrderSnapshot>().HasIndex(x => new { x.PlanVersionId, x.ProductionOrderId }).IsUnique();
         modelBuilder.Entity<PlanCampaignSnapshot>().HasIndex(x => new { x.PlanVersionId, x.CampaignId }).IsUnique();
         modelBuilder.Entity<PlanCampaignAllocationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.CampaignId, x.ProductionOrderId });
