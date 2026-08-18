@@ -23,7 +23,88 @@ public enum MaterialBalanceEventType
     QualityRelease = 10,
     Rejection = 11,
     Adjustment = 12,
-    Dispatch = 13
+    Dispatch = 13,
+    PlannedPurchaseReceipt = 14,
+    PlannedTransferReceipt = 15
+}
+
+public enum MaterialRequirementStatus
+{
+    AvailableNow = 1,
+    PlannedAvailable = 2,
+    SupplyActionRequired = 3,
+    Shortfall = 4,
+    LateSupply = 5,
+    Unsourced = 6
+}
+
+public enum MaterialSupplyActionType
+{
+    Make = 1,
+    Buy = 2,
+    Transfer = 3,
+    Manual = 4,
+    Unsourced = 5
+}
+
+public enum MaterialRequirementSourceType
+{
+    ProductionOrder = 1,
+    Campaign = 2,
+    RollingPlan = 3,
+    ProcessOperation = 4,
+    StockPolicy = 5
+}
+
+/// <summary>
+/// A time-phased qualified material need. This remains in the plan even when the material does not
+/// currently exist; supply planning decides how and when the requirement will be satisfied.
+/// </summary>
+public sealed class MaterialRequirement : Entity
+{
+    public Guid? PlanVersionId { get; set; }
+    public required string RequirementKey { get; set; }
+    public MaterialRequirementSourceType SourceType { get; set; }
+    public Guid SourceEntityId { get; set; }
+    public Guid? ProductionOrderId { get; set; }
+    public Guid? CampaignId { get; set; }
+    public Guid? CampaignHeatId { get; set; }
+    public string? MaterialSpecificationCode { get; set; }
+    public required string MaterialCode { get; set; }
+    public required string GradeCode { get; set; }
+    public required string CrossSectionCode { get; set; }
+    public SteelProductForm ProductForm { get; set; } = SteelProductForm.Other;
+    public string? LocationCode { get; set; }
+    public decimal RequiredQuantityMt { get; set; }
+    public DateTime RequiredAtUtc { get; set; }
+    public int Priority { get; set; }
+    public MaterialRequirementStatus Status { get; set; } = MaterialRequirementStatus.SupplyActionRequired;
+    public decimal CoveredQuantityMt { get; set; }
+    public decimal ShortfallQuantityMt { get; set; }
+    public DateTime? ExpectedFullyAvailableAtUtc { get; set; }
+    public string? Explanation { get; set; }
+}
+
+/// <summary>
+/// Explicit action generated when time-phased qualified supply is insufficient. A MAKE action is
+/// normally satisfied by an APS-planned upstream campaign/heat; BUY/TRANSFER become external expected receipts.
+/// </summary>
+public sealed class MaterialSupplyRequirement : Entity
+{
+    public Guid? PlanVersionId { get; set; }
+    public Guid MaterialRequirementId { get; set; }
+    public MaterialSupplyActionType ActionType { get; set; }
+    public decimal QuantityMt { get; set; }
+    public DateTime RequiredReceiptUtc { get; set; }
+    public DateTime? ExpectedReceiptUtc { get; set; }
+    public string? SupplyReference { get; set; }
+    public string? SupplierCode { get; set; }
+    public Guid? UpstreamCampaignId { get; set; }
+    public Guid? UpstreamHeatId { get; set; }
+    public string? SourceLocationCode { get; set; }
+    public string? DestinationLocationCode { get; set; }
+    public bool IsFirm { get; set; }
+    public string? Explanation { get; set; }
 }
 
 /// <summary>
