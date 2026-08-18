@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject IPlannerWorkspaceQueryService PlannerQuery
 @inject PlannerWorkspaceState WorkspaceState
+@inject IConfiguration Configuration
 
 <div class="planner-shell">
     <aside class="planner-rail" aria-label="APS primary navigation">
@@ -53,10 +54,13 @@
             </div>
         </nav>
 
-        <div class="planner-rail-reference">
-            <span>REFERENCE</span>
-            <NavLink href="/planning">Planning Sandbox</NavLink>
-        </div>
+        @if (demoModeEnabled)
+        {
+            <div class="planner-rail-reference">
+                <span>DEMO / REFERENCE</span>
+                <NavLink href="/demo/planning">Planning Sandbox</NavLink>
+            </div>
+        }
     </aside>
 
     <section class="planner-stage">
@@ -71,9 +75,11 @@
 
 @code {
     private PlanContextView? currentPlan;
+    private bool demoModeEnabled;
 
     protected override async Task OnInitializedAsync()
     {
+        demoModeEnabled = Configuration.GetValue<bool>("APS:DemoModeEnabled");
         WorkspaceState.Changed += OnWorkspaceChanged;
         currentPlan = await PlannerQuery.GetCurrentPlanAsync();
         if (currentPlan is not null)
