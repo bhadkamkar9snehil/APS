@@ -21,4 +21,14 @@ public sealed class UnavailablePlannerWorkspaceQueryService : IPlannerWorkspaceQ
         Guid? planVersionId = null,
         CancellationToken cancellationToken = default) =>
         Task.FromResult<ControlTowerView?>(null);
+
+    public Task<DemandSupplyView?> GetDemandSupplyAsync(
+        Guid? planVersionId = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<DemandSupplyView?>(null);
+
+    public Task<CampaignStudioView?> GetCampaignStudioAsync(
+        Guid? planVersionId = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult<CampaignStudioView?>(null);
 }
