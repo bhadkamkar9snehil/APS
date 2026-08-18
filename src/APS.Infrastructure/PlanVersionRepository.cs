@@ -202,6 +202,7 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             });
         }
 
+        DemandSnapshotProjector.AddToContext(db, result.PlanVersionId, request.Demand);
         PlanStructureSnapshotProjector.AddToContext(db, request.PlanningRequest, result);
 
         await db.SaveChangesAsync(cancellationToken);
