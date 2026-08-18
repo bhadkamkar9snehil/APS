@@ -97,6 +97,19 @@ public sealed class PlanOperationSnapshot : Entity
     public OperationAssignmentCommitmentState AssignmentCommitmentState { get; set; } = OperationAssignmentCommitmentState.Flexible;
     public string? EligibleResourceOptionsJson { get; set; }
 
+    /// <summary>
+    /// Immutable plan-version snapshot of direct predecessor planning keys. Execution uses this to
+    /// harden successor assignments from actual process progress without consulting live route masters.
+    /// </summary>
+    public string? PredecessorPlanningKeysJson { get; set; }
+
+    /// <summary>
+    /// Immutable per-operation assignment policy captured with the Plan Version. This prevents later
+    /// master-data edits from changing when an already-issued plan should become firm/committed.
+    /// </summary>
+    public string? AssignmentPolicyJson { get; set; }
+    public DateTime? CommitmentLastEvaluatedOnUtc { get; set; }
+
     public Guid? PreviousPlannedResourceId { get; set; }
     public string? RedispatchReasonCode { get; set; }
     public string? RedispatchComment { get; set; }
