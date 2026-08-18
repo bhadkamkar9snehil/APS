@@ -8,17 +8,15 @@ public sealed record PlanningTimeFencePolicy(
     int SlushyMovementPenaltyPerMinute = 50,
     int SlushyResourceChangePenalty = 5000);
 
-/// <summary>
-/// Controls how late a physical-resource assignment remains operationally flexible for each process.
-/// This is deliberately separate from schedule movement time fences: a heat may be firm in sequence/time
-/// while its next LRF/VD/CCM remains redispatchable until a much later operational commitment point.
-/// </summary>
 public sealed record OperationAssignmentPolicy(
     ProcessOperationType ProcessOperationType,
     int FirmMinutesBeforeStart = 120,
     int CommitMinutesBeforeStart = 30,
     bool AllowRedispatchWhenFirm = true,
-    bool AllowRedispatchWhenCommittedForDisruption = true);
+    bool AllowRedispatchWhenCommittedForDisruption = true,
+    bool CommitWhenPredecessorRunning = false,
+    bool CommitWhenPredecessorCompleted = false,
+    bool RequireDispatchAcknowledgement = false);
 
 public sealed record BaselinePlanOperation(
     string PlanningKey,
@@ -34,12 +32,19 @@ public sealed record OperationResourceOverride(
     string ReasonCode = "OPERATIONAL_REDISPATCH",
     string? Comment = null);
 
+public sealed record RepairScopePolicy(
+    int SuccessorDepth = 4,
+    int RepairHorizonMinutes = 720,
+    bool FreezeUnaffectedOperations = true,
+    bool IncludeSameResourceNeighbors = true);
+
 public sealed record PlanningReplanContext(
     Guid BaselinePlanVersionId,
     DateTime ReferenceTimeUtc,
     PlanningTimeFencePolicy TimeFencePolicy,
     IReadOnlyCollection<BaselinePlanOperation> BaselineOperations,
-    IReadOnlyCollection<OperationResourceOverride>? ResourceOverrides = null);
+    IReadOnlyCollection<OperationResourceOverride>? ResourceOverrides = null,
+    RepairScopePolicy? RepairScope = null);
 
 public sealed record PlanningTaskIdentity(
     Guid TaskId,
@@ -55,7 +60,8 @@ public sealed record PlanningOperationResourceAlternative(
     Guid ResourceId,
     int DurationMinutes,
     int AssignmentPenalty,
-    bool WasSelected);
+    bool WasSelected,
+    string? EligibilityBasisCode = null);
 
 public sealed record MaterialSupplyPlanningPolicy(
     bool AllowInternalMake = true,
@@ -87,7 +93,8 @@ public sealed record PlanningRunRequest(
     IReadOnlyCollection<PackagingSpecification>? PackagingSpecifications = null,
     IReadOnlyCollection<ExternalMaterialSupply>? ExternalMaterialSupplies = null,
     MaterialSupplyPlanningPolicy? MaterialSupplyPolicy = null,
-    IReadOnlyCollection<OperationAssignmentPolicy>? AssignmentPolicies = null);
+    IReadOnlyCollection<OperationAssignmentPolicy>? AssignmentPolicies = null,
+    IReadOnlyCollection<MaterialSourcingRule>? MaterialSourcingRules = null);
 
 public sealed record PlanningRunResult(
     Guid PlanVersionId,
