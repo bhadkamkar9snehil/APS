@@ -58,7 +58,8 @@ public sealed record PlanningRunResult(
     bool IsFeasible,
     IReadOnlyCollection<PlanningTaskIdentity>? TaskIdentities = null,
     Guid? BaselinePlanVersionId = null,
-    IReadOnlyCollection<PlannedPackagingUnit>? PlannedPackagingUnits = null);
+    IReadOnlyCollection<PlannedPackagingUnit>? PlannedPackagingUnits = null,
+    IReadOnlyCollection<PlanOrderRequirementSnapshot>? RequirementSnapshots = null);
 
 public interface IPlanningEngine
 {
