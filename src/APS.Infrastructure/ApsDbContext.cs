@@ -42,6 +42,8 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
     public DbSet<PackagingSpecification> PackagingSpecifications => Set<PackagingSpecification>();
     public DbSet<ExternalMaterialSupply> ExternalMaterialSupplies => Set<ExternalMaterialSupply>();
     public DbSet<MaterialSourcingRule> MaterialSourcingRules => Set<MaterialSourcingRule>();
+    public DbSet<BillOfMaterial> BillsOfMaterial => Set<BillOfMaterial>();
+    public DbSet<BillOfMaterialComponent> BillOfMaterialComponents => Set<BillOfMaterialComponent>();
     public DbSet<PlannedPackagingUnit> PlannedPackagingUnits => Set<PlannedPackagingUnit>();
 
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
@@ -101,6 +103,9 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<ExternalMaterialSupply>().HasIndex(x => new { x.SourceType, x.SupplyReference });
         modelBuilder.Entity<MaterialSourcingRule>().HasIndex(x => x.RuleCode).IsUnique();
         modelBuilder.Entity<MaterialSourcingRule>().HasIndex(x => new { x.MaterialCode, x.GradeCode, x.CrossSectionCode, x.DestinationLocationCode });
+        modelBuilder.Entity<BillOfMaterial>().HasIndex(x => new { x.BomCode, x.VersionNumber }).IsUnique();
+        modelBuilder.Entity<BillOfMaterial>().HasIndex(x => new { x.OutputMaterialCode, x.Status, x.EffectiveFromUtc });
+        modelBuilder.Entity<BillOfMaterialComponent>().HasIndex(x => new { x.BillOfMaterialId, x.SequenceNumber });
 
         modelBuilder.Entity<SalesOrderDemandState>()
             .HasOne(x => x.SalesOrder)
@@ -178,6 +183,12 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
             .HasMany(x => x.ProcessRequirements)
             .WithOne(x => x.SteelGrade)
             .HasForeignKey(x => x.SteelGradeId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<BillOfMaterial>()
+            .HasMany(x => x.Components)
+            .WithOne(x => x.BillOfMaterial)
+            .HasForeignKey(x => x.BillOfMaterialId)
             .OnDelete(DeleteBehavior.Cascade);
 
         modelBuilder.Entity<ProcessStage>()
