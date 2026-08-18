@@ -40,4 +40,14 @@ public interface IOperationExecutionService
     Task<OperationExecutionSnapshot> ApplyAsync(
         OperationExecutionUpdate update,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Re-evaluates flexible/firm/committed resource assignments against the immutable Plan Version
+    /// policy snapshot, current clock and actual predecessor progress. This is safe to run periodically.
+    /// Running/completed assignments are never downgraded.
+    /// </summary>
+    Task<IReadOnlyCollection<OperationExecutionSnapshot>> RefreshCommitmentsAsync(
+        Guid planVersionId,
+        DateTime referenceTimeUtc,
+        CancellationToken cancellationToken = default);
 }
