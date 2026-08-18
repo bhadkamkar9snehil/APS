@@ -1,4 +1,5 @@
 using APS.Application;
+using APS.Domain;
 using Microsoft.EntityFrameworkCore;
 
 namespace APS.Infrastructure;
@@ -20,6 +21,14 @@ public sealed class SqlPlanningMasterDataProvider(ApsDbContext db) : IPlanningMa
             .Include(x => x.Chemistry)
             .Include(x => x.ProcessRequirements)
             .OrderBy(x => x.GradeCode)
+            .ToListAsync(cancellationToken);
+
+        var billsOfMaterial = await db.BillsOfMaterial
+            .AsNoTracking()
+            .Where(x => x.IsActive && x.Status == BomStatus.Active)
+            .Include(x => x.Components)
+            .OrderBy(x => x.BomCode)
+            .ThenByDescending(x => x.VersionNumber)
             .ToListAsync(cancellationToken);
 
         return new PlanningMasterDataSnapshot(
@@ -54,6 +63,7 @@ public sealed class SqlPlanningMasterDataProvider(ApsDbContext db) : IPlanningMa
             await db.MaterialSourcingRules.AsNoTracking()
                 .Where(x => x.IsActive)
                 .OrderBy(x => x.RuleCode)
-                .ToListAsync(cancellationToken));
+                .ToListAsync(cancellationToken),
+            billsOfMaterial);
     }
 }
