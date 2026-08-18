@@ -3,6 +3,7 @@ namespace APS.Domain;
 public sealed class PlanOrderRequirementSnapshot : Entity
 {
     public Guid PlanVersionId { get; set; }
+    public PlanVersion? PlanVersion { get; set; }
     public Guid ProductionOrderId { get; set; }
     public string? SalesOrderNumber { get; set; }
     public string? SalesOrderItem { get; set; }
@@ -48,6 +49,7 @@ public sealed class PlanOrderRequirementSnapshot : Entity
 public sealed class PlanChemistryRequirementSnapshot : Entity
 {
     public Guid PlanOrderRequirementSnapshotId { get; set; }
+    public PlanOrderRequirementSnapshot? PlanOrderRequirementSnapshot { get; set; }
     public required string ElementCode { get; set; }
     public decimal? MinimumPct { get; set; }
     public decimal? TargetPct { get; set; }
@@ -57,6 +59,7 @@ public sealed class PlanChemistryRequirementSnapshot : Entity
 public sealed class PlanProcessRequirementSnapshot : Entity
 {
     public Guid PlanOrderRequirementSnapshotId { get; set; }
+    public PlanOrderRequirementSnapshot? PlanOrderRequirementSnapshot { get; set; }
     public ProcessOperationType ProcessOperationType { get; set; }
     public RequirementDisposition Requirement { get; set; }
     public string? CapabilityClassCode { get; set; }
