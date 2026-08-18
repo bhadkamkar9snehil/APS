@@ -46,10 +46,7 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
 
             foreach (var option in task.ResourceOptions)
             {
-                if (!intervalsByResource.ContainsKey(option.ResourceId))
-                {
-                    continue;
-                }
+                if (!intervalsByResource.ContainsKey(option.ResourceId)) continue;
 
                 var selected = model.NewBoolVar($"task_{task.TaskId:N}_resource_{option.ResourceId:N}");
                 presence[option.ResourceId] = selected;
@@ -101,6 +98,7 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
         }
 
         ApplyDependencies(request, model, taskVars, issues);
+        ApplyMaterialReservoirs(request, horizonMinutes, model, taskVars, issues);
         if (issues.Any(i => i.Severity == PlanningIssueSeverity.Error))
         {
             return new FiniteScheduleResult("InvalidInput", false, 0, Array.Empty<FiniteScheduleAssignment>(), issues);
@@ -161,7 +159,7 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
                 PlanningIssueSeverity.Error,
                 status == CpSolverStatus.Infeasible ? "SCHEDULE_INFEASIBLE" : "SCHEDULE_NOT_SOLVED",
                 status == CpSolverStatus.Infeasible
-                    ? "No finite schedule satisfies the current resource, calendar, material-flow, dependency, sequencing and time-fence constraints."
+                    ? "No finite schedule satisfies the current resource, calendar, time-phased material, dependency, sequencing and time-fence constraints."
                     : $"CP-SAT returned {status}."));
             return new FiniteScheduleResult(status.ToString(), false, 0, Array.Empty<FiniteScheduleAssignment>(), issues);
         }
@@ -242,6 +240,63 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
                             maximum.OnlyEnforceIf(currentPresence.Value);
                         }
                     }
+                }
+            }
+        }
+    }
+
+    private static void ApplyMaterialReservoirs(
+        FiniteScheduleRequest request,
+        int horizonMinutes,
+        CpModel model,
+        IReadOnlyDictionary<Guid, TaskVariables> taskVars,
+        ICollection<PlanningIssue> issues)
+    {
+        foreach (var pool in (request.MaterialEvents ?? Array.Empty<ScheduledMaterialEvent>())
+                     .GroupBy(x => x.MaterialPoolKey, StringComparer.OrdinalIgnoreCase))
+        {
+            var events = pool.ToArray();
+            if (events.Length == 0) continue;
+            var totalPositive = events.Where(x => x.QuantityDeltaKg > 0).Sum(x => x.QuantityDeltaKg);
+            if (totalPositive <= 0 && events.Any(x => x.QuantityDeltaKg < 0))
+            {
+                issues.Add(new PlanningIssue(
+                    PlanningIssueSeverity.Error,
+                    "MATERIAL_POOL_WITHOUT_SUPPLY",
+                    $"Material pool {pool.Key} has consumption but no planned or confirmed supply."));
+                continue;
+            }
+
+            var reservoir = model.AddReservoirConstraint(0, Math.Max(0, totalPositive));
+            foreach (var materialEvent in events)
+            {
+                switch (materialEvent.Timing)
+                {
+                    case ScheduledMaterialEventTiming.FixedTime:
+                        var fixedMinute = ToMinute(
+                            materialEvent.FixedTimeUtc ?? request.HorizonStartUtc,
+                            request.HorizonStartUtc,
+                            horizonMinutes);
+                        reservoir.AddEvent(fixedMinute, materialEvent.QuantityDeltaKg);
+                        break;
+
+                    case ScheduledMaterialEventTiming.TaskStart:
+                    case ScheduledMaterialEventTiming.TaskEnd:
+                        if (!materialEvent.TaskId.HasValue || !taskVars.TryGetValue(materialEvent.TaskId.Value, out var task))
+                        {
+                            issues.Add(new PlanningIssue(
+                                PlanningIssueSeverity.Error,
+                                "MATERIAL_EVENT_TASK_NOT_FOUND",
+                                $"Material event for pool {pool.Key} references missing task {materialEvent.TaskId}."));
+                            continue;
+                        }
+                        reservoir.AddEvent(
+                            materialEvent.Timing == ScheduledMaterialEventTiming.TaskStart ? task.Start : task.End,
+                            materialEvent.QuantityDeltaKg);
+                        break;
+
+                    default:
+                        throw new ArgumentOutOfRangeException();
                 }
             }
         }
