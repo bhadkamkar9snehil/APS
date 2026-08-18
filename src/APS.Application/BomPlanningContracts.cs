@@ -60,7 +60,9 @@ public sealed record MaterialCoverageAllocation(
 
 public sealed record MaterialCoverageResult(
     decimal CoveredQuantity,
-    IReadOnlyCollection<MaterialCoverageAllocation> Allocations)
+    IReadOnlyCollection<MaterialCoverageAllocation> Allocations,
+    decimal LateSupplyQuantity = 0m,
+    DateTime? EarliestLateSupplyUtc = null)
 {
     public static readonly MaterialCoverageResult None = new(0m, Array.Empty<MaterialCoverageAllocation>());
 }
