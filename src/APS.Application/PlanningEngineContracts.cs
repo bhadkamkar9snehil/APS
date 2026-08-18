@@ -102,8 +102,8 @@ public sealed record PlanningRunRequest(
     IReadOnlyCollection<OperationAssignmentPolicy>? AssignmentPolicies = null,
     IReadOnlyCollection<MaterialSourcingRule>? MaterialSourcingRules = null,
     IReadOnlyCollection<CommittedMaterialSupply>? CommittedMaterialSupplies = null,
-    IReadOnlyCollection<BillOfMaterial>? BillsOfMaterial = null,
-    PlanningExecutionMode ExecutionMode = PlanningExecutionMode.Compatibility);
+    PlanningExecutionMode ExecutionMode = PlanningExecutionMode.Compatibility,
+    IReadOnlyCollection<BillOfMaterial>? BillsOfMaterial = null);
 
 public sealed record PlanningRunResult(
     Guid PlanVersionId,
