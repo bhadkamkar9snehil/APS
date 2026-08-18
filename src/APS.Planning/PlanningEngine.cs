@@ -35,7 +35,8 @@ public sealed class PlanningEngine(
             request.ExternalMaterialSupplies,
             request.MaterialSupplyPolicy,
             request.MaterialSourcingRules,
-            request.HorizonStartUtc));
+            request.HorizonStartUtc,
+            request.RoutePlanning));
 
         var heatAllocations = CampaignHeatAllocationBuilder.Build(campaignPlan.Campaigns);
         campaignPlan = campaignPlan with { HeatAllocations = heatAllocations };
