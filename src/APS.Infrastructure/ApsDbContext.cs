@@ -50,6 +50,8 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
     public DbSet<PlanVersion> PlanVersions => Set<PlanVersion>();
     public DbSet<PlanVersionState> PlanVersionStates => Set<PlanVersionState>();
     public DbSet<PlanOperationSnapshot> PlanOperationSnapshots => Set<PlanOperationSnapshot>();
+    public DbSet<PlanOperationResourceOptionSnapshot> PlanOperationResourceOptionSnapshots => Set<PlanOperationResourceOptionSnapshot>();
+    public DbSet<OperationDispatchRevision> OperationDispatchRevisions => Set<OperationDispatchRevision>();
     public DbSet<PlanInventoryAllocationSnapshot> PlanInventoryAllocationSnapshots => Set<PlanInventoryAllocationSnapshot>();
     public DbSet<PlanMaterialUnitSnapshot> PlanMaterialUnitSnapshots => Set<PlanMaterialUnitSnapshot>();
     public DbSet<PlanProductionOrderSnapshot> PlanProductionOrderSnapshots => Set<PlanProductionOrderSnapshot>();
@@ -251,6 +253,18 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
             .HasForeignKey(x => x.PlanVersionId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        modelBuilder.Entity<PlanOperationResourceOptionSnapshot>()
+            .HasOne<PlanVersion>()
+            .WithMany()
+            .HasForeignKey(x => x.PlanVersionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<OperationDispatchRevision>()
+            .HasOne<PlanVersion>()
+            .WithMany()
+            .HasForeignKey(x => x.PlanVersionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
         modelBuilder.Entity<PlanInventoryAllocationSnapshot>()
             .HasOne<PlanVersion>()
             .WithMany()
@@ -302,6 +316,8 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<StrandMaterialActual>().HasIndex(x => new { x.HeatExecutionActualId, x.StrandNumber, x.UnitSequence });
         modelBuilder.Entity<PlanVersionState>().HasIndex(x => x.PlanVersionId).IsUnique();
         modelBuilder.Entity<PlanOperationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.PlanningKey }).IsUnique();
+        modelBuilder.Entity<PlanOperationResourceOptionSnapshot>().HasIndex(x => new { x.PlanVersionId, x.PlanningKey, x.ResourceId }).IsUnique();
+        modelBuilder.Entity<OperationDispatchRevision>().HasIndex(x => new { x.PlanVersionId, x.PlanningKey, x.ChangedOnUtc });
         modelBuilder.Entity<PlanInventoryAllocationSnapshot>().HasIndex(x => new { x.PlanVersionId, x.ProductionOrderId, x.Stage });
         modelBuilder.Entity<PlanMaterialUnitSnapshot>().HasIndex(x => new { x.PlanVersionId, x.PlanningKey }).IsUnique();
         modelBuilder.Entity<PlanProductionOrderSnapshot>().HasIndex(x => new { x.PlanVersionId, x.ProductionOrderId }).IsUnique();
