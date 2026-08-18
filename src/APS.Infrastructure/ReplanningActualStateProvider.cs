@@ -18,6 +18,46 @@ public sealed class ReplanningActualStateProvider(
         var completed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var running = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+        // Canonical operation-grain execution overlay. This covers EAF/LRF/VD/CCM/RHF/RM and
+        // downstream constrained operations uniformly.
+        var operationActuals = await db.PlanOperationSnapshots
+            .AsNoTracking()
+            .Where(x => x.PlanVersionId == baselinePlanVersionId && x.ExecutionStatus != OperationExecutionStatus.Planned)
+            .ToListAsync(cancellationToken);
+        foreach (var actual in operationActuals)
+        {
+            if (actual.ExecutionStatus == OperationExecutionStatus.Completed)
+            {
+                baseline.Remove(actual.PlanningKey);
+                completed.Add(actual.PlanningKey);
+                continue;
+            }
+
+            if (actual.ExecutionStatus is OperationExecutionStatus.Running or OperationExecutionStatus.Held &&
+                baseline.TryGetValue(actual.PlanningKey, out var planned))
+            {
+                var actualStart = actual.ActualStartUtc ?? planned.StartUtc;
+                var duration = planned.EndUtc - planned.StartUtc;
+                var expectedEnd = actual.ActualEndUtc ?? actualStart.Add(duration);
+                baseline[actual.PlanningKey] = planned with
+                {
+                    ResourceId = actual.ActualResourceId ?? actual.CommittedResourceId ?? planned.ResourceId,
+                    StartUtc = actualStart,
+                    EndUtc = expectedEnd < referenceTimeUtc ? referenceTimeUtc : expectedEnd
+                };
+                running.Add(actual.PlanningKey);
+                continue;
+            }
+
+            if (actual.ExecutionStatus == OperationExecutionStatus.Ready &&
+                actual.CommittedResourceId.HasValue &&
+                baseline.TryGetValue(actual.PlanningKey, out var readyPlanned))
+            {
+                baseline[actual.PlanningKey] = readyPlanned with { ResourceId = actual.CommittedResourceId.Value };
+            }
+        }
+
+        // Casting-specific actuals remain supported because they also carry heat/cast/strand output data.
         var heatEvents = await db.HeatExecutionActuals
             .AsNoTracking()
             .Where(x => x.PlanVersionId == baselinePlanVersionId)
@@ -37,12 +77,7 @@ public sealed class ReplanningActualStateProvider(
                 continue;
             }
 
-            if (actual.Status != HeatExecutionStatus.Running ||
-                !baseline.TryGetValue(actual.PlanningKey, out var planned))
-            {
-                continue;
-            }
-
+            if (actual.Status != HeatExecutionStatus.Running || !baseline.TryGetValue(actual.PlanningKey, out var planned)) continue;
             var actualStart = actual.ActualStartUtc ?? planned.StartUtc;
             var duration = planned.EndUtc - planned.StartUtc;
             var expectedEnd = actual.ActualEndUtc ?? actualStart.Add(duration);
@@ -55,6 +90,8 @@ public sealed class ReplanningActualStateProvider(
             running.Add(actual.PlanningKey);
         }
 
+        // Work Order state remains a coarse fallback for integrations that have not yet sent
+        // operation-grain actuals.
         var releasedOperations = await db.ScheduledOperations
             .AsNoTracking()
             .Where(x => x.PlanVersionId == baselinePlanVersionId && x.PlanningKey != null)
@@ -85,20 +122,12 @@ public sealed class ReplanningActualStateProvider(
                 continue;
             }
 
-            if (workOrder.Status != WorkOrderStatus.Running || !workOrder.ActualStart.HasValue)
-            {
-                continue;
-            }
-
+            if (workOrder.Status != WorkOrderStatus.Running || !workOrder.ActualStart.HasValue) continue;
             var activeOperation = operationGroup
                 .Where(x => !string.IsNullOrWhiteSpace(x.PlanningKey))
                 .OrderBy(x => Math.Abs((x.Start - workOrder.ActualStart.Value).TotalMinutes))
                 .FirstOrDefault();
-            if (activeOperation?.PlanningKey is null ||
-                !baseline.TryGetValue(activeOperation.PlanningKey, out var planned))
-            {
-                continue;
-            }
+            if (activeOperation?.PlanningKey is null || !baseline.TryGetValue(activeOperation.PlanningKey, out var planned)) continue;
 
             var duration = planned.EndUtc - planned.StartUtc;
             var expectedEnd = workOrder.ActualEnd ?? workOrder.ActualStart.Value.Add(duration);
