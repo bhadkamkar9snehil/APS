@@ -10,7 +10,7 @@ internal static class PlanStructureSnapshotProjector
         PlanningRunRequest request,
         PlanningRunResult result)
     {
-        AddProductionOrders(db, request, result.PlanVersionId);
+        AddProductionOrders(db, request, result);
         AddRequirementSnapshots(db, result);
         AddCampaignStructure(db, result);
         AddPhysicalStructure(db, result);
@@ -20,13 +20,26 @@ internal static class PlanStructureSnapshotProjector
     private static void AddProductionOrders(
         ApsDbContext db,
         PlanningRunRequest request,
-        Guid planVersionId)
+        PlanningRunResult result)
     {
+        var external = result.CampaignPlan.ExternalIntermediateAllocatedMt
+                       ?? new Dictionary<Guid, decimal>();
+        var fgByPo = result.CampaignPlan.InventoryAllocations
+            .Where(x => x.Use == PlanningInventoryUse.FinishedGoodsFulfilment)
+            .GroupBy(x => x.ProductionOrderId)
+            .ToDictionary(x => x.Key, x => x.Sum(y => y.QuantityMt));
+
         foreach (var po in request.ProductionOrders.DistinctBy(x => x.Id))
         {
+            result.CampaignPlan.RollingRequirementsMt.TryGetValue(po.Id, out var rollingRequirement);
+            result.CampaignPlan.FreshSteelRequirementsMt.TryGetValue(po.Id, out var freshSteel);
+            result.CampaignPlan.IntermediateInventoryAllocatedMt.TryGetValue(po.Id, out var existingIntermediate);
+            external.TryGetValue(po.Id, out var externalIntermediate);
+            fgByPo.TryGetValue(po.Id, out var finishedGoods);
+
             db.PlanProductionOrderSnapshots.Add(new PlanProductionOrderSnapshot
             {
-                PlanVersionId = planVersionId,
+                PlanVersionId = result.PlanVersionId,
                 ProductionOrderId = po.Id,
                 ProductionOrderNumber = po.ProductionOrderNumber,
                 DemandSource = po.DemandSource,
@@ -50,7 +63,12 @@ internal static class PlanStructureSnapshotProjector
                 Status = po.Status,
                 TargetStockMt = po.TargetStockMt,
                 ProjectedAvailableStockMt = po.ProjectedAvailableStockMt,
-                StockPolicyCode = po.StockPolicyCode
+                StockPolicyCode = po.StockPolicyCode,
+                FinishedGoodsAllocatedMt = finishedGoods,
+                RollingRequirementMt = rollingRequirement,
+                ExistingIntermediateAllocatedMt = existingIntermediate,
+                ExternalIntermediateAllocatedMt = externalIntermediate,
+                FreshSteelRequirementMt = freshSteel
             });
         }
     }
