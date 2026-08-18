@@ -15,6 +15,12 @@ internal static class TimePhasedMaterialPlanner
         var issues = new List<PlanningIssue>();
         var poById = request.ProductionOrders.ToDictionary(x => x.Id);
         var heatById = campaignPlan.Campaigns.SelectMany(x => x.Heats).ToDictionary(x => x.Id);
+        var canonicalMaterialByPo = (request.PrecomputedCampaignMaterialDemand ?? Array.Empty<PrecomputedCampaignMaterialDemand>())
+            .ToDictionary(x => x.ProductionOrderId);
+        var rollingQuantityByPo = structure.RollingPlans
+            .SelectMany(x => x.Allocations)
+            .GroupBy(x => x.ProductionOrderId)
+            .ToDictionary(x => x.Key, x => x.Sum(y => y.PlannedQuantityMt));
 
         foreach (var allocation in campaignPlan.InventoryAllocations.Where(x =>
                      x.Use is PlanningInventoryUse.IntermediateFeed or
@@ -179,13 +185,23 @@ internal static class TimePhasedMaterialPlanner
             foreach (var allocation in rolling.Allocations.Where(x => x.ProductionOrder is not null))
             {
                 var po = allocation.ProductionOrder!;
+                var rollingTotalForPo = rollingQuantityByPo.GetValueOrDefault(po.Id);
+                var allocationFeedQuantity = allocation.PlannedQuantityMt;
+                if (canonicalMaterialByPo.TryGetValue(po.Id, out var canonical) && rollingTotalForPo > 0m)
+                {
+                    allocationFeedQuantity = decimal.Round(
+                        canonical.SteelFeedRequirementMt * allocation.PlannedQuantityMt / rollingTotalForPo,
+                        4,
+                        MidpointRounding.AwayFromZero);
+                }
+
                 decimal assigned = 0m;
                 for (var index = 0; index < feedTasks.Length; index++)
                 {
                     var task = feedTasks[index];
                     var quantity = index == feedTasks.Length - 1
-                        ? allocation.PlannedQuantityMt - assigned
-                        : decimal.Round(allocation.PlannedQuantityMt * task.QuantityMt / totalFeedTaskQuantity, 4, MidpointRounding.AwayFromZero);
+                        ? allocationFeedQuantity - assigned
+                        : decimal.Round(allocationFeedQuantity * task.QuantityMt / totalFeedTaskQuantity, 4, MidpointRounding.AwayFromZero);
                     quantity = Math.Max(0m, quantity);
                     assigned += quantity;
                     if (quantity <= 0m) continue;
@@ -195,7 +211,9 @@ internal static class TimePhasedMaterialPlanner
                         -Kg(quantity),
                         ScheduledMaterialEventTiming.TaskStart,
                         TaskId: task.TaskId,
-                        Explanation: $"Billet feed to {task.ProcessOperationType} for rolling plan {rolling.Id}.",
+                        Explanation: canonicalMaterialByPo.ContainsKey(po.Id)
+                            ? $"Canonical BOM-derived steel feed to {task.ProcessOperationType} for rolling plan {rolling.Id}."
+                            : $"Billet feed to {task.ProcessOperationType} for rolling plan {rolling.Id}.",
                         ProductionOrderId: po.Id,
                         MaterialCode: po.MaterialCode,
                         GradeCode: po.GradeCode,
@@ -318,6 +336,11 @@ internal static class TimePhasedMaterialPlanner
                 GradeCode = po.GradeCode,
                 CrossSectionCode = po.CasterSectionCode,
                 ProductForm = SteelProductForm.Billet,
+                MaterialUom = "MT",
+                GrossQuantity = required,
+                CoveredQuantity = required,
+                NetRequirementQuantity = 0m,
+                ShortfallQuantity = 0m,
                 RequiredQuantityMt = required,
                 RequiredAtUtc = assignment.StartUtc,
                 Priority = po.Priority,
@@ -339,6 +362,9 @@ internal static class TimePhasedMaterialPlanner
                          balanceIssues.Any(issue => issue.SourceId == x.ProductionOrderId)))
             {
                 requirement.Status = MaterialRequirementStatus.Shortfall;
+                requirement.ShortfallQuantity = requirement.RequiredQuantityMt;
+                requirement.NetRequirementQuantity = requirement.RequiredQuantityMt;
+                requirement.CoveredQuantity = 0m;
                 requirement.ShortfallQuantityMt = requirement.RequiredQuantityMt;
                 requirement.CoveredQuantityMt = 0m;
                 requirement.Explanation = "Scheduled material balance becomes negative before this requirement is fully satisfied.";
