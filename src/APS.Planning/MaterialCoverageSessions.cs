@@ -57,7 +57,8 @@ public sealed class InventorySnapshotMaterialCoverageSession : IMaterialCoverage
                 pool.Position.LocationCode,
                 quantity,
                 pool.Position.AvailableFromUtc,
-                pool.Position.QualityStatus));
+                pool.Position.QualityStatus,
+                pool.Position.Stage));
         }
 
         return new MaterialCoverageResult(allocations.Sum(x => x.Quantity), allocations);
