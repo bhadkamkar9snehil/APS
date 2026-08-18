@@ -19,14 +19,10 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
                 .FirstOrDefaultAsync(x =>
                     x.Source == update.Source && x.ExternalEventId == update.ExternalEventId,
                     cancellationToken);
-            if (duplicate is not null)
-            {
-                return await SnapshotAsync(duplicate, cancellationToken);
-            }
+            if (duplicate is not null) return await SnapshotAsync(duplicate, cancellationToken);
         }
 
         var planned = await db.PlanOperationSnapshots
-            .AsNoTracking()
             .SingleOrDefaultAsync(x =>
                 x.PlanVersionId == update.PlanVersionId &&
                 x.PlanningKey == update.PlanningKey &&
@@ -48,8 +44,8 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
 
         var outputs = update.MaterialOutputs ?? Array.Empty<StrandMaterialActualInput>();
         var outputQuantity = outputs.Sum(x => x.QuantityMt);
-        var actualQuantity = update.ActualQuantityMt ??
-                             (outputs.Count > 0 ? outputQuantity : previous?.ActualQuantityMt ?? 0m);
+        var actualQuantity = update.ActualQuantityMt ?? (outputs.Count > 0 ? outputQuantity : previous?.ActualQuantityMt ?? 0m);
+        var actualResource = update.CasterResourceId ?? previous?.CasterResourceId ?? planned.ActualResourceId ?? planned.CommittedResourceId ?? planned.ResourceId;
 
         var actual = new HeatExecutionActual
         {
@@ -57,7 +53,7 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
             PlanningKey = update.PlanningKey,
             ExternalHeatNumber = update.ExternalHeatNumber ?? previous?.ExternalHeatNumber,
             ExternalCastNumber = update.ExternalCastNumber ?? previous?.ExternalCastNumber,
-            CasterResourceId = update.CasterResourceId ?? previous?.CasterResourceId ?? planned.ResourceId,
+            CasterResourceId = actualResource,
             Status = update.Status,
             ActualStartUtc = update.ActualStartUtc ?? previous?.ActualStartUtc ??
                              (update.Status == HeatExecutionStatus.Running ? update.ChangedOnUtc : null),
@@ -71,9 +67,35 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
         };
 
         if (actual.ActualStartUtc.HasValue && actual.ActualEndUtc.HasValue && actual.ActualEndUtc < actual.ActualStartUtc)
-        {
             throw new InvalidOperationException("Heat actual end cannot be before actual start.");
+
+        // The specialized casting actual and the generic operation actual are one execution truth.
+        planned.ExecutionStatus = update.Status switch
+        {
+            HeatExecutionStatus.Planned => OperationExecutionStatus.Planned,
+            HeatExecutionStatus.Ready => OperationExecutionStatus.Ready,
+            HeatExecutionStatus.Running => OperationExecutionStatus.Running,
+            HeatExecutionStatus.Held => OperationExecutionStatus.Held,
+            HeatExecutionStatus.Completed => OperationExecutionStatus.Completed,
+            HeatExecutionStatus.Cancelled => OperationExecutionStatus.Cancelled,
+            _ => OperationExecutionStatus.Planned
+        };
+        planned.ActualStartUtc = actual.ActualStartUtc;
+        planned.ActualEndUtc = actual.ActualEndUtc;
+        planned.ActualQuantityMt = actual.ActualQuantityMt;
+        planned.LastExecutionChangedOnUtc = update.ChangedOnUtc;
+        if (update.Status is HeatExecutionStatus.Ready or HeatExecutionStatus.Running or HeatExecutionStatus.Completed)
+        {
+            planned.CommittedResourceId = actualResource;
+            planned.AssignmentCommitmentState = update.Status switch
+            {
+                HeatExecutionStatus.Running => OperationAssignmentCommitmentState.Running,
+                HeatExecutionStatus.Completed => OperationAssignmentCommitmentState.Completed,
+                _ => OperationAssignmentCommitmentState.Committed
+            };
         }
+        if (update.Status is HeatExecutionStatus.Running or HeatExecutionStatus.Completed)
+            planned.ActualResourceId = actualResource;
 
         db.HeatExecutionActuals.Add(actual);
         foreach (var output in outputs)
@@ -93,11 +115,8 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
                 LocationCode = output.LocationCode
             });
 
-            var lotNumber = output.ExternalLotNumber ??
-                            $"{update.PlanningKey}:S{output.StrandNumber:00}:U{output.UnitSequence:000}";
-            var lotExists = await db.MaterialLots
-                .AsNoTracking()
-                .AnyAsync(x => x.LotNumber == lotNumber, cancellationToken);
+            var lotNumber = output.ExternalLotNumber ?? $"{update.PlanningKey}:S{output.StrandNumber:00}:U{output.UnitSequence:000}";
+            var lotExists = await db.MaterialLots.AsNoTracking().AnyAsync(x => x.LotNumber == lotNumber, cancellationToken);
             if (!lotExists)
             {
                 db.MaterialLots.Add(new MaterialLot
@@ -122,9 +141,7 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
         return Snapshot(actual, outputs);
     }
 
-    private async Task<HeatExecutionSnapshot> SnapshotAsync(
-        HeatExecutionActual actual,
-        CancellationToken cancellationToken)
+    private async Task<HeatExecutionSnapshot> SnapshotAsync(HeatExecutionActual actual, CancellationToken cancellationToken)
     {
         var outputs = await db.StrandMaterialActuals
             .AsNoTracking()
@@ -145,9 +162,7 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
         return Snapshot(actual, outputs);
     }
 
-    private static HeatExecutionSnapshot Snapshot(
-        HeatExecutionActual actual,
-        IReadOnlyCollection<StrandMaterialActualInput> outputs) => new(
+    private static HeatExecutionSnapshot Snapshot(HeatExecutionActual actual, IReadOnlyCollection<StrandMaterialActualInput> outputs) => new(
         actual.Id,
         actual.PlanVersionId,
         actual.PlanningKey,
