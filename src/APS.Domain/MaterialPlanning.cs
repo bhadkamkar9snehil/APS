@@ -56,12 +56,6 @@ public enum MaterialRequirementSourceType
     StockPolicy = 5
 }
 
-/// <summary>
-/// Master rule defining which supply paths are permitted for a qualified material requirement.
-/// Null material/grade/section selectors act as progressively broader defaults; the most specific
-/// matching rule wins. This allows normal integrated-plant MAKE preference while retaining approved
-/// BUY/TRANSFER contingency paths without hard-coded plant logic.
-/// </summary>
 public sealed class MaterialSourcingRule : Entity
 {
     public required string RuleCode { get; set; }
@@ -76,7 +70,7 @@ public sealed class MaterialSourcingRule : Entity
     public bool AllowMake { get; set; } = true;
     public bool AllowBuy { get; set; }
     public bool AllowTransfer { get; set; }
-    public bool AllowManualSupply { get; set; } = true;
+    public bool AllowManualSupply { get; set; }
     public MaterialSupplyActionType PreferredAction { get; set; } = MaterialSupplyActionType.Make;
 
     public TimeSpan? PurchaseLeadTime { get; set; }
@@ -108,7 +102,16 @@ public sealed class MaterialRequirement : Entity
     public SteelProductForm ProductForm { get; set; } = SteelProductForm.Other;
     public string? LocationCode { get; set; }
     public decimal RequiredQuantityMt { get; set; }
+
+    /// <summary>Actual planned material-consumption time after finite scheduling.</summary>
     public DateTime RequiredAtUtc { get; set; }
+
+    /// <summary>
+    /// Latest service-feasible need time from backward propagation through the planned process chain.
+    /// Supply after this timestamp is explicitly classified LateSupply even if APS can delay the operation.
+    /// </summary>
+    public DateTime? TargetRequiredAtUtc { get; set; }
+
     public int Priority { get; set; }
     public MaterialRequirementStatus Status { get; set; } = MaterialRequirementStatus.SupplyActionRequired;
     public decimal CoveredQuantityMt { get; set; }
@@ -127,7 +130,16 @@ public sealed class MaterialSupplyRequirement : Entity
     public required string GradeCode { get; set; }
     public required string CrossSectionCode { get; set; }
     public MaterialSupplyActionType ActionType { get; set; }
+
+    /// <summary>Quantity actually required/reserved by the originating material requirement.</summary>
     public decimal QuantityMt { get; set; }
+
+    /// <summary>Commercial order/transfer quantity after MOQ/order-multiple rules.</summary>
+    public decimal PlannedOrderQuantityMt { get; set; }
+
+    /// <summary>PlannedOrderQuantityMt - QuantityMt; projected future inventory, not silently reserved to this PO.</summary>
+    public decimal ExcessQuantityMt { get; set; }
+
     public DateTime RequiredReceiptUtc { get; set; }
     public DateTime? ExpectedReceiptUtc { get; set; }
     public string? SupplyReference { get; set; }
