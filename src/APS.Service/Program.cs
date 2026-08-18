@@ -33,6 +33,7 @@ if (hasApsDatabase)
     builder.Services.AddScoped<IWorkOrderExecutionService, WorkOrderExecutionService>();
     builder.Services.AddScoped<IHeatExecutionService, HeatExecutionService>();
     builder.Services.AddScoped<IOperationExecutionService, OperationExecutionService>();
+    builder.Services.AddHostedService<OperationCommitmentHostedService>();
     builder.Services.AddScoped<IInventorySnapshotProvider, SqlInventorySnapshotProvider>();
     builder.Services.AddScoped<IReplanningActualStateProvider, ReplanningActualStateProvider>();
     builder.Services.AddScoped<IPlanVersionRepository, PlanVersionRepository>();
