@@ -1,3 +1,4 @@
+using System.Text.Json;
 using APS.Application;
 using APS.Domain;
 using Microsoft.EntityFrameworkCore;
@@ -8,6 +9,8 @@ public sealed class ReplanningActualStateProvider(
     ApsDbContext db,
     IInventorySnapshotProvider inventoryProvider) : IReplanningActualStateProvider
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
     public async Task<ReplanningActualState> GetAsync(
         Guid baselinePlanVersionId,
         DateTime referenceTimeUtc,
@@ -18,13 +21,12 @@ public sealed class ReplanningActualStateProvider(
         var completed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var running = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // Canonical operation-grain execution overlay. This covers EAF/LRF/VD/CCM/RHF/RM and
-        // downstream constrained operations uniformly.
-        var operationActuals = await db.PlanOperationSnapshots
+        var allOperationSnapshots = await db.PlanOperationSnapshots
             .AsNoTracking()
-            .Where(x => x.PlanVersionId == baselinePlanVersionId && x.ExecutionStatus != OperationExecutionStatus.Planned)
+            .Where(x => x.PlanVersionId == baselinePlanVersionId)
             .ToListAsync(cancellationToken);
-        foreach (var actual in operationActuals)
+
+        foreach (var actual in allOperationSnapshots.Where(x => x.ExecutionStatus != OperationExecutionStatus.Planned))
         {
             if (actual.ExecutionStatus == OperationExecutionStatus.Completed)
             {
@@ -91,7 +93,8 @@ public sealed class ReplanningActualStateProvider(
         }
 
         // Work Order state remains a coarse fallback for integrations that have not yet sent
-        // operation-grain actuals.
+        // operation-grain actuals. It also tells us whether a baseline material-producing operation
+        // has crossed the execution-release boundary and therefore represents protected future supply.
         var releasedOperations = await db.ScheduledOperations
             .AsNoTracking()
             .Where(x => x.PlanVersionId == baselinePlanVersionId && x.PlanningKey != null)
@@ -102,6 +105,7 @@ public sealed class ReplanningActualStateProvider(
             .AsNoTracking()
             .Where(x => workOrderIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, cancellationToken);
+        var releasedPlanningKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var operationGroup in releasedOperations.GroupBy(x => x.WorkOrderId))
         {
@@ -111,6 +115,11 @@ public sealed class ReplanningActualStateProvider(
                 .Select(x => x.PlanningKey!)
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray();
+
+            if (workOrder.Status is WorkOrderStatus.Released or WorkOrderStatus.Ready or WorkOrderStatus.Running or WorkOrderStatus.Held)
+            {
+                foreach (var key in operationKeys) releasedPlanningKeys.Add(key);
+            }
 
             if (workOrder.Status == WorkOrderStatus.Completed)
             {
@@ -140,11 +149,150 @@ public sealed class ReplanningActualStateProvider(
             running.Add(activeOperation.PlanningKey);
         }
 
+        var committedFutureSupplies = await BuildCommittedFutureSuppliesAsync(
+            baselinePlanVersionId,
+            referenceTimeUtc,
+            allOperationSnapshots,
+            latestHeatEvents,
+            releasedPlanningKeys,
+            cancellationToken);
+
         var inventory = await inventoryProvider.GetInventoryAsync(cancellationToken);
         return new ReplanningActualState(
             baseline.Values.OrderBy(x => x.StartUtc).ToArray(),
             inventory,
             completed.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray(),
-            running.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray());
+            running.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray(),
+            committedFutureSupplies);
+    }
+
+    private async Task<IReadOnlyCollection<CommittedMaterialSupply>> BuildCommittedFutureSuppliesAsync(
+        Guid baselinePlanVersionId,
+        DateTime referenceTimeUtc,
+        IReadOnlyCollection<PlanOperationSnapshot> operations,
+        IReadOnlyCollection<HeatExecutionActual> latestHeatEvents,
+        IReadOnlySet<string> releasedPlanningKeys,
+        CancellationToken cancellationToken)
+    {
+        var state = await db.PlanVersionStates
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.PlanVersionId == baselinePlanVersionId, cancellationToken);
+        var ledger = DeserializeLedger(state?.MaterialLedgerJson)
+            .Where(x =>
+                x.EventType == MaterialBalanceEventType.PlannedProductionReceipt &&
+                x.QuantityDeltaMt > 0m &&
+                x.CampaignHeatId.HasValue &&
+                x.ProductionOrderId.HasValue)
+            .ToArray();
+        if (ledger.Length == 0) return Array.Empty<CommittedMaterialSupply>();
+
+        var latestHeatByKey = latestHeatEvents.ToDictionary(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase);
+        var result = new List<CommittedMaterialSupply>();
+
+        foreach (var heatGroup in ledger.GroupBy(x => x.CampaignHeatId!.Value))
+        {
+            var heatId = heatGroup.Key;
+            var ccm = operations
+                .Where(x => x.SourceEntityId == heatId && x.ProcessOperationType == ProcessOperationType.Ccm)
+                .OrderBy(x => x.StartUtc)
+                .FirstOrDefault();
+            if (ccm is null) continue;
+            if (ccm.ExecutionStatus is OperationExecutionStatus.Completed or OperationExecutionStatus.Cancelled) continue;
+
+            var isCommitted =
+                releasedPlanningKeys.Contains(ccm.PlanningKey) ||
+                ccm.ExecutionStatus is OperationExecutionStatus.Ready or OperationExecutionStatus.Running or OperationExecutionStatus.Held ||
+                ccm.AssignmentCommitmentState is OperationAssignmentCommitmentState.Committed or OperationAssignmentCommitmentState.Running;
+            if (!isCommitted) continue;
+
+            var plannedTotal = heatGroup.Sum(x => x.QuantityDeltaMt);
+            if (plannedTotal <= 0m) continue;
+
+            latestHeatByKey.TryGetValue(ccm.PlanningKey, out var heatActual);
+            var actualQuantity = Math.Max(ccm.ActualQuantityMt, heatActual?.ActualQuantityMt ?? 0m);
+            actualQuantity = Math.Clamp(actualQuantity, 0m, plannedTotal);
+            var remainingTotal = plannedTotal - actualQuantity;
+            if (remainingTotal <= 0m) continue;
+
+            var eta = ResolveReceiptEta(ccm, heatActual, referenceTimeUtc);
+            var remainingRatio = remainingTotal / plannedTotal;
+            var remainingByPo = heatGroup
+                .GroupBy(x => x.ProductionOrderId!.Value)
+                .Select(group => new
+                {
+                    ProductionOrderId = group.Key,
+                    PlannedMt = group.Sum(x => x.QuantityDeltaMt),
+                    Template = group.OrderBy(x => x.EffectiveAtUtc).First()
+                })
+                .ToArray();
+
+            decimal allocated = 0m;
+            for (var index = 0; index < remainingByPo.Length; index++)
+            {
+                var item = remainingByPo[index];
+                var quantity = index == remainingByPo.Length - 1
+                    ? remainingTotal - allocated
+                    : decimal.Round(item.PlannedMt * remainingRatio, 4, MidpointRounding.AwayFromZero);
+                quantity = Math.Max(0m, quantity);
+                allocated += quantity;
+                if (quantity <= 0m) continue;
+
+                result.Add(new CommittedMaterialSupply(
+                    baselinePlanVersionId,
+                    item.ProductionOrderId,
+                    heatId,
+                    $"BASELINE:{baselinePlanVersionId:N}:HEAT:{heatId:N}:PO:{item.ProductionOrderId:N}",
+                    BilletSupplySourceType.InternalCastPlanned,
+                    item.Template.MaterialSpecificationCode,
+                    item.Template.GradeCode,
+                    item.Template.CrossSectionCode,
+                    quantity,
+                    eta,
+                    item.Template.LocationCode));
+            }
+        }
+
+        return result
+            .OrderBy(x => x.AvailableFromUtc)
+            .ThenBy(x => x.ProductionOrderId)
+            .ThenBy(x => x.SupplyReference, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static DateTime ResolveReceiptEta(
+        PlanOperationSnapshot ccm,
+        HeatExecutionActual? heatActual,
+        DateTime referenceTimeUtc)
+    {
+        DateTime eta;
+        if (ccm.ActualEndUtc.HasValue || heatActual?.ActualEndUtc is not null)
+        {
+            eta = ccm.ActualEndUtc ?? heatActual!.ActualEndUtc!.Value;
+        }
+        else if (ccm.ActualStartUtc.HasValue || heatActual?.ActualStartUtc is not null)
+        {
+            var actualStart = ccm.ActualStartUtc ?? heatActual!.ActualStartUtc!.Value;
+            eta = actualStart + (ccm.EndUtc - ccm.StartUtc);
+        }
+        else
+        {
+            eta = ccm.EndUtc;
+        }
+
+        return eta < referenceTimeUtc ? referenceTimeUtc : eta;
+    }
+
+    private static IReadOnlyCollection<MaterialBalanceEvent> DeserializeLedger(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return Array.Empty<MaterialBalanceEvent>();
+        try
+        {
+            return JsonSerializer.Deserialize<MaterialBalanceEvent[]>(json, JsonOptions)
+                   ?? Array.Empty<MaterialBalanceEvent>();
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<MaterialBalanceEvent>();
+        }
     }
 }
