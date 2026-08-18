@@ -46,6 +46,25 @@ public enum OperationAssignmentCommitmentState
     Completed = 5
 }
 
+public enum OperationExecutionStatus
+{
+    Planned = 1,
+    Ready = 2,
+    Running = 3,
+    Held = 4,
+    Completed = 5,
+    Cancelled = 6
+}
+
+public sealed record OperationExecutionEventSnapshot(
+    OperationExecutionStatus PreviousStatus,
+    OperationExecutionStatus NewStatus,
+    Guid? ResourceId,
+    DateTime ChangedOnUtc,
+    ExecutionUpdateSource Source,
+    string? ExternalEventId,
+    string? Comment);
+
 public sealed class PlanVersionState : Entity
 {
     public Guid PlanVersionId { get; set; }
@@ -58,8 +77,6 @@ public sealed class PlanVersionState : Entity
     public string? SolverStatus { get; set; }
     public long? ObjectiveValue { get; set; }
     public bool IsActive { get; set; }
-
-    // Immutable serialized Plan Version facts. These are snapshots, not live-master references.
     public string? MaterialRequirementsJson { get; set; }
     public string? MaterialSupplyRequirementsJson { get; set; }
     public string? MaterialReservationsJson { get; set; }
@@ -74,25 +91,23 @@ public sealed class PlanOperationSnapshot : Entity
     public PlanOperationType OperationType { get; set; }
     public ProcessOperationType ProcessOperationType { get; set; } = ProcessOperationType.Unknown;
 
-    /// <summary>Resource selected by the optimizer for this Plan Version.</summary>
     public Guid ResourceId { get; set; }
-
-    /// <summary>Explicit dispatch commitment, if operations has firmed a physical resource after planning.</summary>
     public Guid? CommittedResourceId { get; set; }
-
-    /// <summary>Actual physical resource from execution. Once running/completed this is historical truth.</summary>
     public Guid? ActualResourceId { get; set; }
-
     public OperationAssignmentCommitmentState AssignmentCommitmentState { get; set; } = OperationAssignmentCommitmentState.Flexible;
-
-    /// <summary>Immutable serialized set of all alternatives that were feasible when this plan was solved.</summary>
     public string? EligibleResourceOptionsJson { get; set; }
 
-    /// <summary>For child plans created by an operational redispatch, records the displaced resource.</summary>
     public Guid? PreviousPlannedResourceId { get; set; }
     public string? RedispatchReasonCode { get; set; }
     public string? RedispatchComment { get; set; }
     public DateTime? RedispatchedOnUtc { get; set; }
+
+    public OperationExecutionStatus ExecutionStatus { get; set; } = OperationExecutionStatus.Planned;
+    public DateTime? ActualStartUtc { get; set; }
+    public DateTime? ActualEndUtc { get; set; }
+    public decimal ActualQuantityMt { get; set; }
+    public DateTime? LastExecutionChangedOnUtc { get; set; }
+    public string? ExecutionHistoryJson { get; set; }
 
     public DateTime StartUtc { get; set; }
     public DateTime EndUtc { get; set; }
@@ -101,10 +116,6 @@ public sealed class PlanOperationSnapshot : Entity
     public required string CrossSectionCode { get; set; }
 }
 
-/// <summary>
-/// Typed in-memory representation of one retained resource option. PlanOperationSnapshot stores the
-/// immutable set as JSON so historical alternatives remain part of the operation snapshot aggregate.
-/// </summary>
 public sealed class PlanOperationResourceOptionSnapshot : Entity
 {
     public Guid PlanVersionId { get; set; }
