@@ -44,7 +44,8 @@ public sealed record CampaignPlanningRequest(
     MaterialSupplyPlanningPolicy? MaterialSupplyPolicy = null,
     IReadOnlyCollection<MaterialSourcingRule>? MaterialSourcingRules = null,
     DateTime? PlanningReferenceTimeUtc = null,
-    RoutePlanningInput? RoutePlanning = null);
+    RoutePlanningInput? RoutePlanning = null,
+    IReadOnlyCollection<CommittedMaterialSupply>? CommittedMaterialSupplies = null);
 
 public enum PlanningInventoryUse
 {
@@ -53,7 +54,8 @@ public enum PlanningInventoryUse
     ExternalIntermediateFeed = 3,
     PlannedPurchaseFeed = 4,
     PlannedTransferFeed = 5,
-    ManualPlannedFeed = 6
+    ManualPlannedFeed = 6,
+    CommittedInternalProductionFeed = 7
 }
 
 public sealed record PlanningInventoryAllocation(
