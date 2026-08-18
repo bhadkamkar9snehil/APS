@@ -190,6 +190,7 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
             AssignmentPolicies: request.AssignmentPolicies,
             MaterialSourcingRules: masterData.EffectiveMaterialSourcingRules,
             CommittedMaterialSupplies: committedSupplies,
+            BillsOfMaterial: masterData.EffectiveBillsOfMaterial,
             ExecutionMode: PlanningExecutionMode.Production);
     }
 
