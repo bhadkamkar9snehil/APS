@@ -47,7 +47,8 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             MaterialRequirementsJson = Serialize(result.MaterialPlan?.Requirements),
             MaterialSupplyRequirementsJson = Serialize(result.MaterialPlan?.SupplyRequirements),
             MaterialReservationsJson = Serialize(result.MaterialPlan?.Reservations),
-            MaterialLedgerJson = Serialize(result.MaterialPlan?.LedgerEvents)
+            MaterialLedgerJson = Serialize(result.MaterialPlan?.LedgerEvents),
+            MaterialSourcingAlternativesJson = Serialize(result.CampaignPlan.SourcingAlternatives)
         };
 
         if (result.IsFeasible)
@@ -67,7 +68,8 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
 
         var tasksById = result.ProductionStructure.SchedulingTasks.ToDictionary(x => x.TaskId);
         var identitiesById = (result.TaskIdentities ?? Array.Empty<PlanningTaskIdentity>()).ToDictionary(x => x.TaskId);
-        var alternativesByKey = (result.ResourceAlternatives ?? Array.Empty<PlanningOperationResourceAlternative>())
+        var alternatives = result.ResourceAlternatives ?? Array.Empty<PlanningOperationResourceAlternative>();
+        var alternativesByKey = alternatives
             .GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.OrderBy(y => y.AssignmentPenalty).ThenBy(y => y.ResourceId).ToArray(), StringComparer.OrdinalIgnoreCase);
         var overridesByKey = (request.PlanningRequest.ReplanContext?.ResourceOverrides ?? Array.Empty<OperationResourceOverride>())
@@ -77,6 +79,23 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             .GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.OrderBy(y => y.StartUtc).First(), StringComparer.OrdinalIgnoreCase);
 
+        foreach (var alternative in alternatives)
+        {
+            db.PlanOperationResourceOptionSnapshots.Add(new PlanOperationResourceOptionSnapshot
+            {
+                PlanVersionId = result.PlanVersionId,
+                PlanningKey = alternative.PlanningKey,
+                SourceEntityId = alternative.SourceEntityId,
+                ProcessOperationType = alternative.ProcessOperationType,
+                ResourceId = alternative.ResourceId,
+                DurationMinutes = alternative.DurationMinutes,
+                AssignmentPenalty = alternative.AssignmentPenalty,
+                WasSelected = alternative.WasSelected,
+                EligibilityBasisCode = alternative.EligibilityBasisCode,
+                CapturedOnUtc = result.CreatedOnUtc
+            });
+        }
+
         foreach (var assignment in result.Schedule.Assignments)
         {
             if (!tasksById.TryGetValue(assignment.TaskId, out var task)) continue;
@@ -84,7 +103,7 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
 
             overridesByKey.TryGetValue(identity.PlanningKey, out var resourceOverride);
             baselineByKey.TryGetValue(identity.PlanningKey, out var baseline);
-            alternativesByKey.TryGetValue(identity.PlanningKey, out var alternatives);
+            alternativesByKey.TryGetValue(identity.PlanningKey, out var operationAlternatives);
             var processType = ResolveProcessOperationType(task);
             var assignmentPolicy = request.PlanningRequest.AssignmentPolicies?
                 .FirstOrDefault(x => x.ProcessOperationType == processType);
@@ -113,7 +132,7 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
                     : null,
                 ActualResourceId = null,
                 AssignmentCommitmentState = commitment,
-                EligibleResourceOptionsJson = Serialize(alternatives),
+                EligibleResourceOptionsJson = Serialize(operationAlternatives),
                 PredecessorPlanningKeysJson = Serialize(predecessorKeys),
                 AssignmentPolicyJson = assignmentPolicy is null ? null : SerializeObject(assignmentPolicy),
                 CommitmentLastEvaluatedOnUtc = request.ReferenceTimeUtc,
@@ -129,6 +148,21 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
                 GradeCode = task.GradeCode,
                 CrossSectionCode = task.CrossSectionCode
             });
+
+            if (resourceOverride is not null && baseline is not null && baseline.ResourceId != assignment.ResourceId)
+            {
+                db.OperationDispatchRevisions.Add(new OperationDispatchRevision
+                {
+                    PlanVersionId = result.PlanVersionId,
+                    PlanningKey = identity.PlanningKey,
+                    PreviousResourceId = baseline.ResourceId,
+                    RevisedResourceId = assignment.ResourceId,
+                    ChangedOnUtc = request.ReferenceTimeUtc,
+                    ReasonCode = resourceOverride.ReasonCode,
+                    Comment = resourceOverride.Comment,
+                    Source = ExecutionUpdateSource.Manual
+                });
+            }
         }
 
         foreach (var allocation in result.CampaignPlan.InventoryAllocations)
@@ -181,6 +215,17 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
         if (version is null) return null;
         var state = await db.PlanVersionStates.AsNoTracking().SingleAsync(x => x.PlanVersionId == planVersionId, cancellationToken);
         var operations = await GetBaselineOperationsAsync(planVersionId, cancellationToken);
+        var alternatives = await db.PlanOperationResourceOptionSnapshots.AsNoTracking()
+            .Where(x => x.PlanVersionId == planVersionId)
+            .OrderBy(x => x.PlanningKey)
+            .ThenBy(x => x.AssignmentPenalty)
+            .ThenBy(x => x.ResourceId)
+            .ToArrayAsync(cancellationToken);
+        var revisions = await db.OperationDispatchRevisions.AsNoTracking()
+            .Where(x => x.PlanVersionId == planVersionId)
+            .OrderBy(x => x.ChangedOnUtc)
+            .ThenBy(x => x.PlanningKey)
+            .ToArrayAsync(cancellationToken);
 
         return new PlanVersionSnapshot(
             version.Id,
@@ -195,7 +240,14 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             state.SolverStatus,
             state.ObjectiveValue,
             state.IsActive,
-            operations);
+            operations,
+            alternatives,
+            revisions,
+            Deserialize<MaterialRequirement>(state.MaterialRequirementsJson),
+            Deserialize<MaterialSupplyRequirement>(state.MaterialSupplyRequirementsJson),
+            Deserialize<MaterialSupplyReservation>(state.MaterialReservationsJson),
+            Deserialize<MaterialBalanceEvent>(state.MaterialLedgerJson),
+            Deserialize<PlanningSupplyAlternative>(state.MaterialSourcingAlternativesJson));
     }
 
     public async Task<IReadOnlyCollection<BaselinePlanOperation>> GetBaselineOperationsAsync(
@@ -237,6 +289,12 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
         values is null ? null : JsonSerializer.Serialize(values, SnapshotJsonOptions);
 
     private static string SerializeObject<T>(T value) => JsonSerializer.Serialize(value, SnapshotJsonOptions);
+
+    private static IReadOnlyCollection<T> Deserialize<T>(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return Array.Empty<T>();
+        return JsonSerializer.Deserialize<T[]>(json, SnapshotJsonOptions) ?? Array.Empty<T>();
+    }
 
     private static ProcessOperationType ResolveProcessOperationType(FiniteScheduleTask task)
     {
