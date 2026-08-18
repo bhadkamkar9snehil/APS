@@ -287,7 +287,6 @@ public sealed class PlanningEngine(
             if (overrideKeys.Contains(identity.PlanningKey)) continue;
             if (!baselineByKey.TryGetValue(identity.PlanningKey, out var baseline) || baseline.EndUtc <= context.ReferenceTimeUtc) continue;
 
-            // Local repair: everything outside the affected dependency/resource neighborhood remains exact.
             if (repairTaskIds is not null && !repairTaskIds.Contains(identity.TaskId))
             {
                 constraints.Add(new FiniteScheduleStabilityConstraint(
@@ -324,8 +323,10 @@ public sealed class PlanningEngine(
         IReadOnlyDictionary<string, BaselinePlanOperation> baselineByKey)
     {
         var scope = context.RepairScope ?? new RepairScopePolicy();
+        if (!scope.FreezeUnaffectedOperations)
+            return tasks.Select(x => x.TaskId).ToHashSet();
+
         var identityByKey = identities.ToDictionary(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase);
-        var identityByTask = identities.ToDictionary(x => x.TaskId);
         var taskById = tasks.ToDictionary(x => x.TaskId);
         var successors = tasks
             .SelectMany(task => task.Dependencies.Select(dep => (dep.PredecessorTaskId, task.TaskId)))
