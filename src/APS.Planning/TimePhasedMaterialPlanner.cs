@@ -3,11 +3,6 @@ using APS.Domain;
 
 namespace APS.Planning;
 
-/// <summary>
-/// Builds the qualified material event stream consumed by finite scheduling. The planner deliberately
-/// keeps a PO-qualified pool unless compatibility has already been proven upstream; this prevents
-/// accidental cross-customer material substitution.
-/// </summary>
 internal static class TimePhasedMaterialPlanner
 {
     public static MaterialPlanningResult BuildPreSchedule(
@@ -19,8 +14,8 @@ internal static class TimePhasedMaterialPlanner
         var events = new List<ScheduledMaterialEvent>();
         var issues = new List<PlanningIssue>();
         var poById = request.ProductionOrders.ToDictionary(x => x.Id);
+        var heatById = campaignPlan.Campaigns.SelectMany(x => x.Heats).ToDictionary(x => x.Id);
 
-        // Selected existing/external billet supply becomes a fixed receipt in the PO-qualified pool.
         foreach (var allocation in campaignPlan.InventoryAllocations.Where(x =>
                      x.Use is PlanningInventoryUse.IntermediateFeed or PlanningInventoryUse.ExternalIntermediateFeed))
         {
@@ -63,8 +58,6 @@ internal static class TimePhasedMaterialPlanner
                     : MaterialBalanceEventType.OpeningInventory));
         }
 
-        // Fresh steel is a future supply source. Each PO's pegged quantity becomes available only
-        // when the corresponding CCM task ends; no current-stock prerequisite is imposed.
         var ccmTaskByHeat = structure.SchedulingTasks
             .Where(x => x.ProcessOperationType == ProcessOperationType.Ccm || x.TaskType == FiniteScheduleTaskType.Casting)
             .GroupBy(x => x.SourceEntityId)
@@ -96,13 +89,9 @@ internal static class TimePhasedMaterialPlanner
                 LedgerEventType: MaterialBalanceEventType.PlannedProductionReceipt));
         }
 
-        // Billet is consumed at the first material-feed operation for each rolling plan: RHF when
-        // reheating is present, otherwise hot rolling. Progressive feed blocks remain separate events.
         foreach (var rolling in structure.RollingPlans)
         {
-            var sourceTasks = structure.SchedulingTasks
-                .Where(x => x.SourceEntityId == rolling.Id)
-                .ToArray();
+            var sourceTasks = structure.SchedulingTasks.Where(x => x.SourceEntityId == rolling.Id).ToArray();
             var feedTasks = sourceTasks.Where(x => x.ProcessOperationType == ProcessOperationType.Reheat).ToArray();
             if (feedTasks.Length == 0)
             {
@@ -124,10 +113,7 @@ internal static class TimePhasedMaterialPlanner
                     var task = feedTasks[index];
                     var quantity = index == feedTasks.Length - 1
                         ? allocation.PlannedQuantityMt - assigned
-                        : decimal.Round(
-                            allocation.PlannedQuantityMt * task.QuantityMt / totalFeedTaskQuantity,
-                            4,
-                            MidpointRounding.AwayFromZero);
+                        : decimal.Round(allocation.PlannedQuantityMt * task.QuantityMt / totalFeedTaskQuantity, 4, MidpointRounding.AwayFromZero);
                     quantity = Math.Max(0m, quantity);
                     assigned += quantity;
                     if (quantity <= 0m) continue;
@@ -147,13 +133,26 @@ internal static class TimePhasedMaterialPlanner
             }
         }
 
+        var supplyActions = BuildPreScheduleSupplyActions(request, campaignPlan, heatById);
+        if (supplyActions.Any(x => x.ActionType == MaterialSupplyActionType.Unsourced))
+        {
+            foreach (var action in supplyActions.Where(x => x.ActionType == MaterialSupplyActionType.Unsourced))
+            {
+                issues.Add(new PlanningIssue(
+                    PlanningIssueSeverity.Error,
+                    "MATERIAL_SUPPLY_UNSOURCED",
+                    action.Explanation ?? $"No approved source exists for {action.QuantityMt:0.####} MT {action.GradeCode}/{action.CrossSectionCode}.",
+                    action.ProductionOrderId));
+            }
+        }
+
         return new MaterialPlanningResult(
             reservations,
             events,
             Array.Empty<MaterialBalanceEvent>(),
             issues,
             Array.Empty<MaterialRequirement>(),
-            BuildPreScheduleSupplyActions(request, campaignPlan));
+            supplyActions);
     }
 
     public static MaterialPlanningResult ResolveAfterSchedule(
@@ -217,29 +216,43 @@ internal static class TimePhasedMaterialPlanner
                 SupplyReference = scheduled.SupplyReference,
                 Explanation = scheduled.Explanation
             });
+        }
 
-            if (scheduled.QuantityDeltaKg >= 0 || !scheduled.ProductionOrderId.HasValue) continue;
-            if (!poById.TryGetValue(scheduled.ProductionOrderId.Value, out var po)) continue;
+        foreach (var scheduled in preSchedule.ScheduleEvents.Where(x => x.QuantityDeltaKg < 0 && x.ProductionOrderId.HasValue))
+        {
+            if (!scheduled.TaskId.HasValue || !assignmentByTask.TryGetValue(scheduled.TaskId.Value, out var assignment)) continue;
+            if (!poById.TryGetValue(scheduled.ProductionOrderId!.Value, out var po)) continue;
             var required = -scheduled.QuantityDeltaKg / 1000m;
+            var poolEvents = ledger
+                .Where(x => x.ProductionOrderId == po.Id && x.QuantityDeltaMt > 0m && x.EffectiveAtUtc <= assignment.StartUtc)
+                .OrderBy(x => x.EffectiveAtUtc)
+                .ToArray();
+            var usesFutureSupply = poolEvents.Any(x =>
+                x.EventType is MaterialBalanceEventType.PlannedProductionReceipt or MaterialBalanceEventType.ExternalReceipt &&
+                x.EffectiveAtUtc > request.HorizonStartUtc);
+            var latestReceipt = poolEvents.LastOrDefault()?.EffectiveAtUtc;
+
             requirements.Add(new MaterialRequirement
             {
                 PlanVersionId = planVersionId,
                 RequirementKey = $"REQ:{po.Id:N}:{scheduled.TaskId:N}",
                 SourceType = MaterialRequirementSourceType.ProcessOperation,
-                SourceEntityId = scheduled.TaskId ?? po.Id,
+                SourceEntityId = scheduled.TaskId.Value,
                 ProductionOrderId = po.Id,
                 MaterialCode = po.MaterialCode,
                 GradeCode = po.GradeCode,
                 CrossSectionCode = po.CasterSectionCode,
                 ProductForm = SteelProductForm.Billet,
                 RequiredQuantityMt = required,
-                RequiredAtUtc = effective,
+                RequiredAtUtc = assignment.StartUtc,
                 Priority = po.Priority,
-                Status = MaterialRequirementStatus.PlannedAvailable,
+                Status = usesFutureSupply ? MaterialRequirementStatus.PlannedAvailable : MaterialRequirementStatus.AvailableNow,
                 CoveredQuantityMt = required,
                 ShortfallQuantityMt = 0m,
-                ExpectedFullyAvailableAtUtc = effective,
-                Explanation = "Qualified billet supply is time-phased by the same material reservoir used by finite scheduling."
+                ExpectedFullyAvailableAtUtc = latestReceipt,
+                Explanation = usesFutureSupply
+                    ? "Requirement is supplied by qualified future receipts before the scheduled consuming operation."
+                    : "Requirement is covered by qualified supply available at the planning-horizon start."
             });
         }
 
@@ -247,13 +260,13 @@ internal static class TimePhasedMaterialPlanner
         issues.AddRange(balanceIssues);
         if (balanceIssues.Count > 0)
         {
-            foreach (var requirement in requirements)
+            foreach (var requirement in requirements.Where(x =>
+                         balanceIssues.Any(issue => issue.SourceId == x.ProductionOrderId)))
             {
-                if (balanceIssues.Any(x => x.SourceId == requirement.ProductionOrderId))
-                {
-                    requirement.Status = MaterialRequirementStatus.Shortfall;
-                    requirement.Explanation = "Scheduled material balance becomes negative before this requirement is fully satisfied.";
-                }
+                requirement.Status = MaterialRequirementStatus.Shortfall;
+                requirement.ShortfallQuantityMt = requirement.RequiredQuantityMt;
+                requirement.CoveredQuantityMt = 0m;
+                requirement.Explanation = "Scheduled material balance becomes negative before this requirement is fully satisfied.";
             }
         }
 
@@ -262,10 +275,30 @@ internal static class TimePhasedMaterialPlanner
             x.PlanVersionId = planVersionId;
             return x;
         }).ToArray();
-        var supplyActions = (preSchedule.SupplyRequirements ?? Array.Empty<MaterialSupplyRequirement>()).Select(x =>
+
+        var firstRequirementByPo = requirements
+            .Where(x => x.ProductionOrderId.HasValue)
+            .GroupBy(x => x.ProductionOrderId!.Value)
+            .ToDictionary(x => x.Key, x => x.OrderBy(y => y.RequiredAtUtc).First());
+        var supplyActions = (preSchedule.SupplyRequirements ?? Array.Empty<MaterialSupplyRequirement>()).Select(action =>
         {
-            x.PlanVersionId = planVersionId;
-            return x;
+            action.PlanVersionId = planVersionId;
+            if (action.ProductionOrderId.HasValue && firstRequirementByPo.TryGetValue(action.ProductionOrderId.Value, out var requirement))
+            {
+                action.MaterialRequirementId = requirement.Id;
+                action.RequiredReceiptUtc = requirement.RequiredAtUtc;
+            }
+            if (action.UpstreamHeatId.HasValue)
+            {
+                action.ExpectedReceiptUtc = ledger
+                    .Where(x => x.CampaignHeatId == action.UpstreamHeatId &&
+                                x.ProductionOrderId == action.ProductionOrderId &&
+                                x.EventType == MaterialBalanceEventType.PlannedProductionReceipt)
+                    .Select(x => (DateTime?)x.EffectiveAtUtc)
+                    .OrderBy(x => x)
+                    .FirstOrDefault();
+            }
+            return action;
         }).ToArray();
 
         return preSchedule with
@@ -280,29 +313,49 @@ internal static class TimePhasedMaterialPlanner
 
     private static IReadOnlyCollection<MaterialSupplyRequirement> BuildPreScheduleSupplyActions(
         PlanningRunRequest request,
-        CampaignPlanningResult campaignPlan)
+        CampaignPlanningResult campaignPlan,
+        IReadOnlyDictionary<Guid, CampaignHeat> heatById)
     {
         var result = new List<MaterialSupplyRequirement>();
         var policy = request.MaterialSupplyPolicy ?? new MaterialSupplyPlanningPolicy();
-        foreach (var po in request.ProductionOrders)
+        var poById = request.ProductionOrders.ToDictionary(x => x.Id);
+
+        foreach (var allocation in campaignPlan.HeatAllocations ?? Array.Empty<CampaignHeatAllocation>())
         {
-            if (!campaignPlan.FreshSteelRequirementsMt.TryGetValue(po.Id, out var fresh) || fresh <= 0m) continue;
+            if (allocation.PlannedOutputQuantityMt <= 0m || !poById.TryGetValue(allocation.ProductionOrderId, out var po)) continue;
+            heatById.TryGetValue(allocation.CampaignHeatId, out var heat);
+            var actionType = policy.AllowInternalMake
+                ? MaterialSupplyActionType.Make
+                : policy.AllowExternalBuy
+                    ? MaterialSupplyActionType.Buy
+                    : MaterialSupplyActionType.Unsourced;
+
             result.Add(new MaterialSupplyRequirement
             {
                 MaterialRequirementId = Guid.Empty,
-                ActionType = policy.AllowInternalMake ? MaterialSupplyActionType.Make :
-                    policy.AllowExternalBuy ? MaterialSupplyActionType.Buy : MaterialSupplyActionType.Unsourced,
-                QuantityMt = fresh,
+                ProductionOrderId = po.Id,
+                MaterialCode = po.MaterialCode,
+                GradeCode = po.GradeCode,
+                CrossSectionCode = po.CasterSectionCode,
+                ActionType = actionType,
+                QuantityMt = allocation.PlannedOutputQuantityMt,
                 RequiredReceiptUtc = po.RequiredDate,
                 ExpectedReceiptUtc = null,
+                UpstreamCampaignId = heat?.CampaignId,
+                UpstreamHeatId = actionType == MaterialSupplyActionType.Make ? allocation.CampaignHeatId : null,
                 IsFirm = false,
-                Explanation = policy.AllowInternalMake
-                    ? $"APS must make {fresh:0.####} MT qualified billet through the campaign/heat/SMS plan."
-                    : policy.AllowExternalBuy
-                        ? $"Internal make is disabled; procurement must provide {fresh:0.####} MT qualified billet."
-                        : $"No approved supply path exists for {fresh:0.####} MT qualified billet."
+                Explanation = actionType switch
+                {
+                    MaterialSupplyActionType.Make =>
+                        $"APS-planned internal billet receipt from heat {allocation.CampaignHeatId}; stock need not exist when the campaign is created.",
+                    MaterialSupplyActionType.Buy =>
+                        $"Internal make is disabled; procurement must provide {allocation.PlannedOutputQuantityMt:0.####} MT qualified billet.",
+                    _ =>
+                        $"No approved make/buy/transfer path exists for {allocation.PlannedOutputQuantityMt:0.####} MT qualified billet."
+                }
             });
         }
+
         return result;
     }
 
