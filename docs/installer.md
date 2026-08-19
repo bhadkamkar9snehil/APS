@@ -53,18 +53,32 @@ directory while persistent data (SQL connection is external, but logs) lives und
 dotnet tool install -g vpk
 ```
 
-For tags matching `v*.*.*`, `.github/workflows/release.yml` downloads the preceding Velopack
-release, packages the new version, and publishes it with `vpk upload github`. Tag and
-`APS.DesktopHost.csproj` `<Version>` must match, or the workflow fails fast rather than publishing
-a mismatched release.
+**Publishing is manual and local — no GitHub Actions.** Per explicit repository policy, GitHub
+Actions (a paid feature) is never used for this project, for verification or for releases. After
+`build/release.ps1` produces the packages in `build/Releases/`, publish them by running
+`vpk upload github` directly from a Windows machine with the Velopack CLI and a GitHub token with
+`repo` scope:
+
+```powershell
+vpk upload github `
+  --repoUrl "https://github.com/bhadkamkar9snehil/APS" `
+  --outputDir build/Releases `
+  --token "<token>" `
+  --publish `
+  --releaseName "APS Planner v1.0.0" `
+  --tag "v1.0.0"
+```
+
+Tag and `APS.DesktopHost.csproj` `<Version>` should match by convention, but nothing enforces this
+automatically since there is no CI step — check it by hand before publishing.
 
 ## Current state
 
-- Local `build/release.ps1` has not been run yet on this machine (no `Setup.exe` has been produced).
-- No version has been tagged or pushed, so `.github/workflows/release.yml` has never run and no
-  GitHub Release exists yet.
-- The app has never been installed via the installer — every launch so far has been a dev build run
-  directly from `bin/`, which is why update checks report `Unsupported`.
+- v0.1.0 is packed (`build/Releases/`, gitignored) and installed locally on this machine via the
+  Setup.exe — confirmed the installed copy self-identifies as a real Velopack installation and
+  checks GitHub for updates.
+- Publishing v0.1.0 to GitHub Releases via manual `vpk upload github` is in progress/complete
+  depending on when you're reading this — check `gh release list` for current state.
 - No `app-icon.ico` exists yet; `vpk pack` runs without `--icon` and falls back to a default icon
   until one is added.
 
