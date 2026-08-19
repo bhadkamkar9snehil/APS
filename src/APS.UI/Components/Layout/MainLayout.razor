@@ -50,7 +50,27 @@
     <section class="flex min-w-0 flex-1 flex-col">
         <PlanContextBar Plan="currentPlan" />
         <main class="flex-1 overflow-y-auto p-6">
-            @Body
+            @if (backendUnavailable)
+            {
+                <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center">
+                    <strong class="text-slate-700">Production planner workspace is unavailable</strong>
+                    <p class="mt-1 text-sm text-slate-500">@backendUnavailableMessage</p>
+                </div>
+            }
+            else
+            {
+                <ErrorBoundary>
+                    <ChildContent>
+                        @Body
+                    </ChildContent>
+                    <ErrorContent Context="ex">
+                        <div class="rounded border border-dashed border-rose-300 bg-rose-50 p-8 text-center">
+                            <strong class="text-rose-700">This page couldn't load</strong>
+                            <p class="mt-1 text-sm text-rose-600">@ex.Message</p>
+                        </div>
+                    </ErrorContent>
+                </ErrorBoundary>
+            }
         </main>
     </section>
 
@@ -60,16 +80,26 @@
 @code {
     private PlanContextView? currentPlan;
     private bool demoModeEnabled;
+    private bool backendUnavailable;
+    private string? backendUnavailableMessage;
 
     protected override async Task OnInitializedAsync()
     {
         demoModeEnabled = Configuration.GetValue<bool>("APS:DemoModeEnabled");
         WorkspaceState.Changed += OnWorkspaceChanged;
-        currentPlan = await PlannerQuery.GetCurrentPlanAsync();
-        if (currentPlan is not null)
+        try
         {
-            WorkspaceState.SetPlan(currentPlan.PlanVersionId, currentPlan.ParentPlanVersionId);
-            WorkspaceState.SetWindow(currentPlan.HorizonStartUtc, currentPlan.HorizonEndUtc);
+            currentPlan = await PlannerQuery.GetCurrentPlanAsync();
+            if (currentPlan is not null)
+            {
+                WorkspaceState.SetPlan(currentPlan.PlanVersionId, currentPlan.ParentPlanVersionId);
+                WorkspaceState.SetWindow(currentPlan.HorizonStartUtc, currentPlan.HorizonEndUtc);
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            backendUnavailable = true;
+            backendUnavailableMessage = ex.Message;
         }
     }
 
@@ -87,14 +117,22 @@
 
     private async Task LoadSelectedPlanAsync()
     {
-        var planVersionId = WorkspaceState.CurrentPlanVersionId;
-        currentPlan = planVersionId.HasValue
-            ? await PlannerQuery.GetPlanContextAsync(planVersionId.Value)
-            : await PlannerQuery.GetCurrentPlanAsync();
-
-        if (currentPlan is not null)
+        try
         {
-            WorkspaceState.SetWindow(currentPlan.HorizonStartUtc, currentPlan.HorizonEndUtc);
+            var planVersionId = WorkspaceState.CurrentPlanVersionId;
+            currentPlan = planVersionId.HasValue
+                ? await PlannerQuery.GetPlanContextAsync(planVersionId.Value)
+                : await PlannerQuery.GetCurrentPlanAsync();
+
+            if (currentPlan is not null)
+            {
+                WorkspaceState.SetWindow(currentPlan.HorizonStartUtc, currentPlan.HorizonEndUtc);
+            }
+        }
+        catch (InvalidOperationException ex)
+        {
+            backendUnavailable = true;
+            backendUnavailableMessage = ex.Message;
         }
         StateHasChanged();
     }
