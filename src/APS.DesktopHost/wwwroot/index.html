@@ -6,16 +6,44 @@
     <title>APS Planner</title>
     <base href="/" />
     <link rel="stylesheet" href="_content/APS.UI/tailwind.css" />
+    <!--
+      This file lives outside APS.UI's project tree, so Tailwind's content scan never sees it and
+      any Tailwind utility class referenced here silently compiles to nothing. The loading screen
+      and the error banner below must render correctly even if the rest of the CSS pipeline is
+      broken, so they're styled with plain inline CSS instead of Tailwind classes.
+    -->
+    <style>
+        #blazor-error-ui {
+            display: none;
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 1000;
+            padding: 0.75rem 1rem;
+            font-family: -apple-system, "Segoe UI", sans-serif;
+            font-size: 0.875rem;
+            color: #9f1239;
+            background: #fff1f2;
+            border-top: 1px solid #fecdd3;
+        }
+        #blazor-error-ui .dismiss {
+            float: right;
+            cursor: pointer;
+            font-weight: 600;
+        }
+    </style>
 </head>
-<body class="bg-canvas font-sans text-ink">
+<body style="margin:0; background:#f8fafc; font-family:-apple-system,'Segoe UI',sans-serif; color:#0f172a;">
     <div id="app">
-        <div class="flex h-screen w-screen flex-col items-center justify-center gap-2 bg-canvas">
-            <strong class="text-2xl font-bold text-primary">APS Planner</strong>
-            <span class="text-sm text-ink-soft">Starting&hellip;</span>
+        <div style="display:flex; height:100vh; width:100vw; flex-direction:column; align-items:center; justify-content:center; gap:0.5rem; background:#f8fafc;">
+            <strong style="font-size:1.5rem; font-weight:700; color:#2563eb;">APS Planner</strong>
+            <span style="font-size:0.875rem; color:#64748b;">Starting&hellip;</span>
         </div>
     </div>
-    <div id="blazor-error-ui" class="hidden fixed inset-x-0 bottom-0 z-50 border-t border-critical bg-critical-soft p-3 text-sm text-critical">
+    <div id="blazor-error-ui">
         An unexpected error occurred.
+        <a class="dismiss" onclick="document.getElementById('blazor-error-ui').style.display='none'">🗙</a>
     </div>
     <script src="_framework/blazor.webview.js"></script>
 </body>

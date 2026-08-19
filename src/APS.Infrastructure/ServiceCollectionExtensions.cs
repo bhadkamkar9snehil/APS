@@ -49,8 +49,25 @@ public static class ServiceCollectionExtensions
         }
         else
         {
+            // Every DB-backed service above needs a registration here too - Blazor's DI throws at
+            // component-construction time (before the page's own code ever runs) for any page that
+            // injects a service with no registration at all, which crashes the whole app instead of
+            // letting the page show its own "workspace unavailable" state.
             services.AddScoped<IPlannerWorkspaceQueryService>(
                 _ => new UnavailablePlannerWorkspaceQueryService(demoModeEnabled));
+            services.AddScoped<ITraceabilityService, UnavailableTraceabilityService>();
+            services.AddScoped<IWorkOrderExecutionService, UnavailableWorkOrderExecutionService>();
+            services.AddScoped<IHeatExecutionService, UnavailableHeatExecutionService>();
+            services.AddScoped<IOperationExecutionService, UnavailableOperationExecutionService>();
+            services.AddScoped<IInventorySnapshotProvider, UnavailableInventorySnapshotProvider>();
+            services.AddScoped<IReplanningActualStateProvider, UnavailableReplanningActualStateProvider>();
+            services.AddScoped<IPlanVersionRepository, UnavailablePlanVersionRepository>();
+            services.AddScoped<IPlanReleaseRepository, UnavailablePlanReleaseRepository>();
+            services.AddScoped<IPersistedPlanReleaseService, UnavailablePersistedPlanReleaseService>();
+            services.AddScoped<IPlanComparisonService, UnavailablePlanComparisonService>();
+            services.AddScoped<IPlanningMasterDataProvider, UnavailablePlanningMasterDataProvider>();
+            services.AddScoped<IProductionDemandOrchestrationService, UnavailableProductionDemandOrchestrationService>();
+            services.AddScoped<IPlanningLifecycleService, UnavailablePlanningLifecycleService>();
         }
 
         return new ApsInfrastructureRegistration(hasApsDatabase, demoModeEnabled);
