@@ -4,93 +4,96 @@
 
 <PageTitle>Plan Compare - APS</PageTitle>
 
-<div class="planner-page compare-workspace">
-    <header class="workspace-titlebar">
-        <div>
-            <span class="workspace-eyebrow">DECIDE / PLAN COMPARE</span>
-            <h1>Plan Versions</h1>
-            <p>See exactly what moved, changed resource, appeared or disappeared between two persisted schedules.</p>
-        </div>
-    </header>
+<h1 class="mb-1 text-lg font-semibold">Plan Compare</h1>
+<p class="mb-6 text-sm text-slate-500">See exactly what moved, changed resource, appeared or disappeared between two persisted schedules.</p>
 
-    @if (loading)
-    {
-        <div class="planner-empty-state"><strong>Loading Plan Version history…</strong></div>
-    }
-    else if (plans.Count < 2)
-    {
-        <div class="planner-empty-state planner-empty-state-major">
-            <strong>At least two Plan Versions are required</strong>
-            <p>Replanning or scenario runs create the history needed for comparison.</p>
-        </div>
-    }
-    else
-    {
-        <section class="compare-picker">
-            <label>
-                <span>BASELINE</span>
-                <select @bind="baselineSelection">
-                    @foreach (var plan in plans)
-                    {
-                        <option value="@plan.PlanVersionId">@plan.VersionNumber · @plan.CreatedOnUtc.ToString("dd MMM HH:mm")</option>
-                    }
-                </select>
-            </label>
-            <div class="compare-arrow">→</div>
-            <label>
-                <span>NEW PLAN</span>
-                <select @bind="newSelection">
-                    @foreach (var plan in plans)
-                    {
-                        <option value="@plan.PlanVersionId">@plan.VersionNumber · @plan.CreatedOnUtc.ToString("dd MMM HH:mm")</option>
-                    }
-                </select>
-            </label>
-            <button type="button" class="compare-run" @onclick="CompareAsync">Compare</button>
-        </section>
-
-        @if (comparing)
-        {
-            <div class="planner-empty-state"><strong>Comparing persisted operations…</strong></div>
-        }
-        else if (comparison is not null)
-        {
-            <section class="compare-summary">
-                <div class="compare-plan-card baseline">
-                    <span>BASELINE</span>
-                    <strong>@comparison.Baseline.VersionNumber</strong>
-                    <small>@comparison.Baseline.CreatedOnUtc.ToString("dd MMM yyyy HH:mm") · @comparison.Baseline.Status</small>
-                </div>
-                <div class="compare-metric"><span>Added</span><strong>@comparison.AddedOperations</strong></div>
-                <div class="compare-metric"><span>Removed</span><strong>@comparison.RemovedOperations</strong></div>
-                <div class="compare-metric"><span>Moved</span><strong>@comparison.MovedOperations</strong></div>
-                <div class="compare-metric"><span>Resource changes</span><strong>@comparison.ResourceChangedOperations</strong></div>
-                <div class="compare-metric"><span>Max movement</span><strong>@comparison.MaximumStartMovementMinutes min</strong></div>
-                <div class="compare-plan-card new-plan">
-                    <span>NEW</span>
-                    <strong>@comparison.NewPlan.VersionNumber</strong>
-                    <small>@comparison.NewPlan.CreatedOnUtc.ToString("dd MMM yyyy HH:mm") · @comparison.NewPlan.Status</small>
-                </div>
-            </section>
-
-            <section class="compare-ledger">
-                <div class="compare-ledger-head">
-                    <span>Operation</span><span>Change</span><span>Resource</span><span>Start</span><span>Movement</span>
-                </div>
-                @foreach (var change in comparison.Changes)
+@if (loading)
+{
+    <p class="text-sm text-slate-400">Loading Plan Version history…</p>
+}
+else if (plans.Count < 2)
+{
+    <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center">
+        <strong class="text-slate-700">At least two Plan Versions are required</strong>
+        <p class="mt-1 text-sm text-slate-500">Replanning or scenario runs create the history needed for comparison.</p>
+    </div>
+}
+else
+{
+    <div class="mb-6 flex items-end gap-3 rounded border border-slate-200 bg-white p-4">
+        <label class="flex flex-col gap-1 text-sm">
+            <span class="text-xs text-slate-500">Baseline</span>
+            <select class="rounded border border-slate-300 px-2 py-1" @bind="baselineSelection">
+                @foreach (var plan in plans)
                 {
-                    <div class="compare-ledger-row @(change.ChangeType == PlanOperationChangeType.Unchanged ? "is-unchanged" : null)">
-                        <div><strong>@change.PlanningKey</strong><span>@change.TaskType</span></div>
-                        <span class="change-badge @ChangeClass(change.ChangeType)">@change.ChangeType</span>
-                        <div class="compare-resource-change"><span>@Display(change.BaselineResourceCode)</span><i>→</i><strong>@Display(change.NewResourceCode)</strong></div>
-                        <div class="compare-time-change"><span>@Time(change.BaselineStartUtc)</span><strong>@Time(change.NewStartUtc)</strong></div>
-                        <strong class="movement-value @MovementClass(change.StartMovementMinutes)">@Movement(change.StartMovementMinutes)</strong>
-                    </div>
+                    <option value="@plan.PlanVersionId">@plan.VersionNumber &middot; @plan.CreatedOnUtc.ToString("dd MMM HH:mm")</option>
                 }
-            </section>
-        }
+            </select>
+        </label>
+        <span class="pb-1.5 text-slate-300">&rarr;</span>
+        <label class="flex flex-col gap-1 text-sm">
+            <span class="text-xs text-slate-500">New plan</span>
+            <select class="rounded border border-slate-300 px-2 py-1" @bind="newSelection">
+                @foreach (var plan in plans)
+                {
+                    <option value="@plan.PlanVersionId">@plan.VersionNumber &middot; @plan.CreatedOnUtc.ToString("dd MMM HH:mm")</option>
+                }
+            </select>
+        </label>
+        <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white" @onclick="CompareAsync">Compare</button>
+    </div>
+
+    @if (comparing)
+    {
+        <p class="text-sm text-slate-400">Comparing persisted operations…</p>
     }
-</div>
+    else if (comparison is not null)
+    {
+        <div class="mb-6 grid grid-cols-7 gap-3">
+            <div class="rounded border border-slate-200 bg-white p-3">
+                <div class="text-xs text-slate-400">BASELINE</div>
+                <strong>@comparison.Baseline.VersionNumber</strong>
+                <div class="text-xs text-slate-400">@comparison.Baseline.CreatedOnUtc.ToString("dd MMM HH:mm") &middot; @comparison.Baseline.Status</div>
+            </div>
+            <StatTile Label="Added" Value="@comparison.AddedOperations.ToString()" />
+            <StatTile Label="Removed" Value="@comparison.RemovedOperations.ToString()" />
+            <StatTile Label="Moved" Value="@comparison.MovedOperations.ToString()" />
+            <StatTile Label="Resource changes" Value="@comparison.ResourceChangedOperations.ToString()" />
+            <StatTile Label="Max movement" Value="@($"{comparison.MaximumStartMovementMinutes} min")" />
+            <div class="rounded border border-slate-200 bg-white p-3">
+                <div class="text-xs text-slate-400">NEW</div>
+                <strong>@comparison.NewPlan.VersionNumber</strong>
+                <div class="text-xs text-slate-400">@comparison.NewPlan.CreatedOnUtc.ToString("dd MMM HH:mm") &middot; @comparison.NewPlan.Status</div>
+            </div>
+        </div>
+
+        <section class="rounded border border-slate-200 bg-white">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+                        <th class="px-3 py-2 font-medium">Operation</th>
+                        <th class="px-3 py-2 font-medium">Change</th>
+                        <th class="px-3 py-2 font-medium">Resource</th>
+                        <th class="px-3 py-2 font-medium">Start</th>
+                        <th class="px-3 py-2 font-medium text-right">Movement</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var change in comparison.Changes)
+                    {
+                        <tr class="border-b border-slate-100 last:border-0 @(change.ChangeType == PlanOperationChangeType.Unchanged ? "text-slate-400" : "")">
+                            <td class="px-3 py-1.5"><strong>@change.PlanningKey</strong><div class="text-xs text-slate-400">@change.TaskType</div></td>
+                            <td class="px-3 py-1.5"><span class="rounded px-1.5 py-0.5 text-xs @ChangeClass(change.ChangeType)">@change.ChangeType</span></td>
+                            <td class="px-3 py-1.5 text-xs">@Display(change.BaselineResourceCode) &rarr; <strong>@Display(change.NewResourceCode)</strong></td>
+                            <td class="px-3 py-1.5 text-xs">@Time(change.BaselineStartUtc) &rarr; <strong>@Time(change.NewStartUtc)</strong></td>
+                            <td class="px-3 py-1.5 text-right font-medium @MovementClass(change.StartMovementMinutes)">@Movement(change.StartMovementMinutes)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+}
 
 @code {
     private IReadOnlyCollection<PlanVersionListItemView> plans = Array.Empty<PlanVersionListItemView>();
@@ -134,14 +137,14 @@
     private static string Display(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
     private static string Time(DateTime? value) => value.HasValue ? value.Value.ToString("dd MMM HH:mm") : "—";
     private static string Movement(int minutes) => minutes == 0 ? "—" : minutes > 0 ? $"+{minutes}m" : $"{minutes}m";
-    private static string MovementClass(int minutes) => minutes > 0 ? "later" : minutes < 0 ? "earlier" : "same";
+    private static string MovementClass(int minutes) => minutes > 0 ? "text-amber-600" : minutes < 0 ? "text-sky-600" : "text-slate-400";
     private static string ChangeClass(PlanOperationChangeType change) => change switch
     {
-        PlanOperationChangeType.Added => "added",
-        PlanOperationChangeType.Removed => "removed",
-        PlanOperationChangeType.Moved => "moved",
-        PlanOperationChangeType.ResourceChanged => "resource",
-        PlanOperationChangeType.MovedAndResourceChanged => "moved-resource",
-        _ => "unchanged"
+        PlanOperationChangeType.Added => "bg-emerald-100 text-emerald-700",
+        PlanOperationChangeType.Removed => "bg-rose-100 text-rose-700",
+        PlanOperationChangeType.Moved => "bg-amber-100 text-amber-700",
+        PlanOperationChangeType.ResourceChanged => "bg-violet-100 text-violet-700",
+        PlanOperationChangeType.MovedAndResourceChanged => "bg-violet-100 text-violet-700",
+        _ => "bg-slate-100 text-slate-500"
     };
 }

@@ -1,6 +1,10 @@
 using APS.Application;
-using APS.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+namespace APS.Infrastructure;
 
 /// <summary>
 /// Keeps time-based resource commitment current even when no MES/manual execution event arrives.

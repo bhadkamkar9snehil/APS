@@ -1,0 +1,172 @@
+@page "/operate/traceability"
+@inject ITraceabilityService TraceabilityService
+
+<PageTitle>Traceability - APS</PageTitle>
+
+<h1 class="mb-1 text-lg font-semibold">Traceability</h1>
+<p class="mb-6 text-sm text-slate-500">Commercial lineage for a Work Order, or physical genealogy for a material lot.</p>
+
+<div class="mb-6 flex gap-1 border-b border-slate-200">
+    <button type="button" class="border-b-2 px-3 py-2 text-sm @(mode == "wo" ? "border-accent font-medium text-accent" : "border-transparent text-slate-500")" @onclick='() => mode = "wo"'>Work Order</button>
+    <button type="button" class="border-b-2 px-3 py-2 text-sm @(mode == "lot" ? "border-accent font-medium text-accent" : "border-transparent text-slate-500")" @onclick='() => mode = "lot"'>Material Lot</button>
+</div>
+
+@if (mode == "wo")
+{
+    <div class="mb-4 flex items-end gap-2">
+        <label class="flex flex-col gap-1 text-sm">
+            <span class="text-xs text-slate-500">Work Order ID</span>
+            <input class="w-96 rounded border border-slate-300 px-2 py-1 font-mono text-xs" @bind="workOrderIdInput" />
+        </label>
+        <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white" @onclick="LoadWorkOrderTraceAsync">Look up</button>
+    </div>
+
+    @if (workOrderError is not null)
+    {
+        <p class="text-sm text-rose-600">@workOrderError</p>
+    }
+    else if (workOrderTrace is { } wo)
+    {
+        <div class="mb-4 rounded border border-slate-200 bg-white p-4">
+            <h2 class="text-base font-semibold">@wo.WorkOrderNumber</h2>
+            <p class="text-sm text-slate-500">@wo.WorkOrderType &middot; planned @wo.PlannedQuantityMt.ToString("0.##") MT &middot; actual @wo.ActualQuantityMt.ToString("0.##") MT</p>
+        </div>
+
+        <section class="mb-4 rounded border border-slate-200 bg-white">
+            <div class="border-b border-slate-200 px-3 py-2 text-sm font-semibold">Production Orders (@wo.ProductionOrders.Count)</div>
+            <Table Headers="@(new[] {"PO", "Source", "SO / Item", "Allocated qty"})">
+                @foreach (var po in wo.ProductionOrders)
+                {
+                    <tr class="border-b border-slate-100 last:border-0">
+                        <td class="px-3 py-1.5">@po.ProductionOrderNumber</td>
+                        <td class="px-3 py-1.5">@po.DemandSource</td>
+                        <td class="px-3 py-1.5">@(po.SalesOrderNumber is null ? "—" : $"{po.SalesOrderNumber}/{po.SalesOrderItem}")</td>
+                        <td class="px-3 py-1.5 text-right">@po.AllocatedQuantityMt.ToString("0.##")</td>
+                    </tr>
+                }
+            </Table>
+        </section>
+
+        <section class="rounded border border-slate-200 bg-white">
+            <div class="border-b border-slate-200 px-3 py-2 text-sm font-semibold">Produced lots (@wo.ProducedLots.Count)</div>
+            <Table Headers="@(new[] {"Lot", "Grade", "Section", "Qty"})">
+                @foreach (var lot in wo.ProducedLots)
+                {
+                    <tr class="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50" @onclick="() => JumpToLot(lot.MaterialLotId)">
+                        <td class="px-3 py-1.5 font-mono text-xs">@lot.LotNumber</td>
+                        <td class="px-3 py-1.5">@lot.GradeCode</td>
+                        <td class="px-3 py-1.5">@lot.CrossSectionCode</td>
+                        <td class="px-3 py-1.5 text-right">@lot.QuantityMt.ToString("0.##")</td>
+                    </tr>
+                }
+            </Table>
+        </section>
+    }
+}
+else
+{
+    <div class="mb-4 flex items-end gap-2">
+        <label class="flex flex-col gap-1 text-sm">
+            <span class="text-xs text-slate-500">Material Lot ID</span>
+            <input class="w-96 rounded border border-slate-300 px-2 py-1 font-mono text-xs" @bind="lotIdInput" />
+        </label>
+        <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white" @onclick="LoadLotTraceAsync">Look up</button>
+    </div>
+
+    @if (lotError is not null)
+    {
+        <p class="text-sm text-rose-600">@lotError</p>
+    }
+    else if (lotTrace is { } lot)
+    {
+        <div class="mb-4 rounded border border-slate-200 bg-white p-4">
+            <h2 class="text-base font-semibold">@lot.LotNumber</h2>
+            <p class="text-sm text-slate-500">@lot.MaterialCode &middot; @lot.GradeCode / @lot.CrossSectionCode &middot; @lot.QuantityMt.ToString("0.##") MT</p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+            <section class="rounded border border-slate-200 bg-white">
+                <div class="border-b border-slate-200 px-3 py-2 text-sm font-semibold">Parent lots (@lot.ParentLots.Count)</div>
+                <Table Headers="@(new[] {"Lot", "Qty"})">
+                    @foreach (var parent in lot.ParentLots)
+                    {
+                        <tr class="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50" @onclick="() => JumpToLot(parent.MaterialLotId)">
+                            <td class="px-3 py-1.5 font-mono text-xs">@parent.LotNumber</td>
+                            <td class="px-3 py-1.5 text-right">@parent.QuantityMt.ToString("0.##")</td>
+                        </tr>
+                    }
+                </Table>
+            </section>
+            <section class="rounded border border-slate-200 bg-white">
+                <div class="border-b border-slate-200 px-3 py-2 text-sm font-semibold">Child lots (@lot.ChildLots.Count)</div>
+                <Table Headers="@(new[] {"Lot", "Qty"})">
+                    @foreach (var child in lot.ChildLots)
+                    {
+                        <tr class="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50" @onclick="() => JumpToLot(child.MaterialLotId)">
+                            <td class="px-3 py-1.5 font-mono text-xs">@child.LotNumber</td>
+                            <td class="px-3 py-1.5 text-right">@child.QuantityMt.ToString("0.##")</td>
+                        </tr>
+                    }
+                </Table>
+            </section>
+        </div>
+
+        <section class="mt-4 rounded border border-slate-200 bg-white">
+            <div class="border-b border-slate-200 px-3 py-2 text-sm font-semibold">Allocated Production Orders (@lot.AllocatedProductionOrders.Count)</div>
+            <Table Headers="@(new[] {"PO", "Source", "SO / Item", "Allocated qty"})">
+                @foreach (var po in lot.AllocatedProductionOrders)
+                {
+                    <tr class="border-b border-slate-100 last:border-0">
+                        <td class="px-3 py-1.5">@po.ProductionOrderNumber</td>
+                        <td class="px-3 py-1.5">@po.DemandSource</td>
+                        <td class="px-3 py-1.5">@(po.SalesOrderNumber is null ? "—" : $"{po.SalesOrderNumber}/{po.SalesOrderItem}")</td>
+                        <td class="px-3 py-1.5 text-right">@po.AllocatedQuantityMt.ToString("0.##")</td>
+                    </tr>
+                }
+            </Table>
+        </section>
+    }
+}
+
+@code {
+    private string mode = "wo";
+    private string workOrderIdInput = "";
+    private string lotIdInput = "";
+    private WorkOrderTrace? workOrderTrace;
+    private MaterialLotTrace? lotTrace;
+    private string? workOrderError;
+    private string? lotError;
+
+    private async Task LoadWorkOrderTraceAsync()
+    {
+        workOrderError = null;
+        workOrderTrace = null;
+        if (!Guid.TryParse(workOrderIdInput, out var id))
+        {
+            workOrderError = "Enter a valid Work Order ID (GUID).";
+            return;
+        }
+        workOrderTrace = await TraceabilityService.GetWorkOrderTraceAsync(id);
+        if (workOrderTrace is null) workOrderError = "No trace found for that Work Order ID.";
+    }
+
+    private async Task LoadLotTraceAsync()
+    {
+        lotError = null;
+        lotTrace = null;
+        if (!Guid.TryParse(lotIdInput, out var id))
+        {
+            lotError = "Enter a valid Material Lot ID (GUID).";
+            return;
+        }
+        lotTrace = await TraceabilityService.GetMaterialLotTraceAsync(id);
+        if (lotTrace is null) lotError = "No trace found for that Material Lot ID.";
+    }
+
+    private void JumpToLot(Guid materialLotId)
+    {
+        mode = "lot";
+        lotIdInput = materialLotId.ToString();
+        _ = LoadLotTraceAsync();
+    }
+}

@@ -3,8 +3,6 @@ using APS.Application;
 using APS.Domain;
 using APS.Infrastructure;
 using APS.Planning;
-using APS.Service.Components;
-using APS.UI.State;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -18,58 +16,20 @@ builder.Host.UseSerilog((context, services, logger) => logger
     .WriteTo.Console());
 
 builder.Services.AddProblemDetails();
-builder.Services.AddRazorComponents().AddInteractiveServerComponents();
-builder.Services.AddScoped<PlannerWorkspaceState>();
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
 });
 
-builder.Services.AddScoped<IMtsProductionOrderService, MtsProductionOrderService>();
-builder.Services.AddScoped<ICampaignPlanningService, CampaignPlanningService>();
-builder.Services.AddScoped<IProductionStructurePlanningService, ProductionStructurePlanningService>();
-builder.Services.AddScoped<IFiniteScheduleOptimizer, FiniteScheduleOptimizer>();
-builder.Services.AddScoped<IRecursiveMaterialRequirementEngine, RecursiveMaterialRequirementEngine>();
-builder.Services.AddScoped<PlanningEngine>();
-builder.Services.AddScoped<IPlanningEngine, BomAwarePlanningEngine>();
-builder.Services.AddScoped<IPlanReleaseBuilder, PlanReleaseBuilder>();
-
-var apsConnection = builder.Configuration.GetConnectionString("APS");
-var hasApsDatabase = !string.IsNullOrWhiteSpace(apsConnection);
-var demoModeEnabled = builder.Configuration.GetValue<bool>("APS:DemoModeEnabled");
-
-if (hasApsDatabase)
-{
-    builder.Services.AddDbContext<ApsDbContext>(options => options.UseSqlServer(apsConnection));
-    builder.Services.AddScoped<ITraceabilityService, TraceabilityService>();
-    builder.Services.AddScoped<IWorkOrderExecutionService, WorkOrderExecutionService>();
-    builder.Services.AddScoped<IHeatExecutionService, HeatExecutionService>();
-    builder.Services.AddScoped<IOperationExecutionService, OperationExecutionService>();
-    builder.Services.AddHostedService<OperationCommitmentHostedService>();
-    builder.Services.AddScoped<IInventorySnapshotProvider, SqlInventorySnapshotProvider>();
-    builder.Services.AddScoped<IReplanningActualStateProvider, ReplanningActualStateProvider>();
-    builder.Services.AddScoped<IPlanVersionRepository, PlanVersionRepository>();
-    builder.Services.AddScoped<IPlanReleaseRepository, PlanReleaseRepository>();
-    builder.Services.AddScoped<IPersistedPlanReleaseService, PersistedPlanReleaseService>();
-    builder.Services.AddScoped<IPlanComparisonService, PlanComparisonService>();
-    builder.Services.AddScoped<IPlannerWorkspaceQueryService, PlannerWorkspaceQueryService>();
-    builder.Services.AddScoped<IPlanningMasterDataProvider, SqlPlanningMasterDataProvider>();
-    builder.Services.AddScoped<IProductionDemandOrchestrationService, ProductionDemandOrchestrationService>();
-    builder.Services.AddScoped<IPlanningLifecycleService, PlanningLifecycleService>();
-}
-else
-{
-    builder.Services.AddScoped<IPlannerWorkspaceQueryService>(
-        _ => new UnavailablePlannerWorkspaceQueryService(demoModeEnabled));
-}
+var apsRegistration = builder.Services.AddApsInfrastructure(builder.Configuration);
+var hasApsDatabase = apsRegistration.HasApsDatabase;
+var demoModeEnabled = apsRegistration.DemoModeEnabled;
 
 var app = builder.Build();
 app.UseSerilogRequestLogging();
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
-app.MapStaticAssets();
-app.UseAntiforgery();
 
 app.MapGet("/api/health", () => Results.Ok(new
 {
@@ -440,11 +400,6 @@ if (hasApsDatabase)
             return trace is null ? Results.NotFound() : Results.Ok(trace);
         });
 }
-
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode()
-    .AddAdditionalAssemblies(typeof(APS.UI.Components.Layout.MainLayout).Assembly)
-    .WithStaticAssets();
 
 app.Run();
 

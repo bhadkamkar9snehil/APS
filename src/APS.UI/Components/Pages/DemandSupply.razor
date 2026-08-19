@@ -1,153 +1,182 @@
 @page "/plan/demand"
 @implements IDisposable
 @inject IPlannerWorkspaceQueryService PlannerQuery
+@inject IProductionDemandOrchestrationService Demand
 @inject PlannerWorkspaceState WorkspaceState
 
 <PageTitle>Demand & Supply - APS</PageTitle>
 
-<div class="planner-page">
-    <header class="workspace-titlebar">
-        <div>
-            <span class="workspace-eyebrow">PLAN / DEMAND</span>
-            <h1>Demand & Supply</h1>
-            <p>How each Production Order is covered before fresh steel is created.</p>
-        </div>
-        @if (view is not null)
-        {
-            <div class="workspace-basis">
-                <span>Basis</span>
-                <strong>@view.Plan.VersionNumber snapshot</strong>
-            </div>
-        }
-    </header>
-
-    @if (loading)
-    {
-        <div class="planner-empty-state"><strong>Loading demand coverage…</strong></div>
-    }
-    else if (view is null)
-    {
-        <div class="planner-empty-state planner-empty-state-major">
-            <strong>No persisted demand snapshot</strong>
-            <p>Run and persist a Plan Version before using the production Demand & Supply workspace.</p>
-        </div>
-    }
-    else
-    {
-        <section class="demand-total-strip">
-            <div>
-                <span>Remaining demand</span>
-                <strong>@view.TotalRemainingQuantityMt.ToString("0.##") MT</strong>
-                <small>@view.MakeToOrderCount MTO · @view.MakeToStockCount MTS</small>
-            </div>
-            <div class="demand-total-flow">
-                <div class="coverage-track coverage-track-large" aria-label="Aggregate supply coverage">
-                    @CoverageSegment(view.FinishedGoodsAllocatedMt, view.TotalRemainingQuantityMt, "coverage-fg", "FG")
-                    @CoverageSegment(view.ExistingIntermediateAllocatedMt, view.TotalRemainingQuantityMt, "coverage-billet", "Billet")
-                    @CoverageSegment(view.ExternalIntermediateAllocatedMt, view.TotalRemainingQuantityMt, "coverage-external", "External")
-                    @CoverageSegment(view.FreshSteelRequirementMt, view.TotalRemainingQuantityMt, "coverage-fresh", "Fresh")
-                    @CoverageSegment(view.UncoveredQuantityMt, view.TotalRemainingQuantityMt, "coverage-uncovered", "Gap")
-                </div>
-                <div class="coverage-legend">
-                    <span><i class="coverage-fg"></i>FG @view.FinishedGoodsAllocatedMt.ToString("0.##")</span>
-                    <span><i class="coverage-billet"></i>Existing billet @view.ExistingIntermediateAllocatedMt.ToString("0.##")</span>
-                    <span><i class="coverage-external"></i>External @view.ExternalIntermediateAllocatedMt.ToString("0.##")</span>
-                    <span><i class="coverage-fresh"></i>Fresh steel @view.FreshSteelRequirementMt.ToString("0.##")</span>
-                    @if (view.UncoveredQuantityMt > 0m)
-                    {
-                        <span class="is-danger"><i class="coverage-uncovered"></i>Uncovered @view.UncoveredQuantityMt.ToString("0.##")</span>
-                    }
-                </div>
-            </div>
-        </section>
-
-        <section class="planner-ledger">
-            <div class="planner-ledger-head demand-grid">
-                <span>Demand</span>
-                <span>Requirement</span>
-                <span>Coverage</span>
-                <span>Due</span>
-                <span>Status</span>
-            </div>
-
-            @foreach (var row in view.Rows)
-            {
-                <button class="planner-ledger-row demand-grid" type="button" @onclick="() => SelectProductionOrder(row)">
-                    <div class="demand-identity">
-                        <div class="demand-id-line">
-                            <span class="source-badge @(row.DemandSource == DemandSourceType.MakeToOrder ? "mto" : "mts")">@(row.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</span>
-                            <strong>@row.ProductionOrderNumber</strong>
-                        </div>
-                        @if (!string.IsNullOrWhiteSpace(row.SalesOrderNumber))
-                        {
-                            <span>SO @row.SalesOrderNumber / @row.SalesOrderItemNumber · @Display(row.CustomerCode)</span>
-                        }
-                        else
-                        {
-                            <span>@Display(row.StockPolicyCode) · target @FormatNullable(row.TargetStockMt) MT</span>
-                        }
-                    </div>
-
-                    <div class="demand-requirement">
-                        <strong>@row.GradeCode · @row.FinalCrossSectionCode</strong>
-                        <span>@row.MaterialCode · route @row.RouteCode</span>
-                        <div class="requirement-flags">
-                            @if (row.VdRequirement != RequirementDisposition.Optional)
-                            {
-                                <em>VD @row.VdRequirement</em>
-                            }
-                            @if (row.ReheatRequirement != RequirementDisposition.Optional)
-                            {
-                                <em>RHF @row.ReheatRequirement</em>
-                            }
-                            @if (row.TmtRequirement != RequirementDisposition.Optional)
-                            {
-                                <em>TMT @row.TmtRequirement</em>
-                            }
-                            @if (row.SegregationPolicy != SegregationPolicy.None)
-                            {
-                                <em>@row.SegregationPolicy</em>
-                            }
-                            @if (!row.HotChargeAllowed)
-                            {
-                                <em>NO HOT CHARGE</em>
-                            }
-                        </div>
-                    </div>
-
-                    <div class="demand-coverage-cell">
-                        <div class="coverage-track" aria-label="@row.CoveredQuantityMt MT covered of @row.RemainingQuantityMt MT">
-                            @CoverageSegment(row.FinishedGoodsAllocatedMt, row.RemainingQuantityMt, "coverage-fg", "FG")
-                            @CoverageSegment(row.ExistingIntermediateAllocatedMt, row.RemainingQuantityMt, "coverage-billet", "Billet")
-                            @CoverageSegment(row.ExternalIntermediateAllocatedMt, row.RemainingQuantityMt, "coverage-external", "External")
-                            @CoverageSegment(row.FreshSteelRequirementMt, row.RemainingQuantityMt, "coverage-fresh", "Fresh")
-                            @CoverageSegment(row.UncoveredQuantityMt, row.RemainingQuantityMt, "coverage-uncovered", "Gap")
-                        </div>
-                        <div class="coverage-numbers">
-                            <strong>@row.RemainingQuantityMt.ToString("0.##") MT</strong>
-                            <span>FG @row.FinishedGoodsAllocatedMt.ToString("0.#") · Bil @row.ExistingIntermediateAllocatedMt.ToString("0.#") · Ext @row.ExternalIntermediateAllocatedMt.ToString("0.#") · Fresh @row.FreshSteelRequirementMt.ToString("0.#")</span>
-                        </div>
-                    </div>
-
-                    <div class="demand-due">
-                        <strong>@row.RequiredDate.ToString("dd MMM")</strong>
-                        <span>@row.RequiredDate.ToString("yyyy HH:mm")</span>
-                        <small>Priority @row.Priority</small>
-                    </div>
-
-                    <div class="demand-state">
-                        <span class="planner-status @(row.UncoveredQuantityMt > 0m ? "is-bad" : "is-good")">@(row.UncoveredQuantityMt > 0m ? "UNCOVERED" : "COVERED")</span>
-                        <small>@row.Status</small>
-                    </div>
-                </button>
-            }
-        </section>
-    }
+<div class="mb-4 flex items-start justify-between">
+    <div>
+        <h1 class="text-lg font-semibold">Demand &amp; Supply</h1>
+        <p class="text-sm text-slate-500">How each Production Order is covered before fresh steel is created.</p>
+    </div>
+    <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50" disabled="@reconciling" @onclick="ToggleReconcileForm">
+        Reconcile Sales Orders
+    </button>
 </div>
+
+@if (showReconcileForm)
+{
+    <section class="mb-6 rounded border border-slate-200 bg-white p-4">
+        <h2 class="mb-3 text-sm font-semibold">Add Sales Order line and reconcile</h2>
+        <div class="grid grid-cols-4 gap-3 text-sm">
+            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">SO number</span><input class="rounded border border-slate-300 px-2 py-1" @bind="soNumber" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Item</span><input class="rounded border border-slate-300 px-2 py-1" @bind="soItem" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Material code</span><input class="rounded border border-slate-300 px-2 py-1" @bind="materialCode" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Grade</span><input class="rounded border border-slate-300 px-2 py-1" @bind="gradeCode" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Final section</span><input class="rounded border border-slate-300 px-2 py-1" @bind="crossSectionCode" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Order qty (MT)</span><input type="number" class="rounded border border-slate-300 px-2 py-1" @bind="orderQuantityMt" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Open qty (MT)</span><input type="number" class="rounded border border-slate-300 px-2 py-1" @bind="openQuantityMt" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Required date</span><input type="date" class="rounded border border-slate-300 px-2 py-1" @bind="requiredDate" /></label>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(reconcileError))
+        {
+            <p class="mt-2 text-sm text-rose-600">@reconcileError</p>
+        }
+        <div class="mt-3 flex gap-2">
+            <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50" disabled="@reconciling" @onclick="SubmitReconcileAsync">
+                @(reconciling ? "Reconciling…" : "Submit and reconcile")
+            </button>
+            <button type="button" class="rounded border border-slate-300 px-3 py-1.5 text-sm" @onclick="ToggleReconcileForm">Cancel</button>
+        </div>
+    </section>
+}
+
+@if (loading)
+{
+    <p class="text-sm text-slate-400">Loading demand coverage…</p>
+}
+else if (view is null)
+{
+    <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center">
+        <strong class="text-slate-700">No persisted demand snapshot</strong>
+        <p class="mt-1 text-sm text-slate-500">Run and persist a Plan Version before using the production Demand &amp; Supply workspace.</p>
+    </div>
+}
+else
+{
+    <div class="mb-6 grid grid-cols-6 gap-3">
+        <StatTile Label="Remaining demand" Value="@($"{view.TotalRemainingQuantityMt:0.##} MT")" Sub="@($"{view.MakeToOrderCount} MTO / {view.MakeToStockCount} MTS")" />
+        <StatTile Label="FG covered" Value="@($"{view.FinishedGoodsAllocatedMt:0.##} MT")" />
+        <StatTile Label="Existing billet" Value="@($"{view.ExistingIntermediateAllocatedMt:0.##} MT")" />
+        <StatTile Label="External billet" Value="@($"{view.ExternalIntermediateAllocatedMt:0.##} MT")" />
+        <StatTile Label="Fresh steel" Value="@($"{view.FreshSteelRequirementMt:0.##} MT")" />
+        <StatTile Label="Uncovered" Value="@($"{view.UncoveredQuantityMt:0.##} MT")" />
+    </div>
+
+    <section class="rounded border border-slate-200 bg-white">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+                    <th class="px-3 py-2 font-medium">Production Order</th>
+                    <th class="px-3 py-2 font-medium">Requirement</th>
+                    <th class="px-3 py-2 font-medium">Coverage</th>
+                    <th class="px-3 py-2 font-medium">Due</th>
+                    <th class="px-3 py-2 font-medium">Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in view.Rows)
+                {
+                    <tr class="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50" @onclick="() => SelectProductionOrder(row)">
+                        <td class="px-3 py-2">
+                            <span class="mr-1 rounded px-1.5 py-0.5 text-xs font-medium @(row.DemandSource == DemandSourceType.MakeToOrder ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600")">@(row.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</span>
+                            <strong>@row.ProductionOrderNumber</strong>
+                            <div class="text-xs text-slate-400">
+                                @if (!string.IsNullOrWhiteSpace(row.SalesOrderNumber))
+                                {
+                                    @($"SO {row.SalesOrderNumber}/{row.SalesOrderItemNumber} · {Display(row.CustomerCode)}")
+                                }
+                                else
+                                {
+                                    @($"{Display(row.StockPolicyCode)} · target {FormatNullable(row.TargetStockMt)} MT")
+                                }
+                            </div>
+                        </td>
+                        <td class="px-3 py-2">
+                            <strong>@row.GradeCode &middot; @row.FinalCrossSectionCode</strong>
+                            <div class="text-xs text-slate-400">@row.MaterialCode &middot; route @row.RouteCode</div>
+                            <div class="mt-0.5 flex flex-wrap gap-1 text-xs">
+                                @if (row.VdRequirement != RequirementDisposition.Optional) { <span class="rounded bg-slate-100 px-1">VD @row.VdRequirement</span> }
+                                @if (row.ReheatRequirement != RequirementDisposition.Optional) { <span class="rounded bg-slate-100 px-1">RHF @row.ReheatRequirement</span> }
+                                @if (row.TmtRequirement != RequirementDisposition.Optional) { <span class="rounded bg-slate-100 px-1">TMT @row.TmtRequirement</span> }
+                                @if (row.SegregationPolicy != SegregationPolicy.None) { <span class="rounded bg-slate-100 px-1">@row.SegregationPolicy</span> }
+                                @if (!row.HotChargeAllowed) { <span class="rounded bg-amber-100 px-1 text-amber-700">NO HOT CHARGE</span> }
+                            </div>
+                        </td>
+                        <td class="w-56 px-3 py-2">
+                            <div class="flex h-2 overflow-hidden rounded bg-slate-100">
+                                @CoverageSegment(row.FinishedGoodsAllocatedMt, row.RemainingQuantityMt, "bg-emerald-500")
+                                @CoverageSegment(row.ExistingIntermediateAllocatedMt, row.RemainingQuantityMt, "bg-sky-500")
+                                @CoverageSegment(row.ExternalIntermediateAllocatedMt, row.RemainingQuantityMt, "bg-violet-500")
+                                @CoverageSegment(row.FreshSteelRequirementMt, row.RemainingQuantityMt, "bg-orange-500")
+                                @CoverageSegment(row.UncoveredQuantityMt, row.RemainingQuantityMt, "bg-rose-500")
+                            </div>
+                            <div class="mt-1 text-xs text-slate-400">@row.RemainingQuantityMt.ToString("0.##") MT total</div>
+                        </td>
+                        <td class="px-3 py-2">
+                            <strong>@row.RequiredDate.ToString("dd MMM")</strong>
+                            <div class="text-xs text-slate-400">Priority @row.Priority</div>
+                        </td>
+                        <td class="px-3 py-2">
+                            <span class="rounded px-1.5 py-0.5 text-xs font-medium @(row.UncoveredQuantityMt > 0m ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700")">@(row.UncoveredQuantityMt > 0m ? "UNCOVERED" : "COVERED")</span>
+                            <div class="text-xs text-slate-400">@row.Status</div>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </section>
+
+    @if (view.SalesOrders is { Count: > 0 } salesOrders)
+    {
+        <section class="mt-6 rounded border border-slate-200 bg-white">
+            <div class="border-b border-slate-200 px-3 py-2 text-sm font-semibold">Sales Order coverage (@salesOrders.Count)</div>
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+                        <th class="px-3 py-2 font-medium">SO / Item</th>
+                        <th class="px-3 py-2 font-medium">Open demand</th>
+                        <th class="px-3 py-2 font-medium">FG covered</th>
+                        <th class="px-3 py-2 font-medium">Mfg requirement</th>
+                        <th class="px-3 py-2 font-medium">Disposition</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var so in salesOrders)
+                    {
+                        <tr class="border-b border-slate-100 last:border-0">
+                            <td class="px-3 py-2"><strong>@so.SalesOrderNumber</strong> / @so.SalesOrderItemNumber<div class="text-xs text-slate-400">@Display(so.CustomerCode)</div></td>
+                            <td class="px-3 py-2">@so.OpenDemandQuantityMt.ToString("0.##") MT</td>
+                            <td class="px-3 py-2">@so.FinishedGoodsCoveredQuantityMt.ToString("0.##") MT</td>
+                            <td class="px-3 py-2">@so.ManufacturingRequirementQuantityMt.ToString("0.##") MT</td>
+                            <td class="px-3 py-2">
+                                <span class="rounded px-1.5 py-0.5 text-xs @(so.PlannerAttentionRequired ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600")">@so.Disposition</span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
+}
 
 @code {
     private DemandSupplyView? view;
     private bool loading = true;
+    private bool showReconcileForm;
+    private bool reconciling;
+    private string? reconcileError;
+
+    private string soNumber = "";
+    private string soItem = "10";
+    private string materialCode = "";
+    private string gradeCode = "";
+    private string crossSectionCode = "";
+    private decimal orderQuantityMt;
+    private decimal openQuantityMt;
+    private DateTime requiredDate = DateTime.UtcNow.Date.AddDays(14);
 
     protected override async Task OnInitializedAsync()
     {
@@ -171,20 +200,50 @@
         }
     }
 
+    private void ToggleReconcileForm()
+    {
+        showReconcileForm = !showReconcileForm;
+        reconcileError = null;
+    }
+
+    private async Task SubmitReconcileAsync()
+    {
+        reconciling = true;
+        reconcileError = null;
+        StateHasChanged();
+        try
+        {
+            var input = new SalesOrderDemandInput(
+                soNumber, soItem, materialCode, gradeCode, crossSectionCode,
+                orderQuantityMt, openQuantityMt, requiredDate);
+            await Demand.ReconcileSalesOrdersAsync(new[] { input });
+            showReconcileForm = false;
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            reconcileError = ex.Message;
+        }
+        finally
+        {
+            reconciling = false;
+            StateHasChanged();
+        }
+    }
+
     private void SelectProductionOrder(DemandSupplyRowView row) =>
         WorkspaceState.Select(new PlannerEntityRef(
             PlannerEntityType.ProductionOrder,
             row.ProductionOrderId,
             row.ProductionOrderNumber));
 
-    private RenderFragment CoverageSegment(decimal quantity, decimal total, string cssClass, string label) => builder =>
+    private RenderFragment CoverageSegment(decimal quantity, decimal total, string cssClass) => builder =>
     {
         if (quantity <= 0m || total <= 0m) return;
         var pct = Math.Clamp(quantity / total * 100m, 0m, 100m);
-        builder.OpenElement(0, "span");
+        builder.OpenElement(0, "div");
         builder.AddAttribute(1, "class", cssClass);
         builder.AddAttribute(2, "style", $"width:{pct.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)}%");
-        builder.AddAttribute(3, "title", $"{label}: {quantity:0.##} MT");
         builder.CloseElement();
     };
 

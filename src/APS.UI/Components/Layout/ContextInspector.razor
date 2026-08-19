@@ -1,36 +1,27 @@
 @implements IDisposable
 @inject PlannerWorkspaceState WorkspaceState
 
-<aside class="planner-inspector @(WorkspaceState.SelectedEntity is null ? "is-empty" : "is-open")" aria-label="Selected entity details">
-    @if (WorkspaceState.SelectedEntity is null)
+<aside class="@(WorkspaceState.SelectedEntity is null ? "w-0 overflow-hidden" : "w-72 shrink-0") border-l border-slate-200 bg-white transition-all" aria-label="Selected entity details">
+    @if (WorkspaceState.SelectedEntity is { } selected)
     {
-        <div class="planner-inspector-empty">
-            <span class="planner-inspector-mark">↗</span>
-            <strong>Context</strong>
-            <p>Select an order, campaign, heat, operation, resource or material object to keep its lineage in view.</p>
-        </div>
-    }
-    else
-    {
-        var selected = WorkspaceState.SelectedEntity;
-        <div class="planner-inspector-head">
+        <div class="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
             <div>
-                <span class="planner-context-kicker">@selected.EntityType</span>
+                <div class="text-xs font-semibold uppercase tracking-wide text-slate-400">@selected.EntityType</div>
                 <strong>@selected.DisplayCode</strong>
             </div>
-            <button class="planner-icon-button" type="button" title="Close inspector" @onclick="WorkspaceState.ClearSelection">×</button>
+            <button type="button" class="rounded px-2 py-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Close" @onclick="WorkspaceState.ClearSelection">&times;</button>
         </div>
-        <div class="planner-inspector-body">
+        <div class="space-y-4 px-4 py-3">
             <section>
-                <span class="planner-section-label">Identity</span>
-                <dl class="planner-definition-list">
-                    <div><dt>Type</dt><dd>@selected.EntityType</dd></div>
-                    <div><dt>ID</dt><dd class="planner-mono">@selected.EntityId</dd></div>
+                <div class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Identity</div>
+                <dl class="space-y-1 text-xs">
+                    <div class="flex justify-between gap-2"><dt class="text-slate-500">Type</dt><dd>@selected.EntityType</dd></div>
+                    <div class="flex justify-between gap-2"><dt class="text-slate-500">ID</dt><dd class="truncate font-mono">@selected.EntityId</dd></div>
                 </dl>
             </section>
-            <section class="planner-inspector-note">
+            <p class="text-xs text-slate-400">
                 Type-specific lineage, requirements, diagnostics and safe actions are populated by the workspace read models as each production surface is implemented.
-            </section>
+            </p>
         </div>
     }
 </aside>

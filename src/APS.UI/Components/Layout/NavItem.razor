@@ -1,0 +1,9 @@
+<NavLink href="@Href" Match="Match" class="block rounded px-2 py-1.5 text-slate-700 hover:bg-slate-100" ActiveClass="bg-accent-soft text-accent font-medium">
+    @Label
+</NavLink>
+
+@code {
+    [Parameter] public string Href { get; set; } = string.Empty;
+    [Parameter] public string Label { get; set; } = string.Empty;
+    [Parameter] public NavLinkMatch Match { get; set; } = NavLinkMatch.Prefix;
+}

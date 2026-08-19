@@ -7,9 +7,9 @@
 
 <PageTitle>Planning Sandbox - APS Demo</PageTitle>
 
-<div class="aps-panel">
-    <h2>Planning Sandbox</h2>
-    <p style="color:var(--aps-muted); margin-top:-0.4rem;">
+<div class="rounded border border-slate-200 bg-white p-4">
+    <h2 class="text-base font-semibold">Planning Sandbox</h2>
+    <p class="mt-1 text-sm text-slate-500">
         Explicit demo/reference surface. Runs the real campaign &rarr; structure &rarr; CP-SAT calculation kernel
         (<code>IPlanningEngine</code>) against a built-in long-products sample scenario.
         It does not create authoritative production Plan Versions or Work Orders.
@@ -17,30 +17,30 @@
 
     @if (!demoModeEnabled)
     {
-        <div class="aps-issue error">
+        <div class="mt-3 rounded bg-rose-50 px-3 py-2 text-sm text-rose-700">
             Demo mode is disabled. Set <code>APS:DemoModeEnabled=true</code> explicitly to use this sandbox.
         </div>
     }
 
-    <div class="aps-controls">
-        <div class="aps-field">
-            <label for="horizonDays">Horizon (days)</label>
-            <input id="horizonDays" type="number" min="1" max="21" @bind="horizonDays" disabled="@(!demoModeEnabled)" />
-        </div>
-        <div class="aps-field">
-            <label for="solverSeconds">Max solver seconds</label>
-            <input id="solverSeconds" type="number" min="1" max="60" @bind="maxSolverSeconds" disabled="@(!demoModeEnabled)" />
-        </div>
-        <div class="aps-checkbox">
-            <input id="infeasible" type="checkbox" @bind="includeInfeasibleOrder" disabled="@(!demoModeEnabled)" />
-            <label for="infeasible">Include an order with no eligible resource (demonstrates issue reporting)</label>
-        </div>
-        <button class="aps-btn" @onclick="RunPlanningAsync" disabled="@(!demoModeEnabled || isRunning)">
-            @(isRunning ? "Running..." : "Run Demo Planning")
+    <div class="mt-4 flex flex-wrap items-end gap-4 text-sm">
+        <label class="flex flex-col gap-1">
+            <span class="text-xs text-slate-500">Horizon (days)</span>
+            <input type="number" min="1" max="21" class="w-24 rounded border border-slate-300 px-2 py-1" @bind="horizonDays" disabled="@(!demoModeEnabled)" />
+        </label>
+        <label class="flex flex-col gap-1">
+            <span class="text-xs text-slate-500">Max solver seconds</span>
+            <input type="number" min="1" max="60" class="w-28 rounded border border-slate-300 px-2 py-1" @bind="maxSolverSeconds" disabled="@(!demoModeEnabled)" />
+        </label>
+        <label class="flex items-center gap-2">
+            <input type="checkbox" @bind="includeInfeasibleOrder" disabled="@(!demoModeEnabled)" />
+            <span>Include an order with no eligible resource</span>
+        </label>
+        <button type="button" class="rounded bg-accent px-3 py-1.5 font-medium text-white disabled:opacity-50" @onclick="RunPlanningAsync" disabled="@(!demoModeEnabled || isRunning)">
+            @(isRunning ? "Running…" : "Run Demo Planning")
         </button>
         @if (result is not null)
         {
-            <button class="aps-btn secondary" @onclick="BuildReleaseAsync" disabled="@(!demoModeEnabled || isRunning || !result.IsFeasible)">
+            <button type="button" class="rounded border border-slate-300 px-3 py-1.5 font-medium disabled:opacity-50" @onclick="BuildReleaseAsync" disabled="@(!demoModeEnabled || isRunning || !result.IsFeasible)">
                 Build Demo Release
             </button>
         }
@@ -48,24 +48,24 @@
 
     @if (isRunning)
     {
-        <p class="aps-loading">Solving with CP-SAT&hellip;</p>
+        <p class="mt-3 text-sm text-slate-400">Solving with CP-SAT&hellip;</p>
     }
     @if (errorMessage is not null)
     {
-        <div class="aps-issue error">@errorMessage</div>
+        <div class="mt-3 rounded bg-rose-50 px-3 py-2 text-sm text-rose-700">@errorMessage</div>
     }
 </div>
 
 @if (result is not null)
 {
-    <div class="aps-panel">
-        <h2>
+    <div class="mt-4 rounded border border-slate-200 bg-white p-4">
+        <h2 class="flex items-center gap-2 text-base font-semibold">
             Demo plan result
-            <span class="aps-badge @(result.IsFeasible ? "feasible" : "infeasible")">
+            <span class="rounded px-1.5 py-0.5 text-xs @(result.IsFeasible ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700")">
                 @(result.IsFeasible ? "Feasible" : "Infeasible")
             </span>
         </h2>
-        <p style="color:var(--aps-muted)">
+        <p class="mt-1 text-xs text-slate-400">
             Ephemeral calculation ID @result.PlanVersionId &middot; solver status @result.Schedule.SolverStatus
             &middot; objective @result.Schedule.ObjectiveValue &middot; generated @result.CreatedOnUtc.ToString("u")
         </p>
@@ -75,11 +75,11 @@
         }
         @if (allIssues.Length > 0)
         {
-            <h3>Issues</h3>
-            <ul class="aps-issue-list">
+            <h3 class="mt-3 mb-1 text-sm font-semibold">Issues</h3>
+            <ul class="space-y-1 text-sm">
                 @foreach (var issue in allIssues)
                 {
-                    <li class="aps-issue @(issue.Severity == PlanningIssueSeverity.Error ? "error" : "warning")">
+                    <li class="rounded px-2 py-1 @(issue.Severity == PlanningIssueSeverity.Error ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700")">
                         <strong>@issue.Code</strong> &mdash; @issue.Message
                     </li>
                 }
@@ -87,34 +87,34 @@
         }
     </div>
 
-    <div class="aps-panel">
-        <h3>Campaigns</h3>
+    <div class="mt-4 rounded border border-slate-200 bg-white p-4">
+        <h3 class="mb-2 text-sm font-semibold">Campaigns</h3>
         @if (result.CampaignPlan.Campaigns.Count == 0)
         {
-            <p class="aps-empty">No campaigns were formed.</p>
+            <p class="text-sm text-slate-400">No campaigns were formed.</p>
         }
         else
         {
-            <table class="aps-table">
+            <table class="w-full text-sm">
                 <thead>
-                    <tr>
-                        <th>Campaign</th><th>Sequence class</th><th>Caster section</th>
-                        <th>Planned MT</th><th>Fresh steel MT</th><th>From inventory MT</th>
-                        <th>Heats</th><th>Required by</th>
+                    <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+                        <th class="py-1 font-medium">Campaign</th><th class="py-1 font-medium">Seq. class</th><th class="py-1 font-medium">Caster section</th>
+                        <th class="py-1 font-medium text-right">Planned MT</th><th class="py-1 font-medium text-right">Fresh MT</th><th class="py-1 font-medium text-right">From inventory MT</th>
+                        <th class="py-1 font-medium text-right">Heats</th><th class="py-1 font-medium">Required by</th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var campaign in result.CampaignPlan.Campaigns.OrderBy(c => c.CampaignNumber))
                     {
-                        <tr>
-                            <td>@campaign.CampaignNumber</td>
-                            <td>@campaign.GradeSequenceClassCode</td>
-                            <td>@campaign.CasterSectionCode</td>
-                            <td>@campaign.PlannedQuantityMt.ToString("0.#")</td>
-                            <td>@campaign.FreshSteelRequirementMt.ToString("0.#")</td>
-                            <td>@campaign.ExistingIntermediateInventoryMt.ToString("0.#")</td>
-                            <td>@campaign.Heats.Count</td>
-                            <td>@campaign.RequiredDate.ToString("MMM dd")</td>
+                        <tr class="border-b border-slate-100 last:border-0">
+                            <td class="py-1">@campaign.CampaignNumber</td>
+                            <td class="py-1">@campaign.GradeSequenceClassCode</td>
+                            <td class="py-1">@campaign.CasterSectionCode</td>
+                            <td class="py-1 text-right">@campaign.PlannedQuantityMt.ToString("0.#")</td>
+                            <td class="py-1 text-right">@campaign.FreshSteelRequirementMt.ToString("0.#")</td>
+                            <td class="py-1 text-right">@campaign.ExistingIntermediateInventoryMt.ToString("0.#")</td>
+                            <td class="py-1 text-right">@campaign.Heats.Count</td>
+                            <td class="py-1">@campaign.RequiredDate.ToString("MMM dd")</td>
                         </tr>
                     }
                 </tbody>
@@ -122,32 +122,32 @@
         }
         @if (result.CampaignPlan.FullyCoveredByFinishedGoods.Count > 0)
         {
-            <p style="color:var(--aps-muted); font-size:0.85rem;">
+            <p class="mt-2 text-xs text-slate-400">
                 Fully covered from finished-goods inventory (no new campaign needed):
                 @string.Join(", ", result.CampaignPlan.FullyCoveredByFinishedGoods.Select(p => p.ProductionOrderNumber))
             </p>
         }
     </div>
 
-    <div class="aps-panel">
-        <h3>Cast sequences</h3>
+    <div class="mt-4 rounded border border-slate-200 bg-white p-4">
+        <h3 class="mb-2 text-sm font-semibold">Cast sequences</h3>
         @if (result.ProductionStructure.CastSequences.Count == 0)
         {
-            <p class="aps-empty">No cast sequences were built.</p>
+            <p class="text-sm text-slate-400">No cast sequences were built.</p>
         }
         else
         {
-            <table class="aps-table">
-                <thead><tr><th>Caster</th><th>Sequence #</th><th>Heats</th><th>Grades</th><th>Total MT</th></tr></thead>
+            <table class="w-full text-sm">
+                <thead><tr class="border-b border-slate-200 text-left text-xs text-slate-400"><th class="py-1 font-medium">Caster</th><th class="py-1 font-medium">Seq #</th><th class="py-1 font-medium">Heats</th><th class="py-1 font-medium">Grades</th><th class="py-1 font-medium text-right">Total MT</th></tr></thead>
                 <tbody>
                     @foreach (var sequence in result.ProductionStructure.CastSequences.OrderBy(s => ResourceName(s.CasterResourceId)).ThenBy(s => s.SequenceNumber))
                     {
-                        <tr>
-                            <td>@ResourceName(sequence.CasterResourceId)</td>
-                            <td>@sequence.SequenceNumber</td>
-                            <td>@sequence.Heats.Count</td>
-                            <td>@string.Join(", ", sequence.Heats.Select(h => h.CampaignHeat.GradeCode).Distinct())</td>
-                            <td>@sequence.Heats.Sum(h => h.CampaignHeat.PlannedQuantityMt).ToString("0.#")</td>
+                        <tr class="border-b border-slate-100 last:border-0">
+                            <td class="py-1">@ResourceName(sequence.CasterResourceId)</td>
+                            <td class="py-1">@sequence.SequenceNumber</td>
+                            <td class="py-1">@sequence.Heats.Count</td>
+                            <td class="py-1">@string.Join(", ", sequence.Heats.Select(h => h.CampaignHeat.GradeCode).Distinct())</td>
+                            <td class="py-1 text-right">@sequence.Heats.Sum(h => h.CampaignHeat.PlannedQuantityMt).ToString("0.#")</td>
                         </tr>
                     }
                 </tbody>
@@ -155,26 +155,26 @@
         }
     </div>
 
-    <div class="aps-panel">
-        <h3>Rolling plans</h3>
+    <div class="mt-4 rounded border border-slate-200 bg-white p-4">
+        <h3 class="mb-2 text-sm font-semibold">Rolling plans</h3>
         @if (result.ProductionStructure.RollingPlans.Count == 0)
         {
-            <p class="aps-empty">No rolling plans were built.</p>
+            <p class="text-sm text-slate-400">No rolling plans were built.</p>
         }
         else
         {
-            <table class="aps-table">
-                <thead><tr><th>Mill</th><th>Grade</th><th>Input &rarr; Output</th><th>Planned MT</th><th>Fresh MT</th><th>Inventory MT</th></tr></thead>
+            <table class="w-full text-sm">
+                <thead><tr class="border-b border-slate-200 text-left text-xs text-slate-400"><th class="py-1 font-medium">Mill</th><th class="py-1 font-medium">Grade</th><th class="py-1 font-medium">Input &rarr; Output</th><th class="py-1 font-medium text-right">Planned MT</th><th class="py-1 font-medium text-right">Fresh MT</th><th class="py-1 font-medium text-right">Inventory MT</th></tr></thead>
                 <tbody>
                     @foreach (var plan in result.ProductionStructure.RollingPlans.OrderBy(p => ResourceName(p.RollingMillResourceId)).ThenBy(p => p.SequenceNumber))
                     {
-                        <tr>
-                            <td>@ResourceName(plan.RollingMillResourceId)</td>
-                            <td>@plan.GradeCode</td>
-                            <td>@plan.InputCrossSectionCode &rarr; @plan.OutputCrossSectionCode</td>
-                            <td>@plan.PlannedQuantityMt.ToString("0.#")</td>
-                            <td>@plan.FreshSteelQuantityMt.ToString("0.#")</td>
-                            <td>@plan.ExistingIntermediateInventoryMt.ToString("0.#")</td>
+                        <tr class="border-b border-slate-100 last:border-0">
+                            <td class="py-1">@ResourceName(plan.RollingMillResourceId)</td>
+                            <td class="py-1">@plan.GradeCode</td>
+                            <td class="py-1">@plan.InputCrossSectionCode &rarr; @plan.OutputCrossSectionCode</td>
+                            <td class="py-1 text-right">@plan.PlannedQuantityMt.ToString("0.#")</td>
+                            <td class="py-1 text-right">@plan.FreshSteelQuantityMt.ToString("0.#")</td>
+                            <td class="py-1 text-right">@plan.ExistingIntermediateInventoryMt.ToString("0.#")</td>
                         </tr>
                     }
                 </tbody>
@@ -182,11 +182,11 @@
         }
     </div>
 
-    <div class="aps-panel">
-        <h3>Finite schedule</h3>
+    <div class="mt-4 rounded border border-slate-200 bg-white p-4">
+        <h3 class="mb-2 text-sm font-semibold">Finite schedule</h3>
         @if (!result.IsFeasible || result.Schedule.Assignments.Count == 0)
         {
-            <p class="aps-empty">No feasible schedule to display.</p>
+            <p class="text-sm text-slate-400">No feasible schedule to display.</p>
         }
         else
         {
@@ -197,23 +197,23 @@
 
 @if (release is not null)
 {
-    <div class="aps-panel">
-        <h3>Demo work orders</h3>
-        <table class="aps-table">
-            <thead><tr><th>WO number</th><th>Type</th><th>Resource</th><th>Grade</th><th>Section</th><th>Planned MT</th><th>Start</th><th>End</th><th>Sources</th></tr></thead>
+    <div class="mt-4 rounded border border-slate-200 bg-white p-4">
+        <h3 class="mb-2 text-sm font-semibold">Demo work orders</h3>
+        <table class="w-full text-sm">
+            <thead><tr class="border-b border-slate-200 text-left text-xs text-slate-400"><th class="py-1 font-medium">WO number</th><th class="py-1 font-medium">Type</th><th class="py-1 font-medium">Resource</th><th class="py-1 font-medium">Grade</th><th class="py-1 font-medium">Section</th><th class="py-1 font-medium text-right">Planned MT</th><th class="py-1 font-medium">Start</th><th class="py-1 font-medium">End</th><th class="py-1 font-medium">Sources</th></tr></thead>
             <tbody>
                 @foreach (var wo in release.WorkOrders.OrderBy(w => w.PlannedStart))
                 {
-                    <tr>
-                        <td>@wo.WorkOrderNumber</td>
-                        <td>@wo.WorkOrderType</td>
-                        <td>@(wo.ResourceId is Guid rid ? ResourceName(rid) : "multiple")</td>
-                        <td>@wo.GradeCode</td>
-                        <td>@wo.CrossSectionCode</td>
-                        <td>@wo.PlannedQuantityMt.ToString("0.#")</td>
-                        <td>@(wo.PlannedStart?.ToString("MMM dd HH:mm") ?? "-")</td>
-                        <td>@(wo.PlannedEnd?.ToString("MMM dd HH:mm") ?? "-")</td>
-                        <td>@string.Join(", ", wo.Allocations.Select(a => a.ProductionOrder?.ProductionOrderNumber).Where(n => n is not null))</td>
+                    <tr class="border-b border-slate-100 last:border-0">
+                        <td class="py-1">@wo.WorkOrderNumber</td>
+                        <td class="py-1">@wo.WorkOrderType</td>
+                        <td class="py-1">@(wo.ResourceId is Guid rid ? ResourceName(rid) : "multiple")</td>
+                        <td class="py-1">@wo.GradeCode</td>
+                        <td class="py-1">@wo.CrossSectionCode</td>
+                        <td class="py-1 text-right">@wo.PlannedQuantityMt.ToString("0.#")</td>
+                        <td class="py-1">@(wo.PlannedStart?.ToString("MMM dd HH:mm") ?? "-")</td>
+                        <td class="py-1">@(wo.PlannedEnd?.ToString("MMM dd HH:mm") ?? "-")</td>
+                        <td class="py-1">@string.Join(", ", wo.Allocations.Select(a => a.ProductionOrder?.ProductionOrderNumber).Where(n => n is not null))</td>
                     </tr>
                 }
             </tbody>

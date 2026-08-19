@@ -1,0 +1,130 @@
+@page "/plan/master-data"
+@inject IPlanningMasterDataProvider MasterDataProvider
+
+<PageTitle>Master Data - APS</PageTitle>
+
+<h1 class="mb-1 text-lg font-semibold">Master Data</h1>
+<p class="mb-6 text-sm text-slate-500">Read-only browse of configured plant, grade, route and material masters. Master data is maintained through the configured integration/import mechanism, not this screen &mdash; there is no create/edit capability here yet.</p>
+
+@if (loading)
+{
+    <p class="text-sm text-slate-400">Loading master data…</p>
+}
+else if (snapshot is null)
+{
+    <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center text-slate-700">Master data is unavailable.</div>
+}
+else
+{
+    <div class="mb-4 flex gap-1 border-b border-slate-200">
+        @foreach (var tab in Tabs)
+        {
+            <button type="button" class="border-b-2 px-3 py-2 text-sm @(activeTab == tab ? "border-accent font-medium text-accent" : "border-transparent text-slate-500 hover:text-slate-700")" @onclick="() => activeTab = tab">
+                @tab
+            </button>
+        }
+    </div>
+
+    @if (activeTab == "Resources")
+    {
+        <Table Headers="@(new[] {"Code", "Name", "Type", "Process unit", "State", "Capacity %"})">
+            @foreach (var r in snapshot.Resources)
+            {
+                <tr class="border-b border-slate-100 last:border-0">
+                    <td class="px-3 py-1.5">@r.Code</td>
+                    <td class="px-3 py-1.5">@r.Name</td>
+                    <td class="px-3 py-1.5">@r.ResourceType</td>
+                    <td class="px-3 py-1.5">@r.ProcessUnitType</td>
+                    <td class="px-3 py-1.5">@r.OperatingState</td>
+                    <td class="px-3 py-1.5 text-right">@r.CapacityFactorPct.ToString("0.#")</td>
+                </tr>
+            }
+        </Table>
+    }
+    else if (activeTab == "Steel Grades")
+    {
+        <Table Headers="@(new[] {"Grade", "Description", "Family", "Sequence class", "Default route", "Hot charge"})">
+            @foreach (var g in snapshot.EffectiveSteelGrades)
+            {
+                <tr class="border-b border-slate-100 last:border-0">
+                    <td class="px-3 py-1.5">@g.GradeCode</td>
+                    <td class="px-3 py-1.5">@g.Description</td>
+                    <td class="px-3 py-1.5">@(g.GradeFamilyCode ?? "—")</td>
+                    <td class="px-3 py-1.5">@(g.SequenceClassCode ?? "—")</td>
+                    <td class="px-3 py-1.5">@(g.DefaultRouteCode ?? "—")</td>
+                    <td class="px-3 py-1.5">@(g.HotChargeEligible ? "Yes" : "No")</td>
+                </tr>
+            }
+        </Table>
+    }
+    else if (activeTab == "Routes")
+    {
+        <Table Headers="@(new[] {"Route", "Name", "Operations"})">
+            @foreach (var route in snapshot.Routes)
+            {
+                <tr class="border-b border-slate-100 last:border-0">
+                    <td class="px-3 py-1.5">@route.RouteCode</td>
+                    <td class="px-3 py-1.5">@route.Name</td>
+                    <td class="px-3 py-1.5">@string.Join(" → ", snapshot.RouteOperations.Where(o => o.RouteCode == route.RouteCode).OrderBy(o => o.SequenceNumber).Select(o => o.ProcessOperationType))</td>
+                </tr>
+            }
+        </Table>
+    }
+    else if (activeTab == "Materials")
+    {
+        <Table Headers="@(new[] {"Material spec", "SAP code", "Product form", "Active"})">
+            @foreach (var m in snapshot.EffectiveMaterialSpecifications)
+            {
+                <tr class="border-b border-slate-100 last:border-0">
+                    <td class="px-3 py-1.5">@m.MaterialSpecificationCode</td>
+                    <td class="px-3 py-1.5">@(m.SapMaterialCode ?? "—")</td>
+                    <td class="px-3 py-1.5">@m.ProductForm</td>
+                    <td class="px-3 py-1.5">@(m.IsActive ? "Yes" : "No")</td>
+                </tr>
+            }
+        </Table>
+    }
+    else if (activeTab == "Cross Sections")
+    {
+        <Table Headers="@(new[] {"Code", "Shape", "Width", "Thickness/Diameter"})">
+            @foreach (var c in snapshot.EffectiveCrossSections)
+            {
+                <tr class="border-b border-slate-100 last:border-0">
+                    <td class="px-3 py-1.5">@c.CrossSectionCode</td>
+                    <td class="px-3 py-1.5">@c.Shape</td>
+                    <td class="px-3 py-1.5">@(c.WidthMm?.ToString("0.#") ?? "—")</td>
+                    <td class="px-3 py-1.5">@(c.ThicknessMm?.ToString("0.#") ?? c.DiameterMm?.ToString("0.#") ?? "—")</td>
+                </tr>
+            }
+        </Table>
+    }
+    else if (activeTab == "External Supply")
+    {
+        <Table Headers="@(new[] {"Reference", "Grade", "Section", "Qty", "Available from", "Firm"})">
+            @foreach (var s in snapshot.EffectiveExternalMaterialSupplies)
+            {
+                <tr class="border-b border-slate-100 last:border-0">
+                    <td class="px-3 py-1.5">@s.SupplyReference</td>
+                    <td class="px-3 py-1.5">@s.GradeCode</td>
+                    <td class="px-3 py-1.5">@s.CrossSectionCode</td>
+                    <td class="px-3 py-1.5 text-right">@s.QuantityMt.ToString("0.##")</td>
+                    <td class="px-3 py-1.5">@s.AvailableFromUtc.ToString("dd MMM HH:mm")</td>
+                    <td class="px-3 py-1.5">@(s.IsFirm ? "Yes" : "No")</td>
+                </tr>
+            }
+        </Table>
+    }
+}
+
+@code {
+    private static readonly string[] Tabs = { "Resources", "Steel Grades", "Routes", "Materials", "Cross Sections", "External Supply" };
+    private string activeTab = Tabs[0];
+    private PlanningMasterDataSnapshot? snapshot;
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        snapshot = await MasterDataProvider.GetAsync();
+        loading = false;
+    }
+}

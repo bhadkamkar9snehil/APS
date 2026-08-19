@@ -6,5 +6,6 @@
   <Project Path="src/APS.Integrations/APS.Integrations.csproj" />
   <Project Path="src/APS.UI/APS.UI.csproj" />
   <Project Path="src/APS.Service/APS.Service.csproj" />
+  <Project Path="src/APS.DesktopHost/APS.DesktopHost.csproj" />
   <Project Path="tests/APS.Planning.Tests/APS.Planning.Tests.csproj" />
 </Solution>

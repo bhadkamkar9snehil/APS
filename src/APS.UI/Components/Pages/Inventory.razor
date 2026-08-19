@@ -1,0 +1,62 @@
+@page "/plan/inventory"
+@inject IInventorySnapshotProvider InventorySnapshot
+
+<PageTitle>Inventory - APS</PageTitle>
+
+<h1 class="mb-1 text-lg font-semibold">Inventory</h1>
+<p class="mb-6 text-sm text-slate-500">Current inventory positions from the authoritative snapshot provider.</p>
+
+@if (loading)
+{
+    <p class="text-sm text-slate-400">Loading inventory…</p>
+}
+else if (positions.Count == 0)
+{
+    <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center text-slate-700">No inventory positions.</div>
+}
+else
+{
+    <div class="mb-4 flex items-center gap-2 text-sm">
+        <input class="w-64 rounded border border-slate-300 px-2 py-1" placeholder="Filter by material / grade / section" @bind="filter" @bind:event="oninput" />
+        <span class="text-xs text-slate-400">@filtered.Count of @positions.Count positions</span>
+    </div>
+
+    <Table Headers="@(new[] {"Material", "Grade", "Section", "Stage", "Quality", "Available", "Reserved", "Confirmed incoming", "Projected"})">
+        @foreach (var p in filtered)
+        {
+            <tr class="border-b border-slate-100 last:border-0">
+                <td class="px-3 py-1.5">@p.MaterialCode</td>
+                <td class="px-3 py-1.5">@p.GradeCode</td>
+                <td class="px-3 py-1.5">@p.CrossSectionCode</td>
+                <td class="px-3 py-1.5">@p.Stage</td>
+                <td class="px-3 py-1.5">
+                    <span class="rounded px-1.5 py-0.5 text-xs @(p.QualityStatus is MaterialQualityStatus.Available or MaterialQualityStatus.Released ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700")">@p.QualityStatus</span>
+                </td>
+                <td class="px-3 py-1.5 text-right">@p.AvailableQuantityMt.ToString("0.##")</td>
+                <td class="px-3 py-1.5 text-right">@p.ReservedQuantityMt.ToString("0.##")</td>
+                <td class="px-3 py-1.5 text-right">@p.ConfirmedIncomingQuantityMt.ToString("0.##")</td>
+                <td class="px-3 py-1.5 text-right font-medium">@p.ProjectedAvailableQuantityMt.ToString("0.##")</td>
+            </tr>
+        }
+    </Table>
+}
+
+@code {
+    private IReadOnlyCollection<InventoryPosition> positions = Array.Empty<InventoryPosition>();
+    private bool loading = true;
+    private string filter = "";
+
+    private IReadOnlyList<InventoryPosition> filtered =>
+        string.IsNullOrWhiteSpace(filter)
+            ? positions.ToArray()
+            : positions.Where(p =>
+                p.MaterialCode.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                p.GradeCode.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                p.CrossSectionCode.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToArray();
+
+    protected override async Task OnInitializedAsync()
+    {
+        positions = await InventorySnapshot.GetInventoryAsync();
+        loading = false;
+    }
+}

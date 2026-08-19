@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+/*
+  Single design-token source for APS Planner. Deliberately minimal: default Tailwind neutral
+  (slate/gray) palette, one accent color, no dark mode, no custom shadows/gradients. The product
+  direction is a plain, utilitarian planning instrument, not a themed dashboard.
+*/
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --color-accent: var(--color-blue-600);
+  --color-accent-soft: var(--color-blue-50);
+}
+
+body {
+  @apply bg-white text-slate-900 antialiased;
+}

@@ -1,0 +1,216 @@
+@page "/plan/versions"
+@inject IPlannerWorkspaceQueryService PlannerQuery
+@inject IPlanningLifecycleService Lifecycle
+@inject IPersistedPlanReleaseService ReleaseService
+@inject PlannerWorkspaceState WorkspaceState
+
+<PageTitle>Plan Versions - APS</PageTitle>
+
+<h1 class="mb-1 text-lg font-semibold">Plan Versions</h1>
+<p class="mb-6 text-sm text-slate-500">Plan Version history, and the Calculate / Replan / Release actions that create and progress them.</p>
+
+<div class="grid grid-cols-[1fr_360px] gap-4">
+    <section class="rounded border border-slate-200 bg-white">
+        <div class="border-b border-slate-200 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Plan Version register</div>
+        @if (loading)
+        {
+            <p class="p-4 text-sm text-slate-400">Loading…</p>
+        }
+        else if (plans.Count == 0)
+        {
+            <p class="p-4 text-sm text-slate-400">No Plan Versions yet. Use Calculate to create the first one.</p>
+        }
+        else
+        {
+            <Table Headers="@(new[] {"Version", "Status", "Trigger", "Created", "Horizon", ""})">
+                @foreach (var plan in plans)
+                {
+                    <tr class="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50 @(selectedPlanId == plan.PlanVersionId ? "bg-accent-soft" : "")" @onclick="() => SelectPlan(plan.PlanVersionId)">
+                        <td class="px-3 py-1.5"><strong>@plan.VersionNumber</strong></td>
+                        <td class="px-3 py-1.5"><span class="rounded px-1.5 py-0.5 text-xs @StatusClass(plan.Status)">@plan.Status</span></td>
+                        <td class="px-3 py-1.5">@plan.Trigger</td>
+                        <td class="px-3 py-1.5 text-xs text-slate-500">@plan.CreatedOnUtc.ToString("dd MMM HH:mm")</td>
+                        <td class="px-3 py-1.5 text-xs text-slate-500">@plan.HorizonStartUtc.ToString("dd MMM") &rarr; @plan.HorizonEndUtc.ToString("dd MMM")</td>
+                        <td class="px-3 py-1.5">
+                            @if (plan.IsActive) { <span class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">ACTIVE</span> }
+                            @if (plan.IsReleased) { <span class="ml-1 rounded bg-emerald-100 px-1.5 py-0.5 text-xs text-emerald-700">RELEASED</span> }
+                        </td>
+                    </tr>
+                }
+            </Table>
+        }
+    </section>
+
+    <aside class="space-y-4">
+        <section class="rounded border border-slate-200 bg-white p-4">
+            <h2 class="mb-3 text-sm font-semibold">Calculate new plan</h2>
+            <div class="space-y-2 text-sm">
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Horizon start</span><input type="date" class="rounded border border-slate-300 px-2 py-1" @bind="horizonStart" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Horizon end</span><input type="date" class="rounded border border-slate-300 px-2 py-1" @bind="horizonEnd" /></label>
+                <div class="grid grid-cols-2 gap-2">
+                    <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Nominal heat MT</span><input type="number" class="rounded border border-slate-300 px-2 py-1" @bind="nominalHeatSizeMt" /></label>
+                    <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Max campaign MT</span><input type="number" class="rounded border border-slate-300 px-2 py-1" @bind="maximumCampaignQuantityMt" /></label>
+                </div>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Max solver seconds</span><input type="number" class="rounded border border-slate-300 px-2 py-1" @bind="maxSolverSeconds" /></label>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(calculateError))
+            {
+                <p class="mt-2 text-xs text-rose-600">@calculateError</p>
+            }
+            <button type="button" class="mt-3 w-full rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50" disabled="@calculating" @onclick="CalculateAsync">
+                @(calculating ? "Calculating…" : "Calculate")
+            </button>
+        </section>
+
+        @if (selectedPlanId is { } selected)
+        {
+            <section class="rounded border border-slate-200 bg-white p-4">
+                <h2 class="mb-3 text-sm font-semibold">Selected plan actions</h2>
+                @if (!string.IsNullOrWhiteSpace(actionError))
+                {
+                    <p class="mb-2 text-xs text-rose-600">@actionError</p>
+                }
+                @if (!string.IsNullOrWhiteSpace(actionSuccess))
+                {
+                    <p class="mb-2 text-xs text-emerald-600">@actionSuccess</p>
+                }
+                <div class="flex flex-col gap-2">
+                    <button type="button" class="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-50" disabled="@acting" @onclick="() => ReplanAsync(selected)">
+                        Replan from this baseline
+                    </button>
+                    <button type="button" class="rounded border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-50" disabled="@acting" @onclick="() => ReleaseAsync(selected)">
+                        Release
+                    </button>
+                </div>
+            </section>
+        }
+    </aside>
+</div>
+
+@code {
+    private IReadOnlyCollection<PlanVersionListItemView> plans = Array.Empty<PlanVersionListItemView>();
+    private bool loading = true;
+    private Guid? selectedPlanId;
+
+    private DateTime horizonStart = DateTime.UtcNow.Date;
+    private DateTime horizonEnd = DateTime.UtcNow.Date.AddDays(7);
+    private decimal nominalHeatSizeMt = 90m;
+    private decimal maximumCampaignQuantityMt = 600m;
+    private int maxSolverSeconds = 20;
+    private bool calculating;
+    private string? calculateError;
+
+    private bool acting;
+    private string? actionError;
+    private string? actionSuccess;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        plans = await PlannerQuery.GetRecentPlanVersionsAsync(40);
+        loading = false;
+        StateHasChanged();
+    }
+
+    private void SelectPlan(Guid planVersionId)
+    {
+        selectedPlanId = planVersionId;
+        actionError = null;
+        actionSuccess = null;
+        WorkspaceState.SetPlan(planVersionId);
+    }
+
+    private async Task CalculateAsync()
+    {
+        calculating = true;
+        calculateError = null;
+        StateHasChanged();
+        try
+        {
+            var request = new PlanningCalculationRequest(
+                new PlanningDemandSelection(),
+                new CampaignPlanningPolicy(nominalHeatSizeMt, nominalHeatSizeMt * 0.7m, nominalHeatSizeMt * 1.15m, maximumCampaignQuantityMt, maximumCampaignQuantityMt),
+                new ProductionStructurePlanningPolicy(),
+                horizonStart,
+                horizonEnd,
+                maxSolverSeconds);
+            var outcome = await Lifecycle.CalculateAsync(request);
+            await LoadAsync();
+            SelectPlan(outcome.Version.PlanVersionId);
+            actionSuccess = $"Plan {outcome.Version.VersionNumber} created ({(outcome.Plan.IsFeasible ? "feasible" : "infeasible")}).";
+        }
+        catch (Exception ex)
+        {
+            calculateError = ex.Message;
+        }
+        finally
+        {
+            calculating = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ReplanAsync(Guid baselinePlanVersionId)
+    {
+        acting = true;
+        actionError = null;
+        actionSuccess = null;
+        StateHasChanged();
+        try
+        {
+            var request = new PlanningCalculationRequest(
+                new PlanningDemandSelection(),
+                new CampaignPlanningPolicy(nominalHeatSizeMt, nominalHeatSizeMt * 0.7m, nominalHeatSizeMt * 1.15m, maximumCampaignQuantityMt, maximumCampaignQuantityMt),
+                new ProductionStructurePlanningPolicy(),
+                horizonStart,
+                horizonEnd,
+                maxSolverSeconds);
+            var outcome = await Lifecycle.ReplanAsync(baselinePlanVersionId, new PlanningRecalculationRequest(request, new PlanningTimeFencePolicy()));
+            await LoadAsync();
+            SelectPlan(outcome.Version.PlanVersionId);
+            actionSuccess = $"Replanned as {outcome.Version.VersionNumber}.";
+        }
+        catch (Exception ex)
+        {
+            actionError = ex.Message;
+        }
+        finally
+        {
+            acting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ReleaseAsync(Guid planVersionId)
+    {
+        acting = true;
+        actionError = null;
+        actionSuccess = null;
+        StateHasChanged();
+        try
+        {
+            var release = await ReleaseService.ReleaseAsync(planVersionId);
+            await LoadAsync();
+            actionSuccess = $"Released {release.WorkOrders.Count} Work Order(s).";
+        }
+        catch (Exception ex)
+        {
+            actionError = ex.Message;
+        }
+        finally
+        {
+            acting = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string StatusClass(PlanVersionStatus status) => status switch
+    {
+        PlanVersionStatus.Feasible or PlanVersionStatus.Released => "bg-emerald-100 text-emerald-700",
+        PlanVersionStatus.Failed => "bg-rose-100 text-rose-700",
+        PlanVersionStatus.Superseded => "bg-slate-100 text-slate-400",
+        _ => "bg-slate-100 text-slate-600"
+    };
+}

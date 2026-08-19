@@ -1,0 +1,11 @@
+<div class="mt-4 first:mt-0">
+    <div class="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">@Title</div>
+    <div class="flex flex-col gap-0.5">
+        @ChildContent
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

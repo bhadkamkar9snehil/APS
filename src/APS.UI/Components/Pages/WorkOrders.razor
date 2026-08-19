@@ -1,137 +1,176 @@
 @page "/operate/work-orders"
 @implements IDisposable
 @inject IPlannerWorkspaceQueryService PlannerQuery
+@inject IWorkOrderExecutionService WorkOrderExecution
 @inject PlannerWorkspaceState WorkspaceState
 
 <PageTitle>Work Orders - APS</PageTitle>
 
-<div class="planner-page workorders-workspace">
-    <header class="workspace-titlebar">
-        <div>
-            <span class="workspace-eyebrow">OPERATE / WORK ORDERS</span>
-            <h1>Work Orders</h1>
-            <p>Execution envelopes released from the plan, with the process operations and demand lineage retained inside them.</p>
-        </div>
-        @if (view is not null)
-        {
-            <div class="workspace-basis"><span>Plan</span><strong>@view.Plan.VersionNumber</strong></div>
-        }
-    </header>
+<h1 class="mb-1 text-lg font-semibold">Work Orders</h1>
+<p class="mb-6 text-sm text-slate-500">Execution envelopes released from the plan, with the process operations and demand lineage retained inside them.</p>
 
-    @if (loading)
-    {
-        <div class="planner-empty-state"><strong>Loading released work…</strong></div>
-    }
-    else if (view is null)
-    {
-        <div class="planner-empty-state planner-empty-state-major"><strong>No persisted Work Order view</strong></div>
-    }
-    else
-    {
-        <section class="wo-summary-strip">
-            <div><span>Total</span><strong>@view.WorkOrderCount</strong></div>
-            <div><span>Released</span><strong>@view.ReleasedCount</strong></div>
-            <div><span>Running</span><strong>@view.RunningCount</strong></div>
-            <div><span>Held</span><strong>@view.HeldCount</strong></div>
-            <div><span>Completed</span><strong>@view.CompletedCount</strong></div>
-        </section>
+@if (loading)
+{
+    <p class="text-sm text-slate-400">Loading released work…</p>
+}
+else if (view is null)
+{
+    <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center text-slate-700">No persisted Work Order view.</div>
+}
+else
+{
+    <div class="mb-6 grid grid-cols-5 gap-3">
+        <StatTile Label="Total" Value="@view.WorkOrderCount.ToString()" />
+        <StatTile Label="Released" Value="@view.ReleasedCount.ToString()" />
+        <StatTile Label="Running" Value="@view.RunningCount.ToString()" />
+        <StatTile Label="Held" Value="@view.HeldCount.ToString()" />
+        <StatTile Label="Completed" Value="@view.CompletedCount.ToString()" />
+    </div>
 
-        <div class="wo-layout">
-            <aside class="wo-register">
-                <div class="campaign-register-head">
-                    <span class="planner-section-label">WORK ORDER REGISTER</span>
-                    <strong>@view.WorkOrderCount released envelopes</strong>
-                </div>
-                <div class="wo-register-list">
-                    @foreach (var wo in view.WorkOrders.OrderBy(x => x.FirstPlannedStartUtc))
-                    {
-                        <button type="button" class="wo-register-row @(selectedWorkOrder?.WorkOrderId == wo.WorkOrderId ? "is-selected" : null)" @onclick="() => SelectWorkOrder(wo)">
-                            <div><strong>@wo.WorkOrderNumber</strong><span>@wo.WorkOrderType</span></div>
-                            <span class="wo-state state-@StatusClass(wo.Status)">@wo.Status</span>
-                            <small>@TimeRange(wo) · @wo.PlannedQuantityMt.ToString("0.##") MT</small>
-                        </button>
-                    }
-                </div>
-            </aside>
-
-            <section class="wo-canvas">
-                @if (selectedWorkOrder is null)
+    <div class="grid grid-cols-[280px_1fr] gap-4">
+        <aside class="rounded border border-slate-200 bg-white">
+            <div class="border-b border-slate-200 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Work Order register</div>
+            <div class="max-h-[70vh] overflow-y-auto">
+                @foreach (var wo in view.WorkOrders.OrderBy(x => x.FirstPlannedStartUtc))
                 {
-                    <div class="planner-empty-state"><strong>Select a Work Order</strong></div>
-                }
-                else
-                {
-                    <div class="wo-hero">
-                        <div>
-                            <span class="planner-section-label">EXECUTION ENVELOPE</span>
-                            <h2>@selectedWorkOrder.WorkOrderNumber</h2>
-                            <p>@selectedWorkOrder.WorkOrderType · @TimeRange(selectedWorkOrder)</p>
+                    <button type="button" class="block w-full border-b border-slate-100 px-3 py-2 text-left last:border-0 hover:bg-slate-50 @(selectedWorkOrder?.WorkOrderId == wo.WorkOrderId ? "bg-accent-soft" : "")" @onclick="() => SelectWorkOrder(wo)">
+                        <div class="flex items-center justify-between">
+                            <strong>@wo.WorkOrderNumber</strong>
+                            <span class="rounded px-1.5 py-0.5 text-xs @StatusClass(wo.Status)">@wo.Status</span>
                         </div>
-                        <div class="wo-hero-meta">
-                            <div><span>Status</span><strong>@selectedWorkOrder.Status</strong></div>
-                            <div><span>Quantity</span><strong>@selectedWorkOrder.PlannedQuantityMt.ToString("0.##") MT</strong></div>
-                            <div><span>External ref</span><strong>@Display(selectedWorkOrder.ExternalExecutionId)</strong></div>
+                        <div class="text-xs text-slate-400">@wo.WorkOrderType &middot; @TimeRange(wo)</div>
+                        <div class="text-xs text-slate-400">@wo.PlannedQuantityMt.ToString("0.##") MT</div>
+                    </button>
+                }
+            </div>
+        </aside>
+
+        <section>
+            @if (selectedWorkOrder is null)
+            {
+                <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center text-slate-400">Select a Work Order</div>
+            }
+            else
+            {
+                <div class="mb-4 rounded border border-slate-200 bg-white p-4">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <h2 class="text-base font-semibold">@selectedWorkOrder.WorkOrderNumber</h2>
+                            <p class="text-sm text-slate-500">@selectedWorkOrder.WorkOrderType &middot; @TimeRange(selectedWorkOrder)</p>
+                        </div>
+                        <div class="flex gap-4 text-right text-sm">
+                            <div><div class="text-xs text-slate-400">Status</div><strong>@selectedWorkOrder.Status</strong></div>
+                            <div><div class="text-xs text-slate-400">Quantity</div><strong>@selectedWorkOrder.PlannedQuantityMt.ToString("0.##") MT</strong></div>
+                            <div><div class="text-xs text-slate-400">External ref</div><strong>@Display(selectedWorkOrder.ExternalExecutionId)</strong></div>
                         </div>
                     </div>
+                </div>
 
-                    <section class="campaign-section">
-                        <div class="campaign-section-head">
-                            <div><span class="planner-section-label">PROCESS OPERATIONS</span><h3>Scheduled truth inside this Work Order</h3></div>
-                            <span class="planner-basis-badge">@selectedWorkOrder.Operations.Count OPS</span>
-                        </div>
-                        @if (selectedWorkOrder.Operations.Count == 0)
+                <section class="mb-4 rounded border border-slate-200 bg-white p-4">
+                    <div class="mb-3 flex items-center justify-between">
+                        <h3 class="text-sm font-semibold">Record actual</h3>
+                        @if (!string.IsNullOrWhiteSpace(actualError))
                         {
-                            <p class="aps-empty">No persisted operation rows are linked to this Work Order.</p>
+                            <span class="text-xs text-rose-600">@actualError</span>
                         }
-                        else
-                        {
-                            <div class="wo-operation-chain">
+                    </div>
+                    <div class="grid grid-cols-5 gap-3 text-sm">
+                        <label class="flex flex-col gap-1">
+                            <span class="text-xs text-slate-500">Status</span>
+                            <select class="rounded border border-slate-300 px-2 py-1" @bind="actualStatus">
+                                @foreach (var status in Enum.GetValues<WorkOrderStatus>())
+                                {
+                                    <option value="@status">@status</option>
+                                }
+                            </select>
+                        </label>
+                        <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Actual start</span><input type="datetime-local" class="rounded border border-slate-300 px-2 py-1" @bind="actualStart" /></label>
+                        <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Actual end</span><input type="datetime-local" class="rounded border border-slate-300 px-2 py-1" @bind="actualEnd" /></label>
+                        <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Actual qty (MT)</span><input type="number" class="rounded border border-slate-300 px-2 py-1" @bind="actualQuantity" /></label>
+                        <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Comment</span><input class="rounded border border-slate-300 px-2 py-1" @bind="actualComment" /></label>
+                    </div>
+                    <button type="button" class="mt-3 rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50" disabled="@savingActual" @onclick="SaveActualAsync">
+                        @(savingActual ? "Saving…" : "Save actual")
+                    </button>
+                </section>
+
+                <section class="mb-4 rounded border border-slate-200 bg-white p-4">
+                    <div class="mb-3 flex items-center justify-between">
+                        <h3 class="text-sm font-semibold">Process operations</h3>
+                        <span class="text-xs text-slate-400">@selectedWorkOrder.Operations.Count ops</span>
+                    </div>
+                    @if (selectedWorkOrder.Operations.Count == 0)
+                    {
+                        <p class="text-sm text-slate-400">No persisted operation rows are linked to this Work Order.</p>
+                    }
+                    else
+                    {
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+                                    <th class="py-1 font-medium">Operation</th>
+                                    <th class="py-1 font-medium">Resource</th>
+                                    <th class="py-1 font-medium">Grade / Section</th>
+                                    <th class="py-1 font-medium">Window</th>
+                                    <th class="py-1 font-medium text-right">Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody>
                                 @foreach (var op in selectedWorkOrder.Operations.OrderBy(x => x.PlannedStartUtc))
                                 {
-                                    <button type="button" class="wo-operation-card process-@ProcessClass(op.ProcessOperationType)" @onclick="() => SelectOperation(op)">
-                                        <div><span>@op.ProcessOperationType</span><strong>@op.ResourceCode</strong></div>
-                                        <div><strong>@op.GradeCode</strong><span>@op.CrossSectionCode</span></div>
-                                        <div><strong>@op.PlannedStartUtc.ToString("dd MMM HH:mm")</strong><span>→ @op.PlannedEndUtc.ToString("dd MMM HH:mm")</span></div>
-                                        <div><strong>@op.QuantityMt.ToString("0.##") MT</strong><span>@Math.Max(0, (op.PlannedEndUtc - op.PlannedStartUtc).TotalMinutes).ToString("0") min</span></div>
-                                    </button>
+                                    <tr class="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50" @onclick="() => SelectOperation(op)">
+                                        <td class="py-1.5">@op.ProcessOperationType</td>
+                                        <td class="py-1.5">@op.ResourceCode</td>
+                                        <td class="py-1.5">@op.GradeCode / @op.CrossSectionCode</td>
+                                        <td class="py-1.5 text-xs text-slate-500">@op.PlannedStartUtc.ToString("dd MMM HH:mm") &rarr; @op.PlannedEndUtc.ToString("HH:mm")</td>
+                                        <td class="py-1.5 text-right">@op.QuantityMt.ToString("0.##") MT</td>
+                                    </tr>
                                 }
-                            </div>
-                        }
-                    </section>
+                            </tbody>
+                        </table>
+                    }
+                </section>
 
-                    <section class="campaign-section">
-                        <div class="campaign-section-head">
-                            <div><span class="planner-section-label">COMMERCIAL LINEAGE</span><h3>Production Orders and originating demand</h3></div>
-                            <span class="planner-basis-badge">@selectedWorkOrder.DemandReferences.Count PO</span>
+                <section class="rounded border border-slate-200 bg-white p-4">
+                    <div class="mb-3 flex items-center justify-between">
+                        <h3 class="text-sm font-semibold">Commercial lineage</h3>
+                        <span class="text-xs text-slate-400">@selectedWorkOrder.DemandReferences.Count PO</span>
+                    </div>
+                    @if (selectedWorkOrder.DemandReferences.Count == 0)
+                    {
+                        <p class="text-sm text-slate-400">No PO allocation is linked to this Work Order.</p>
+                    }
+                    else
+                    {
+                        <div class="grid grid-cols-3 gap-2">
+                            @foreach (var demand in selectedWorkOrder.DemandReferences)
+                            {
+                                <button type="button" class="rounded border border-slate-200 px-2 py-1.5 text-left text-xs hover:bg-slate-50" @onclick="() => SelectProductionOrder(demand)">
+                                    <span class="rounded px-1 @(demand.DemandSource == DemandSourceType.MakeToOrder ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600")">@(demand.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</span>
+                                    <strong class="ml-1">@demand.ProductionOrderNumber</strong>
+                                    <div class="text-slate-400">@(demand.SalesOrderNumber is null ? "Stock replenishment" : $"SO {demand.SalesOrderNumber} / {demand.SalesOrderItemNumber}")</div>
+                                </button>
+                            }
                         </div>
-                        @if (selectedWorkOrder.DemandReferences.Count == 0)
-                        {
-                            <p class="aps-empty">No PO allocation is linked to this Work Order.</p>
-                        }
-                        else
-                        {
-                            <div class="wo-demand-grid">
-                                @foreach (var demand in selectedWorkOrder.DemandReferences)
-                                {
-                                    <button type="button" class="wo-demand-row" @onclick="() => SelectProductionOrder(demand)">
-                                        <em class="source-badge @(demand.DemandSource == DemandSourceType.MakeToOrder ? "mto" : "mts")">@(demand.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</em>
-                                        <strong>@demand.ProductionOrderNumber</strong>
-                                        <span>@(demand.SalesOrderNumber is null ? "Stock replenishment" : $"SO {demand.SalesOrderNumber} / {demand.SalesOrderItemNumber}")</span>
-                                    </button>
-                                }
-                            </div>
-                        }
-                    </section>
-                }
-            </section>
-        </div>
-    }
-</div>
+                    }
+                </section>
+            }
+        </section>
+    </div>
+}
 
 @code {
     private WorkOrdersWorkspaceView? view;
     private WorkOrderView? selectedWorkOrder;
     private bool loading = true;
+
+    private WorkOrderStatus actualStatus = WorkOrderStatus.Running;
+    private DateTime? actualStart;
+    private DateTime? actualEnd;
+    private decimal? actualQuantity;
+    private string? actualComment;
+    private bool savingActual;
+    private string? actualError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -157,7 +196,38 @@
     private void SelectWorkOrder(WorkOrderView wo)
     {
         selectedWorkOrder = wo;
+        actualStatus = wo.Status;
+        actualStart = null;
+        actualEnd = null;
+        actualQuantity = null;
+        actualComment = null;
+        actualError = null;
         WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.WorkOrder, wo.WorkOrderId, wo.WorkOrderNumber));
+    }
+
+    private async Task SaveActualAsync()
+    {
+        if (selectedWorkOrder is null) return;
+        savingActual = true;
+        actualError = null;
+        StateHasChanged();
+        try
+        {
+            await WorkOrderExecution.ApplyAsync(new WorkOrderExecutionUpdate(
+                selectedWorkOrder.WorkOrderId, null, actualStatus, actualStart, actualEnd,
+                actualQuantity, DateTime.UtcNow, ExecutionUpdateSource.Manual, null, actualComment));
+            await LoadAsync();
+            selectedWorkOrder = view?.WorkOrders.FirstOrDefault(x => x.WorkOrderId == selectedWorkOrder.WorkOrderId);
+        }
+        catch (Exception ex)
+        {
+            actualError = ex.Message;
+        }
+        finally
+        {
+            savingActual = false;
+            StateHasChanged();
+        }
     }
 
     private void SelectOperation(WorkOrderOperationView op) =>
@@ -167,8 +237,15 @@
         WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.ProductionOrder, demand.ProductionOrderId, demand.ProductionOrderNumber));
 
     private static string Display(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
-    private static string ProcessClass(ProcessOperationType type) => type.ToString().ToLowerInvariant();
-    private static string StatusClass(WorkOrderStatus status) => status.ToString().ToLowerInvariant().Replace(" ", "-");
+
+    private static string StatusClass(WorkOrderStatus status) => status switch
+    {
+        WorkOrderStatus.Completed => "bg-emerald-100 text-emerald-700",
+        WorkOrderStatus.Running => "bg-sky-100 text-sky-700",
+        WorkOrderStatus.Held or WorkOrderStatus.Cancelled => "bg-rose-100 text-rose-700",
+        _ => "bg-slate-100 text-slate-600"
+    };
+
     private static string TimeRange(WorkOrderView wo) =>
         wo.FirstPlannedStartUtc.HasValue && wo.LastPlannedEndUtc.HasValue
             ? $"{wo.FirstPlannedStartUtc.Value:dd MMM HH:mm} → {wo.LastPlannedEndUtc.Value:dd MMM HH:mm}"

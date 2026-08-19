@@ -5,138 +5,118 @@
 
 <PageTitle>Steelmaking & Casting - APS</PageTitle>
 
-<div class="planner-page physical-workspace">
-    <header class="workspace-titlebar">
-        <div>
-            <span class="workspace-eyebrow">PLAN / STEELMAKING</span>
-            <h1>Steelmaking & Casting</h1>
-            <p>Heat-by-heat route through physical steelmaking units, CCM sequence and strand output.</p>
-        </div>
-        @if (view is not null)
-        {
-            <div class="workspace-basis"><span>Basis</span><strong>@view.Plan.VersionNumber snapshot</strong></div>
-        }
-    </header>
+<h1 class="mb-1 text-lg font-semibold">Steelmaking &amp; Casting</h1>
+<p class="mb-6 text-sm text-slate-500">Heat-by-heat route through physical steelmaking units, CCM sequence and strand output.</p>
 
-    @if (loading)
-    {
-        <div class="planner-empty-state"><strong>Loading heat route…</strong></div>
-    }
-    else if (view is null)
-    {
-        <div class="planner-empty-state planner-empty-state-major"><strong>No persisted physical plan</strong></div>
-    }
-    else
-    {
-        <section class="campaign-summary-strip physical-summary-strip">
-            <div><span>Heats</span><strong>@view.HeatCount</strong></div>
-            <div><span>Cast sequences</span><strong>@view.CastSequenceCount</strong></div>
-            <div><span>Planned heat input</span><strong>@view.PlannedHeatInputMt.ToString("0.##") MT</strong></div>
-            <div><span>Planned cast output</span><strong>@view.PlannedCastOutputMt.ToString("0.##") MT</strong></div>
-            <div><span>Yield view</span><strong>Plan snapshot</strong></div>
-        </section>
+@if (loading)
+{
+    <p class="text-sm text-slate-400">Loading heat route…</p>
+}
+else if (view is null)
+{
+    <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center text-slate-700">No persisted physical plan.</div>
+}
+else
+{
+    <div class="mb-6 grid grid-cols-4 gap-3">
+        <StatTile Label="Heats" Value="@view.HeatCount.ToString()" />
+        <StatTile Label="Cast sequences" Value="@view.CastSequenceCount.ToString()" />
+        <StatTile Label="Planned heat input" Value="@($"{view.PlannedHeatInputMt:0.##} MT")" />
+        <StatTile Label="Planned cast output" Value="@($"{view.PlannedCastOutputMt:0.##} MT")" />
+    </div>
 
-        <div class="physical-layout">
-            <aside class="heat-register">
-                <div class="campaign-register-head">
-                    <span class="planner-section-label">HEAT REGISTER</span>
-                    <strong>@view.HeatCount planned heats</strong>
-                </div>
-                <div class="heat-register-list">
-                    @foreach (var heat in view.Heats)
-                    {
-                        <button type="button" class="heat-register-row @(selectedHeat?.CampaignHeatId == heat.CampaignHeatId ? "is-selected" : null)" @onclick="() => SelectHeat(heat)">
-                            <div><strong>@heat.CampaignNumber / H@heat.HeatSequenceNumber.ToString("00")</strong><span>@heat.GradeCode</span></div>
-                            <div><strong>@heat.PlannedQuantityMt.ToString("0.#")</strong><span>MT</span></div>
-                            <small>@(heat.CasterResourceCode ?? "CCM unresolved") · seq @(heat.CastSequenceNumber?.ToString() ?? "—")</small>
-                        </button>
-                    }
-                </div>
-            </aside>
-
-            <section class="physical-canvas">
-                @if (selectedHeat is null)
+    <div class="grid grid-cols-[280px_1fr] gap-4">
+        <aside class="rounded border border-slate-200 bg-white">
+            <div class="border-b border-slate-200 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Heat register</div>
+            <div class="max-h-[70vh] overflow-y-auto">
+                @foreach (var heat in view.Heats)
                 {
-                    <div class="planner-empty-state"><strong>Select a heat</strong></div>
+                    <button type="button" class="block w-full border-b border-slate-100 px-3 py-2 text-left last:border-0 hover:bg-slate-50 @(selectedHeat?.CampaignHeatId == heat.CampaignHeatId ? "bg-accent-soft" : "")" @onclick="() => SelectHeat(heat)">
+                        <strong>@heat.CampaignNumber / H@heat.HeatSequenceNumber.ToString("00")</strong>
+                        <div class="text-xs text-slate-400">@heat.GradeCode &middot; @heat.PlannedQuantityMt.ToString("0.#") MT</div>
+                        <div class="text-xs text-slate-400">@(heat.CasterResourceCode ?? "CCM unresolved") &middot; seq @(heat.CastSequenceNumber?.ToString() ?? "—")</div>
+                    </button>
                 }
-                else
-                {
-                    <div class="physical-heat-head">
+            </div>
+        </aside>
+
+        <section>
+            @if (selectedHeat is null)
+            {
+                <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center text-slate-400">Select a heat</div>
+            }
+            else
+            {
+                <div class="mb-4 rounded border border-slate-200 bg-white p-4">
+                    <div class="flex items-start justify-between">
                         <div>
-                            <span class="planner-section-label">SELECTED HEAT</span>
-                            <h2>@selectedHeat.CampaignNumber / H@selectedHeat.HeatSequenceNumber.ToString("00")</h2>
-                            <p>@selectedHeat.GradeCode · @selectedHeat.PlannedQuantityMt.ToString("0.##") MT</p>
+                            <h2 class="text-base font-semibold">@selectedHeat.CampaignNumber / H@selectedHeat.HeatSequenceNumber.ToString("00")</h2>
+                            <p class="text-sm text-slate-500">@selectedHeat.GradeCode &middot; @selectedHeat.PlannedQuantityMt.ToString("0.##") MT</p>
                         </div>
-                        <div class="physical-heat-meta">
-                            <div><span>Cast sequence</span><strong>@(selectedHeat.CastSequenceNumber?.ToString() ?? "—")</strong></div>
-                            <div><span>CCM</span><strong>@(selectedHeat.CasterResourceCode ?? "—")</strong></div>
-                            <div><span>Tundish</span><strong>@(selectedHeat.TundishNumber?.ToString() ?? "—")</strong></div>
+                        <div class="flex gap-4 text-right text-sm">
+                            <div><div class="text-xs text-slate-400">Cast sequence</div><strong>@(selectedHeat.CastSequenceNumber?.ToString() ?? "—")</strong></div>
+                            <div><div class="text-xs text-slate-400">CCM</div><strong>@(selectedHeat.CasterResourceCode ?? "—")</strong></div>
+                            <div><div class="text-xs text-slate-400">Tundish</div><strong>@(selectedHeat.TundishNumber?.ToString() ?? "—")</strong></div>
                         </div>
                     </div>
+                </div>
 
-                    <section class="campaign-section process-train-section">
-                        <div class="campaign-section-head">
-                            <div><span class="planner-section-label">HEAT TRAIN</span><h3>Scheduled physical operations</h3></div>
-                        </div>
-                        @if (selectedHeat.Operations.Count == 0)
-                        {
-                            <p class="aps-empty">No persisted operation snapshots for this heat.</p>
-                        }
-                        else
-                        {
-                            var orderedOps = selectedHeat.Operations.OrderBy(x => x.StartUtc).ToArray();
-                            <div class="process-train">
-                                @for (var i = 0; i < orderedOps.Length; i++)
+                <section class="mb-4 rounded border border-slate-200 bg-white p-4">
+                    <h3 class="mb-3 text-sm font-semibold">Heat train &mdash; scheduled physical operations</h3>
+                    @if (selectedHeat.Operations.Count == 0)
+                    {
+                        <p class="text-sm text-slate-400">No persisted operation snapshots for this heat.</p>
+                    }
+                    else
+                    {
+                        var orderedOps = selectedHeat.Operations.OrderBy(x => x.StartUtc).ToArray();
+                        <div class="flex flex-wrap items-center gap-2">
+                            @for (var i = 0; i < orderedOps.Length; i++)
+                            {
+                                var operation = orderedOps[i];
+                                <button type="button" class="rounded border border-slate-200 px-3 py-2 text-left text-xs hover:bg-slate-50" @onclick="() => SelectOperation(operation)">
+                                    <div class="text-slate-400">@operation.ProcessOperationType</div>
+                                    <strong>@operation.ResourceCode</strong>
+                                    <div class="text-slate-400">@operation.StartUtc.ToString("dd MMM HH:mm") &rarr; @operation.EndUtc.ToString("HH:mm")</div>
+                                    <div class="text-slate-400">@Duration(operation)</div>
+                                </button>
+                                @if (i < orderedOps.Length - 1)
                                 {
-                                    var operation = orderedOps[i];
-                                    <button type="button" class="process-train-node process-@ProcessClass(operation.ProcessOperationType)" @onclick="() => SelectOperation(operation)">
-                                        <span>@operation.ProcessOperationType</span>
-                                        <strong>@operation.ResourceCode</strong>
-                                        <small>@operation.StartUtc.ToString("dd MMM HH:mm") → @operation.EndUtc.ToString("HH:mm")</small>
-                                        <em>@Duration(operation)</em>
-                                    </button>
-                                    @if (i < orderedOps.Length - 1)
-                                    {
-                                        <div class="process-train-link">
-                                            <span>@QueueGap(orderedOps[i], orderedOps[i + 1])</span>
-                                            <i>→</i>
-                                        </div>
-                                    }
+                                    <div class="flex flex-col items-center text-xs text-slate-300">
+                                        <span>@QueueGap(orderedOps[i], orderedOps[i + 1])</span>
+                                        <span>&rarr;</span>
+                                    </div>
                                 }
-                            </div>
-                        }
-                    </section>
+                            }
+                        </div>
+                    }
+                </section>
 
-                    <section class="campaign-section strand-section">
-                        <div class="campaign-section-head">
-                            <div><span class="planner-section-label">CCM OUTPUT</span><h3>Planned strand material</h3></div>
-                            <span class="planner-basis-badge">@(selectedHeat.StrandOutputs.Select(x => x.StrandNumber).Distinct().Count()) STRANDS</span>
+                <section class="rounded border border-slate-200 bg-white p-4">
+                    <h3 class="mb-3 text-sm font-semibold">CCM output &mdash; planned strand material (@selectedHeat.StrandOutputs.Select(x => x.StrandNumber).Distinct().Count() strands)</h3>
+                    @if (selectedHeat.StrandOutputs.Count == 0)
+                    {
+                        <p class="text-sm text-slate-400">No strand-output snapshot for this heat.</p>
+                    }
+                    else
+                    {
+                        <div class="grid grid-cols-4 gap-2">
+                            @foreach (var strandGroup in selectedHeat.StrandOutputs.GroupBy(x => x.StrandNumber).OrderBy(x => x.Key))
+                            {
+                                <button type="button" class="rounded border border-slate-200 p-2 text-left text-xs hover:bg-slate-50" @onclick="() => SelectStrand(strandGroup.First())">
+                                    <div class="text-slate-400">STRAND <strong class="text-slate-700">@strandGroup.Key</strong></div>
+                                    <div class="mt-1 text-sm font-semibold">@strandGroup.Sum(x => x.QuantityMt).ToString("0.##") MT</div>
+                                    <div class="text-slate-400">@strandGroup.First().CrossSectionCode</div>
+                                    <div class="text-slate-400">available @Available(strandGroup.Max(x => x.AvailableOnUtc))</div>
+                                </button>
+                            }
                         </div>
-                        @if (selectedHeat.StrandOutputs.Count == 0)
-                        {
-                            <p class="aps-empty">No strand-output snapshot for this heat.</p>
-                        }
-                        else
-                        {
-                            <div class="strand-bank">
-                                @foreach (var strandGroup in selectedHeat.StrandOutputs.GroupBy(x => x.StrandNumber).OrderBy(x => x.Key))
-                                {
-                                    <button type="button" class="strand-channel" @onclick="() => SelectStrand(strandGroup.First())">
-                                        <div class="strand-channel-head"><span>STRAND</span><strong>@strandGroup.Key</strong></div>
-                                        <div class="strand-flow-line"></div>
-                                        <div class="strand-channel-qty">@strandGroup.Sum(x => x.QuantityMt).ToString("0.##") MT</div>
-                                        <small>@strandGroup.First().CrossSectionCode</small>
-                                        <small>available @Available(strandGroup.Max(x => x.AvailableOnUtc))</small>
-                                    </button>
-                                }
-                            </div>
-                        }
-                    </section>
-                }
-            </section>
-        </div>
-    }
-</div>
+                    }
+                </section>
+            }
+        </section>
+    </div>
+}
 
 @code {
     private SteelmakingCastingWorkspaceView? view;
@@ -176,7 +156,6 @@
     private void SelectStrand(StrandOutputView strand) =>
         WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.MaterialSupply, strand.MaterialUnitSnapshotId, strand.PlanningKey));
 
-    private static string ProcessClass(ProcessOperationType type) => type.ToString().ToLowerInvariant();
     private static string Duration(ScheduledProcessOperationView op) => $"{Math.Max(0, (op.EndUtc - op.StartUtc).TotalMinutes):0} min";
     private static string QueueGap(ScheduledProcessOperationView left, ScheduledProcessOperationView right) => $"{Math.Max(0, (right.StartUtc - left.EndUtc).TotalMinutes):0}m";
     private static string Available(DateTime? value) => value.HasValue ? value.Value.ToString("dd MMM HH:mm") : "—";

@@ -3,8 +3,33 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
+    <SupportedPlatform Include="browser" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\APS.Domain\APS.Domain.csproj" />
     <ProjectReference Include="..\APS.Application\APS.Application.csproj" />
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.Web" Version="10.0.10" />
   </ItemGroup>
+
+  <!--
+    Compiles wwwroot/tailwind-input.css into wwwroot/tailwind.css using the Tailwind standalone
+    CLI binary - no Node/npm toolchain. The binary is not committed; it's fetched into a
+    repo-root .tailwind/ cache on first build.
+  -->
+  <PropertyGroup>
+    <TailwindCliPath>$(MSBuildProjectDirectory)\..\..\.tailwind\tailwindcss.exe</TailwindCliPath>
+    <TailwindCliUrl>https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-windows-x64.exe</TailwindCliUrl>
+    <TailwindInputCss>$(MSBuildProjectDirectory)\wwwroot\tailwind-input.css</TailwindInputCss>
+    <TailwindOutputCss>$(MSBuildProjectDirectory)\wwwroot\tailwind.css</TailwindOutputCss>
+  </PropertyGroup>
+
+  <Target Name="EnsureTailwindCli" BeforeTargets="CompileTailwindCss">
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(TailwindCliPath)'))" Condition="!Exists('$(TailwindCliPath)')" />
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Invoke-WebRequest -Uri '$(TailwindCliUrl)' -OutFile '$(TailwindCliPath)'&quot;"
+          Condition="!Exists('$(TailwindCliPath)')" />
+  </Target>
+
+  <Target Name="CompileTailwindCss" BeforeTargets="Build;Publish">
+    <Exec Command="&quot;$(TailwindCliPath)&quot; -i &quot;$(TailwindInputCss)&quot; -o &quot;$(TailwindOutputCss)&quot; --minify" />
+  </Target>
 </Project>

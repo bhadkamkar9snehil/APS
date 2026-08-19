@@ -1,46 +1,44 @@
-@using APS.Application
-
-<header class="planner-context-bar">
-    <div class="planner-context-identity">
-        <span class="planner-context-kicker">PLAN CONTEXT</span>
-        @if (Plan is null)
-        {
-            <strong>No persisted plan</strong>
-            <span class="planner-context-muted">Reference sandbox remains available</span>
-        }
-        else
-        {
+<header class="flex items-center justify-between gap-6 border-b border-slate-200 bg-white px-6 py-2.5">
+    @if (Plan is null)
+    {
+        <div class="flex items-baseline gap-2">
+            <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Plan context</span>
+            <strong class="text-slate-700">No persisted plan</strong>
+            <span class="text-xs text-slate-400">Reference sandbox remains available</span>
+        </div>
+    }
+    else
+    {
+        <div class="flex items-center gap-3">
+            <span class="text-xs font-semibold uppercase tracking-wide text-slate-400">Plan context</span>
             <strong>@Plan.VersionNumber</strong>
-            <span class="planner-status @StatusClass(Plan.Status)">@Plan.Status</span>
+            <span class="rounded px-1.5 py-0.5 text-xs font-medium @StatusClass(Plan.Status)">@Plan.Status</span>
             @if (Plan.IsActive)
             {
-                <span class="planner-context-tag">ACTIVE</span>
+                <span class="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">ACTIVE</span>
             }
             @if (Plan.IsReleased)
             {
-                <span class="planner-context-tag">RELEASED</span>
+                <span class="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-600">RELEASED</span>
             }
-        }
-    </div>
+        </div>
 
-    @if (Plan is not null)
-    {
-        <div class="planner-context-facts">
+        <div class="flex items-center gap-6 text-xs text-slate-500">
             <div>
-                <span>Horizon</span>
-                <strong>@Plan.HorizonStartUtc.ToString("dd MMM HH:mm") → @Plan.HorizonEndUtc.ToString("dd MMM HH:mm")</strong>
+                <span class="text-slate-400">Horizon </span>
+                <strong class="text-slate-700">@Plan.HorizonStartUtc.ToString("dd MMM HH:mm") &rarr; @Plan.HorizonEndUtc.ToString("dd MMM HH:mm")</strong>
             </div>
             <div>
-                <span>Reference</span>
-                <strong>@Plan.ReferenceTimeUtc.ToString("dd MMM HH:mm") UTC</strong>
+                <span class="text-slate-400">Reference </span>
+                <strong class="text-slate-700">@Plan.ReferenceTimeUtc.ToString("dd MMM HH:mm") UTC</strong>
             </div>
             <div>
-                <span>Solver</span>
-                <strong>@(Plan.SolverStatus ?? "—")</strong>
+                <span class="text-slate-400">Solver </span>
+                <strong class="text-slate-700">@(Plan.SolverStatus ?? "—")</strong>
             </div>
             <div>
-                <span>Trigger</span>
-                <strong>@Plan.Trigger</strong>
+                <span class="text-slate-400">Trigger </span>
+                <strong class="text-slate-700">@Plan.Trigger</strong>
             </div>
         </div>
     }
@@ -51,10 +49,10 @@
 
     private static string StatusClass(APS.Domain.PlanVersionStatus status) => status switch
     {
-        APS.Domain.PlanVersionStatus.Feasible => "is-good",
-        APS.Domain.PlanVersionStatus.Released => "is-good",
-        APS.Domain.PlanVersionStatus.Failed => "is-bad",
-        APS.Domain.PlanVersionStatus.Superseded => "is-muted",
-        _ => "is-neutral"
+        APS.Domain.PlanVersionStatus.Feasible => "bg-emerald-100 text-emerald-700",
+        APS.Domain.PlanVersionStatus.Released => "bg-emerald-100 text-emerald-700",
+        APS.Domain.PlanVersionStatus.Failed => "bg-rose-100 text-rose-700",
+        APS.Domain.PlanVersionStatus.Superseded => "bg-slate-100 text-slate-500",
+        _ => "bg-slate-100 text-slate-600"
     };
 }

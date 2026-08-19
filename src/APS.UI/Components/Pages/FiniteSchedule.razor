@@ -5,82 +5,63 @@
 
 <PageTitle>Finite Schedule - APS</PageTitle>
 
-<div class="planner-page schedule-workspace">
-    <header class="workspace-titlebar">
-        <div>
-            <span class="workspace-eyebrow">PLAN / FINITE SCHEDULE</span>
-            <h1>Finite Schedule</h1>
-            <p>Solver-owned assignments on independent physical resources. Every lane is a ResourceId.</p>
+<h1 class="mb-1 text-lg font-semibold">Finite Schedule</h1>
+<p class="mb-6 text-sm text-slate-500">Solver-owned assignments on independent physical resources. Every lane is a ResourceId.</p>
+
+@if (loading)
+{
+    <p class="text-sm text-slate-400">Loading finite schedule…</p>
+}
+else if (view is null)
+{
+    <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center text-slate-700">No persisted finite schedule.</div>
+}
+else
+{
+    <div class="mb-4 flex items-center gap-6 rounded border border-slate-200 bg-white px-4 py-2 text-sm">
+        <div><span class="text-xs text-slate-400">Window </span><strong>@view.ScheduleStartUtc.ToString("dd MMM HH:mm") &rarr; @view.ScheduleEndUtc.ToString("dd MMM HH:mm")</strong></div>
+        <div><span class="text-xs text-slate-400">Operations </span><strong>@view.OperationCount</strong></div>
+        <div><span class="text-xs text-slate-400">Resources </span><strong>@view.ResourceCount</strong></div>
+    </div>
+
+    <section class="rounded border border-slate-200 bg-white p-3">
+        <div class="grid grid-cols-[160px_1fr] border-b border-slate-100 pb-1 text-xs text-slate-400">
+            <div>RESOURCE</div>
+            <div class="relative h-4">
+                @foreach (var tick in AxisTicks())
+                {
+                    <span class="absolute -translate-x-1/2" style="left:@(tick.LeftPercent.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture))%">@tick.Time.ToString("dd MMM HH:mm")</span>
+                }
+            </div>
         </div>
-        @if (view is not null)
-        {
-            <div class="workspace-basis"><span>Basis</span><strong>@view.Plan.VersionNumber solved snapshot</strong></div>
-        }
-    </header>
 
-    @if (loading)
-    {
-        <div class="planner-empty-state"><strong>Loading finite schedule…</strong></div>
-    }
-    else if (view is null)
-    {
-        <div class="planner-empty-state planner-empty-state-major"><strong>No persisted finite schedule</strong></div>
-    }
-    else
-    {
-        <section class="schedule-toolbar">
-            <div><span>Window</span><strong>@view.ScheduleStartUtc.ToString("dd MMM HH:mm") → @view.ScheduleEndUtc.ToString("dd MMM HH:mm")</strong></div>
-            <div><span>Operations</span><strong>@view.OperationCount</strong></div>
-            <div><span>Physical resources</span><strong>@view.ResourceCount</strong></div>
-            <div class="schedule-legend">
-                <span><i class="op-eaf"></i>EAF</span>
-                <span><i class="op-lrf"></i>LRF</span>
-                <span><i class="op-vd"></i>VD</span>
-                <span><i class="op-ccm"></i>CCM</span>
-                <span><i class="op-reheat"></i>RHF</span>
-                <span><i class="op-hotroll"></i>RM</span>
-            </div>
-        </section>
-
-        <section class="schedule-board">
-            <div class="schedule-axis-row">
-                <div class="schedule-resource-axis-label">RESOURCE</div>
-                <div class="schedule-axis">
-                    @foreach (var tick in AxisTicks())
-                    {
-                        <span style="left:@tick.LeftPercent.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)%">@tick.Time.ToString("dd MMM HH:mm")</span>
-                    }
-                </div>
-            </div>
-
+        <div class="divide-y divide-slate-100">
             @foreach (var lane in view.ResourceLanes)
             {
-                <div class="schedule-lane-row">
-                    <button type="button" class="schedule-resource-label" @onclick="() => SelectResource(lane)">
-                        <strong>@lane.ResourceCode</strong>
-                        <span>@lane.ProcessUnitType</span>
-                        <small>@lane.ScheduledHours.ToString("0.##") h · @lane.Operations.Count ops</small>
+                <div class="grid grid-cols-[160px_1fr] items-center py-1.5">
+                    <button type="button" class="pr-2 text-left text-xs hover:text-accent" @onclick="() => SelectResource(lane)">
+                        <strong class="block text-slate-800">@lane.ResourceCode</strong>
+                        <span class="text-slate-400">@lane.ProcessUnitType &middot; @lane.ScheduledHours.ToString("0.##") h</span>
                     </button>
-                    <div class="schedule-lane-track">
+                    <div class="relative h-6 rounded bg-slate-50">
                         @foreach (var operation in lane.Operations)
                         {
                             <button type="button"
-                                    class="schedule-operation op-@ProcessClass(operation.ProcessOperationType)"
-                                    style="left:@OperationLeft(operation)%;width:@OperationWidth(operation)%"
+                                    class="absolute top-0.5 h-5 overflow-hidden rounded px-1 text-left text-[10px] leading-5 text-white @ProcessColor(operation.ProcessOperationType)"
+                                    style="left:@(OperationLeft(operation))%;width:@(OperationWidth(operation))%"
                                     title="@OperationTitle(operation)"
                                     @onclick="() => SelectOperation(operation)">
-                                <strong>@operation.ProcessOperationType</strong>
-                                <span>@operation.GradeCode</span>
+                                @operation.ProcessOperationType
                             </button>
                         }
                     </div>
                 </div>
             }
-        </section>
+        </div>
+    </section>
 
-        <p class="schedule-disclaimer">This view renders the persisted solved operation assignments. Resource calendar blocks, time-fence policy and dependency edges will be added only after those exact run assumptions are snapshotted with the Plan Version.</p>
-    }
-</div>
+    <p class="mt-3 text-xs text-slate-400">This view renders the persisted solved operation assignments. Resource calendar blocks, time-fence policy and dependency edges will be added only after those exact run assumptions are snapshotted with the Plan Version.</p>
+}
 
 @code {
     private FiniteScheduleWorkspaceView? view;
@@ -118,7 +99,7 @@
         if (view is null) return 0m;
         var totalMinutes = Math.Max(1d, (view.ScheduleEndUtc - view.ScheduleStartUtc).TotalMinutes);
         var width = Math.Max(0d, (operation.EndUtc - operation.StartUtc).TotalMinutes) / totalMinutes * 100d;
-        return (decimal)Math.Clamp(width, .18d, 100d);
+        return (decimal)Math.Clamp(width, .5d, 100d);
     }
 
     private IReadOnlyCollection<AxisTick> AxisTicks()
@@ -137,7 +118,18 @@
     private void SelectResource(ScheduleResourceLaneView lane) =>
         WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Resource, lane.ResourceId, lane.ResourceCode));
 
-    private static string ProcessClass(ProcessOperationType type) => type.ToString().ToLowerInvariant();
+    private static string ProcessColor(ProcessOperationType type) => type switch
+    {
+        ProcessOperationType.Eaf => "bg-orange-500",
+        ProcessOperationType.Lrf => "bg-violet-500",
+        ProcessOperationType.Vd => "bg-teal-500",
+        ProcessOperationType.Ccm => "bg-emerald-600",
+        ProcessOperationType.Reheat => "bg-amber-500",
+        ProcessOperationType.HotRoll or ProcessOperationType.ColdRoll => "bg-sky-600",
+        ProcessOperationType.Finish => "bg-cyan-600",
+        _ => "bg-slate-500"
+    };
+
     private static string OperationTitle(ScheduledProcessOperationView op) =>
         $"{op.ProcessOperationType} · {op.ResourceCode} · {op.StartUtc:dd MMM HH:mm} → {op.EndUtc:dd MMM HH:mm} · {op.QuantityMt:0.##} MT · {op.GradeCode}/{op.CrossSectionCode}";
 

@@ -5,181 +5,149 @@
 
 <PageTitle>Campaign Studio - APS</PageTitle>
 
-<div class="planner-page campaign-studio">
-    <header class="workspace-titlebar">
-        <div>
-            <span class="workspace-eyebrow">PLAN / CAMPAIGNS</span>
-            <h1>Campaign Studio</h1>
-            <p>PO allocation, grade order and furnace-feasible heat structure for the selected Plan Version.</p>
-        </div>
-        @if (view is not null)
-        {
-            <div class="workspace-basis">
-                <span>Basis</span>
-                <strong>@view.Plan.VersionNumber snapshot</strong>
-            </div>
-        }
-    </header>
+<h1 class="mb-1 text-lg font-semibold">Campaign Studio</h1>
+<p class="mb-6 text-sm text-slate-500">PO allocation, grade order and furnace-feasible heat structure for the selected Plan Version.</p>
 
-    @if (loading)
-    {
-        <div class="planner-empty-state"><strong>Loading campaign structure…</strong></div>
-    }
-    else if (view is null)
-    {
-        <div class="planner-empty-state planner-empty-state-major">
-            <strong>No persisted campaign snapshot</strong>
-            <p>Run and persist a Plan Version before using Campaign Studio.</p>
-        </div>
-    }
-    else
-    {
-        <section class="campaign-summary-strip">
-            <div><span>Campaigns</span><strong>@view.CampaignCount</strong></div>
-            <div><span>Heats</span><strong>@view.HeatCount</strong></div>
-            <div><span>Rolling quantity</span><strong>@view.PlannedRollingQuantityMt.ToString("0.##") MT</strong></div>
-            <div><span>Existing billet</span><strong>@view.ExistingIntermediateQuantityMt.ToString("0.##") MT</strong></div>
-            <div><span>Fresh steel</span><strong>@view.FreshSteelRequirementMt.ToString("0.##") MT</strong></div>
-        </section>
+@if (loading)
+{
+    <p class="text-sm text-slate-400">Loading campaign structure…</p>
+}
+else if (view is null)
+{
+    <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center">
+        <strong class="text-slate-700">No persisted campaign snapshot</strong>
+        <p class="mt-1 text-sm text-slate-500">Run and persist a Plan Version before using Campaign Studio.</p>
+    </div>
+}
+else
+{
+    <div class="mb-6 grid grid-cols-5 gap-3">
+        <StatTile Label="Campaigns" Value="@view.CampaignCount.ToString()" />
+        <StatTile Label="Heats" Value="@view.HeatCount.ToString()" />
+        <StatTile Label="Rolling qty" Value="@($"{view.PlannedRollingQuantityMt:0.##} MT")" />
+        <StatTile Label="Existing billet" Value="@($"{view.ExistingIntermediateQuantityMt:0.##} MT")" />
+        <StatTile Label="Fresh steel" Value="@($"{view.FreshSteelRequirementMt:0.##} MT")" />
+    </div>
 
-        <div class="campaign-layout">
-            <aside class="campaign-register">
-                <div class="campaign-register-head">
-                    <span class="planner-section-label">CAMPAIGN REGISTER</span>
-                    <strong>@view.CampaignCount selected by optimizer</strong>
-                </div>
-                <div class="campaign-register-list">
-                    @foreach (var campaign in view.Campaigns)
-                    {
-                        <button type="button" class="campaign-register-row @(selectedCampaign?.CampaignId == campaign.CampaignId ? "is-selected" : null)" @onclick="() => SelectCampaign(campaign)">
-                            <div>
-                                <strong>@campaign.CampaignNumber</strong>
-                                <span>@campaign.GradeSequenceClassCode · @campaign.CasterSectionCode</span>
-                            </div>
-                            <div class="campaign-register-qty">
-                                <strong>@campaign.PlannedQuantityMt.ToString("0.#")</strong>
-                                <span>MT</span>
-                            </div>
-                            <small>@campaign.Heats.Count heats · due @campaign.RequiredDate.ToString("dd MMM")</small>
-                        </button>
-                    }
-                </div>
-            </aside>
-
-            <section class="campaign-canvas">
-                @if (selectedCampaign is null)
+    <div class="grid grid-cols-[280px_1fr] gap-4">
+        <aside class="rounded border border-slate-200 bg-white">
+            <div class="border-b border-slate-200 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Campaign register</div>
+            <div class="max-h-[70vh] overflow-y-auto">
+                @foreach (var campaign in view.Campaigns)
                 {
-                    <div class="planner-empty-state"><strong>Select a campaign</strong></div>
-                }
-                else
-                {
-                    var gradeSequence = selectedCampaign.GradeSequence.OrderBy(x => x.SequenceNumber).ToArray();
-                    <div class="campaign-hero">
-                        <div>
-                            <span class="planner-section-label">SELECTED CAMPAIGN</span>
-                            <h2>@selectedCampaign.CampaignNumber</h2>
-                            <p>@selectedCampaign.RouteCode · caster section @selectedCampaign.CasterSectionCode · due @selectedCampaign.RequiredDate.ToString("dd MMM yyyy HH:mm")</p>
+                    <button type="button" class="block w-full border-b border-slate-100 px-3 py-2 text-left last:border-0 hover:bg-slate-50 @(selectedCampaign?.CampaignId == campaign.CampaignId ? "bg-accent-soft" : "")" @onclick="() => SelectCampaign(campaign)">
+                        <strong>@campaign.CampaignNumber</strong>
+                        <div class="text-xs text-slate-400">@campaign.GradeSequenceClassCode &middot; @campaign.CasterSectionCode</div>
+                        <div class="mt-1 flex items-center justify-between text-xs">
+                            <span>@campaign.Heats.Count heats &middot; due @campaign.RequiredDate.ToString("dd MMM")</span>
+                            <strong>@campaign.PlannedQuantityMt.ToString("0.#") MT</strong>
                         </div>
-                        <div class="campaign-hero-numbers">
-                            <div><span>Total</span><strong>@selectedCampaign.PlannedQuantityMt.ToString("0.##") MT</strong></div>
-                            <div><span>Existing billet</span><strong>@selectedCampaign.ExistingIntermediateInventoryMt.ToString("0.##")</strong></div>
-                            <div><span>Fresh steel</span><strong>@selectedCampaign.FreshSteelRequirementMt.ToString("0.##")</strong></div>
+                    </button>
+                }
+            </div>
+        </aside>
+
+        <section>
+            @if (selectedCampaign is null)
+            {
+                <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center text-slate-400">Select a campaign</div>
+            }
+            else
+            {
+                var gradeSequence = selectedCampaign.GradeSequence.OrderBy(x => x.SequenceNumber).ToArray();
+                <div class="mb-4 rounded border border-slate-200 bg-white p-4">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <h2 class="text-base font-semibold">@selectedCampaign.CampaignNumber</h2>
+                            <p class="text-sm text-slate-500">@selectedCampaign.RouteCode &middot; caster section @selectedCampaign.CasterSectionCode &middot; due @selectedCampaign.RequiredDate.ToString("dd MMM yyyy HH:mm")</p>
+                        </div>
+                        <div class="flex gap-4 text-right text-sm">
+                            <div><div class="text-xs text-slate-400">Total</div><strong>@selectedCampaign.PlannedQuantityMt.ToString("0.##") MT</strong></div>
+                            <div><div class="text-xs text-slate-400">Existing billet</div><strong>@selectedCampaign.ExistingIntermediateInventoryMt.ToString("0.##")</strong></div>
+                            <div><div class="text-xs text-slate-400">Fresh steel</div><strong>@selectedCampaign.FreshSteelRequirementMt.ToString("0.##")</strong></div>
                         </div>
                     </div>
+                </div>
 
-                    <section class="campaign-section">
-                        <div class="campaign-section-head">
-                            <div>
-                                <span class="planner-section-label">GRADE ORDER</span>
-                                <h3>Sequence selected for this campaign</h3>
+                <section class="mb-4 rounded border border-slate-200 bg-white p-4">
+                    <h3 class="mb-3 text-sm font-semibold">Grade order</h3>
+                    <div class="flex flex-wrap items-center gap-2">
+                        @for (var i = 0; i < gradeSequence.Length; i++)
+                        {
+                            var grade = gradeSequence[i];
+                            <div class="rounded border border-slate-200 px-2 py-1 text-center text-xs">
+                                <div class="text-slate-400">@grade.SequenceNumber.ToString("00")</div>
+                                <strong>@grade.GradeCode</strong>
+                                <div class="text-slate-400">@grade.PlannedQuantityMt.ToString("0.#") MT</div>
                             </div>
-                            <span class="planner-basis-badge">@selectedCampaign.GradeSequenceClassCode</span>
-                        </div>
-                        <div class="grade-sequence-rail">
-                            @for (var i = 0; i < gradeSequence.Length; i++)
+                            @if (i < gradeSequence.Length - 1)
                             {
-                                var grade = gradeSequence[i];
-                                <div class="grade-sequence-node">
-                                    <span>@grade.SequenceNumber.ToString("00")</span>
-                                    <strong>@grade.GradeCode</strong>
-                                    <small>@grade.PlannedQuantityMt.ToString("0.#") MT</small>
+                                <span class="text-slate-300">&rarr;</span>
+                            }
+                        }
+                    </div>
+                </section>
+
+                <section class="mb-4 rounded border border-slate-200 bg-white p-4">
+                    <h3 class="mb-3 text-sm font-semibold">Heat structure (@selectedCampaign.Heats.Count)</h3>
+                    <div class="grid grid-cols-3 gap-2">
+                        @foreach (var heat in selectedCampaign.Heats.OrderBy(x => x.SequenceNumber))
+                        {
+                            <button type="button" class="rounded border border-slate-200 p-2 text-left text-xs hover:bg-slate-50" @onclick="() => SelectHeat(heat)">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-slate-400">H@heat.SequenceNumber.ToString("00")</span>
+                                    <strong>@heat.GradeCode</strong>
                                 </div>
-                                @if (i < gradeSequence.Length - 1)
-                                {
-                                    <div class="grade-sequence-link">→</div>
-                                }
-                            }
-                        </div>
-                    </section>
-
-                    <section class="campaign-section">
-                        <div class="campaign-section-head">
-                            <div>
-                                <span class="planner-section-label">HEAT STRUCTURE</span>
-                                <h3>Furnace-feasible heats and PO pegging</h3>
-                            </div>
-                            <span class="planner-basis-badge">@selectedCampaign.Heats.Count HEATS</span>
-                        </div>
-                        <div class="heat-ribbon">
-                            @foreach (var heat in selectedCampaign.Heats.OrderBy(x => x.SequenceNumber))
-                            {
-                                <button type="button" class="heat-ribbon-block" @onclick="() => SelectHeat(heat)">
-                                    <div class="heat-ribbon-head">
-                                        <span>H@heat.SequenceNumber.ToString("00")</span>
-                                        <strong>@heat.GradeCode</strong>
-                                    </div>
-                                    <div class="heat-ribbon-qty">@heat.PlannedQuantityMt.ToString("0.##") MT</div>
-                                    <div class="heat-envelope">
-                                        <span>min @FormatNullable(heat.MinimumFeasibleQuantityMt)</span>
-                                        <span>target @FormatNullable(heat.TargetQuantityMt)</span>
-                                        <span>max @FormatNullable(heat.MaximumFeasibleQuantityMt)</span>
-                                    </div>
-                                    <div class="heat-allocations">
-                                        @if (heat.Allocations.Count == 0)
+                                <div class="mt-1 text-sm font-semibold">@heat.PlannedQuantityMt.ToString("0.##") MT</div>
+                                <div class="text-slate-400">min @FormatNullable(heat.MinimumFeasibleQuantityMt) &middot; target @FormatNullable(heat.TargetQuantityMt) &middot; max @FormatNullable(heat.MaximumFeasibleQuantityMt)</div>
+                                <div class="mt-1 space-y-0.5">
+                                    @if (heat.Allocations.Count == 0)
+                                    {
+                                        <div class="text-slate-400">No PO pegging snapshot</div>
+                                    }
+                                    else
+                                    {
+                                        @foreach (var allocation in heat.Allocations)
                                         {
-                                            <span>No PO pegging snapshot</span>
+                                            <div title="@HeatAllocationTitle(allocation)">@allocation.ProductionOrderNumber &middot; @allocation.PlannedOutputQuantityMt.ToString("0.#") MT</div>
                                         }
-                                        else
-                                        {
-                                            @foreach (var allocation in heat.Allocations)
-                                            {
-                                                <span title="@HeatAllocationTitle(allocation)">@allocation.ProductionOrderNumber · @allocation.PlannedOutputQuantityMt.ToString("0.#") MT</span>
-                                            }
-                                        }
-                                    </div>
-                                </button>
-                            }
-                        </div>
-                    </section>
+                                    }
+                                </div>
+                            </button>
+                        }
+                    </div>
+                </section>
 
-                    <section class="campaign-section">
-                        <div class="campaign-section-head">
-                            <div>
-                                <span class="planner-section-label">PO ALLOCATION</span>
-                                <h3>Why this campaign exists</h3>
-                            </div>
-                        </div>
-                        <div class="campaign-allocation-table">
-                            <div class="campaign-allocation-head">
-                                <span>Production Order</span><span>Demand</span><span>Total</span><span>Existing billet</span><span>Fresh steel</span>
-                            </div>
+                <section class="rounded border border-slate-200 bg-white">
+                    <div class="border-b border-slate-200 px-4 py-2 text-sm font-semibold">PO allocation</div>
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+                                <th class="px-4 py-2 font-medium">Production Order</th>
+                                <th class="px-4 py-2 font-medium">Source</th>
+                                <th class="px-4 py-2 font-medium text-right">Total</th>
+                                <th class="px-4 py-2 font-medium text-right">Existing billet</th>
+                                <th class="px-4 py-2 font-medium text-right">Fresh steel</th>
+                            </tr>
+                        </thead>
+                        <tbody>
                             @foreach (var allocation in selectedCampaign.Allocations)
                             {
-                                <button type="button" class="campaign-allocation-row" @onclick="() => SelectProductionOrder(allocation)">
-                                    <span><strong>@allocation.ProductionOrderNumber</strong><small>@(allocation.SalesOrderNumber is null ? "Stock replenishment" : $"SO {allocation.SalesOrderNumber}")</small></span>
-                                    <span><em class="source-badge @(allocation.DemandSource == DemandSourceType.MakeToOrder ? "mto" : "mts")">@(allocation.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</em></span>
-                                    <strong>@allocation.PlannedQuantityMt.ToString("0.##")</strong>
-                                    <strong>@allocation.ExistingIntermediateInventoryMt.ToString("0.##")</strong>
-                                    <strong>@allocation.FreshSteelQuantityMt.ToString("0.##")</strong>
-                                </button>
+                                <tr class="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50" @onclick="() => SelectProductionOrder(allocation)">
+                                    <td class="px-4 py-2"><strong>@allocation.ProductionOrderNumber</strong><div class="text-xs text-slate-400">@(allocation.SalesOrderNumber is null ? "Stock replenishment" : $"SO {allocation.SalesOrderNumber}")</div></td>
+                                    <td class="px-4 py-2"><span class="rounded px-1.5 py-0.5 text-xs @(allocation.DemandSource == DemandSourceType.MakeToOrder ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600")">@(allocation.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</span></td>
+                                    <td class="px-4 py-2 text-right font-medium">@allocation.PlannedQuantityMt.ToString("0.##")</td>
+                                    <td class="px-4 py-2 text-right">@allocation.ExistingIntermediateInventoryMt.ToString("0.##")</td>
+                                    <td class="px-4 py-2 text-right">@allocation.FreshSteelQuantityMt.ToString("0.##")</td>
+                                </tr>
                             }
-                        </div>
-                    </section>
-                }
-            </section>
-        </div>
-    }
-</div>
+                        </tbody>
+                    </table>
+                </section>
+            }
+        </section>
+    </div>
+}
 
 @code {
     private CampaignStudioView? view;

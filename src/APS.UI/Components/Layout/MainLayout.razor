@@ -4,68 +4,52 @@
 @inject PlannerWorkspaceState WorkspaceState
 @inject IConfiguration Configuration
 
-<div class="planner-shell">
-    <aside class="planner-rail" aria-label="APS primary navigation">
-        <div class="planner-brand">
-            <div class="planner-brand-mark">A</div>
-            <div>
-                <strong>APS</strong>
-                <span>Planning system</span>
+<div class="flex h-screen w-screen overflow-hidden bg-slate-50 text-sm text-slate-900">
+    <aside class="flex w-56 shrink-0 flex-col border-r border-slate-200 bg-white">
+        <div class="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
+            <div class="flex h-7 w-7 items-center justify-center rounded bg-accent text-sm font-bold text-white">A</div>
+            <div class="leading-tight">
+                <div class="font-semibold">APS Planner</div>
+                <div class="text-xs text-slate-500">Steel planning system</div>
             </div>
         </div>
 
-        <nav class="planner-rail-nav">
-            <NavLink class="planner-nav-link" href="/" Match="NavLinkMatch.All">
-                <span class="planner-nav-code">01</span><span>Control Tower</span>
-            </NavLink>
+        <nav class="flex-1 overflow-y-auto px-2 py-3">
+            <NavItem Href="/" Match="NavLinkMatch.All" Label="Control Tower" />
 
-            <div class="planner-nav-group">
-                <span class="planner-nav-label">PLAN</span>
-                <NavLink class="planner-nav-link" href="/plan/demand">
-                    <span class="planner-nav-code">02</span><span>Demand & Supply</span>
-                </NavLink>
-                <NavLink class="planner-nav-link" href="/plan/campaigns">
-                    <span class="planner-nav-code">03</span><span>Campaign Studio</span>
-                </NavLink>
-                <span class="planner-nav-link is-disabled"><span class="planner-nav-code">04</span><span>Steelmaking & Casting</span></span>
-                <span class="planner-nav-link is-disabled"><span class="planner-nav-code">05</span><span>Rolling & Finishing</span></span>
-                <span class="planner-nav-link is-disabled"><span class="planner-nav-code">06</span><span>Finite Schedule</span></span>
-                <span class="planner-nav-link is-disabled"><span class="planner-nav-code">07</span><span>Material Flow</span></span>
-            </div>
+            <NavGroup Title="PLAN">
+                <NavItem Href="/plan/versions" Label="Plan Versions" />
+                <NavItem Href="/plan/demand" Label="Demand & Supply" />
+                <NavItem Href="/plan/campaigns" Label="Campaign Studio" />
+                <NavItem Href="/plan/steelmaking" Label="Steelmaking & Casting" />
+                <NavItem Href="/plan/rolling" Label="Rolling & Finishing" />
+                <NavItem Href="/plan/schedule" Label="Finite Schedule" />
+                <NavItem Href="/plan/inventory" Label="Inventory" />
+                <NavItem Href="/plan/master-data" Label="Master Data" />
+            </NavGroup>
 
-            <div class="planner-nav-group">
-                <span class="planner-nav-label">OPERATE</span>
-                <span class="planner-nav-link is-disabled"><span class="planner-nav-code">08</span><span>Work Orders</span></span>
-                <span class="planner-nav-link is-disabled"><span class="planner-nav-code">09</span><span>Actuals & Replan</span></span>
-                <span class="planner-nav-link is-disabled"><span class="planner-nav-code">10</span><span>Traceability</span></span>
-            </div>
+            <NavGroup Title="OPERATE">
+                <NavItem Href="/operate/work-orders" Label="Work Orders" />
+                <NavItem Href="/operate/traceability" Label="Traceability" />
+            </NavGroup>
 
-            <div class="planner-nav-group planner-nav-secondary">
-                <span class="planner-nav-label">DECIDE</span>
-                <span class="planner-nav-link is-disabled">Scenarios / Compare</span>
-                <span class="planner-nav-link is-disabled">CTP / Promise</span>
-                <span class="planner-nav-link is-disabled">Diagnostics</span>
-                <span class="planner-nav-link is-disabled">Capacity</span>
-            </div>
-
-            <div class="planner-nav-group planner-nav-secondary">
-                <span class="planner-nav-label">CONFIGURE</span>
-                <span class="planner-nav-link is-disabled">Steel Masters</span>
-            </div>
+            <NavGroup Title="COMPARE">
+                <NavItem Href="/decide/compare" Label="Plan Compare" />
+            </NavGroup>
         </nav>
 
         @if (demoModeEnabled)
         {
-            <div class="planner-rail-reference">
-                <span>DEMO / REFERENCE</span>
-                <NavLink href="/demo/planning">Planning Sandbox</NavLink>
+            <div class="border-t border-slate-200 px-4 py-3 text-xs">
+                <div class="mb-1 font-semibold uppercase tracking-wide text-slate-400">Demo / reference</div>
+                <NavLink href="/demo/planning" class="text-accent hover:underline">Planning Sandbox</NavLink>
             </div>
         }
     </aside>
 
-    <section class="planner-stage">
+    <section class="flex min-w-0 flex-1 flex-col">
         <PlanContextBar Plan="currentPlan" />
-        <main class="planner-workspace">
+        <main class="flex-1 overflow-y-auto p-6">
             @Body
         </main>
     </section>

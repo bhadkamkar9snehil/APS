@@ -1,29 +1,27 @@
 @using APS.Application
 
-<div class="aps-gantt-axis">
+<div class="grid grid-cols-[160px_1fr] border-b border-slate-100 pb-1 text-xs text-slate-400">
     <div></div>
-    <div class="aps-gantt-axis-ticks">
+    <div class="relative h-4">
         @foreach (var tick in AxisTicks())
         {
-            <span>@tick.ToString("ddd HH:mm")</span>
+            <span class="absolute -translate-x-1/2">@tick.ToString("ddd HH:mm")</span>
         }
     </div>
 </div>
-<div class="aps-gantt">
+<div class="divide-y divide-slate-100">
     @foreach (var row in Rows)
     {
-        <div class="aps-gantt-row">
-            <div class="aps-gantt-label" title="@row.ResourceName">@row.ResourceName</div>
-            <div class="aps-gantt-track">
+        <div class="grid grid-cols-[160px_1fr] items-center py-1.5">
+            <div class="truncate pr-2 text-xs font-medium" title="@row.ResourceName">@row.ResourceName</div>
+            <div class="relative h-6 rounded bg-slate-50">
                 @foreach (var block in row.Downtime)
                 {
-                    <div class="aps-gantt-block downtime" style="@BlockStyle(block.Start, block.End)" title="Downtime @block.Reason">
-                        &#8203;
-                    </div>
+                    <div class="absolute top-0.5 h-5 rounded bg-slate-300" style="@BlockStyle(block.Start, block.End)" title="Downtime @block.Reason"></div>
                 }
                 @foreach (var block in row.Blocks)
                 {
-                    <div class="aps-gantt-block @CssClass(block.TaskType)" style="@BlockStyle(block.StartUtc, block.EndUtc)" title="@block.Title">
+                    <div class="absolute top-0.5 h-5 overflow-hidden rounded px-1 text-[10px] leading-5 text-white @CssClass(block.TaskType)" style="@BlockStyle(block.StartUtc, block.EndUtc)" title="@block.Title">
                         @block.Title
                     </div>
                 }
@@ -67,10 +65,10 @@
 
     private static string CssClass(FiniteScheduleTaskType type) => type switch
     {
-        FiniteScheduleTaskType.Casting => "casting",
-        FiniteScheduleTaskType.HotRolling => "hotrolling",
-        FiniteScheduleTaskType.ColdRolling => "coldrolling",
-        FiniteScheduleTaskType.Finishing => "finishing",
-        _ => "casting"
+        FiniteScheduleTaskType.Casting => "bg-emerald-600",
+        FiniteScheduleTaskType.HotRolling => "bg-sky-600",
+        FiniteScheduleTaskType.ColdRolling => "bg-sky-700",
+        FiniteScheduleTaskType.Finishing => "bg-cyan-600",
+        _ => "bg-slate-500"
     };
 }

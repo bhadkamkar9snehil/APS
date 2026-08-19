@@ -5,187 +5,128 @@
 
 <PageTitle>Control Tower - APS</PageTitle>
 
-<div class="control-tower">
-    <header class="workspace-titlebar">
-        <div>
-            <span class="workspace-eyebrow">CONTROL</span>
-            <h1>Control Tower</h1>
-            <p>Authoritative plan footprint, physical-resource pressure and persisted material commitments.</p>
-        </div>
-        @if (view is not null)
-        {
-            <div class="workspace-basis">
-                <span>Basis</span>
-                <strong>Persisted Plan Version</strong>
-            </div>
-        }
-    </header>
+<h1 class="mb-1 text-lg font-semibold">Control Tower</h1>
+<p class="mb-6 text-sm text-slate-500">Authoritative plan footprint, physical-resource pressure and persisted material commitments.</p>
 
-    @if (loading)
-    {
-        <div class="planner-empty-state">
-            <strong>Loading plan context…</strong>
-            <span>Reading persisted planning snapshots.</span>
-        </div>
-    }
-    else if (view is null)
-    {
-        <div class="planner-empty-state planner-empty-state-major">
-            <span class="planner-empty-symbol">◇</span>
-            <strong>No active persisted Plan Version</strong>
-            <p>The production workspace only shows authoritative persisted planning state. The sample engine remains available in the reference sandbox.</p>
-            <a class="planner-text-link" href="/planning">Open Planning Sandbox →</a>
-        </div>
-    }
-    else
-    {
-        <section class="plan-pulse" aria-label="Plan footprint">
-            <div class="plan-pulse-primary">
-                <span>PLAN</span>
-                <strong>@view.Plan.VersionNumber</strong>
-                <small>@view.Plan.CreatedOnUtc.ToString("dd MMM yyyy HH:mm") UTC</small>
-            </div>
-            <div>
-                <span>Scheduled operations</span>
-                <strong>@view.Footprint.ScheduledOperationCount</strong>
-                <small>@view.Footprint.PhysicalResourceCount physical resources</small>
-            </div>
-            <div>
-                <span>Inventory allocations</span>
-                <strong>@view.Footprint.InventoryAllocatedQuantityMt.ToString("0.##") MT</strong>
-                <small>@view.Footprint.InventoryAllocationCount allocation records</small>
-            </div>
-            <div>
-                <span>Planned cast output</span>
-                <strong>@view.Footprint.PlannedMaterialUnitQuantityMt.ToString("0.##") MT</strong>
-                <small>@view.Footprint.PlannedMaterialUnitCount strand/material units</small>
-            </div>
-            <div>
-                <span>Execution footprint</span>
-                <strong>@view.Footprint.WorkOrderCount WOs</strong>
-                <small>@view.Footprint.RunningWorkOrderCount running · @view.Footprint.CompletedWorkOrderCount complete</small>
-            </div>
-            <div>
-                <span>Schedule span</span>
-                <strong>@ScheduleSpan(view.Footprint)</strong>
-                <small>@ScheduleWindow(view.Footprint)</small>
+@if (loading)
+{
+    <p class="text-sm text-slate-400">Loading plan context…</p>
+}
+else if (view is null)
+{
+    <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center">
+        <strong class="block text-slate-700">No active persisted Plan Version</strong>
+        <p class="mt-1 text-sm text-slate-500">The production workspace only shows authoritative persisted planning state.</p>
+        <a class="mt-3 inline-block text-sm text-accent hover:underline" href="/plan/versions">Go to Plan Versions &rarr;</a>
+    </div>
+}
+else
+{
+    <div class="mb-6 grid grid-cols-3 gap-3 lg:grid-cols-6">
+        <StatTile Label="Plan" Value="@view.Plan.VersionNumber" Sub="@view.Plan.CreatedOnUtc.ToString("dd MMM HH:mm")" />
+        <StatTile Label="Scheduled ops" Value="@view.Footprint.ScheduledOperationCount.ToString()" Sub="@($"{view.Footprint.PhysicalResourceCount} resources")" />
+        <StatTile Label="Inventory alloc." Value="@($"{view.Footprint.InventoryAllocatedQuantityMt:0.##} MT")" Sub="@($"{view.Footprint.InventoryAllocationCount} records")" />
+        <StatTile Label="Planned cast" Value="@($"{view.Footprint.PlannedMaterialUnitQuantityMt:0.##} MT")" Sub="@($"{view.Footprint.PlannedMaterialUnitCount} units")" />
+        <StatTile Label="Work orders" Value="@view.Footprint.WorkOrderCount.ToString()" Sub="@($"{view.Footprint.RunningWorkOrderCount} running")" />
+        <StatTile Label="Schedule span" Value="@ScheduleSpan(view.Footprint)" Sub="@ScheduleWindow(view.Footprint)" />
+    </div>
+
+    <div class="grid grid-cols-2 gap-4">
+        <section class="rounded border border-slate-200 bg-white p-4">
+            <h2 class="mb-3 text-sm font-semibold">Physical resource pressure</h2>
+            @if (view.Resources.Count == 0)
+            {
+                <p class="text-sm text-slate-400">No persisted scheduled operations for this Plan Version.</p>
+            }
+            else
+            {
+                <div class="space-y-2">
+                    @foreach (var resource in view.Resources)
+                    {
+                        <button type="button" class="flex w-full items-center gap-3 rounded px-2 py-1.5 text-left hover:bg-slate-50" @onclick="() => SelectResource(resource)">
+                            <div class="w-28 shrink-0">
+                                <div class="font-medium">@resource.ResourceCode</div>
+                                <div class="text-xs text-slate-400">@resource.ProcessUnitType</div>
+                            </div>
+                            <div class="h-2 flex-1 rounded bg-slate-100">
+                                <div class="h-2 rounded bg-accent" style="width:@(PressureWidth(resource.ScheduledHours))%"></div>
+                            </div>
+                            <div class="w-20 shrink-0 text-right text-xs">
+                                <div class="font-medium">@resource.ScheduledHours.ToString("0.##") h</div>
+                                <div class="text-slate-400">@resource.ScheduledOperationCount ops</div>
+                            </div>
+                            <span class="w-24 shrink-0 rounded px-1.5 py-0.5 text-center text-xs @ResourceStateClass(resource.OperatingState)">@resource.OperatingState</span>
+                        </button>
+                    }
+                </div>
+                <p class="mt-2 text-xs text-slate-400">Bar length is relative scheduled occupancy inside this Plan Version; it is not a utilization percentage.</p>
+            }
+        </section>
+
+        <section class="rounded border border-slate-200 bg-white p-4">
+            <h2 class="mb-3 text-sm font-semibold">Material commitment</h2>
+            @if (view.MaterialAllocations.Count == 0)
+            {
+                <p class="text-sm text-slate-400">No persisted inventory allocations.</p>
+            }
+            else
+            {
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+                            <th class="pb-1 font-medium">Stage</th>
+                            <th class="pb-1 font-medium">Quantity</th>
+                            <th class="pb-1 font-medium">Allocations</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var material in view.MaterialAllocations)
+                        {
+                            <tr class="border-b border-slate-100 last:border-0">
+                                <td class="py-1">@material.Stage</td>
+                                <td class="py-1 font-medium">@material.AllocatedQuantityMt.ToString("0.##") MT</td>
+                                <td class="py-1 text-slate-500">@material.AllocationCount</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </section>
+
+        <section class="rounded border border-slate-200 bg-white p-4">
+            <h2 class="mb-3 text-sm font-semibold">Execution state</h2>
+            <div class="grid grid-cols-4 gap-2 text-center">
+                <div><div class="text-xs text-slate-400">Released</div><strong>@view.Footprint.ReleasedWorkOrderCount</strong></div>
+                <div><div class="text-xs text-slate-400">Running</div><strong>@view.Footprint.RunningWorkOrderCount</strong></div>
+                <div><div class="text-xs text-slate-400">Held</div><strong>@view.Footprint.HeldWorkOrderCount</strong></div>
+                <div><div class="text-xs text-slate-400">Completed</div><strong>@view.Footprint.CompletedWorkOrderCount</strong></div>
             </div>
         </section>
 
-        <div class="control-grid">
-            <section class="control-surface control-resources">
-                <div class="control-surface-head">
-                    <div>
-                        <span class="planner-section-label">PHYSICAL RESOURCE PRESSURE</span>
-                        <h2>Scheduled occupancy</h2>
-                    </div>
-                    <span class="planner-basis-badge">FINITE PLAN SNAPSHOT</span>
-                </div>
-
-                @if (view.Resources.Count == 0)
-                {
-                    <p class="aps-empty">No persisted scheduled operations for this Plan Version.</p>
-                }
-                else
-                {
-                    <div class="resource-pressure-list">
-                        @foreach (var resource in view.Resources)
-                        {
-                            <button class="resource-pressure-row" type="button" @onclick="() => SelectResource(resource)">
-                                <div class="resource-pressure-id">
-                                    <strong>@resource.ResourceCode</strong>
-                                    <span>@resource.ProcessUnitType</span>
-                                </div>
-                                <div class="resource-pressure-track" aria-label="@resource.ScheduledHours scheduled hours">
-                                    <span style="width:@PressureWidth(resource.ScheduledHours)%"></span>
-                                </div>
-                                <div class="resource-pressure-value">
-                                    <strong>@resource.ScheduledHours.ToString("0.##") h</strong>
-                                    <span>@resource.ScheduledOperationCount ops</span>
-                                </div>
-                                <span class="resource-state @ResourceStateClass(resource.OperatingState)">@resource.OperatingState</span>
-                            </button>
-                        }
-                    </div>
-                    <p class="control-footnote">Bar length is relative scheduled occupancy inside this Plan Version; it is not a utilization percentage.</p>
-                }
-            </section>
-
-            <section class="control-surface control-material">
-                <div class="control-surface-head">
-                    <div>
-                        <span class="planner-section-label">MATERIAL COMMITMENT</span>
-                        <h2>Inventory allocation basis</h2>
-                    </div>
-                </div>
-                @if (view.MaterialAllocations.Count == 0)
-                {
-                    <p class="aps-empty">No persisted inventory allocations.</p>
-                }
-                else
-                {
-                    <div class="material-stage-list">
-                        @foreach (var material in view.MaterialAllocations)
-                        {
-                            <div class="material-stage-row">
-                                <span>@material.Stage</span>
-                                <strong>@material.AllocatedQuantityMt.ToString("0.##") MT</strong>
-                                <small>@material.AllocationCount allocations</small>
+        <section class="rounded border border-slate-200 bg-white p-4">
+            <h2 class="mb-3 text-sm font-semibold">Recent Plan Versions</h2>
+            @if (recentPlans.Count == 0)
+            {
+                <p class="text-sm text-slate-400">No Plan Version history.</p>
+            }
+            else
+            {
+                <div class="space-y-1">
+                    @foreach (var plan in recentPlans)
+                    {
+                        <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left hover:bg-slate-50 @(plan.PlanVersionId == view.Plan.PlanVersionId ? "bg-accent-soft" : "")" @onclick="() => SelectPlan(plan.PlanVersionId)">
+                            <div>
+                                <strong>@plan.VersionNumber</strong>
+                                <span class="ml-2 text-xs text-slate-400">@plan.CreatedOnUtc.ToString("dd MMM HH:mm") &middot; @plan.Trigger</span>
                             </div>
-                        }
-                    </div>
-                }
-                <div class="control-callout">
-                    <span>What this means</span>
-                    <p>This panel shows persisted inventory allocation snapshots only. Time-phased receipts, reservations and source-to-demand flow belong to the Material Flow workspace and will use their own authoritative read model.</p>
+                            <span class="rounded px-1.5 py-0.5 text-xs @PlanStatusClass(plan.Status)">@plan.Status</span>
+                        </button>
+                    }
                 </div>
-            </section>
-
-            <section class="control-surface control-execution">
-                <div class="control-surface-head">
-                    <div>
-                        <span class="planner-section-label">EXECUTION STATE</span>
-                        <h2>Released work</h2>
-                    </div>
-                </div>
-                <div class="execution-strip">
-                    <div><span>Released</span><strong>@view.Footprint.ReleasedWorkOrderCount</strong></div>
-                    <div><span>Running</span><strong>@view.Footprint.RunningWorkOrderCount</strong></div>
-                    <div><span>Held</span><strong>@view.Footprint.HeldWorkOrderCount</strong></div>
-                    <div><span>Completed</span><strong>@view.Footprint.CompletedWorkOrderCount</strong></div>
-                </div>
-            </section>
-
-            <section class="control-surface control-history">
-                <div class="control-surface-head">
-                    <div>
-                        <span class="planner-section-label">PLAN HISTORY</span>
-                        <h2>Recent Plan Versions</h2>
-                    </div>
-                </div>
-                @if (recentPlans.Count == 0)
-                {
-                    <p class="aps-empty">No Plan Version history.</p>
-                }
-                else
-                {
-                    <div class="plan-history-list">
-                        @foreach (var plan in recentPlans)
-                        {
-                            <button type="button" class="plan-history-row @(plan.PlanVersionId == view.Plan.PlanVersionId ? "is-current" : null)" @onclick="() => SelectPlan(plan.PlanVersionId)">
-                                <div>
-                                    <strong>@plan.VersionNumber</strong>
-                                    <span>@plan.CreatedOnUtc.ToString("dd MMM HH:mm") · @plan.Trigger</span>
-                                </div>
-                                <span class="planner-status @PlanStatusClass(plan.Status)">@plan.Status</span>
-                            </button>
-                        }
-                    </div>
-                }
-            </section>
-        </div>
-    }
-</div>
+            }
+        </section>
+    </div>
+}
 
 @code {
     private ControlTowerView? view;
@@ -257,18 +198,18 @@
 
     private static string ResourceStateClass(ResourceOperatingState state) => state switch
     {
-        ResourceOperatingState.Available => "is-good",
-        ResourceOperatingState.CapacityDerated or ResourceOperatingState.QualityRestricted => "is-warn",
-        ResourceOperatingState.PlannedMaintenance or ResourceOperatingState.Breakdown or ResourceOperatingState.Disabled => "is-bad",
-        _ => "is-neutral"
+        ResourceOperatingState.Available => "bg-emerald-100 text-emerald-700",
+        ResourceOperatingState.CapacityDerated or ResourceOperatingState.QualityRestricted => "bg-amber-100 text-amber-700",
+        ResourceOperatingState.PlannedMaintenance or ResourceOperatingState.Breakdown or ResourceOperatingState.Disabled => "bg-rose-100 text-rose-700",
+        _ => "bg-slate-100 text-slate-600"
     };
 
     private static string PlanStatusClass(PlanVersionStatus status) => status switch
     {
-        PlanVersionStatus.Feasible or PlanVersionStatus.Released => "is-good",
-        PlanVersionStatus.Failed => "is-bad",
-        PlanVersionStatus.Superseded => "is-muted",
-        _ => "is-neutral"
+        PlanVersionStatus.Feasible or PlanVersionStatus.Released => "bg-emerald-100 text-emerald-700",
+        PlanVersionStatus.Failed => "bg-rose-100 text-rose-700",
+        PlanVersionStatus.Superseded => "bg-slate-100 text-slate-400",
+        _ => "bg-slate-100 text-slate-600"
     };
 
     public void Dispose() => WorkspaceState.Changed -= OnWorkspaceChanged;
