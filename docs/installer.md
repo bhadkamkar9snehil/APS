@@ -79,8 +79,10 @@ automatically since there is no CI step — check it by hand before publishing.
   checks GitHub for updates.
 - Publishing v0.1.0 to GitHub Releases via manual `vpk upload github` is in progress/complete
   depending on when you're reading this — check `gh release list` for current state.
-- No `app-icon.ico` exists yet; `vpk pack` runs without `--icon` and falls back to a default icon
-  until one is added.
+- `src/APS.DesktopHost/Assets/app-icon.ico` exists (7-size multi-res PNG-in-ICO, generated
+  programmatically) and is wired into the `.exe`, the WPF window/taskbar icon, and
+  `build/release.ps1`'s `vpk pack --icon`. Not yet reflected in the installed v0.1.0 copy or the
+  published v0.1.0 release — those were built before the icon existed; a new release will pick it up.
 
 ## Release verification
 

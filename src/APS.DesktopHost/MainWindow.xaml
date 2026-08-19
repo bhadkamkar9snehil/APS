@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:blazor="clr-namespace:Microsoft.AspNetCore.Components.WebView.Wpf;assembly=Microsoft.AspNetCore.Components.WebView.Wpf"
         xmlns:ui="clr-namespace:APS.UI.Components;assembly=APS.UI"
-        Title="APS Planner" Width="1360" Height="880"
+        Title="APS Planner" Icon="Assets/app-icon.ico" Width="1360" Height="880"
         MinWidth="1000" MinHeight="700" WindowStartupLocation="CenterScreen" Background="#EEF1F5"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType">

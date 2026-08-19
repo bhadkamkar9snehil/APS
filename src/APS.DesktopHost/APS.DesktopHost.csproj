@@ -23,6 +23,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
+    <Resource Include="Assets\app-icon.ico" />
   </ItemGroup>
   <PropertyGroup>
     <!-- Read by build/release.ps1 to version the Velopack release unless -Version is passed explicitly. -->
@@ -34,6 +35,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
     <RootNamespace>APS.DesktopHost</RootNamespace>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
