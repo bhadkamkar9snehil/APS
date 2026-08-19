@@ -67,6 +67,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<IPlanningMasterDataProvider, SqlPlanningMasterDataProvider>();
             services.AddScoped<IProductionDemandOrchestrationService, ProductionDemandOrchestrationService>();
             services.AddScoped<IPlanningLifecycleService, PlanningLifecycleService>();
+            services.AddScoped<IMasterDataAdminService, MasterDataAdminService>();
         }
         else
         {
@@ -89,6 +90,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<IPlanningMasterDataProvider, UnavailablePlanningMasterDataProvider>();
             services.AddScoped<IProductionDemandOrchestrationService, UnavailableProductionDemandOrchestrationService>();
             services.AddScoped<IPlanningLifecycleService, UnavailablePlanningLifecycleService>();
+            services.AddScoped<IMasterDataAdminService, UnavailableMasterDataAdminService>();
         }
 
         return new ApsInfrastructureRegistration(hasApsDatabase, demoModeEnabled);

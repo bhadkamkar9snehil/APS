@@ -1,10 +1,11 @@
 @page "/plan/master-data"
 @inject IPlanningMasterDataProvider MasterDataProvider
+@inject IMasterDataAdminService Admin
 
 <PageTitle>Master Data - APS</PageTitle>
 
 <h1 class="mb-1 text-lg font-semibold">Master Data</h1>
-<p class="mb-6 text-sm text-slate-500">Read-only browse of configured plant, grade, route and material masters. Master data is maintained through the configured integration/import mechanism, not this screen &mdash; there is no create/edit capability here yet.</p>
+<p class="mb-6 text-sm text-slate-500">Plant, grade, and material masters. Routes and external supply are still read-only here &mdash; editing those needs a composite editor, not yet built.</p>
 
 @if (loading)
 {
@@ -25,9 +26,98 @@ else
         }
     </div>
 
-    @if (activeTab == "Resources")
+    @if (!string.IsNullOrWhiteSpace(saveError))
     {
-        <Table Headers="@(new[] {"Code", "Name", "Type", "Process unit", "State", "Capacity %"})">
+        <p class="mb-3 text-sm text-rose-600">@saveError</p>
+    }
+
+    @if (activeTab == "Plants")
+    {
+        <section class="mb-4 rounded border border-slate-200 bg-white p-4">
+            <h2 class="mb-2 text-sm font-semibold">Add plant</h2>
+            <div class="flex items-end gap-2 text-sm">
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Code</span><input class="w-32 rounded border border-slate-300 px-2 py-1" @bind="newPlant.Code" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Name</span><input class="w-64 rounded border border-slate-300 px-2 py-1" @bind="newPlant.Name" /></label>
+                <button type="button" class="rounded bg-accent px-3 py-1.5 text-white disabled:opacity-50" disabled="@saving" @onclick="AddPlantAsync">Add</button>
+            </div>
+        </section>
+        <Table Headers="@(new[] {"Code", "Name", ""})">
+            @foreach (var p in snapshot.Plants)
+            {
+                <tr class="border-b border-slate-100 last:border-0">
+                    <td class="px-3 py-1.5">@p.Code</td>
+                    <td class="px-3 py-1.5">@p.Name</td>
+                    <td class="px-3 py-1.5 text-right"><button type="button" class="text-xs text-rose-500 hover:underline" @onclick="() => DeleteAsync(p.Id, () => Admin.DeleteAsync<Plant>(p.Id))">Delete</button></td>
+                </tr>
+            }
+        </Table>
+    }
+    else if (activeTab == "Process Stages")
+    {
+        <section class="mb-4 rounded border border-slate-200 bg-white p-4">
+            <h2 class="mb-2 text-sm font-semibold">Add process stage</h2>
+            <div class="flex flex-wrap items-end gap-2 text-sm">
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Plant</span>
+                    <select class="w-40 rounded border border-slate-300 px-2 py-1" @bind="newStage.PlantId">
+                        @foreach (var p in snapshot.Plants) { <option value="@p.Id">@p.Code</option> }
+                    </select>
+                </label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Code</span><input class="w-32 rounded border border-slate-300 px-2 py-1" @bind="newStage.Code" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Name</span><input class="w-48 rounded border border-slate-300 px-2 py-1" @bind="newStage.Name" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Process operation</span>
+                    <select class="w-36 rounded border border-slate-300 px-2 py-1" @bind="newStage.ProcessOperationType">
+                        @foreach (var v in Enum.GetValues<ProcessOperationType>()) { <option value="@v">@v</option> }
+                    </select>
+                </label>
+                <button type="button" class="rounded bg-accent px-3 py-1.5 text-white disabled:opacity-50" disabled="@saving" @onclick="AddStageAsync">Add</button>
+            </div>
+        </section>
+        <Table Headers="@(new[] {"Plant", "Code", "Name", "Process operation", ""})">
+            @foreach (var s in snapshot.ProcessStages)
+            {
+                <tr class="border-b border-slate-100 last:border-0">
+                    <td class="px-3 py-1.5">@PlantCode(s.PlantId)</td>
+                    <td class="px-3 py-1.5">@s.Code</td>
+                    <td class="px-3 py-1.5">@s.Name</td>
+                    <td class="px-3 py-1.5">@s.ProcessOperationType</td>
+                    <td class="px-3 py-1.5 text-right"><button type="button" class="text-xs text-rose-500 hover:underline" @onclick="() => DeleteAsync(s.Id, () => Admin.DeleteAsync<ProcessStage>(s.Id))">Delete</button></td>
+                </tr>
+            }
+        </Table>
+    }
+    else if (activeTab == "Resources")
+    {
+        <section class="mb-4 rounded border border-slate-200 bg-white p-4">
+            <h2 class="mb-2 text-sm font-semibold">Add resource</h2>
+            <div class="grid grid-cols-4 gap-2 text-sm">
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Plant</span>
+                    <select class="rounded border border-slate-300 px-2 py-1" @bind="newResource.PlantId">
+                        @foreach (var p in snapshot.Plants) { <option value="@p.Id">@p.Code</option> }
+                    </select>
+                </label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Process stage</span>
+                    <select class="rounded border border-slate-300 px-2 py-1" @bind="newResource.ProcessStageId">
+                        @foreach (var s in snapshot.ProcessStages) { <option value="@s.Id">@s.Code</option> }
+                    </select>
+                </label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Code</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newResource.Code" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Name</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newResource.Name" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Resource type</span>
+                    <select class="rounded border border-slate-300 px-2 py-1" @bind="newResource.ResourceType">
+                        @foreach (var v in Enum.GetValues<ResourceType>()) { <option value="@v">@v</option> }
+                    </select>
+                </label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Process unit</span>
+                    <select class="rounded border border-slate-300 px-2 py-1" @bind="newResource.ProcessUnitType">
+                        @foreach (var v in Enum.GetValues<ProcessUnitType>()) { <option value="@v">@v</option> }
+                    </select>
+                </label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Capacity %</span><input type="number" class="rounded border border-slate-300 px-2 py-1" @bind="newResource.CapacityFactorPct" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Nominal heat MT</span><input type="number" class="rounded border border-slate-300 px-2 py-1" @bind="newResource.NominalHeatWeightMt" /></label>
+            </div>
+            <button type="button" class="mt-2 rounded bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50" disabled="@saving" @onclick="AddResourceAsync">Add</button>
+        </section>
+        <Table Headers="@(new[] {"Code", "Name", "Type", "Process unit", "State", "Capacity %", ""})">
             @foreach (var r in snapshot.Resources)
             {
                 <tr class="border-b border-slate-100 last:border-0">
@@ -37,13 +127,24 @@ else
                     <td class="px-3 py-1.5">@r.ProcessUnitType</td>
                     <td class="px-3 py-1.5">@r.OperatingState</td>
                     <td class="px-3 py-1.5 text-right">@r.CapacityFactorPct.ToString("0.#")</td>
+                    <td class="px-3 py-1.5 text-right"><button type="button" class="text-xs text-rose-500 hover:underline" @onclick="() => DeleteAsync(r.Id, () => Admin.DeleteAsync<Resource>(r.Id))">Delete</button></td>
                 </tr>
             }
         </Table>
     }
     else if (activeTab == "Steel Grades")
     {
-        <Table Headers="@(new[] {"Grade", "Description", "Family", "Sequence class", "Default route", "Hot charge"})">
+        <section class="mb-4 rounded border border-slate-200 bg-white p-4">
+            <h2 class="mb-2 text-sm font-semibold">Add steel grade</h2>
+            <div class="grid grid-cols-4 gap-2 text-sm">
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Grade code</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newGrade.GradeCode" /></label>
+                <label class="flex flex-col gap-1 col-span-2"><span class="text-xs text-slate-500">Description</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newGrade.Description" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Family</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newGrade.GradeFamilyCode" /></label>
+                <label class="flex items-center gap-2 pt-4"><input type="checkbox" @bind="newGrade.HotChargeEligible" /><span class="text-xs text-slate-600">Hot charge eligible</span></label>
+            </div>
+            <button type="button" class="mt-2 rounded bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50" disabled="@saving" @onclick="AddGradeAsync">Add</button>
+        </section>
+        <Table Headers="@(new[] {"Grade", "Description", "Family", "Sequence class", "Default route", "Hot charge", ""})">
             @foreach (var g in snapshot.EffectiveSteelGrades)
             {
                 <tr class="border-b border-slate-100 last:border-0">
@@ -53,6 +154,7 @@ else
                     <td class="px-3 py-1.5">@(g.SequenceClassCode ?? "—")</td>
                     <td class="px-3 py-1.5">@(g.DefaultRouteCode ?? "—")</td>
                     <td class="px-3 py-1.5">@(g.HotChargeEligible ? "Yes" : "No")</td>
+                    <td class="px-3 py-1.5 text-right"><button type="button" class="text-xs text-rose-500 hover:underline" @onclick="() => DeleteAsync(g.Id, () => Admin.DeleteAsync<SteelGrade>(g.Id))">Delete</button></td>
                 </tr>
             }
         </Table>
@@ -72,7 +174,25 @@ else
     }
     else if (activeTab == "Materials")
     {
-        <Table Headers="@(new[] {"Material spec", "SAP code", "Product form", "Active"})">
+        <section class="mb-4 rounded border border-slate-200 bg-white p-4">
+            <h2 class="mb-2 text-sm font-semibold">Add material specification</h2>
+            <div class="grid grid-cols-4 gap-2 text-sm">
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Spec code</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newMaterial.MaterialSpecificationCode" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Name</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newMaterial.Name" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Stage</span>
+                    <select class="rounded border border-slate-300 px-2 py-1" @bind="newMaterial.Stage">
+                        @foreach (var v in Enum.GetValues<SteelMaterialStage>()) { <option value="@v">@v</option> }
+                    </select>
+                </label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Product form</span>
+                    <select class="rounded border border-slate-300 px-2 py-1" @bind="newMaterial.ProductForm">
+                        @foreach (var v in Enum.GetValues<SteelProductForm>()) { <option value="@v">@v</option> }
+                    </select>
+                </label>
+            </div>
+            <button type="button" class="mt-2 rounded bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50" disabled="@saving" @onclick="AddMaterialAsync">Add</button>
+        </section>
+        <Table Headers="@(new[] {"Material spec", "SAP code", "Product form", "Active", ""})">
             @foreach (var m in snapshot.EffectiveMaterialSpecifications)
             {
                 <tr class="border-b border-slate-100 last:border-0">
@@ -80,13 +200,28 @@ else
                     <td class="px-3 py-1.5">@(m.SapMaterialCode ?? "—")</td>
                     <td class="px-3 py-1.5">@m.ProductForm</td>
                     <td class="px-3 py-1.5">@(m.IsActive ? "Yes" : "No")</td>
+                    <td class="px-3 py-1.5 text-right"><button type="button" class="text-xs text-rose-500 hover:underline" @onclick="() => DeleteAsync(m.Id, () => Admin.DeleteAsync<MaterialSpecification>(m.Id))">Delete</button></td>
                 </tr>
             }
         </Table>
     }
     else if (activeTab == "Cross Sections")
     {
-        <Table Headers="@(new[] {"Code", "Shape", "Width", "Thickness/Diameter"})">
+        <section class="mb-4 rounded border border-slate-200 bg-white p-4">
+            <h2 class="mb-2 text-sm font-semibold">Add cross section</h2>
+            <div class="grid grid-cols-4 gap-2 text-sm">
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Code</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newCrossSection.CrossSectionCode" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Shape</span>
+                    <select class="rounded border border-slate-300 px-2 py-1" @bind="newCrossSection.Shape">
+                        @foreach (var v in Enum.GetValues<CrossSectionShape>()) { <option value="@v">@v</option> }
+                    </select>
+                </label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Width mm</span><input type="number" class="rounded border border-slate-300 px-2 py-1" @bind="newCrossSection.WidthMm" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Thickness mm</span><input type="number" class="rounded border border-slate-300 px-2 py-1" @bind="newCrossSection.ThicknessMm" /></label>
+            </div>
+            <button type="button" class="mt-2 rounded bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50" disabled="@saving" @onclick="AddCrossSectionAsync">Add</button>
+        </section>
+        <Table Headers="@(new[] {"Code", "Shape", "Width", "Thickness/Diameter", ""})">
             @foreach (var c in snapshot.EffectiveCrossSections)
             {
                 <tr class="border-b border-slate-100 last:border-0">
@@ -94,6 +229,7 @@ else
                     <td class="px-3 py-1.5">@c.Shape</td>
                     <td class="px-3 py-1.5">@(c.WidthMm?.ToString("0.#") ?? "—")</td>
                     <td class="px-3 py-1.5">@(c.ThicknessMm?.ToString("0.#") ?? c.DiameterMm?.ToString("0.#") ?? "—")</td>
+                    <td class="px-3 py-1.5 text-right"><button type="button" class="text-xs text-rose-500 hover:underline" @onclick="() => DeleteAsync(c.Id, () => Admin.DeleteAsync<CrossSectionSpecification>(c.Id))">Delete</button></td>
                 </tr>
             }
         </Table>
@@ -117,14 +253,106 @@ else
 }
 
 @code {
-    private static readonly string[] Tabs = { "Resources", "Steel Grades", "Routes", "Materials", "Cross Sections", "External Supply" };
+    private static readonly string[] Tabs = { "Plants", "Process Stages", "Resources", "Steel Grades", "Routes", "Materials", "Cross Sections", "External Supply" };
     private string activeTab = Tabs[0];
     private PlanningMasterDataSnapshot? snapshot;
     private bool loading = true;
+    private bool saving;
+    private string? saveError;
 
-    protected override async Task OnInitializedAsync()
+    private Plant newPlant = new() { Code = "", Name = "" };
+    private ProcessStage newStage = new() { Code = "", Name = "" };
+    private Resource newResource = new() { Code = "", Name = "", CapacityFactorPct = 100m };
+    private SteelGrade newGrade = new() { GradeCode = "", Description = "" };
+    private MaterialSpecification newMaterial = new() { MaterialSpecificationCode = "", Name = "" };
+    private CrossSectionSpecification newCrossSection = new() { CrossSectionCode = "" };
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
     {
+        loading = true;
         snapshot = await MasterDataProvider.GetAsync();
         loading = false;
+        StateHasChanged();
+    }
+
+    private string PlantCode(Guid plantId) => snapshot?.Plants.FirstOrDefault(x => x.Id == plantId)?.Code ?? "—";
+
+    private async Task AddPlantAsync()
+    {
+        await SaveAsync(async () =>
+        {
+            await Admin.CreateAsync(newPlant);
+            newPlant = new Plant { Code = "", Name = "" };
+        });
+    }
+
+    private async Task AddStageAsync()
+    {
+        await SaveAsync(async () =>
+        {
+            await Admin.CreateAsync(newStage);
+            newStage = new ProcessStage { Code = "", Name = "", PlantId = newStage.PlantId };
+        });
+    }
+
+    private async Task AddResourceAsync()
+    {
+        await SaveAsync(async () =>
+        {
+            await Admin.CreateAsync(newResource);
+            newResource = new Resource { Code = "", Name = "", CapacityFactorPct = 100m, PlantId = newResource.PlantId, ProcessStageId = newResource.ProcessStageId };
+        });
+    }
+
+    private async Task AddGradeAsync()
+    {
+        await SaveAsync(async () =>
+        {
+            await Admin.CreateAsync(newGrade);
+            newGrade = new SteelGrade { GradeCode = "", Description = "" };
+        });
+    }
+
+    private async Task AddMaterialAsync()
+    {
+        await SaveAsync(async () =>
+        {
+            await Admin.CreateAsync(newMaterial);
+            newMaterial = new MaterialSpecification { MaterialSpecificationCode = "", Name = "" };
+        });
+    }
+
+    private async Task AddCrossSectionAsync()
+    {
+        await SaveAsync(async () =>
+        {
+            await Admin.CreateAsync(newCrossSection);
+            newCrossSection = new CrossSectionSpecification { CrossSectionCode = "" };
+        });
+    }
+
+    private async Task DeleteAsync(Guid id, Func<Task> delete) => await SaveAsync(delete);
+
+    private async Task SaveAsync(Func<Task> action)
+    {
+        saving = true;
+        saveError = null;
+        StateHasChanged();
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            saveError = ex.Message;
+        }
+        finally
+        {
+            saving = false;
+            StateHasChanged();
+        }
     }
 }

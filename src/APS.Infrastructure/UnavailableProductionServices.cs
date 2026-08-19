@@ -17,6 +17,18 @@ internal static class ProductionUnavailable
         "Configure the production database connection string to use it.");
 }
 
+public sealed class UnavailableMasterDataAdminService : IMasterDataAdminService
+{
+    public Task<T> CreateAsync<T>(T entity, CancellationToken cancellationToken = default) where T : Entity =>
+        throw ProductionUnavailable.Exception();
+
+    public Task<T> UpdateAsync<T>(T entity, CancellationToken cancellationToken = default) where T : Entity =>
+        throw ProductionUnavailable.Exception();
+
+    public Task DeleteAsync<T>(Guid id, CancellationToken cancellationToken = default) where T : Entity =>
+        throw ProductionUnavailable.Exception();
+}
+
 public sealed class UnavailableTraceabilityService : ITraceabilityService
 {
     public Task<WorkOrderTrace?> GetWorkOrderTraceAsync(Guid workOrderId, CancellationToken cancellationToken = default) =>
