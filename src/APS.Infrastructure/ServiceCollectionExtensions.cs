@@ -1,3 +1,7 @@
+using System;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using APS.Application;
 using APS.Planning;
 using Microsoft.EntityFrameworkCore;
@@ -13,10 +17,27 @@ namespace APS.Infrastructure;
 /// </summary>
 public static class ServiceCollectionExtensions
 {
+    /// <summary>
+    /// APS is a self-contained desktop app: it must not require a separately-administered SQL
+    /// Server instance just to run. SQLite is the active provider - a single local file, created
+    /// and migrated automatically, no external dependency. SQL Server remains the intended provider
+    /// for a future MES integration surface only; nothing in this method touches it.
+    /// </summary>
     public static ApsInfrastructureRegistration AddApsInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        var apsConnection = configuration.GetConnectionString("APS");
-        var hasApsDatabase = !string.IsNullOrWhiteSpace(apsConnection);
+        var configuredConnection = configuration.GetConnectionString("APS");
+        string sqliteConnection;
+        if (string.IsNullOrWhiteSpace(configuredConnection))
+        {
+            var paths = LocalApplicationPaths.ForCurrentUser();
+            paths.EnsureDirectories();
+            sqliteConnection = $"Data Source={Path.Combine(paths.DataDirectory, "aps.db")}";
+        }
+        else
+        {
+            sqliteConnection = configuredConnection;
+        }
+        var hasApsDatabase = true; // SQLite is always locally provisionable - no "unconfigured" state.
         var demoModeEnabled = configuration.GetValue<bool>("APS:DemoModeEnabled");
 
         services.AddScoped<IMtsProductionOrderService, MtsProductionOrderService>();
@@ -30,7 +51,7 @@ public static class ServiceCollectionExtensions
 
         if (hasApsDatabase)
         {
-            services.AddDbContext<ApsDbContext>(options => options.UseSqlServer(apsConnection));
+            services.AddDbContext<ApsDbContext>(options => options.UseSqlite(sqliteConnection));
             services.AddScoped<ITraceabilityService, TraceabilityService>();
             services.AddScoped<IWorkOrderExecutionService, WorkOrderExecutionService>();
             services.AddScoped<IHeatExecutionService, HeatExecutionService>();
@@ -71,6 +92,19 @@ public static class ServiceCollectionExtensions
         }
 
         return new ApsInfrastructureRegistration(hasApsDatabase, demoModeEnabled);
+    }
+
+    /// <summary>
+    /// Applies any pending EF Core migrations to the SQLite database, creating the file and schema
+    /// on first run. A self-contained desktop app has no separate deployment step to run migrations
+    /// out of band, so this runs once at startup instead - call it right after the host is built,
+    /// before showing any UI or accepting requests.
+    /// </summary>
+    public static async Task MigrateApsDatabaseAsync(this IServiceProvider services, CancellationToken cancellationToken = default)
+    {
+        await using var scope = services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApsDbContext>();
+        await db.Database.MigrateAsync(cancellationToken);
     }
 }
 

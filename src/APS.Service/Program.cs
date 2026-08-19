@@ -27,6 +27,12 @@ var hasApsDatabase = apsRegistration.HasApsDatabase;
 var demoModeEnabled = apsRegistration.DemoModeEnabled;
 
 var app = builder.Build();
+
+if (hasApsDatabase)
+{
+    await app.Services.MigrateApsDatabaseAsync();
+}
+
 app.UseSerilogRequestLogging();
 app.UseExceptionHandler();
 app.UseHttpsRedirection();

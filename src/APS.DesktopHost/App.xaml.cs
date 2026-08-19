@@ -54,6 +54,13 @@ public partial class App : System.Windows.Application
         try
         {
             _log.LogInformation("Starting APS Planner. DataDirectory={DataDirectory}", _paths.DataDirectory);
+
+            // Must run before StartAsync(): OperationCommitmentHostedService (and any other
+            // BackgroundService) starts querying the database as soon as the host starts, racing
+            // a migration that runs afterward.
+            await _host.Services.MigrateApsDatabaseAsync();
+            _log.LogInformation("APS database migration check completed.");
+
             await _host.StartAsync();
 
             var mainWindow = _host.Services.GetRequiredService<MainWindow>();
