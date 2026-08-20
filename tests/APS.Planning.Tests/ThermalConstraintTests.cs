@@ -174,6 +174,53 @@ public sealed class ThermalConstraintTests
             issue => issue.Code == "PROCESS_FLOW_PATH_MISSING");
     }
 
+    [Fact]
+    public void Secondary_metallurgy_step_outside_eaf_lrf_vd_is_still_thermally_constrained()
+    {
+        // A configured pre-caster step whose type is outside the classic Eaf/Lrf/Vd set - the BOF,
+        // AOD/VOD, RH or induction-furnace case from #34. Steel is just as liquid in it, so the
+        // thermal projector has to treat it as a liquid-steel operation. Deciding that from a
+        // hard-coded type list would silently skip it.
+        var eaf = SteelResource("PRIMARY-1", ProcessUnitType.Eaf, ResourceType.Furnace);
+        eaf.MinimumHeatWeightMt = 50m;
+        eaf.NominalHeatWeightMt = 60m;
+        eaf.MaximumHeatWeightMt = 70m;
+        var secondary = SteelResource("SECONDARY-1", ProcessUnitType.TmtWaterBox, ResourceType.Generic);
+        var ccm = SteelResource("CCM-1", ProcessUnitType.Ccm, ResourceType.Caster);
+
+        var links = new[] { Link(eaf.Id, secondary.Id), Link(secondary.Id, ccm.Id) };
+        var route = new[]
+        {
+            RouteOperation(10, ProcessOperationType.Eaf),
+            RouteOperation(20, ProcessOperationType.Tmt),
+            RouteOperation(30, ProcessOperationType.Ccm)
+        };
+
+        // The step cannot deliver steel hot enough for the grade's casting window, so the route must
+        // be reported infeasible rather than planned as if temperature did not apply to it.
+        var result = Run(
+            new[] { eaf, secondary, ccm },
+            links,
+            capabilities: new[] { CcmCapability(ccm.Id) },
+            resourceTemperatures: new[]
+            {
+                new ResourceTemperatureCapability
+                {
+                    ResourceId = secondary.Id,
+                    ProcessOperationType = ProcessOperationType.Tmt,
+                    MinimumAchievableExitTemperatureC = 1400m,
+                    NominalExitTemperatureC = 1420m,
+                    MaximumAchievableExitTemperatureC = 1440m
+                }
+            },
+            routeOperations: route);
+
+        Assert.False(result.IsFeasible);
+        Assert.Contains(
+            result.ProductionStructure.Issues.Concat(result.Schedule.Issues),
+            issue => issue.Code == "THERMAL_ROUTE_INFEASIBLE");
+    }
+
     private const string RouteCode = "THERMAL-ROUTE";
     private const string GradeCode = "G-THERMAL";
 
@@ -185,7 +232,8 @@ public sealed class ThermalConstraintTests
         IReadOnlyCollection<GradeProcessTemperatureRequirement>? gradeTemperatures = null,
         SteelGrade? grade = null,
         decimal temperatureLossCPerMinute = 0m,
-        IReadOnlyCollection<ProductionOrder>? orders = null)
+        IReadOnlyCollection<ProductionOrder>? orders = null,
+        IReadOnlyCollection<ManufacturingRouteOperation>? routeOperations = null)
     {
         grade ??= CastingWindowGrade();
         var thermalLinks = temperatureLossCPerMinute <= 0m
@@ -211,7 +259,7 @@ public sealed class ThermalConstraintTests
             Due.AddDays(5),
             10,
             RoutePlanning: new RoutePlanningInput(
-                new[]
+                routeOperations ?? new[]
                 {
                     RouteOperation(10, ProcessOperationType.Eaf),
                     RouteOperation(20, ProcessOperationType.Lrf),

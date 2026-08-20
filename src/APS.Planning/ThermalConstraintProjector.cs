@@ -11,11 +11,14 @@ internal static class ThermalConstraintProjector
         IReadOnlyCollection<PlantFlowLink> flowLinks,
         IReadOnlyCollection<GradeProcessTemperatureRequirement>? gradeTemperatureRequirements,
         IReadOnlyCollection<ResourceTemperatureCapability>? resourceTemperatureCapabilities,
-        IReadOnlyCollection<CampaignHeatAllocation>? heatAllocations)
+        IReadOnlyCollection<CampaignHeatAllocation>? heatAllocations,
+        RoutePlanningInput? routePlanning = null)
     {
         var temperatures = gradeTemperatureRequirements ?? Array.Empty<GradeProcessTemperatureRequirement>();
         var resourceThermal = resourceTemperatureCapabilities ?? Array.Empty<ResourceTemperatureCapability>();
         if (temperatures.Count == 0 && resourceThermal.Count == 0) return structure;
+
+        var liquidSteelOperations = LiquidSteelOperations(routePlanning);
 
         var tasks = structure.SchedulingTasks.ToDictionary(x => x.TaskId);
         var issues = structure.Issues.ToList();
@@ -30,7 +33,7 @@ internal static class ThermalConstraintProjector
             .GroupBy(x => (x.ResourceId, x.ProcessOperationType))
             .ToDictionary(x => x.Key, x => x.First());
 
-        foreach (var task in tasks.Values.Where(x => x.Dependencies.Count > 0 && IsLiquidSteelOperation(x.ProcessOperationType)).ToArray())
+        foreach (var task in tasks.Values.Where(x => x.Dependencies.Count > 0 && liquidSteelOperations.Contains(x.ProcessOperationType)).ToArray())
         {
             if (!allocationsByHeat.TryGetValue(task.SourceEntityId, out var orders) || orders.Length == 0) continue;
             var grade = orders.Select(x => x.SteelGrade).FirstOrDefault(x => x is not null);
@@ -39,7 +42,8 @@ internal static class ThermalConstraintProjector
             var updatedDependencies = new List<FiniteScheduleDependency>();
             foreach (var dependency in task.Dependencies)
             {
-                if (!tasks.TryGetValue(dependency.PredecessorTaskId, out var predecessor) || !IsLiquidSteelOperation(predecessor.ProcessOperationType))
+                if (!tasks.TryGetValue(dependency.PredecessorTaskId, out var predecessor) ||
+                    !liquidSteelOperations.Contains(predecessor.ProcessOperationType))
                 {
                     updatedDependencies.Add(dependency);
                     continue;
@@ -220,8 +224,43 @@ internal static class ThermalConstraintProjector
         return new TemperatureRange(minimum, target, maximum);
     }
 
-    private static bool IsLiquidSteelOperation(ProcessOperationType type) => type is
-        ProcessOperationType.Eaf or ProcessOperationType.Lrf or ProcessOperationType.Vd or ProcessOperationType.Ccm;
+    /// <summary>
+    /// Steel is liquid from the primary vessel until it leaves the caster, so whatever a route places
+    /// at or before CCM is where thermal constraints apply - a plant may configure BOF, AOD/VOD, an
+    /// induction furnace, RH, or several secondary-metallurgy passes, and the route master decides
+    /// what exists rather than a fixed type whitelist in code (#34).
+    /// The Eaf/Lrf/Vd/Ccm set is only the fallback for compatibility callers that supply no route.
+    /// </summary>
+    private static IReadOnlySet<ProcessOperationType> LiquidSteelOperations(RoutePlanningInput? routePlanning)
+    {
+        var operations = routePlanning?.Operations ?? Array.Empty<ManufacturingRouteOperation>();
+        if (operations.Count == 0) return DefaultLiquidSteelOperations;
+
+        var result = new HashSet<ProcessOperationType>();
+        foreach (var route in operations.GroupBy(x => x.RouteCode, StringComparer.OrdinalIgnoreCase))
+        {
+            var ordered = route.OrderBy(x => x.SequenceNumber).ToArray();
+            var casterSequence = ordered.FirstOrDefault(x => x.ProcessOperationType == ProcessOperationType.Ccm)?.SequenceNumber;
+            // A route with no caster never carries liquid steel - an existing-billet rolling route, say.
+            if (casterSequence is null) continue;
+
+            foreach (var operation in ordered.Where(x => x.SequenceNumber <= casterSequence.Value))
+            {
+                result.Add(operation.ProcessOperationType);
+            }
+        }
+
+        return result.Count == 0 ? DefaultLiquidSteelOperations : result;
+    }
+
+    private static readonly IReadOnlySet<ProcessOperationType> DefaultLiquidSteelOperations =
+        new HashSet<ProcessOperationType>
+        {
+            ProcessOperationType.Eaf,
+            ProcessOperationType.Lrf,
+            ProcessOperationType.Vd,
+            ProcessOperationType.Ccm
+        };
 
     private static decimal? Add(decimal? a, decimal? b) => a.HasValue && b.HasValue ? a.Value + b.Value : null;
     private static decimal? Max(decimal? a, decimal? b) => a.HasValue && b.HasValue ? Math.Max(a.Value, b.Value) : a ?? b;

@@ -149,7 +149,8 @@ public sealed class PlanningEngine(
             request.FlowLinks,
             request.GradeTemperatureRequirements,
             request.ResourceTemperatureCapabilities,
-            heatAllocations);
+            heatAllocations,
+            request.RoutePlanning);
         if (HasErrors(structure))
             return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
 
