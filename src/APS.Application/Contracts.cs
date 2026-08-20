@@ -30,7 +30,61 @@ public sealed record CampaignPlanningPolicy(
     decimal MaximumCampaignQuantityMt,
     bool AllowMtoMtsMixing = true,
     bool AllowMixedGradesWithinSequenceClass = true,
-    decimal ExpectedCastingYieldPct = 100m);
+    decimal ExpectedCastingYieldPct = 100m,
+    /// <summary>
+    /// Relative weights the campaign optimizer trades efficiency against service with (#15). Null
+    /// uses <see cref="CampaignObjectiveWeights.Default"/>.
+    /// </summary>
+    CampaignObjectiveWeights? ObjectiveWeights = null);
+
+/// <summary>
+/// Weights for the campaign objective (#15). Service risk sits in its own lexicographic tier, so no
+/// combination of efficiency weights can buy a late customer order - efficiency only ever breaks ties
+/// between compositions that serve demand equally well.
+/// </summary>
+public sealed record CampaignObjectiveWeights(
+    /// <summary>Cost of a tonne finished one day after it was required. Dominates all efficiency terms.</summary>
+    decimal ServiceRiskPerMtDay = 1000m,
+    /// <summary>Cost of a tonne produced one day before it was required - inventory nobody asked for yet.</summary>
+    decimal EarlyProductionPerMtDay = 1m,
+    /// <summary>Cost of an additional campaign: setup, sequence break, lost continuity.</summary>
+    decimal CampaignSetupCost = 40m,
+    /// <summary>Cost of a tonne of unfilled capacity in the last heat of a campaign.</summary>
+    decimal ResidualHeatPerMt = 4m,
+    /// <summary>Cost of a campaign that falls short of the configured minimum campaign quantity, per tonne short.</summary>
+    decimal BelowMinimumCampaignPerMt = 8m)
+{
+    public static CampaignObjectiveWeights Default { get; } = new();
+}
+
+/// <summary>
+/// Why the optimizer chose the composition it did (#15). Each component is reported separately rather
+/// than as one opaque number, so a planner can see whether a campaign exists for service reasons or
+/// efficiency ones - and so a weight change has a visible, attributable effect.
+/// </summary>
+public sealed record CampaignObjectiveBreakdown(
+    string StrategyCode,
+    int CampaignCount,
+    decimal ServiceRiskMtDays,
+    decimal EarlyProductionMtDays,
+    decimal ResidualHeatMt,
+    decimal BelowMinimumShortfallMt,
+    decimal TotalCost)
+{
+    /// <summary>
+    /// Compositions are compared on service first and cost second, so an efficiency gain can never
+    /// offset a service loss however the weights are set.
+    /// </summary>
+    public (decimal Service, decimal Cost) DominanceKey => (ServiceRiskMtDays, TotalCost);
+}
+
+/// <summary>
+/// The chosen composition for one compatible group, with the alternatives it beat (#15).
+/// </summary>
+public sealed record CampaignCompositionDecision(
+    string CompatibilityGroupKey,
+    CampaignObjectiveBreakdown Selected,
+    IReadOnlyCollection<CampaignObjectiveBreakdown> Considered);
 
 public sealed record CampaignPlanningRequest(
     IReadOnlyCollection<ProductionOrder> ProductionOrders,
@@ -118,7 +172,12 @@ public sealed record CampaignPlanningResult(
     IReadOnlyCollection<PlanningSupplyAllocation>? PlannedSupplyAllocations = null,
     IReadOnlyDictionary<Guid, decimal>? PlannedPurchaseAllocatedMt = null,
     IReadOnlyDictionary<Guid, decimal>? PlannedTransferAllocatedMt = null,
-    IReadOnlyCollection<PlanningSupplyAlternative>? SourcingAlternatives = null);
+    IReadOnlyCollection<PlanningSupplyAlternative>? SourcingAlternatives = null,
+    /// <summary>
+    /// Objective breakdown for each compatible group's chosen campaign composition, and the
+    /// alternatives it was chosen over (#15).
+    /// </summary>
+    IReadOnlyCollection<CampaignCompositionDecision>? CompositionDecisions = null);
 
 public interface IMtsProductionOrderService
 {

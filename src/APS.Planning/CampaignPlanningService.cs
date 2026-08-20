@@ -186,44 +186,53 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
             .OrderBy(g => g.Min(x => x.RequiredDate));
 
         var campaigns = new List<Campaign>();
+        var compositionDecisions = new List<CampaignCompositionDecision>();
+        var weights = request.Policy.ObjectiveWeights ?? CampaignObjectiveWeights.Default;
         var sequence = 1;
 
         foreach (var group in campaignInputs)
         {
-            var groupOrders = group
-                .OrderBy(x => x.DemandSource == DemandSourceType.MakeToOrder ? 0 : 1)
-                .ThenByDescending(x => x.Priority)
-                .ThenBy(x => x.RequiredDate)
-                .ThenBy(x => x.GradeCode)
-                .ThenBy(x => x.ProductionOrderNumber)
+            var ordersById = group.ToDictionary(x => x.Id);
+            var requirements = group
+                .Select(po => new CampaignRequirement(
+                    po.Id,
+                    po.ProductionOrderNumber,
+                    rollingRequirements[po.Id],
+                    po.RequiredDate,
+                    po.Priority,
+                    po.DemandSource == DemandSourceType.MakeToOrder))
                 .ToArray();
 
-            var current = NewCampaign(request.CampaignNumberPrefix, sequence++, group.Key, groupOrders.Min(x => x.RequiredDate));
+            // Which requirements share a campaign is a decision with a cost, not a consequence of the
+            // order they happen to arrive in (#15). Candidate compositions are scored and the best is
+            // taken; service risk dominates efficiency lexicographically.
+            var composition = CampaignCandidateOptimizer.Choose(requirements, request.Policy, weights);
+            compositionDecisions.Add(new CampaignCompositionDecision(
+                group.Key.ToString(),
+                composition.Score,
+                CampaignCandidateOptimizer.Considered(requirements, request.Policy, weights)));
 
-            foreach (var po in groupOrders)
+            // Coverage already netted per PO is drawn down across that PO's slices in campaign order,
+            // so a PO split over two campaigns consumes its existing intermediate stock in the first.
+            var remainingIntermediateByOrder = group.ToDictionary(
+                po => po.Id,
+                po => intermediateAllocated[po.Id] + committedInternalAllocated[po.Id] + externalAllocated[po.Id] +
+                      plannedPurchaseAllocated[po.Id] + plannedTransferAllocated[po.Id] +
+                      plannedSupplyAllocations
+                          .Where(x => x.ProductionOrderId == po.Id && x.ActionType == MaterialSupplyActionType.Manual)
+                          .Sum(x => x.QuantityMt));
+            var remainingFreshByOrder = group.ToDictionary(po => po.Id, po => freshSteelRequirements[po.Id]);
+
+            foreach (var candidate in composition.Campaigns)
             {
-                var remainingRolling = rollingRequirements[po.Id];
-                var remainingIntermediate = intermediateAllocated[po.Id] + committedInternalAllocated[po.Id] + externalAllocated[po.Id] +
-                                            plannedPurchaseAllocated[po.Id] + plannedTransferAllocated[po.Id] +
-                                            plannedSupplyAllocations
-                                                .Where(x => x.ProductionOrderId == po.Id && x.ActionType == MaterialSupplyActionType.Manual)
-                                                .Sum(x => x.QuantityMt);
-                var remainingFresh = freshSteelRequirements[po.Id];
+                var current = NewCampaign(request.CampaignNumberPrefix, sequence++, group.Key, candidate.RequiredDate);
 
-                while (remainingRolling > 0m)
+                foreach (var slice in candidate.Slices)
                 {
-                    var capacity = request.Policy.MaximumCampaignQuantityMt - current.PlannedQuantityMt;
-                    if (capacity <= 0m)
-                    {
-                        BuildGradeSequenceAndHeats(current, request);
-                        campaigns.Add(current);
-                        current = NewCampaign(request.CampaignNumberPrefix, sequence++, group.Key, po.RequiredDate);
-                        capacity = request.Policy.MaximumCampaignQuantityMt;
-                    }
-
-                    var allocationQty = Math.Min(remainingRolling, capacity);
-                    var intermediateQty = Math.Min(remainingIntermediate, allocationQty);
-                    var freshQty = Math.Min(remainingFresh, Math.Max(0m, allocationQty - intermediateQty));
+                    var po = ordersById[slice.Requirement.ProductionOrderId];
+                    var allocationQty = slice.QuantityMt;
+                    var intermediateQty = Math.Min(remainingIntermediateByOrder[po.Id], allocationQty);
+                    var freshQty = Math.Min(remainingFreshByOrder[po.Id], Math.Max(0m, allocationQty - intermediateQty));
 
                     current.Allocations.Add(new CampaignAllocation
                     {
@@ -241,14 +250,11 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
                     current.FreshSteelRequirementMt += freshQty;
                     current.RequiredDate = current.RequiredDate <= po.RequiredDate ? current.RequiredDate : po.RequiredDate;
 
-                    remainingRolling -= allocationQty;
-                    remainingIntermediate = Math.Max(0m, remainingIntermediate - intermediateQty);
-                    remainingFresh = Math.Max(0m, remainingFresh - freshQty);
+                    remainingIntermediateByOrder[po.Id] = Math.Max(0m, remainingIntermediateByOrder[po.Id] - intermediateQty);
+                    remainingFreshByOrder[po.Id] = Math.Max(0m, remainingFreshByOrder[po.Id] - freshQty);
                 }
-            }
 
-            if (current.PlannedQuantityMt > 0m)
-            {
+                if (current.PlannedQuantityMt <= 0m) continue;
                 BuildGradeSequenceAndHeats(current, request);
                 campaigns.Add(current);
             }
@@ -266,7 +272,8 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
             plannedSupplyAllocations,
             plannedPurchaseAllocated,
             plannedTransferAllocated,
-            sourcingAlternatives);
+            sourcingAlternatives,
+            compositionDecisions);
     }
 
     private static void ResolveGradeMasters(CampaignPlanningRequest request)
@@ -911,7 +918,14 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
         var maximumCount = totalQuantityMt >= policy.MinimumHeatSizeMt
             ? Math.Max(1, (int)Math.Floor(totalQuantityMt / policy.MinimumHeatSizeMt))
             : 1;
-        var heatCount = Math.Clamp(preferredCount, minimumCount, maximumCount);
+        // A quantity can fall in a dead band where no heat count satisfies both ends of the envelope -
+        // 70 MT against 40/55 min/max needs more than one heat but cannot fill two. Math.Clamp throws
+        // when its bounds cross, which crashed the whole plan with an arithmetic message. The furnace
+        // maximum is a physical limit and the minimum is an economic one, so the maximum wins and the
+        // campaign runs an under-filled heat.
+        var heatCount = minimumCount > maximumCount
+            ? minimumCount
+            : Math.Clamp(preferredCount, minimumCount, maximumCount);
         var average = decimal.Round(totalQuantityMt / heatCount, 4, MidpointRounding.AwayFromZero);
         var result = new List<decimal>(heatCount);
         var allocated = 0m;
