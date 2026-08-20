@@ -22,8 +22,11 @@ public sealed record PlanningMasterDataSnapshot(
     IReadOnlyCollection<MaterialSourcingRule>? MaterialSourcingRules = null,
     IReadOnlyCollection<BillOfMaterial>? BillsOfMaterial = null,
     IReadOnlyCollection<GradeProcessTemperatureRequirement>? GradeTemperatureRequirements = null,
-    IReadOnlyCollection<ResourceTemperatureCapability>? ResourceTemperatureCapabilities = null)
+    IReadOnlyCollection<ResourceTemperatureCapability>? ResourceTemperatureCapabilities = null,
+    IReadOnlyCollection<PlanningScenario>? PlanningScenarios = null)
 {
+    public IReadOnlyCollection<PlanningScenario> EffectivePlanningScenarios =>
+        PlanningScenarios ?? Array.Empty<PlanningScenario>();
     public IReadOnlyCollection<GradeProcessTemperatureRequirement> EffectiveGradeTemperatureRequirements =>
         GradeTemperatureRequirements ?? Array.Empty<GradeProcessTemperatureRequirement>();
     public IReadOnlyCollection<ResourceTemperatureCapability> EffectiveResourceTemperatureCapabilities =>
@@ -60,4 +63,9 @@ public sealed record PlanningCalculationRequest(
     int MaxSolverSeconds = 20,
     string CampaignNumberPrefix = "CMP",
     MaterialSupplyPlanningPolicy? MaterialSupplyPolicy = null,
-    IReadOnlyCollection<OperationAssignmentPolicy>? AssignmentPolicies = null);
+    IReadOnlyCollection<OperationAssignmentPolicy>? AssignmentPolicies = null,
+    /// <summary>
+    /// Operating-state scenario to plan under (#17). Null, or a code that matches no scenario, plans
+    /// the plant as configured - the baseline.
+    /// </summary>
+    string? ScenarioCode = null);

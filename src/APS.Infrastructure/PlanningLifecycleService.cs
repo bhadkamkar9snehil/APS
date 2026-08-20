@@ -193,7 +193,20 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
             BillsOfMaterial: masterData.EffectiveBillsOfMaterial,
             ExecutionMode: PlanningExecutionMode.Production,
             GradeTemperatureRequirements: masterData.EffectiveGradeTemperatureRequirements,
-            ResourceTemperatureCapabilities: masterData.EffectiveResourceTemperatureCapabilities);
+            ResourceTemperatureCapabilities: masterData.EffectiveResourceTemperatureCapabilities,
+            Scenario: ResolveScenario(request.ScenarioCode, masterData));
+    }
+
+    /// <summary>
+    /// A blank scenario code plans the plant as configured. A baseline scenario is equally the plant
+    /// as configured, so it is not applied as an override set either (#17).
+    /// </summary>
+    private static PlanningScenario? ResolveScenario(string? scenarioCode, PlanningMasterDataSnapshot masterData)
+    {
+        if (string.IsNullOrWhiteSpace(scenarioCode)) return null;
+        var scenario = masterData.EffectivePlanningScenarios
+            .FirstOrDefault(x => string.Equals(x.ScenarioCode, scenarioCode, StringComparison.OrdinalIgnoreCase));
+        return scenario is null || scenario.IsBaseline ? null : scenario;
     }
 
     private static void ValidateProductionConfiguration(

@@ -19,6 +19,26 @@ public sealed class PlanningEngine(
 
         var createdOnUtc = DateTime.UtcNow;
         var planVersionId = Guid.NewGuid();
+
+        // An operating-state scenario is a different plant, not a post-hoc filter (#17): outages,
+        // deratings and grade restrictions are folded into the resource/capability/calendar masters
+        // here so campaign formation, heat sizing, route projection and the solver all see the same
+        // plant. Substituting them onto the request means every downstream reader picks them up
+        // without a second scenario-aware code path to keep in step.
+        var plantState = PlanningScenarioApplier.Apply(
+            request.Resources,
+            request.Capabilities,
+            request.ResourceCalendars,
+            request.Scenario,
+            request.HorizonStartUtc,
+            request.HorizonEndUtc);
+        request = request with
+        {
+            Resources = plantState.Resources,
+            Capabilities = plantState.Capabilities,
+            ResourceCalendars = plantState.Calendars
+        };
+
         SteelOrderRequirementValidator.Validate(request.ProductionOrders, request.SteelGrades);
         var requirementSnapshots = PlanRequirementSnapshotBuilder.Build(planVersionId, request.ProductionOrders);
 

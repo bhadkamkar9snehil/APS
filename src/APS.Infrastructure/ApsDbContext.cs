@@ -34,6 +34,8 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
     public DbSet<PlantFlowLink> PlantFlowLinks => Set<PlantFlowLink>();
     public DbSet<TransitionRule> TransitionRules => Set<TransitionRule>();
     public DbSet<ResourceTemperatureCapability> ResourceTemperatureCapabilities => Set<ResourceTemperatureCapability>();
+    public DbSet<PlanningScenario> PlanningScenarios => Set<PlanningScenario>();
+    public DbSet<ResourceScenarioOverride> ResourceScenarioOverrides => Set<ResourceScenarioOverride>();
     public DbSet<GradeProcessTemperatureRequirement> GradeProcessTemperatureRequirements => Set<GradeProcessTemperatureRequirement>();
 
     public DbSet<SteelGrade> SteelGrades => Set<SteelGrade>();
@@ -105,6 +107,7 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
             .HasIndex(x => new { x.SteelGradeId, x.ProcessOperationType }).IsUnique();
         modelBuilder.Entity<ResourceTemperatureCapability>()
             .HasIndex(x => new { x.ResourceId, x.ProcessOperationType }).IsUnique();
+        modelBuilder.Entity<PlanningScenario>().HasIndex(x => x.ScenarioCode).IsUnique();
         modelBuilder.Entity<CrossSectionSpecification>().HasIndex(x => x.CrossSectionCode).IsUnique();
         modelBuilder.Entity<MaterialSpecification>().HasIndex(x => x.MaterialSpecificationCode).IsUnique();
         modelBuilder.Entity<PackagingSpecification>().HasIndex(x => x.PackagingCode).IsUnique();

@@ -7,4 +7,10 @@
     <ProjectReference Include="..\APS.Application\APS.Application.csproj" />
     <PackageReference Include="Google.OrTools" Version="9.15.6755" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- The projectors are internal because PlanningEngine owns the order they run in, not because
+         they should go untested. Two of them shipped complete but never wired in; being reachable
+         from the test project is what makes that visible. -->
+    <InternalsVisibleTo Include="APS.Planning.Tests" />
+  </ItemGroup>
 </Project>

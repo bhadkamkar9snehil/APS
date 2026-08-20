@@ -111,7 +111,13 @@ public sealed record PlanningRunRequest(
     /// </summary>
     IReadOnlyCollection<GradeProcessTemperatureRequirement>? GradeTemperatureRequirements = null,
     /// <summary>Thermal ability of each physical resource, used to prove a transfer keeps the heat in window.</summary>
-    IReadOnlyCollection<ResourceTemperatureCapability>? ResourceTemperatureCapabilities = null);
+    IReadOnlyCollection<ResourceTemperatureCapability>? ResourceTemperatureCapabilities = null,
+    /// <summary>
+    /// Plant operating-state scenario to plan under (#17) - outages, deratings and grade restrictions
+    /// applied to the resource/capability/calendar masters before anything else runs. Null plans the
+    /// plant as configured.
+    /// </summary>
+    PlanningScenario? Scenario = null);
 
 public sealed record PlanningRunResult(
     Guid PlanVersionId,

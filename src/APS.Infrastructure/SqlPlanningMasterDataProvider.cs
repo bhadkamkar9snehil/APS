@@ -72,6 +72,10 @@ public sealed class SqlPlanningMasterDataProvider(ApsDbContext db) : IPlanningMa
             await db.ResourceTemperatureCapabilities.AsNoTracking()
                 .OrderBy(x => x.ResourceId)
                 .ThenBy(x => x.ProcessOperationType)
+                .ToListAsync(cancellationToken),
+            await db.PlanningScenarios.AsNoTracking()
+                .Include(x => x.ResourceOverrides)
+                .OrderBy(x => x.ScenarioCode)
                 .ToListAsync(cancellationToken));
     }
 }
