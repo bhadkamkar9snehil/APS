@@ -95,7 +95,7 @@ else
                         {
                             <button type="button" class="rounded border border-slate-200 p-2 text-left text-xs hover:bg-slate-50" @onclick="() => SelectHeat(heat)">
                                 <div class="flex items-center justify-between">
-                                    <span class="text-slate-400">H@heat.SequenceNumber.ToString("00")</span>
+                                    <span class="text-slate-400">H@(heat.SequenceNumber.ToString("00"))</span>
                                     <strong>@heat.GradeCode</strong>
                                 </div>
                                 <div class="mt-1 text-sm font-semibold">@heat.PlannedQuantityMt.ToString("0.##") MT</div>

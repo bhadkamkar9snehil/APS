@@ -33,7 +33,7 @@ else
                 @foreach (var plan in view.RollingPlans)
                 {
                     <button type="button" class="block w-full border-b border-slate-100 px-3 py-2 text-left last:border-0 hover:bg-slate-50 @(selectedPlan?.RollingPlanId == plan.RollingPlanId ? "bg-accent-soft" : "")" @onclick="() => SelectPlan(plan)">
-                        <strong>RP-@plan.SequenceNumber.ToString("00") &middot; @plan.GradeCode</strong>
+                        <strong>RP-@(plan.SequenceNumber.ToString("00")) &middot; @plan.GradeCode</strong>
                         <div class="text-xs text-slate-400">@plan.InputCrossSectionCode &rarr; @plan.OutputCrossSectionCode</div>
                         <div class="mt-1 flex items-center justify-between text-xs text-slate-400">
                             <span>@(plan.RollingMillResourceCode ?? "mill in schedule")</span>
@@ -54,7 +54,7 @@ else
                 <div class="mb-4 rounded border border-slate-200 bg-white p-4">
                     <div class="flex items-start justify-between">
                         <div>
-                            <h2 class="text-base font-semibold">RP-@selectedPlan.SequenceNumber.ToString("00") &middot; @selectedPlan.GradeCode</h2>
+                            <h2 class="text-base font-semibold">RP-@(selectedPlan.SequenceNumber.ToString("00")) &middot; @selectedPlan.GradeCode</h2>
                             <p class="text-sm text-slate-500">@selectedPlan.RouteCode &middot; @selectedPlan.InputCrossSectionCode &rarr; @selectedPlan.OutputCrossSectionCode</p>
                         </div>
                         <div class="flex gap-4 text-right text-sm">
