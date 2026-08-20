@@ -15,21 +15,49 @@
     Compiles wwwroot/tailwind-input.css into wwwroot/tailwind.css using the Tailwind standalone
     CLI binary - no Node/npm toolchain. The binary is not committed; it's fetched into a
     repo-root .tailwind/ cache on first build.
+
+    The asset is selected per OS and architecture (#59). This project is plain Blazor with no
+    Windows dependency - only the build step was Windows-bound, which made every .razor change
+    unverifiable anywhere else. The version is pinned rather than tracked at 'latest' so the
+    generated CSS cannot change without a commit.
   -->
   <PropertyGroup>
-    <TailwindCliPath>$(MSBuildProjectDirectory)\..\..\.tailwind\tailwindcss.exe</TailwindCliPath>
-    <TailwindCliUrl>https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-windows-x64.exe</TailwindCliUrl>
-    <TailwindInputCss>$(MSBuildProjectDirectory)\wwwroot\tailwind-input.css</TailwindInputCss>
-    <TailwindOutputCss>$(MSBuildProjectDirectory)\wwwroot\tailwind.css</TailwindOutputCss>
+    <TailwindVersion>v4.1.14</TailwindVersion>
+    <TailwindCacheDir>$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)','..','..','.tailwind'))</TailwindCacheDir>
+
+    <TailwindOs Condition="$([MSBuild]::IsOSPlatform('Windows'))">windows</TailwindOs>
+    <TailwindOs Condition="$([MSBuild]::IsOSPlatform('OSX'))">macos</TailwindOs>
+    <TailwindOs Condition="$([MSBuild]::IsOSPlatform('Linux'))">linux</TailwindOs>
+
+    <TailwindArch>x64</TailwindArch>
+    <TailwindArch Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)' == 'Arm64'">arm64</TailwindArch>
+
+    <TailwindExeSuffix Condition="'$(TailwindOs)' == 'windows'">.exe</TailwindExeSuffix>
+    <TailwindAsset>tailwindcss-$(TailwindOs)-$(TailwindArch)$(TailwindExeSuffix)</TailwindAsset>
+    <!-- Cache key includes version and asset, so a version bump fetches rather than reusing a stale binary. -->
+    <TailwindCliPath>$([System.IO.Path]::Combine('$(TailwindCacheDir)','$(TailwindVersion)','$(TailwindAsset)'))</TailwindCliPath>
+    <TailwindCliUrl>https://github.com/tailwindlabs/tailwindcss/releases/download/$(TailwindVersion)/$(TailwindAsset)</TailwindCliUrl>
+
+    <TailwindInputCss>$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)','wwwroot','tailwind-input.css'))</TailwindInputCss>
+    <TailwindOutputCss>$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)','wwwroot','tailwind.css'))</TailwindOutputCss>
   </PropertyGroup>
 
-  <Target Name="EnsureTailwindCli" BeforeTargets="CompileTailwindCss">
-    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(TailwindCliPath)'))" Condition="!Exists('$(TailwindCliPath)')" />
-    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Invoke-WebRequest -Uri '$(TailwindCliUrl)' -OutFile '$(TailwindCliPath)'&quot;"
-          Condition="!Exists('$(TailwindCliPath)')" />
+  <Target Name="EnsureTailwindCli" BeforeTargets="CompileTailwindCss" Condition="!Exists('$(TailwindCliPath)')">
+    <Error Condition="'$(TailwindOs)' == ''"
+           Text="Unsupported OS for the Tailwind standalone CLI. Tailwind publishes Windows, macOS and Linux builds; see APS.UI.csproj." />
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(TailwindCliPath)'))" />
+
+    <!-- curl is present on macOS and Linux; PowerShell is the portable fetch on Windows. -->
+    <Exec Condition="'$(TailwindOs)' != 'windows'"
+          Command="curl -sSL --fail -o &quot;$(TailwindCliPath)&quot; &quot;$(TailwindCliUrl)&quot;" />
+    <Exec Condition="'$(TailwindOs)' != 'windows'"
+          Command="chmod +x &quot;$(TailwindCliPath)&quot;" />
+    <Exec Condition="'$(TailwindOs)' == 'windows'"
+          Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Invoke-WebRequest -Uri '$(TailwindCliUrl)' -OutFile '$(TailwindCliPath)'&quot;" />
   </Target>
 
-  <Target Name="CompileTailwindCss" BeforeTargets="Build;Publish">
+  <Target Name="CompileTailwindCss" BeforeTargets="Build;Publish"
+          Inputs="$(TailwindInputCss)" Outputs="$(TailwindOutputCss)">
     <Exec Command="&quot;$(TailwindCliPath)&quot; -i &quot;$(TailwindInputCss)&quot; -o &quot;$(TailwindOutputCss)&quot; --minify" />
   </Target>
 </Project>
