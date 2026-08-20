@@ -29,7 +29,13 @@ public sealed record BaselinePlanOperation(
     Guid ResourceId,
     DateTime StartUtc,
     DateTime EndUtc,
-    FiniteScheduleTaskType TaskType);
+    FiniteScheduleTaskType TaskType,
+    /// <summary>
+    /// Where the operation sat in the effective route (#34). Optional because replan baselines are
+    /// constructed from schedule facts alone and do not need it.
+    /// </summary>
+    string? RouteCode = null,
+    int? RouteSequenceNumber = null);
 
 public sealed record OperationResourceOverride(
     string PlanningKey,

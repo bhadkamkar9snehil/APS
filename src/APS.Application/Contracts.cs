@@ -247,7 +247,40 @@ public sealed record ProductionStructurePlanningResult(
     IReadOnlyCollection<FiniteScheduleTask> SchedulingTasks,
     IReadOnlyCollection<PlanningIssue> Issues,
     IReadOnlyCollection<PlannedStrandMaterialUnit>? PlannedStrandMaterialUnits = null,
-    IReadOnlyCollection<RouteOperationPlan>? RouteOperationPlans = null);
+    IReadOnlyCollection<RouteOperationPlan>? RouteOperationPlans = null,
+    /// <summary>
+    /// What the effective route was and what happened to each of its operations (#34). Without the
+    /// skipped ones a plan records only the operations that survived, and a heat whose VD was skipped
+    /// is indistinguishable from a heat on a route that never had one.
+    /// </summary>
+    IReadOnlyCollection<RouteOperationDecision>? RouteOperationDecisions = null);
+
+/// <summary>What the planner did with one operation of a configured route (#34).</summary>
+public enum RouteOperationOutcome
+{
+    /// <summary>The operation is part of the plan and carries a scheduling task.</summary>
+    Included = 1,
+    /// <summary>The route offered it, nothing required it, so it was not planned.</summary>
+    SkippedOptional = 2,
+    /// <summary>Grade or order requirements forbid it, so it was not planned.</summary>
+    SkippedForbidden = 3
+}
+
+/// <summary>
+/// One operation of the effective route and what the planner decided about it (#34). This is what
+/// lets a read model draw the manufacturing chain a plan actually used - including the steps it chose
+/// not to run and why - rather than a fixed EAF/LRF/VD diagram.
+/// </summary>
+public sealed record RouteOperationDecision(
+    Guid SourceEntityId,
+    string RouteCode,
+    int RouteSequenceNumber,
+    ProcessOperationType ProcessOperationType,
+    /// <summary>What the route master says: Required, Optional or Forbidden.</summary>
+    RequirementDisposition RouteDisposition,
+    RouteOperationOutcome Outcome,
+    /// <summary>Stable code for why, so integrations do not parse prose.</summary>
+    string ReasonCode);
 
 public interface IProductionStructurePlanningService
 {

@@ -90,6 +90,13 @@ public sealed class PlanVersionState : Entity
     /// a later one - after the fact.
     /// </summary>
     public string? PlanningAssumptionsJson { get; set; }
+
+    /// <summary>
+    /// Every operation of the effective route and what the planner decided about it, including the
+    /// ones it chose not to run (#34). A heat whose VD was skipped because the grade did not require
+    /// it is otherwise indistinguishable from a heat on a route that never had a VD.
+    /// </summary>
+    public string? RouteOperationDecisionsJson { get; set; }
 }
 
 public sealed class PlanOperationSnapshot : Entity
@@ -99,6 +106,14 @@ public sealed class PlanOperationSnapshot : Entity
     public Guid SourceEntityId { get; set; }
     public PlanOperationType OperationType { get; set; }
     public ProcessOperationType ProcessOperationType { get; set; } = ProcessOperationType.Unknown;
+
+    /// <summary>
+    /// Where this operation sat in the effective route (#34). Without it a plan records the operations
+    /// that ran but not the chain they came from, so a read model can only redraw what survived.
+    /// </summary>
+    public string? RouteCode { get; set; }
+
+    public int? RouteSequenceNumber { get; set; }
 
     public Guid ResourceId { get; set; }
     public Guid? CommittedResourceId { get; set; }

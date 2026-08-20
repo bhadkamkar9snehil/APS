@@ -23,6 +23,14 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
                    ?? throw new InvalidOperationException("Persisted plan version could not be reloaded.");
         }
 
+        var routeDecisions = result.ProductionStructure.RouteOperationDecisions ?? Array.Empty<RouteOperationDecision>();
+        // A source entity runs each operation type at most once, so this is unambiguous; DistinctBy
+        // guards a projector that records the same operation twice rather than throwing mid-save.
+        var routeDecisionsByOperation = routeDecisions
+            .Where(x => x.Outcome == RouteOperationOutcome.Included)
+            .DistinctBy(x => (x.SourceEntityId, x.ProcessOperationType))
+            .ToDictionary(x => (x.SourceEntityId, x.ProcessOperationType));
+
         var version = new PlanVersion
         {
             Id = result.PlanVersionId,
@@ -49,7 +57,8 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             MaterialReservationsJson = Serialize(result.MaterialPlan?.Reservations),
             MaterialLedgerJson = Serialize(result.MaterialPlan?.LedgerEvents),
             MaterialSourcingAlternativesJson = Serialize(result.CampaignPlan.SourcingAlternatives),
-            PlanningAssumptionsJson = SerializeObject(BuildAssumptions(request.PlanningRequest, result))
+            PlanningAssumptionsJson = SerializeObject(BuildAssumptions(request.PlanningRequest, result)),
+            RouteOperationDecisionsJson = Serialize(routeDecisions)
         };
 
         if (result.IsFeasible)
@@ -127,6 +136,10 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
                 SourceEntityId = assignment.SourceEntityId,
                 OperationType = MapOperationType(task.TaskType),
                 ProcessOperationType = processType,
+                RouteCode = routeDecisionsByOperation.TryGetValue((assignment.SourceEntityId, processType), out var routeDecision)
+                    ? routeDecision.RouteCode
+                    : null,
+                RouteSequenceNumber = routeDecision?.RouteSequenceNumber,
                 ResourceId = assignment.ResourceId,
                 CommittedResourceId = commitment is OperationAssignmentCommitmentState.Committed or OperationAssignmentCommitmentState.Running or OperationAssignmentCommitmentState.Completed
                     ? assignment.ResourceId
@@ -250,7 +263,8 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             Deserialize<MaterialSupplyReservation>(state.MaterialReservationsJson),
             Deserialize<MaterialBalanceEvent>(state.MaterialLedgerJson),
             Deserialize<PlanningSupplyAlternative>(state.MaterialSourcingAlternativesJson),
-            DeserializeObject<PlanningAssumptions>(state.PlanningAssumptionsJson));
+            DeserializeObject<PlanningAssumptions>(state.PlanningAssumptionsJson),
+            Deserialize<RouteOperationDecision>(state.RouteOperationDecisionsJson));
     }
 
     /// <summary>
@@ -289,7 +303,9 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
                 x.ActualResourceId ?? x.CommittedResourceId ?? x.ResourceId,
                 x.StartUtc,
                 x.EndUtc,
-                MapTaskType(x.OperationType)))
+                MapTaskType(x.OperationType),
+                x.RouteCode,
+                x.RouteSequenceNumber))
             .ToArray();
     }
 

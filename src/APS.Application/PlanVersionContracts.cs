@@ -58,7 +58,13 @@ public sealed record PlanVersionSnapshot(
     /// older plan - or to compare two plans and know whether the difference came from the demand or
     /// from the assumptions.
     /// </summary>
-    PlanningAssumptions? Assumptions = null)
+    PlanningAssumptions? Assumptions = null,
+    /// <summary>
+    /// Every operation of the effective route and what the planner decided about it, including the
+    /// steps it chose not to run and why (#34). This is what lets a read model draw the manufacturing
+    /// chain the plan actually used rather than a fixed EAF/LRF/VD diagram.
+    /// </summary>
+    IReadOnlyCollection<RouteOperationDecision>? RouteOperationDecisions = null)
 {
     /// <summary>
     /// Tree projection over the same persisted MaterialRequirements facts. The existing MaterialRequirements

@@ -16,6 +16,8 @@ internal static class SteelmakingRouteProjector
     {
         var issues = structure.Issues.ToList();
         var tasks = structure.SchedulingTasks.ToList();
+        // What happened to every operation of the effective route, including the ones not planned (#34).
+        var decisions = (structure.RouteOperationDecisions ?? Array.Empty<RouteOperationDecision>()).ToList();
         var resourceCapabilities = capabilities.GroupBy(x => x.ResourceId).ToDictionary(x => x.Key, x => x.ToArray());
         var routeCapabilities = routePlanning.ResourceCapabilities.GroupBy(x => x.ResourceId).ToDictionary(x => x.Key, x => x.ToArray());
         var routes = routePlanning.Operations.GroupBy(x => x.RouteCode, StringComparer.OrdinalIgnoreCase)
@@ -81,9 +83,14 @@ internal static class SteelmakingRouteProjector
                     {
                         if (operation.Requirement == RequirementDisposition.Required)
                             issues.Add(new PlanningIssue(PlanningIssueSeverity.Error, "REQUIRED_PROCESS_FORBIDDEN", $"Route {campaign.RouteCode} requires {operation.ProcessOperationType} but grade/order requirements forbid it for heat {campaign.CampaignNumber}/{heat.SequenceNumber:00}.", heat.Id));
+                        decisions.Add(Decision(heat.Id, campaign.RouteCode, operation, RouteOperationOutcome.SkippedForbidden, "GRADE_OR_ORDER_FORBIDS"));
                         continue;
                     }
-                    if (operation.Requirement == RequirementDisposition.Optional && effective != RequirementResolution.Required) continue;
+                    if (operation.Requirement == RequirementDisposition.Optional && effective != RequirementResolution.Required)
+                    {
+                        decisions.Add(Decision(heat.Id, campaign.RouteCode, operation, RouteOperationOutcome.SkippedOptional, "OPTIONAL_AND_NOT_REQUIRED"));
+                        continue;
+                    }
 
                     var options = BuildResourceOptions(operation, heat, campaign, heatOrders, grade, resources, resourceCapabilities, routeCapabilities);
                     if (options.Count == 0)
@@ -102,6 +109,12 @@ internal static class SteelmakingRouteProjector
                         heat.GradeCode, campaign.CasterSectionCode, heat.PlannedQuantityMt, null, due, priority,
                         options, dependencies, operation.ProcessOperationType);
                     tasks.Add(task);
+                    decisions.Add(Decision(
+                        heat.Id,
+                        campaign.RouteCode,
+                        operation,
+                        RouteOperationOutcome.Included,
+                        effective == RequirementResolution.Required ? "REQUIRED" : "ROUTE_DEFAULT"));
                     predecessor = task;
                 }
 
@@ -110,6 +123,9 @@ internal static class SteelmakingRouteProjector
 
                 var castingTask = tasks[castingTaskIndex];
                 var ccmOperation = route[ccmIndex];
+                // The caster is built before this loop rather than inside it, so it is recorded here -
+                // a route decision record that stopped short of the caster would not be the route.
+                decisions.Add(Decision(heat.Id, campaign.RouteCode, ccmOperation, RouteOperationOutcome.Included, "REQUIRED"));
                 var ccmDependency = BuildDependency(predecessor, castingTask.ResourceOptions, ccmOperation, flowLinks, grade, heatOrders, issues, heat.Id);
                 tasks[castingTaskIndex] = castingTask with
                 {
@@ -119,8 +135,27 @@ internal static class SteelmakingRouteProjector
             }
         }
 
-        return structure with { SchedulingTasks = tasks, Issues = issues };
+        return structure with
+        {
+            SchedulingTasks = tasks,
+            Issues = issues,
+            RouteOperationDecisions = decisions
+        };
     }
+
+    private static RouteOperationDecision Decision(
+        Guid heatId,
+        string routeCode,
+        ManufacturingRouteOperation operation,
+        RouteOperationOutcome outcome,
+        string reasonCode) => new(
+        heatId,
+        routeCode,
+        operation.SequenceNumber,
+        operation.ProcessOperationType,
+        operation.Requirement,
+        outcome,
+        reasonCode);
 
     private static IReadOnlyCollection<FiniteScheduleResourceOption> BuildResourceOptions(
         ManufacturingRouteOperation operation,
