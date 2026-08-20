@@ -40,9 +40,9 @@ internal static class ConfiguredRouteProductionStructureBuilder
             if (sequenceNumbers.Distinct().Count() != sequenceNumbers.Length)
                 yield return new PlanningIssue(PlanningIssueSeverity.Error, "ROUTE_SEQUENCE_DUPLICATE", $"Route {route.Key} contains duplicate operation sequence numbers.");
 
-            if (!route.Any(x => x.ProcessOperationType == ProcessOperationType.HotRoll))
-                yield return new PlanningIssue(PlanningIssueSeverity.Error, "ROUTE_HOT_ROLLING_MISSING", $"Route {route.Key} does not contain a HotRoll operation.");
-
+            // A route legitimately has no HotRoll operation when the plan sells cast intermediate
+            // (billet/bloom/slab) directly rather than rolling it - #34 acceptance scenario 6. HotRoll
+            // absence is not itself an error; BuildHotRollingPlan skips such routes rather than erroring.
             foreach (var operation in route)
             {
                 if (operation.YieldPct <= 0m || operation.YieldPct > 100m)
@@ -182,7 +182,10 @@ internal static class ConfiguredRouteProductionStructureBuilder
                 continue;
             }
 
-            var hotOperation = operations.First(x => x.ProcessOperationType == ProcessOperationType.HotRoll);
+            // No HotRoll in this route: the plan sells the cast intermediate directly (billet/bloom/slab),
+            // so there is nothing further to schedule here - not an error (#34 acceptance scenario 6).
+            var hotOperation = operations.FirstOrDefault(x => x.ProcessOperationType == ProcessOperationType.HotRoll);
+            if (hotOperation is null) continue;
             var inputSection = hotOperation.InputCrossSectionCode ?? representative.CasterSectionCode;
             var outputSection = hotOperation.OutputCrossSectionCode ?? representative.FinalCrossSectionCode;
             var quantity = groupLines.Sum(x => x.QuantityMt);
