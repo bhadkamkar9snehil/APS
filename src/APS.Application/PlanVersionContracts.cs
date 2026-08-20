@@ -10,6 +10,28 @@ public sealed record PersistPlanningRunRequest(
     string? Reason = null,
     DemandOrchestrationResult? Demand = null);
 
+/// <summary>
+/// The levers a plan was solved under, captured at the moment it was cut (#15/#17/#35). Resource
+/// masters, scenarios and objective weights all change; a plan that cannot say what it assumed cannot
+/// be defended later, and Plan Compare cannot tell an assumption change apart from a demand change.
+/// </summary>
+public sealed record PlanningAssumptions(
+    /// <summary>The operating-state scenario the plant was planned under, or null for the configured plant.</summary>
+    string? ScenarioCode,
+    CampaignObjectiveWeights CampaignObjectiveWeights,
+    IReadOnlyCollection<CampaignCompositionDecision> CampaignCompositionDecisions,
+    IReadOnlyCollection<ResourceSchedulingAssumption> ResourceScheduling);
+
+/// <summary>How one physical resource was modelled by the solver for this plan (#35).</summary>
+public sealed record ResourceSchedulingAssumption(
+    Guid ResourceId,
+    string ResourceCode,
+    ResourceSchedulingMode SchedulingMode,
+    ResourceCapacityBasis CapacityBasis,
+    decimal? NominalConcurrentCapacity,
+    decimal CapacityFactorPct,
+    bool AppliesSequenceRules);
+
 public sealed record PlanVersionSnapshot(
     Guid PlanVersionId,
     string VersionNumber,
@@ -30,7 +52,13 @@ public sealed record PlanVersionSnapshot(
     IReadOnlyCollection<MaterialSupplyRequirement>? MaterialSupplyRequirements = null,
     IReadOnlyCollection<MaterialSupplyReservation>? MaterialReservations = null,
     IReadOnlyCollection<MaterialBalanceEvent>? MaterialLedger = null,
-    IReadOnlyCollection<PlanningSupplyAlternative>? SourcingAlternatives = null)
+    IReadOnlyCollection<PlanningSupplyAlternative>? SourcingAlternatives = null,
+    /// <summary>
+    /// What the plan was solved under. Master data moves on, so this is the only way to explain an
+    /// older plan - or to compare two plans and know whether the difference came from the demand or
+    /// from the assumptions.
+    /// </summary>
+    PlanningAssumptions? Assumptions = null)
 {
     /// <summary>
     /// Tree projection over the same persisted MaterialRequirements facts. The existing MaterialRequirements

@@ -48,7 +48,8 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             MaterialSupplyRequirementsJson = Serialize(result.MaterialPlan?.SupplyRequirements),
             MaterialReservationsJson = Serialize(result.MaterialPlan?.Reservations),
             MaterialLedgerJson = Serialize(result.MaterialPlan?.LedgerEvents),
-            MaterialSourcingAlternativesJson = Serialize(result.CampaignPlan.SourcingAlternatives)
+            MaterialSourcingAlternativesJson = Serialize(result.CampaignPlan.SourcingAlternatives),
+            PlanningAssumptionsJson = SerializeObject(BuildAssumptions(request.PlanningRequest, result))
         };
 
         if (result.IsFeasible)
@@ -248,8 +249,31 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             Deserialize<MaterialSupplyRequirement>(state.MaterialSupplyRequirementsJson),
             Deserialize<MaterialSupplyReservation>(state.MaterialReservationsJson),
             Deserialize<MaterialBalanceEvent>(state.MaterialLedgerJson),
-            Deserialize<PlanningSupplyAlternative>(state.MaterialSourcingAlternativesJson));
+            Deserialize<PlanningSupplyAlternative>(state.MaterialSourcingAlternativesJson),
+            DeserializeObject<PlanningAssumptions>(state.PlanningAssumptionsJson));
     }
+
+    /// <summary>
+    /// Captures the levers this plan was solved under. Resources are recorded as the engine saw them,
+    /// which for a scenario run is the scenario-adjusted plant rather than the configured masters -
+    /// that is the point: it is what produced this plan.
+    /// </summary>
+    private static PlanningAssumptions BuildAssumptions(PlanningRunRequest request, PlanningRunResult result) =>
+        new(
+            request.Scenario?.ScenarioCode,
+            request.CampaignPolicy.ObjectiveWeights ?? CampaignObjectiveWeights.Default,
+            result.CampaignPlan.CompositionDecisions ?? Array.Empty<CampaignCompositionDecision>(),
+            request.Resources
+                .Select(x => new ResourceSchedulingAssumption(
+                    x.Id,
+                    x.Code,
+                    x.SchedulingMode,
+                    x.CapacityBasis,
+                    x.NominalConcurrentCapacity,
+                    x.CapacityFactorPct,
+                    x.AppliesSequenceRules))
+                .OrderBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)
+                .ToArray());
 
     public async Task<IReadOnlyCollection<BaselinePlanOperation>> GetBaselineOperationsAsync(
         Guid planVersionId,
@@ -296,6 +320,9 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
         if (string.IsNullOrWhiteSpace(json)) return Array.Empty<T>();
         return JsonSerializer.Deserialize<T[]>(json, SnapshotJsonOptions) ?? Array.Empty<T>();
     }
+
+    private static T? DeserializeObject<T>(string? json) where T : class =>
+        string.IsNullOrWhiteSpace(json) ? null : JsonSerializer.Deserialize<T>(json, SnapshotJsonOptions);
 
     private static ProcessOperationType ResolveProcessOperationType(FiniteScheduleTask task)
     {

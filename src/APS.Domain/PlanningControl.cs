@@ -82,6 +82,14 @@ public sealed class PlanVersionState : Entity
     public string? MaterialReservationsJson { get; set; }
     public string? MaterialLedgerJson { get; set; }
     public string? MaterialSourcingAlternativesJson { get; set; }
+
+    /// <summary>
+    /// What this plan was solved under: the operating-state scenario, the campaign objective weights
+    /// and the per-group composition scores, and each resource's scheduling mode and capacity. Master
+    /// data changes after a plan is cut, so without this a plan cannot be explained - or compared with
+    /// a later one - after the fact.
+    /// </summary>
+    public string? PlanningAssumptionsJson { get; set; }
 }
 
 public sealed class PlanOperationSnapshot : Entity
