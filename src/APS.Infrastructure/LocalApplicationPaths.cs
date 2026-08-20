@@ -7,7 +7,13 @@ namespace APS.Infrastructure;
 /// </summary>
 public sealed class LocalApplicationPaths
 {
-    public const string ProductDirectoryName = "APS";
+    /// <summary>
+    /// Deliberately NOT "APS" - Velopack installs the app itself at %LocalAppData%\APS and wipes
+    /// that entire tree on every update (rename-for-rollback then clean). A data directory nested
+    /// inside it gets deleted along with the old app version on every single update. This name
+    /// must never collide with the Velopack packId used in build/release.ps1.
+    /// </summary>
+    public const string ProductDirectoryName = "APS-Data";
     public const string DataDirectoryName = "Data";
     public const string LogFilePrefix = "aps-";
 
