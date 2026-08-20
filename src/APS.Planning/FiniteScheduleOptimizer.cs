@@ -98,6 +98,7 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
         }
 
         ApplyDependencies(request, model, taskVars, issues);
+        ApplyLinkedResourceGroups(request, model, taskVars);
         ApplyMaterialReservoirs(request, horizonMinutes, model, taskVars, issues);
         if (issues.Any(i => i.Severity == PlanningIssueSeverity.Error))
         {
@@ -275,6 +276,30 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
                             maximum.OnlyEnforceIf(currentPresence.Value);
                         }
                     }
+                }
+            }
+        }
+    }
+
+    private static void ApplyLinkedResourceGroups(
+        FiniteScheduleRequest request,
+        CpModel model,
+        IReadOnlyDictionary<Guid, TaskVariables> taskVars)
+    {
+        // Ties consecutive tasks' per-resource presence together so the group resolves to one physical
+        // resource, even though each task still individually picks from its own eligible-resource set
+        // (#16) - e.g. every heat in one continuous cast sequence must land on the same physical CCM.
+        // Equality is transitive, so linking each consecutive pair links the whole group.
+        foreach (var group in request.LinkedResourceTaskGroups ?? Array.Empty<IReadOnlyCollection<Guid>>())
+        {
+            var ordered = group.Where(taskVars.ContainsKey).ToArray();
+            for (var i = 0; i < ordered.Length - 1; i++)
+            {
+                var current = taskVars[ordered[i]];
+                var next = taskVars[ordered[i + 1]];
+                foreach (var resourceId in current.Presence.Keys.Intersect(next.Presence.Keys))
+                {
+                    model.Add(current.Presence[resourceId] == next.Presence[resourceId]);
                 }
             }
         }

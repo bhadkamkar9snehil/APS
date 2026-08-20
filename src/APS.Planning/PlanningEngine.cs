@@ -141,6 +141,7 @@ public sealed class PlanningEngine(
 
         var stabilityConstraints = BuildStabilityConstraints(request, structure.SchedulingTasks, identities);
         var serviceObligations = BuildServiceObligations(structure, heatAllocations);
+        var linkedResourceGroups = BuildCasterLinkedGroups(structure);
         var finiteSchedule = scheduleOptimizer.Solve(new FiniteScheduleRequest(
             request.HorizonStartUtc,
             request.HorizonEndUtc,
@@ -152,7 +153,16 @@ public sealed class PlanningEngine(
             stabilityConstraints,
             request.SteelGrades,
             materialPreSchedule.ScheduleEvents,
-            serviceObligations));
+            serviceObligations,
+            linkedResourceGroups));
+
+        if (finiteSchedule.IsFeasible)
+        {
+            // Physical caster assignment was left open for CP-SAT (#16); resolve CastSequence.CasterResourceId
+            // and PlannedStrandMaterialUnits from the actually-solved assignment before anything downstream
+            // (material planning, Plan Version persistence, read models) reads them.
+            structure = ResolvedCastingPlanProjector.Apply(structure, finiteSchedule, request.Resources, heatAllocations);
+        }
 
         var materialPlan = finiteSchedule.IsFeasible
             ? TimePhasedMaterialPlanner.ResolveAfterSchedule(planVersionId, request, campaignPlan, materialPreSchedule, finiteSchedule)
@@ -178,7 +188,9 @@ public sealed class PlanningEngine(
             request.PackagingSpecifications,
             request.CrossSections);
 
-        var feasible = finiteSchedule.IsFeasible && !materialPlan.Issues.Any(x => x.Severity == PlanningIssueSeverity.Error);
+        var feasible = finiteSchedule.IsFeasible &&
+            !materialPlan.Issues.Any(x => x.Severity == PlanningIssueSeverity.Error) &&
+            !HasErrors(structure);
 
         return new PlanningRunResult(
             planVersionId,
@@ -197,6 +209,29 @@ public sealed class PlanningEngine(
 
     private static bool HasErrors(ProductionStructurePlanningResult structure) =>
         structure.Issues.Any(i => i.Severity == PlanningIssueSeverity.Error);
+
+    /// <summary>
+    /// Every heat in one continuous cast sequence must physically land on the same CCM even though CP-SAT
+    /// is free to choose which one (#16) - ties their Ccm tasks together for FiniteScheduleOptimizer.
+    /// </summary>
+    private static IReadOnlyCollection<IReadOnlyCollection<Guid>> BuildCasterLinkedGroups(ProductionStructurePlanningResult structure)
+    {
+        var ccmTaskByHeat = structure.SchedulingTasks
+            .Where(x => x.ProcessOperationType == ProcessOperationType.Ccm)
+            .GroupBy(x => x.SourceEntityId)
+            .ToDictionary(x => x.Key, x => x.First().TaskId);
+
+        return structure.CastSequences
+            .Select(sequence => sequence.Heats
+                .OrderBy(h => h.Position)
+                .Select(h => ccmTaskByHeat.TryGetValue(h.CampaignHeatId, out var taskId) ? (Guid?)taskId : null)
+                .Where(id => id.HasValue)
+                .Select(id => id!.Value)
+                .ToArray())
+            .Where(group => group.Length > 1)
+            .Cast<IReadOnlyCollection<Guid>>()
+            .ToArray();
+    }
 
     private static PlanningRunResult InvalidStructureResult(
         Guid planVersionId,

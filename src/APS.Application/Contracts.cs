@@ -277,7 +277,14 @@ public sealed record FiniteScheduleRequest(
     IReadOnlyCollection<FiniteScheduleStabilityConstraint>? StabilityConstraints = null,
     IReadOnlyCollection<SteelGrade>? SteelGrades = null,
     IReadOnlyCollection<ScheduledMaterialEvent>? MaterialEvents = null,
-    IReadOnlyCollection<FiniteScheduleServiceObligation>? ServiceObligations = null);
+    IReadOnlyCollection<FiniteScheduleServiceObligation>? ServiceObligations = null,
+    /// <summary>
+    /// Groups of tasks that must all resolve to the same physical resource (#16) - e.g. every heat in one
+    /// cast sequence, since continuous casting requires them to share one physical CCM even though the
+    /// solver is free to choose which one. Each group is an ordered list of TaskIds sharing a common
+    /// eligible-resource set; the solver links their per-resource presence variables together.
+    /// </summary>
+    IReadOnlyCollection<IReadOnlyCollection<Guid>>? LinkedResourceTaskGroups = null);
 
 public sealed record FiniteScheduleAssignment(
     Guid TaskId,

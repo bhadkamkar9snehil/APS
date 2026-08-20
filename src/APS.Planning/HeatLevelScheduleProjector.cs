@@ -15,6 +15,7 @@ internal static class HeatLevelScheduleProjector
     {
         var issues = structure.Issues.ToList();
         var resourceById = resources.ToDictionary(x => x.Id);
+        var schedulableCastersById = LogicalCastSequenceProjector.SchedulableCcms(resources).ToDictionary(x => x.Id);
         var capabilitiesByResource = capabilities.GroupBy(x => x.ResourceId).ToDictionary(x => x.Key, x => x.ToArray());
         var allocationsByHeat = (heatAllocations ?? Array.Empty<CampaignHeatAllocation>())
             .GroupBy(x => x.CampaignHeatId)
@@ -29,20 +30,41 @@ internal static class HeatLevelScheduleProjector
         var heatTaskByHeatId = new Dictionary<Guid, FiniteScheduleTask>();
         var materialUnits = new List<PlannedStrandMaterialUnit>();
 
-        foreach (var sequence in structure.CastSequences.OrderBy(x => x.CasterResourceId).ThenBy(x => x.SequenceNumber))
+        foreach (var sequence in structure.CastSequences.OrderBy(x => x.SequenceNumber))
         {
-            if (!resourceById.TryGetValue(sequence.CasterResourceId, out var caster)) continue;
-            var strands = Math.Max(1, caster.StrandCount ?? 1);
-            Guid? previousTaskId = null;
+            // Physical caster assignment is a CP-SAT decision (#16), not decided here - LogicalCastSequenceProjector
+            // leaves CasterResourceId empty and only guarantees every heat in this sequence shares at least one
+            // common eligible caster. Offer every one of those eligible casters as a resource alternative; the
+            // solver picks one for the whole sequence via the LinkedResourceTaskGroups constraint PlanningEngine
+            // builds from these CastSequences, and ResolvedCastingPlanProjector writes the resolved choice back
+            // onto CasterResourceId/PlannedStrandMaterialUnits after solving.
+            var heatsInSequence = sequence.Heats.OrderBy(x => x.Position).Select(x => x.CampaignHeat).Where(x => x.Campaign is not null).ToArray();
+            HashSet<Guid>? commonEligibleIds = null;
+            foreach (var heat in heatsInSequence)
+            {
+                var heatEligible = LogicalCastSequenceProjector.EligibleCasters(heat.Campaign!, heat, schedulableCastersById, capabilitiesByResource).ToHashSet();
+                commonEligibleIds = commonEligibleIds is null ? heatEligible : commonEligibleIds.Intersect(heatEligible).ToHashSet();
+            }
+            var eligibleCasters = (commonEligibleIds ?? new HashSet<Guid>())
+                .Select(id => resourceById.TryGetValue(id, out var resource) ? resource : null)
+                .Where(x => x is not null)
+                .Cast<Resource>()
+                .ToArray();
+            if (eligibleCasters.Length == 0)
+            {
+                issues.Add(new PlanningIssue(PlanningIssueSeverity.Error, "CAST_SEQUENCE_NO_ELIGIBLE_CASTER", $"Cast sequence {sequence.SequenceNumber} has no eligible physical CCM.", sequence.Id));
+                continue;
+            }
+            // Rough pre-solve strand-count hint only, purely informational until ResolvedCastingPlanProjector
+            // overwrites it with the actually-solved caster's real strand count.
+            var strands = Math.Max(1, eligibleCasters.Min(x => x.StrandCount ?? 1));
 
             foreach (var sequenceHeat in sequence.Heats.OrderBy(x => x.Position))
             {
                 var heat = sequenceHeat.CampaignHeat;
                 var campaign = heat.Campaign;
                 if (campaign is null) continue;
-                var duration = HeatDurationMinutes(heat, campaign, sequence.CasterResourceId, capabilitiesByResource, policy.DefaultCastingMinutesPerHeat);
                 var taskId = Guid.NewGuid();
-                var dependencies = previousTaskId.HasValue ? new[] { new FiniteScheduleDependency(previousTaskId.Value) } : Array.Empty<FiniteScheduleDependency>();
 
                 var exact = allocationsByHeat.TryGetValue(heat.Id, out var heatAllocationsForHeat)
                     ? heatAllocationsForHeat.Where(x => x.ProductionOrder is not null).ToArray()
@@ -53,6 +75,12 @@ internal static class HeatLevelScheduleProjector
                 var priority = exact.Length > 0
                     ? exact.Max(x => x.ProductionOrder!.Priority)
                     : campaign.Allocations.Where(x => x.ProductionOrder is not null && string.Equals(x.ProductionOrder.GradeCode, heat.GradeCode, StringComparison.OrdinalIgnoreCase)).Select(x => x.ProductionOrder!.Priority).DefaultIfEmpty(0).Max();
+
+                var options = eligibleCasters
+                    .Select(resource => new FiniteScheduleResourceOption(
+                        resource.Id,
+                        HeatDurationMinutes(heat, campaign, resource.Id, capabilitiesByResource, policy.DefaultCastingMinutesPerHeat)))
+                    .ToArray();
 
                 var task = new FiniteScheduleTask(
                     taskId,
@@ -65,13 +93,12 @@ internal static class HeatLevelScheduleProjector
                     null,
                     due,
                     priority,
-                    new[] { new FiniteScheduleResourceOption(sequence.CasterResourceId, duration) },
-                    dependencies,
+                    options,
+                    Array.Empty<FiniteScheduleDependency>(),
                     ProcessOperationType.Ccm);
 
                 heatTasks.Add(task);
                 heatTaskByHeatId[heat.Id] = task;
-                previousTaskId = taskId;
 
                 var plannedOutput = exact.Length > 0
                     ? exact.Sum(x => x.PlannedOutputQuantityMt)
@@ -84,7 +111,7 @@ internal static class HeatLevelScheduleProjector
                     allocated += quantity;
                     materialUnits.Add(new PlannedStrandMaterialUnit(
                         $"CAST:{campaign.CampaignNumber}:H{heat.SequenceNumber:00}:S{strand:00}",
-                        campaign.Id, heat.Id, sequence.Id, sequence.CasterResourceId, strand, 1,
+                        campaign.Id, heat.Id, sequence.Id, eligibleCasters[0].Id, strand, 1,
                         heat.GradeCode, campaign.CasterSectionCode, quantity, taskId));
                 }
             }

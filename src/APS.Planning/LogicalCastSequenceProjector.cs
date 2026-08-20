@@ -14,8 +14,7 @@ internal static class LogicalCastSequenceProjector
             .ToList();
         var sequences = new List<CastSequence>();
         var supplies = new List<PlannedBilletSupply>();
-        var resources = request.Resources
-            .Where(IsSchedulableCcm)
+        var resources = SchedulableCcms(request.Resources)
             .ToDictionary(x => x.Id);
         var capabilities = request.Capabilities
             .GroupBy(x => x.ResourceId)
@@ -106,7 +105,7 @@ internal static class LogicalCastSequenceProjector
         };
     }
 
-    private static IEnumerable<Guid> EligibleCasters(
+    internal static IEnumerable<Guid> EligibleCasters(
         Campaign campaign,
         CampaignHeat heat,
         IReadOnlyDictionary<Guid, Resource> resources,
@@ -214,10 +213,20 @@ internal static class LogicalCastSequenceProjector
         return decimal.Round(heat.PlannedQuantityMt / input * required, 4, MidpointRounding.AwayFromZero);
     }
 
-    private static bool IsSchedulableCcm(Resource resource) =>
-        resource.IsActive &&
-        resource.ProcessUnitType == ProcessUnitType.Ccm &&
-        resource.OperatingState is ResourceOperatingState.Available or ResourceOperatingState.CapacityDerated or ResourceOperatingState.QualityRestricted;
+    /// <summary>
+    /// Casters are identified by ProcessUnitType.Ccm when any resource in the set sets it explicitly;
+    /// otherwise falls back to ResourceType.Caster (older/simpler master data and test fixtures that
+    /// never populate ProcessUnitType).
+    /// </summary>
+    internal static IEnumerable<Resource> SchedulableCcms(IEnumerable<Resource> resources)
+    {
+        var all = resources as ICollection<Resource> ?? resources.ToArray();
+        var explicitCcm = all.Any(x => x.ProcessUnitType == ProcessUnitType.Ccm);
+        return all.Where(x =>
+            x.IsActive &&
+            x.OperatingState is ResourceOperatingState.Available or ResourceOperatingState.CapacityDerated or ResourceOperatingState.QualityRestricted &&
+            (x.ProcessUnitType == ProcessUnitType.Ccm || (!explicitCcm && x.ResourceType == ResourceType.Caster)));
+    }
     private static bool Matches(string? configured, string? actual) => string.IsNullOrWhiteSpace(configured) || Same(configured, actual);
     private static bool Same(string? a, string? b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
 
