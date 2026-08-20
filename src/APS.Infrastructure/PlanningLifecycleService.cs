@@ -191,7 +191,9 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
             MaterialSourcingRules: masterData.EffectiveMaterialSourcingRules,
             CommittedMaterialSupplies: committedSupplies,
             BillsOfMaterial: masterData.EffectiveBillsOfMaterial,
-            ExecutionMode: PlanningExecutionMode.Production);
+            ExecutionMode: PlanningExecutionMode.Production,
+            GradeTemperatureRequirements: masterData.EffectiveGradeTemperatureRequirements,
+            ResourceTemperatureCapabilities: masterData.EffectiveResourceTemperatureCapabilities);
     }
 
     private static void ValidateProductionConfiguration(

@@ -20,8 +20,14 @@ public sealed record PlanningMasterDataSnapshot(
     IReadOnlyCollection<PackagingSpecification>? PackagingSpecifications = null,
     IReadOnlyCollection<ExternalMaterialSupply>? ExternalMaterialSupplies = null,
     IReadOnlyCollection<MaterialSourcingRule>? MaterialSourcingRules = null,
-    IReadOnlyCollection<BillOfMaterial>? BillsOfMaterial = null)
+    IReadOnlyCollection<BillOfMaterial>? BillsOfMaterial = null,
+    IReadOnlyCollection<GradeProcessTemperatureRequirement>? GradeTemperatureRequirements = null,
+    IReadOnlyCollection<ResourceTemperatureCapability>? ResourceTemperatureCapabilities = null)
 {
+    public IReadOnlyCollection<GradeProcessTemperatureRequirement> EffectiveGradeTemperatureRequirements =>
+        GradeTemperatureRequirements ?? Array.Empty<GradeProcessTemperatureRequirement>();
+    public IReadOnlyCollection<ResourceTemperatureCapability> EffectiveResourceTemperatureCapabilities =>
+        ResourceTemperatureCapabilities ?? Array.Empty<ResourceTemperatureCapability>();
     public IReadOnlyCollection<PlantArea> EffectivePlantAreas => PlantAreas ?? Array.Empty<PlantArea>();
     public IReadOnlyCollection<SteelGrade> EffectiveSteelGrades => SteelGrades ?? Array.Empty<SteelGrade>();
     public IReadOnlyCollection<CrossSectionSpecification> EffectiveCrossSections => CrossSections ?? Array.Empty<CrossSectionSpecification>();

@@ -33,6 +33,8 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
     public DbSet<ResourceCalendar> ResourceCalendars => Set<ResourceCalendar>();
     public DbSet<PlantFlowLink> PlantFlowLinks => Set<PlantFlowLink>();
     public DbSet<TransitionRule> TransitionRules => Set<TransitionRule>();
+    public DbSet<ResourceTemperatureCapability> ResourceTemperatureCapabilities => Set<ResourceTemperatureCapability>();
+    public DbSet<GradeProcessTemperatureRequirement> GradeProcessTemperatureRequirements => Set<GradeProcessTemperatureRequirement>();
 
     public DbSet<SteelGrade> SteelGrades => Set<SteelGrade>();
     public DbSet<GradeChemistryRequirement> GradeChemistryRequirements => Set<GradeChemistryRequirement>();
@@ -97,6 +99,12 @@ public sealed class ApsDbContext(DbContextOptions<ApsDbContext> options) : DbCon
         modelBuilder.Entity<PlantArea>().HasIndex(x => new { x.PlantId, x.Code }).IsUnique();
         modelBuilder.Entity<ProcessStage>().HasIndex(x => new { x.PlantId, x.Code }).IsUnique();
         modelBuilder.Entity<SteelGrade>().HasIndex(x => x.GradeCode).IsUnique();
+        // One thermal envelope per grade/operation and per resource/operation - the projector reads
+        // a single row per key, so duplicates would make which one wins arbitrary.
+        modelBuilder.Entity<GradeProcessTemperatureRequirement>()
+            .HasIndex(x => new { x.SteelGradeId, x.ProcessOperationType }).IsUnique();
+        modelBuilder.Entity<ResourceTemperatureCapability>()
+            .HasIndex(x => new { x.ResourceId, x.ProcessOperationType }).IsUnique();
         modelBuilder.Entity<CrossSectionSpecification>().HasIndex(x => x.CrossSectionCode).IsUnique();
         modelBuilder.Entity<MaterialSpecification>().HasIndex(x => x.MaterialSpecificationCode).IsUnique();
         modelBuilder.Entity<PackagingSpecification>().HasIndex(x => x.PackagingCode).IsUnique();

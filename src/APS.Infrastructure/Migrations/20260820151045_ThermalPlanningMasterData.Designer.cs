@@ -3,6 +3,7 @@ using System;
 using APS.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace APS.Infrastructure.Migrations
 {
     [DbContext(typeof(ApsDbContext))]
-    partial class ApsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260820151045_ThermalPlanningMasterData")]
+    partial class ThermalPlanningMasterData
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");

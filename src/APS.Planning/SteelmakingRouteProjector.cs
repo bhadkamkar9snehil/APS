@@ -244,8 +244,25 @@ internal static class SteelmakingRouteProjector
     private static int? ThermalMaximumLagMinutes(SteelGrade? grade, IReadOnlyCollection<ProductionOrder> orders, PlantFlowLink link)
     {
         if (!link.NominalTemperatureLossCPerMinute.HasValue || link.NominalTemperatureLossCPerMinute.Value <= 0m) return null;
-        var minimum = new[] { grade?.MinimumSuperheatC }.Concat(orders.Select(x => x.Requirement?.MinimumSuperheatC)).Where(x => x.HasValue).Select(x => x!.Value).DefaultIfEmpty(0m).Max();
-        var target = orders.Select(x => x.Requirement?.TargetSuperheatC).Where(x => x.HasValue).Select(x => x!.Value).DefaultIfEmpty(grade?.TargetSuperheatC ?? minimum).Min();
+
+        var minimums = new[] { grade?.MinimumSuperheatC }
+            .Concat(orders.Select(x => x.Requirement?.MinimumSuperheatC))
+            .Where(x => x.HasValue).Select(x => x!.Value).ToArray();
+        var targets = orders.Select(x => x.Requirement?.TargetSuperheatC)
+            .Where(x => x.HasValue).Select(x => x!.Value)
+            .DefaultIfEmpty(grade?.TargetSuperheatC ?? 0m).ToArray();
+
+        // With no configured superheat window there is no thermal basis for capping the transfer at
+        // all. Defaulting both ends to 0 made target <= minimum trivially true and returned a 0-minute
+        // maximum lag, which is below any link's minimum transfer time - so every pair was discarded
+        // and a plant that merely declared a cooling rate was reported as having no flow path.
+        if (minimums.Length == 0 || grade?.TargetSuperheatC is null && orders.All(x => x.Requirement?.TargetSuperheatC is null))
+        {
+            return null;
+        }
+
+        var minimum = minimums.Max();
+        var target = targets.Min();
         if (target <= minimum) return 0;
         return Math.Max(0, (int)Math.Floor((double)((target - minimum) / link.NominalTemperatureLossCPerMinute.Value)));
     }

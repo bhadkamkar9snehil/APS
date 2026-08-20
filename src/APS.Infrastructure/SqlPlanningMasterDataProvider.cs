@@ -64,6 +64,14 @@ public sealed class SqlPlanningMasterDataProvider(ApsDbContext db) : IPlanningMa
                 .Where(x => x.IsActive)
                 .OrderBy(x => x.RuleCode)
                 .ToListAsync(cancellationToken),
-            billsOfMaterial);
+            billsOfMaterial,
+            await db.GradeProcessTemperatureRequirements.AsNoTracking()
+                .OrderBy(x => x.SteelGradeId)
+                .ThenBy(x => x.ProcessOperationType)
+                .ToListAsync(cancellationToken),
+            await db.ResourceTemperatureCapabilities.AsNoTracking()
+                .OrderBy(x => x.ResourceId)
+                .ThenBy(x => x.ProcessOperationType)
+                .ToListAsync(cancellationToken));
     }
 }

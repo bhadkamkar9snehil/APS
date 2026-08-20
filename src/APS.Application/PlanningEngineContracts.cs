@@ -104,7 +104,14 @@ public sealed record PlanningRunRequest(
     IReadOnlyCollection<CommittedMaterialSupply>? CommittedMaterialSupplies = null,
     PlanningExecutionMode ExecutionMode = PlanningExecutionMode.Compatibility,
     IReadOnlyCollection<BillOfMaterial>? BillsOfMaterial = null,
-    IReadOnlyCollection<PrecomputedCampaignMaterialDemand>? PrecomputedCampaignMaterialDemand = null);
+    IReadOnlyCollection<PrecomputedCampaignMaterialDemand>? PrecomputedCampaignMaterialDemand = null,
+    /// <summary>
+    /// Grade temperature/superheat envelopes per process operation (#9). Absent, the plan carries no
+    /// thermal constraint at all - which is why these must reach the engine rather than sit in master data.
+    /// </summary>
+    IReadOnlyCollection<GradeProcessTemperatureRequirement>? GradeTemperatureRequirements = null,
+    /// <summary>Thermal ability of each physical resource, used to prove a transfer keeps the heat in window.</summary>
+    IReadOnlyCollection<ResourceTemperatureCapability>? ResourceTemperatureCapabilities = null);
 
 public sealed record PlanningRunResult(
     Guid PlanVersionId,

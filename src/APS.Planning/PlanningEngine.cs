@@ -120,6 +120,19 @@ public sealed class PlanningEngine(
                 return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
         }
 
+        // Thermal/superheat envelopes narrow the allowed resource pairs and transfer windows between
+        // liquid-steel operations (#9). It runs last so every route operation already exists, and
+        // before task identities are taken so the solver sees the constrained dependencies.
+        structure = ThermalConstraintProjector.Apply(
+            structure,
+            request.Resources,
+            request.FlowLinks,
+            request.GradeTemperatureRequirements,
+            request.ResourceTemperatureCapabilities,
+            heatAllocations);
+        if (HasErrors(structure))
+            return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
+
         var identities = PlanningTaskIdentityService.Build(structure);
         var originalTasks = structure.SchedulingTasks.ToArray();
         var overrideResult = ApplyResourceOverrides(structure.SchedulingTasks, identities, request.ReplanContext?.ResourceOverrides);
