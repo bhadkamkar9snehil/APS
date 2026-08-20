@@ -5,7 +5,7 @@
 <PageTitle>Master Data - APS</PageTitle>
 
 <h1 class="mb-1 text-lg font-semibold">Master Data</h1>
-<p class="mb-6 text-sm text-slate-500">Plant, grade, and material masters. Routes and external supply are still read-only here &mdash; editing those needs a composite editor, not yet built.</p>
+<p class="mb-6 text-sm text-slate-500">Plant, grade, material, route, and external-supply masters.</p>
 
 @if (loading)
 {
@@ -164,16 +164,93 @@ else
     }
     else if (activeTab == "Routes")
     {
-        <Table Headers="@(new[] {"Route", "Name", "Operations"})">
+        <section class="mb-4 rounded border border-slate-200 bg-white p-4">
+            <h2 class="mb-2 text-sm font-semibold">Add route</h2>
+            <div class="flex flex-wrap items-end gap-2 text-sm">
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Route code</span><input class="w-32 rounded border border-slate-300 px-2 py-1" @bind="newRoute.RouteCode" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Name</span><input class="w-64 rounded border border-slate-300 px-2 py-1" @bind="newRoute.Name" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Material family</span><input class="w-40 rounded border border-slate-300 px-2 py-1" @bind="newRoute.MaterialFamilyCode" /></label>
+                <button type="button" class="rounded bg-accent px-3 py-1.5 text-white disabled:opacity-50" disabled="@saving" @onclick="AddRouteAsync">Add</button>
+            </div>
+        </section>
+        <Table Headers="@(new[] {"Route", "Name", "Operations", ""})">
             @foreach (var route in snapshot.Routes)
             {
-                <tr class="border-b border-slate-100 last:border-0">
+                <tr class="border-b border-slate-100 last:border-0 cursor-pointer @(selectedRouteCode == route.RouteCode ? "bg-accent-soft" : "")" @onclick="() => selectedRouteCode = route.RouteCode">
                     <td class="px-3 py-1.5">@route.RouteCode</td>
                     <td class="px-3 py-1.5">@route.Name</td>
                     <td class="px-3 py-1.5">@string.Join(" → ", snapshot.RouteOperations.Where(o => o.RouteCode == route.RouteCode).OrderBy(o => o.SequenceNumber).Select(o => o.ProcessOperationType))</td>
+                    <td class="px-3 py-1.5 text-right"><button type="button" class="text-xs text-rose-500 hover:underline" @onclick:stopPropagation="true" @onclick="() => DeleteAsync(route.Id, () => Admin.DeleteAsync<ManufacturingRoute>(route.Id))">Delete</button></td>
                 </tr>
             }
         </Table>
+
+        @if (selectedRouteCode is not null)
+        {
+            <div class="mt-6 grid grid-cols-2 gap-4">
+                <div>
+                    <h2 class="mb-2 text-sm font-semibold">Operations on @selectedRouteCode</h2>
+                    <section class="mb-3 rounded border border-slate-200 bg-white p-3">
+                        <div class="grid grid-cols-2 gap-2 text-sm">
+                            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Sequence</span><input type="number" class="rounded border border-slate-300 px-2 py-1" @bind="newRouteOperation.SequenceNumber" /></label>
+                            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Process operation</span>
+                                <select class="rounded border border-slate-300 px-2 py-1" @bind="newRouteOperation.ProcessOperationType">
+                                    @foreach (var v in Enum.GetValues<ProcessOperationType>()) { <option value="@v">@v</option> }
+                                </select>
+                            </label>
+                            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Release WO type</span>
+                                <select class="rounded border border-slate-300 px-2 py-1" @bind="newRouteOperation.ReleaseWorkOrderType">
+                                    @foreach (var v in Enum.GetValues<WorkOrderType>()) { <option value="@v">@v</option> }
+                                </select>
+                            </label>
+                            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Input section (optional)</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newRouteOperation.InputCrossSectionCode" /></label>
+                            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Output section (optional)</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newRouteOperation.OutputCrossSectionCode" /></label>
+                        </div>
+                        <button type="button" class="mt-2 rounded bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50" disabled="@saving" @onclick="AddRouteOperationAsync">Add operation</button>
+                    </section>
+                    <Table Headers="@(new[] {"Seq", "Operation", "Release WO", "In → Out", ""})">
+                        @foreach (var op in snapshot.RouteOperations.Where(o => o.RouteCode == selectedRouteCode).OrderBy(o => o.SequenceNumber))
+                        {
+                            <tr class="border-b border-slate-100 last:border-0">
+                                <td class="px-3 py-1.5">@op.SequenceNumber</td>
+                                <td class="px-3 py-1.5">@op.ProcessOperationType</td>
+                                <td class="px-3 py-1.5">@op.ReleaseWorkOrderType</td>
+                                <td class="px-3 py-1.5">@(op.InputCrossSectionCode ?? "—") &rarr; @(op.OutputCrossSectionCode ?? "—")</td>
+                                <td class="px-3 py-1.5 text-right"><button type="button" class="text-xs text-rose-500 hover:underline" @onclick="() => DeleteAsync(op.Id, () => Admin.DeleteAsync<ManufacturingRouteOperation>(op.Id))">Delete</button></td>
+                            </tr>
+                        }
+                    </Table>
+                </div>
+                <div>
+                    <h2 class="mb-2 text-sm font-semibold">Resource capabilities on @selectedRouteCode</h2>
+                    <section class="mb-3 rounded border border-slate-200 bg-white p-3">
+                        <div class="grid grid-cols-2 gap-2 text-sm">
+                            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Resource</span>
+                                <select class="rounded border border-slate-300 px-2 py-1" @bind="newRouteCapability.ResourceId">
+                                    @foreach (var r in snapshot.Resources) { <option value="@r.Id">@r.Code</option> }
+                                </select>
+                            </label>
+                            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Process operation</span>
+                                <select class="rounded border border-slate-300 px-2 py-1" @bind="newRouteCapability.ProcessOperationType">
+                                    @foreach (var v in Enum.GetValues<ProcessOperationType>()) { <option value="@v">@v</option> }
+                                </select>
+                            </label>
+                        </div>
+                        <button type="button" class="mt-2 rounded bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50" disabled="@saving" @onclick="AddRouteCapabilityAsync">Add capability</button>
+                    </section>
+                    <Table Headers="@(new[] {"Resource", "Operation", ""})">
+                        @foreach (var cap in snapshot.RouteResourceCapabilities.Where(c => c.RouteCode == selectedRouteCode))
+                        {
+                            <tr class="border-b border-slate-100 last:border-0">
+                                <td class="px-3 py-1.5">@ResourceCode(cap.ResourceId)</td>
+                                <td class="px-3 py-1.5">@cap.ProcessOperationType</td>
+                                <td class="px-3 py-1.5 text-right"><button type="button" class="text-xs text-rose-500 hover:underline" @onclick="() => DeleteAsync(cap.Id, () => Admin.DeleteAsync<RouteResourceCapability>(cap.Id))">Delete</button></td>
+                            </tr>
+                        }
+                    </Table>
+                </div>
+            </div>
+        }
     }
     else if (activeTab == "Materials")
     {
@@ -239,16 +316,41 @@ else
     }
     else if (activeTab == "External Supply")
     {
-        <Table Headers="@(new[] {"Reference", "Grade", "Section", "Qty", "Available from", "Firm"})">
+        <section class="mb-4 rounded border border-slate-200 bg-white p-4">
+            <h2 class="mb-2 text-sm font-semibold">Add external supply</h2>
+            <div class="grid grid-cols-4 gap-2 text-sm">
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Source type</span>
+                    <select class="rounded border border-slate-300 px-2 py-1" @bind="newSupply.SourceType">
+                        @foreach (var v in Enum.GetValues<BilletSupplySourceType>()) { <option value="@v">@v</option> }
+                    </select>
+                </label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Reference</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newSupply.SupplyReference" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Supplier</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newSupply.SupplierCode" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Grade</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newSupply.GradeCode" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Cross section</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newSupply.CrossSectionCode" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Quantity MT</span><input type="number" class="rounded border border-slate-300 px-2 py-1" @bind="newSupply.QuantityMt" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Available from</span><input type="datetime-local" class="rounded border border-slate-300 px-2 py-1" @bind="newSupplyAvailableFrom" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Quality status</span>
+                    <select class="rounded border border-slate-300 px-2 py-1" @bind="newSupply.QualityStatus">
+                        @foreach (var v in Enum.GetValues<MaterialQualityStatus>()) { <option value="@v">@v</option> }
+                    </select>
+                </label>
+                <label class="flex items-center gap-2 pt-4"><input type="checkbox" @bind="newSupply.IsFirm" /><span class="text-xs text-slate-600">Firm</span></label>
+            </div>
+            <button type="button" class="mt-2 rounded bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50" disabled="@saving" @onclick="AddSupplyAsync">Add</button>
+        </section>
+        <Table Headers="@(new[] {"Reference", "Source", "Grade", "Section", "Qty", "Available from", "Firm", ""})">
             @foreach (var s in snapshot.EffectiveExternalMaterialSupplies)
             {
                 <tr class="border-b border-slate-100 last:border-0">
                     <td class="px-3 py-1.5">@s.SupplyReference</td>
+                    <td class="px-3 py-1.5">@s.SourceType</td>
                     <td class="px-3 py-1.5">@s.GradeCode</td>
                     <td class="px-3 py-1.5">@s.CrossSectionCode</td>
                     <td class="px-3 py-1.5 text-right">@s.QuantityMt.ToString("0.##")</td>
                     <td class="px-3 py-1.5">@s.AvailableFromUtc.ToString("dd MMM HH:mm")</td>
                     <td class="px-3 py-1.5">@(s.IsFirm ? "Yes" : "No")</td>
+                    <td class="px-3 py-1.5 text-right"><button type="button" class="text-xs text-rose-500 hover:underline" @onclick="() => DeleteAsync(s.Id, () => Admin.DeleteAsync<ExternalMaterialSupply>(s.Id))">Delete</button></td>
                 </tr>
             }
         </Table>
@@ -269,6 +371,12 @@ else
     private SteelGrade newGrade = new() { GradeCode = "", Description = "" };
     private MaterialSpecification newMaterial = new() { MaterialSpecificationCode = "", Name = "" };
     private CrossSectionSpecification newCrossSection = new() { CrossSectionCode = "" };
+    private ManufacturingRoute newRoute = new() { RouteCode = "", Name = "" };
+    private string? selectedRouteCode;
+    private ManufacturingRouteOperation newRouteOperation = new() { RouteCode = "" };
+    private RouteResourceCapability newRouteCapability = new() { RouteCode = "" };
+    private ExternalMaterialSupply newSupply = new() { SupplyReference = "", GradeCode = "", CrossSectionCode = "", AvailableFromUtc = DateTime.UtcNow };
+    private DateTime newSupplyAvailableFrom = DateTime.UtcNow;
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -281,6 +389,7 @@ else
     }
 
     private string PlantCode(Guid plantId) => snapshot?.Plants.FirstOrDefault(x => x.Id == plantId)?.Code ?? "—";
+    private string ResourceCode(Guid resourceId) => snapshot?.Resources.FirstOrDefault(x => x.Id == resourceId)?.Code ?? "—";
 
     private async Task AddPlantAsync()
     {
@@ -333,6 +442,47 @@ else
         {
             await Admin.CreateAsync(newCrossSection);
             newCrossSection = new CrossSectionSpecification { CrossSectionCode = "" };
+        });
+    }
+
+    private async Task AddRouteAsync()
+    {
+        await SaveAsync(async () =>
+        {
+            await Admin.CreateAsync(newRoute);
+            newRoute = new ManufacturingRoute { RouteCode = "", Name = "" };
+        });
+    }
+
+    private async Task AddRouteOperationAsync()
+    {
+        if (selectedRouteCode is null) return;
+        await SaveAsync(async () =>
+        {
+            newRouteOperation.RouteCode = selectedRouteCode;
+            await Admin.CreateAsync(newRouteOperation);
+            newRouteOperation = new ManufacturingRouteOperation { RouteCode = selectedRouteCode };
+        });
+    }
+
+    private async Task AddRouteCapabilityAsync()
+    {
+        if (selectedRouteCode is null) return;
+        await SaveAsync(async () =>
+        {
+            newRouteCapability.RouteCode = selectedRouteCode;
+            await Admin.CreateAsync(newRouteCapability);
+            newRouteCapability = new RouteResourceCapability { RouteCode = selectedRouteCode, ResourceId = newRouteCapability.ResourceId };
+        });
+    }
+
+    private async Task AddSupplyAsync()
+    {
+        await SaveAsync(async () =>
+        {
+            newSupply.AvailableFromUtc = DateTime.SpecifyKind(newSupplyAvailableFrom, DateTimeKind.Utc);
+            await Admin.CreateAsync(newSupply);
+            newSupply = new ExternalMaterialSupply { SupplyReference = "", GradeCode = "", CrossSectionCode = "", AvailableFromUtc = DateTime.UtcNow };
         });
     }
 
