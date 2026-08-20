@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject IPlannerWorkspaceQueryService PlannerQuery
 @inject IWorkOrderExecutionService WorkOrderExecution
+@inject IOperationExecutionService OperationExecution
 @inject PlannerWorkspaceState WorkspaceState
 
 <PageTitle>Work Orders - APS</PageTitle>
@@ -118,7 +119,7 @@ else
                             <tbody>
                                 @foreach (var op in selectedWorkOrder.Operations.OrderBy(x => x.PlannedStartUtc))
                                 {
-                                    <tr class="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50" @onclick="() => SelectOperation(op)">
+                                    <tr class="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50 @(selectedOperation?.OperationSnapshotId == op.OperationSnapshotId ? "bg-accent-soft" : "")" @onclick="() => SelectOperation(op)">
                                         <td class="py-1.5">@op.ProcessOperationType</td>
                                         <td class="py-1.5">@op.ResourceCode</td>
                                         <td class="py-1.5">@op.GradeCode / @op.CrossSectionCode</td>
@@ -128,6 +129,37 @@ else
                                 }
                             </tbody>
                         </table>
+
+                        @if (selectedOperation is not null)
+                        {
+                            <div class="mt-3 rounded border border-slate-200 bg-slate-50 p-3">
+                                <div class="mb-2 flex items-center justify-between">
+                                    <h4 class="text-xs font-semibold uppercase tracking-wide text-slate-500">Record actual &mdash; @selectedOperation.ProcessOperationType @@ @selectedOperation.ResourceCode</h4>
+                                    @if (!string.IsNullOrWhiteSpace(operationActualError))
+                                    {
+                                        <span class="text-xs text-rose-600">@operationActualError</span>
+                                    }
+                                </div>
+                                <div class="grid grid-cols-5 gap-3 text-sm">
+                                    <label class="flex flex-col gap-1">
+                                        <span class="text-xs text-slate-500">Status</span>
+                                        <select class="rounded border border-slate-300 px-2 py-1" @bind="operationActualStatus">
+                                            @foreach (var status in Enum.GetValues<OperationExecutionStatus>())
+                                            {
+                                                <option value="@status">@status</option>
+                                            }
+                                        </select>
+                                    </label>
+                                    <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Actual start</span><input type="datetime-local" class="rounded border border-slate-300 px-2 py-1" @bind="operationActualStart" /></label>
+                                    <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Actual end</span><input type="datetime-local" class="rounded border border-slate-300 px-2 py-1" @bind="operationActualEnd" /></label>
+                                    <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Actual qty (MT)</span><input type="number" class="rounded border border-slate-300 px-2 py-1" @bind="operationActualQuantity" /></label>
+                                    <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Comment</span><input class="rounded border border-slate-300 px-2 py-1" @bind="operationActualComment" /></label>
+                                </div>
+                                <button type="button" class="mt-3 rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50" disabled="@savingOperationActual" @onclick="SaveOperationActualAsync">
+                                    @(savingOperationActual ? "Saving…" : "Save operation actual")
+                                </button>
+                            </div>
+                        }
                     }
                 </section>
 
@@ -172,6 +204,15 @@ else
     private bool savingActual;
     private string? actualError;
 
+    private WorkOrderOperationView? selectedOperation;
+    private OperationExecutionStatus operationActualStatus = OperationExecutionStatus.Running;
+    private DateTime? operationActualStart;
+    private DateTime? operationActualEnd;
+    private decimal? operationActualQuantity;
+    private string? operationActualComment;
+    private bool savingOperationActual;
+    private string? operationActualError;
+
     protected override async Task OnInitializedAsync()
     {
         WorkspaceState.Changed += OnWorkspaceChanged;
@@ -202,6 +243,7 @@ else
         actualQuantity = null;
         actualComment = null;
         actualError = null;
+        selectedOperation = null;
         WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.WorkOrder, wo.WorkOrderId, wo.WorkOrderNumber));
     }
 
@@ -230,8 +272,44 @@ else
         }
     }
 
-    private void SelectOperation(WorkOrderOperationView op) =>
+    private void SelectOperation(WorkOrderOperationView op)
+    {
+        selectedOperation = op;
+        operationActualStatus = OperationExecutionStatus.Running;
+        operationActualStart = null;
+        operationActualEnd = null;
+        operationActualQuantity = null;
+        operationActualComment = null;
+        operationActualError = null;
         WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Operation, op.OperationSnapshotId, op.PlanningKey));
+    }
+
+    private async Task SaveOperationActualAsync()
+    {
+        if (selectedOperation is null || view is null) return;
+        savingOperationActual = true;
+        operationActualError = null;
+        StateHasChanged();
+        try
+        {
+            await OperationExecution.ApplyAsync(new OperationExecutionUpdate(
+                view.Plan.PlanVersionId, selectedOperation.PlanningKey, operationActualStatus, DateTime.UtcNow,
+                ExecutionUpdateSource.Manual, null, operationActualStart, operationActualEnd,
+                operationActualQuantity, null, operationActualComment));
+            await LoadAsync();
+            selectedWorkOrder = view?.WorkOrders.FirstOrDefault(x => x.WorkOrderId == selectedWorkOrder!.WorkOrderId);
+            selectedOperation = selectedWorkOrder?.Operations.FirstOrDefault(x => x.OperationSnapshotId == selectedOperation.OperationSnapshotId);
+        }
+        catch (Exception ex)
+        {
+            operationActualError = ex.Message;
+        }
+        finally
+        {
+            savingOperationActual = false;
+            StateHasChanged();
+        }
+    }
 
     private void SelectProductionOrder(WorkOrderDemandRefView demand) =>
         WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.ProductionOrder, demand.ProductionOrderId, demand.ProductionOrderNumber));
