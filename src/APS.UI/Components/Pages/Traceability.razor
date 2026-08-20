@@ -1,5 +1,6 @@
 @page "/operate/traceability"
 @inject ITraceabilityService TraceabilityService
+@inject IPlannerWorkspaceQueryService PlannerQuery
 
 <PageTitle>Traceability - APS</PageTitle>
 
@@ -15,11 +16,25 @@
 {
     <div class="mb-4 flex items-end gap-2">
         <label class="flex flex-col gap-1 text-sm">
-            <span class="text-xs text-slate-500">Work Order ID</span>
-            <input class="w-96 rounded border border-slate-300 px-2 py-1 font-mono text-xs" @bind="workOrderIdInput" />
+            <span class="text-xs text-slate-500">Filter</span>
+            <input class="w-48 rounded border border-slate-300 px-2 py-1 text-xs" placeholder="Filter by number/type/status" @bind="workOrderFilter" @bind:event="oninput" />
+        </label>
+        <label class="flex flex-col gap-1 text-sm">
+            <span class="text-xs text-slate-500">Work Order</span>
+            <select class="w-96 rounded border border-slate-300 px-2 py-1 text-xs" @bind="workOrderIdInput">
+                <option value="">— select a Work Order —</option>
+                @foreach (var wo in FilteredWorkOrders)
+                {
+                    <option value="@wo.WorkOrderId">@wo.WorkOrderNumber &middot; @wo.WorkOrderType &middot; @wo.Status &middot; @wo.PlannedQuantityMt.ToString("0.#") MT</option>
+                }
+            </select>
         </label>
         <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white" @onclick="LoadWorkOrderTraceAsync">Look up</button>
     </div>
+    @if (workOrders.Count == 0 && !loadingWorkOrders)
+    {
+        <p class="mb-4 text-xs text-slate-400">No released Work Orders on the current plan yet &mdash; release a Plan Version from Plan Versions first.</p>
+    }
 
     @if (workOrderError is not null)
     {
@@ -136,6 +151,27 @@ else
     private MaterialLotTrace? lotTrace;
     private string? workOrderError;
     private string? lotError;
+    private IReadOnlyCollection<WorkOrderView> workOrders = Array.Empty<WorkOrderView>();
+    private bool loadingWorkOrders = true;
+    private string workOrderFilter = "";
+
+    private IReadOnlyList<WorkOrderView> FilteredWorkOrders =>
+        string.IsNullOrWhiteSpace(workOrderFilter)
+            ? workOrders.OrderBy(x => x.FirstPlannedStartUtc).ToArray()
+            : workOrders
+                .Where(x =>
+                    x.WorkOrderNumber.Contains(workOrderFilter, StringComparison.OrdinalIgnoreCase) ||
+                    x.WorkOrderType.ToString().Contains(workOrderFilter, StringComparison.OrdinalIgnoreCase) ||
+                    x.Status.ToString().Contains(workOrderFilter, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(x => x.FirstPlannedStartUtc)
+                .ToArray();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var view = await PlannerQuery.GetWorkOrdersAsync();
+        workOrders = view?.WorkOrders ?? Array.Empty<WorkOrderView>();
+        loadingWorkOrders = false;
+    }
 
     private async Task LoadWorkOrderTraceAsync()
     {
