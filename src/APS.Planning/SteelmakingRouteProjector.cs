@@ -70,9 +70,11 @@ internal static class SteelmakingRouteProjector
                 var priority = heatOrders.Select(x => x.Priority).DefaultIfEmpty(0).Max();
                 FiniteScheduleTask? predecessor = null;
 
+                // Every operation the route places before CCM is a candidate steelmaking step - not just
+                // Eaf/Lrf/Vd. A plant may configure BOF, AOD/VOD, induction furnace, RH, or any number of
+                // secondary-metallurgy passes; the route master decides what exists, not this switch (#34).
                 foreach (var operation in route.Take(ccmIndex))
                 {
-                    if (operation.ProcessOperationType is not (ProcessOperationType.Eaf or ProcessOperationType.Lrf or ProcessOperationType.Vd)) continue;
                     var effective = ResolveRequirement(heatOrders, grade, operation.ProcessOperationType, issues, heat.Id);
                     if (effective == RequirementResolution.Conflict) break;
                     if (effective == RequirementResolution.Forbidden)
@@ -254,7 +256,7 @@ internal static class SteelmakingRouteProjector
 
     private static bool Fits(decimal? minimum, decimal? maximum, decimal quantity) => (!minimum.HasValue || quantity >= minimum.Value) && (!maximum.HasValue || quantity <= maximum.Value);
 
-    private static ProcessUnitType UnitTypeFor(ProcessOperationType operationType) => operationType switch
+    internal static ProcessUnitType UnitTypeFor(ProcessOperationType operationType) => operationType switch
     {
         ProcessOperationType.Eaf => ProcessUnitType.Eaf,
         ProcessOperationType.Lrf => ProcessUnitType.Lrf,

@@ -72,10 +72,19 @@ internal static class SteelmakingMakeFeasibilityEvaluator
             ProcessOperationType.Ccm
         };
 
-        var routeOperations = (routePlanning?.Operations ?? Array.Empty<ManufacturingRouteOperation>())
-            .Where(x => Same(x.RouteCode, po.RouteCode) && IsSteelmaking(x.ProcessOperationType))
+        var routeOperationsAll = (routePlanning?.Operations ?? Array.Empty<ManufacturingRouteOperation>())
+            .Where(x => Same(x.RouteCode, po.RouteCode))
             .OrderBy(x => x.SequenceNumber)
             .ToArray();
+        var ccmSequence = routeOperationsAll.FirstOrDefault(x => x.ProcessOperationType == ProcessOperationType.Ccm)?.SequenceNumber;
+
+        // Whatever the route places at or before CCM is a candidate steelmaking step - not a fixed
+        // Eaf/Lrf/Vd type whitelist. A plant may configure BOF, AOD/VOD, induction furnace, RH, or any
+        // number of secondary-metallurgy passes; the route master decides what exists, not this list (#34).
+        var routeOperations = ccmSequence.HasValue
+            ? routeOperationsAll.Where(x => x.SequenceNumber <= ccmSequence.Value).ToArray()
+            : routeOperationsAll;
+        var preCcmTypes = routeOperations.Select(x => x.ProcessOperationType).ToHashSet();
 
         foreach (var routeOperation in routeOperations)
         {
@@ -87,14 +96,14 @@ internal static class SteelmakingMakeFeasibilityEvaluator
 
         foreach (var gradeRequirement in po.SteelGrade?.ProcessRequirements ?? Array.Empty<GradeProcessRequirement>())
         {
-            if (!IsSteelmaking(gradeRequirement.ProcessOperationType)) continue;
+            if (!preCcmTypes.Contains(gradeRequirement.ProcessOperationType)) continue;
             if (gradeRequirement.Requirement == RequirementDisposition.Required) required.Add(gradeRequirement.ProcessOperationType);
             if (gradeRequirement.Requirement == RequirementDisposition.Forbidden) required.Remove(gradeRequirement.ProcessOperationType);
         }
 
         foreach (var orderRequirement in po.Requirement?.ProcessOverrides ?? Array.Empty<OrderProcessRequirement>())
         {
-            if (!IsSteelmaking(orderRequirement.ProcessOperationType)) continue;
+            if (!preCcmTypes.Contains(orderRequirement.ProcessOperationType)) continue;
             if (orderRequirement.Requirement == RequirementDisposition.Required) required.Add(orderRequirement.ProcessOperationType);
             if (orderRequirement.Requirement == RequirementDisposition.Forbidden) required.Remove(orderRequirement.ProcessOperationType);
         }
@@ -214,17 +223,12 @@ internal static class SteelmakingMakeFeasibilityEvaluator
 
     private static bool MatchesOperation(Resource resource, ProcessOperationType operation)
     {
+        // Reuse the same operation-type -> physical-unit mapping SteelmakingRouteProjector uses when it
+        // actually builds resource options, so a configured route operation outside the historical
+        // Eaf/Lrf/Vd/Ccm set (BOF, AOD/VOD, induction furnace, RH, ...) can still find eligible resources
+        // here during Make-feasibility pre-checking (#34) instead of being silently rejected.
         if (resource.ProcessUnitType != ProcessUnitType.Unknown)
-        {
-            return operation switch
-            {
-                ProcessOperationType.Eaf => resource.ProcessUnitType == ProcessUnitType.Eaf,
-                ProcessOperationType.Lrf => resource.ProcessUnitType == ProcessUnitType.Lrf,
-                ProcessOperationType.Vd => resource.ProcessUnitType == ProcessUnitType.Vd,
-                ProcessOperationType.Ccm => resource.ProcessUnitType == ProcessUnitType.Ccm,
-                _ => false
-            };
-        }
+            return resource.ProcessUnitType == SteelmakingRouteProjector.UnitTypeFor(operation);
 
         return operation switch
         {
@@ -234,9 +238,6 @@ internal static class SteelmakingMakeFeasibilityEvaluator
             _ => false
         };
     }
-
-    private static bool IsSteelmaking(ProcessOperationType operation) =>
-        operation is ProcessOperationType.Eaf or ProcessOperationType.Lrf or ProcessOperationType.Vd or ProcessOperationType.Ccm;
 
     private static bool Matches(string? configured, string? actual) =>
         string.IsNullOrWhiteSpace(configured) || string.Equals(configured, actual, StringComparison.OrdinalIgnoreCase);
