@@ -6,7 +6,9 @@ namespace APS.Planning;
 
 public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
 {
-    public FiniteScheduleResult Solve(FiniteScheduleRequest request)
+    public FiniteScheduleResult Solve(FiniteScheduleRequest request) => Solve(request, explainInfeasibility: true);
+
+    private FiniteScheduleResult Solve(FiniteScheduleRequest request, bool explainInfeasibility)
     {
         var issues = new List<PlanningIssue>();
         if (request.HorizonEndUtc <= request.HorizonStartUtc)
@@ -275,6 +277,17 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
                 status == CpSolverStatus.Infeasible
                     ? "No finite schedule satisfies the current resource, calendar, time-phased material, dependency, sequencing and time-fence constraints."
                     : $"CP-SAT returned {status}."));
+
+            // Naming every constraint family at once tells a planner nothing about which one to change.
+            // Probing recovers the family that is actually binding (#19). Only for a genuine
+            // infeasibility - a solver timeout means nothing has been proven impossible.
+            if (explainInfeasibility && status == CpSolverStatus.Infeasible)
+            {
+                issues.AddRange(ScheduleInfeasibilityDiagnostician.Explain(
+                    request,
+                    probe => Solve(probe, explainInfeasibility: false)));
+            }
+
             return new FiniteScheduleResult(status.ToString(), false, 0, Array.Empty<FiniteScheduleAssignment>(), issues);
         }
 
