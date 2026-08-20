@@ -1,0 +1,178 @@
+@page "/plan/material-flow"
+@implements IDisposable
+@inject IPlannerWorkspaceQueryService PlannerQuery
+@inject PlannerWorkspaceState WorkspaceState
+
+<PageTitle>Material Flow - APS</PageTitle>
+
+<h1 class="mb-1 text-lg font-semibold">Material Flow</h1>
+<p class="mb-6 text-sm text-slate-500">Time-phased material balance per grade/section pool, and the Production Order reservations drawing against it.</p>
+
+@if (loading)
+{
+    <p class="text-sm text-slate-400">Loading material plan…</p>
+}
+else if (view is null)
+{
+    <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center text-slate-700">No persisted material plan.</div>
+}
+else
+{
+    <div class="mb-6 grid grid-cols-3 gap-3">
+        <StatTile Label="Material pools" Value="@view.Pools.Count.ToString()" />
+        <StatTile Label="Ledger events" Value="@view.Pools.Sum(x => x.Events.Count).ToString()" />
+        <StatTile Label="Active reservations" Value="@view.Reservations.Count.ToString()" />
+    </div>
+
+    <div class="grid grid-cols-[300px_1fr] gap-4">
+        <aside class="rounded border border-slate-200 bg-white">
+            <div class="border-b border-slate-200 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Material pools</div>
+            <div class="max-h-[70vh] overflow-y-auto">
+                @if (view.Pools.Count == 0)
+                {
+                    <p class="p-3 text-sm text-slate-400">No time-phased material events on this plan.</p>
+                }
+                @foreach (var pool in view.Pools)
+                {
+                    <button type="button" class="block w-full border-b border-slate-100 px-3 py-2 text-left last:border-0 hover:bg-slate-50 @(selectedPool?.MaterialPoolKey == pool.MaterialPoolKey ? "bg-accent-soft" : "")" @onclick="() => selectedPool = pool">
+                        <strong>@pool.GradeCode / @pool.CrossSectionCode</strong>
+                        <div class="text-xs text-slate-400">@(pool.LocationCode ?? "no location") &middot; @pool.Events.Count events</div>
+                        <div class="text-xs font-medium @(pool.ClosingBalanceMt < 0 ? "text-rose-600" : "text-slate-600")">closing @pool.ClosingBalanceMt.ToString("0.##") MT</div>
+                    </button>
+                }
+            </div>
+        </aside>
+
+        <section>
+            @if (selectedPool is null)
+            {
+                <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center text-slate-400">Select a material pool</div>
+            }
+            else
+            {
+                <div class="mb-4 rounded border border-slate-200 bg-white p-4">
+                    <div class="flex items-start justify-between">
+                        <div>
+                            <h2 class="text-base font-semibold">@selectedPool.GradeCode / @selectedPool.CrossSectionCode</h2>
+                            <p class="text-sm text-slate-500">@(selectedPool.MaterialSpecificationCode ?? "no material spec") &middot; @(selectedPool.LocationCode ?? "no location")</p>
+                        </div>
+                        <div class="text-right text-sm">
+                            <div class="text-xs text-slate-400">Closing balance</div>
+                            <strong class="@(selectedPool.ClosingBalanceMt < 0 ? "text-rose-600" : "text-slate-700")">@selectedPool.ClosingBalanceMt.ToString("0.##") MT</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <section class="mb-4 rounded border border-slate-200 bg-white p-4">
+                    <h3 class="mb-3 text-sm font-semibold">Time-phased balance</h3>
+                    @if (selectedPool.Events.Count == 0)
+                    {
+                        <p class="text-sm text-slate-400">No ledger events for this pool.</p>
+                    }
+                    else
+                    {
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+                                    <th class="py-1 font-medium">When</th>
+                                    <th class="py-1 font-medium">Event</th>
+                                    <th class="py-1 font-medium text-right">Delta</th>
+                                    <th class="py-1 font-medium text-right">Running balance</th>
+                                    <th class="py-1 font-medium">Reference</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var e in selectedPool.Events)
+                                {
+                                    <tr class="border-b border-slate-100 last:border-0">
+                                        <td class="py-1.5 text-xs text-slate-500">@e.EffectiveAtUtc.ToString("dd MMM HH:mm")</td>
+                                        <td class="py-1.5">@e.EventType</td>
+                                        <td class="py-1.5 text-right @(e.QuantityDeltaMt < 0 ? "text-rose-600" : "text-emerald-700")">@(e.QuantityDeltaMt >= 0 ? "+" : "")@e.QuantityDeltaMt.ToString("0.##")</td>
+                                        <td class="py-1.5 text-right font-medium @(e.RunningBalanceMt < 0 ? "text-rose-600" : "")">@e.RunningBalanceMt.ToString("0.##")</td>
+                                        <td class="py-1.5 text-xs text-slate-400">@(e.SupplyReference ?? e.Explanation ?? "—")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                </section>
+            }
+
+            <section class="rounded border border-slate-200 bg-white p-4">
+                <div class="mb-3 flex items-center justify-between">
+                    <h3 class="text-sm font-semibold">Production Order reservations</h3>
+                    <span class="text-xs text-slate-400">@view.Reservations.Count</span>
+                </div>
+                @if (view.Reservations.Count == 0)
+                {
+                    <p class="text-sm text-slate-400">No material reservations against this plan.</p>
+                }
+                else
+                {
+                    <table class="w-full text-sm">
+                        <thead>
+                            <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+                                <th class="py-1 font-medium">Production Order</th>
+                                <th class="py-1 font-medium">Grade / Section</th>
+                                <th class="py-1 font-medium">Stage</th>
+                                <th class="py-1 font-medium">Status</th>
+                                <th class="py-1 font-medium">Available from</th>
+                                <th class="py-1 font-medium text-right">Qty</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in view.Reservations)
+                            {
+                                <tr class="border-b border-slate-100 last:border-0">
+                                    <td class="py-1.5">@(r.ProductionOrderNumber ?? r.ProductionOrderId.ToString("N")[..8])</td>
+                                    <td class="py-1.5">@r.GradeCode / @r.CrossSectionCode</td>
+                                    <td class="py-1.5">@r.InventoryStage</td>
+                                    <td class="py-1.5"><span class="rounded px-1.5 py-0.5 text-xs @ReservationStatusClass(r.Status)">@r.Status</span></td>
+                                    <td class="py-1.5 text-xs text-slate-500">@r.AvailableFromUtc.ToString("dd MMM HH:mm")</td>
+                                    <td class="py-1.5 text-right">@r.QuantityMt.ToString("0.##")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </section>
+        </section>
+    </div>
+}
+
+@code {
+    private MaterialFlowWorkspaceView? view;
+    private MaterialFlowPoolView? selectedPool;
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        WorkspaceState.Changed += OnWorkspaceChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        view = await PlannerQuery.GetMaterialFlowAsync(WorkspaceState.CurrentPlanVersionId);
+        selectedPool = view?.Pools.FirstOrDefault();
+        loading = false;
+        StateHasChanged();
+    }
+
+    private void OnWorkspaceChanged()
+    {
+        if (view is not null && WorkspaceState.CurrentPlanVersionId != view.Plan.PlanVersionId)
+            _ = InvokeAsync(LoadAsync);
+    }
+
+    private static string ReservationStatusClass(MaterialReservationStatus status) => status switch
+    {
+        MaterialReservationStatus.Consumed => "bg-emerald-100 text-emerald-700",
+        MaterialReservationStatus.Cancelled => "bg-rose-100 text-rose-700",
+        MaterialReservationStatus.Released => "bg-slate-100 text-slate-500",
+        _ => "bg-sky-100 text-sky-700"
+    };
+
+    public void Dispose() => WorkspaceState.Changed -= OnWorkspaceChanged;
+}

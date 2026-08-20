@@ -93,6 +93,14 @@ public sealed class UnavailablePlannerWorkspaceQueryService : IPlannerWorkspaceQ
         return Task.FromResult<WorkOrdersWorkspaceView?>(null);
     }
 
+    public Task<MaterialFlowWorkspaceView?> GetMaterialFlowAsync(
+        Guid? planVersionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureAvailable();
+        return Task.FromResult<MaterialFlowWorkspaceView?>(null);
+    }
+
     public Task<PlanComparisonWorkspaceView?> GetPlanComparisonAsync(
         Guid baselinePlanVersionId,
         Guid newPlanVersionId,

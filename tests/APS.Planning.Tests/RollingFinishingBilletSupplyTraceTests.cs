@@ -125,7 +125,7 @@ public sealed class RollingFinishingBilletSupplyTraceTests
         await repository.SaveAsync(new PersistPlanningRunRequest(
             planningRequest, planningResult, PlanTriggerType.Manual, now, "Test billet supply trace"));
 
-        var queryService = new PlannerWorkspaceQueryService(db);
+        var queryService = new PlannerWorkspaceQueryService(db, repository);
         var workspace = await queryService.GetRollingFinishingAsync(planningResult.PlanVersionId);
 
         var plan = Assert.Single(workspace!.RollingPlans);

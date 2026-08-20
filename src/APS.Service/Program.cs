@@ -182,6 +182,20 @@ if (hasApsDatabase)
             return view is null ? Results.NotFound() : Results.Ok(view);
         });
 
+    plannerApi.MapGet("/material-flow",
+        async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var view = await planner.GetMaterialFlowAsync(null, cancellationToken);
+            return view is null ? Results.NotFound() : Results.Ok(view);
+        });
+
+    plannerApi.MapGet("/material-flow/{planVersionId:guid}",
+        async (Guid planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var view = await planner.GetMaterialFlowAsync(planVersionId, cancellationToken);
+            return view is null ? Results.NotFound() : Results.Ok(view);
+        });
+
     plannerApi.MapGet("/compare/{baselinePlanVersionId:guid}/{newPlanVersionId:guid}",
         async (Guid baselinePlanVersionId, Guid newPlanVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
         {

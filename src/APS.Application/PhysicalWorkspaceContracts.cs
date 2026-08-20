@@ -67,3 +67,35 @@ public sealed record FiniteScheduleWorkspaceView(
     int OperationCount,
     int ResourceCount,
     IReadOnlyCollection<ScheduleResourceLaneView> ResourceLanes);
+
+public sealed record MaterialFlowEventView(
+    MaterialBalanceEventType EventType,
+    decimal QuantityDeltaMt,
+    decimal RunningBalanceMt,
+    DateTime EffectiveAtUtc,
+    string? SupplyReference,
+    string? Explanation);
+
+public sealed record MaterialFlowPoolView(
+    string MaterialPoolKey,
+    string GradeCode,
+    string CrossSectionCode,
+    string? MaterialSpecificationCode,
+    string? LocationCode,
+    decimal ClosingBalanceMt,
+    IReadOnlyCollection<MaterialFlowEventView> Events);
+
+public sealed record MaterialFlowReservationView(
+    Guid ProductionOrderId,
+    string? ProductionOrderNumber,
+    string GradeCode,
+    string CrossSectionCode,
+    InventoryStage InventoryStage,
+    decimal QuantityMt,
+    DateTime AvailableFromUtc,
+    MaterialReservationStatus Status);
+
+public sealed record MaterialFlowWorkspaceView(
+    PlanContextView Plan,
+    IReadOnlyCollection<MaterialFlowPoolView> Pools,
+    IReadOnlyCollection<MaterialFlowReservationView> Reservations);

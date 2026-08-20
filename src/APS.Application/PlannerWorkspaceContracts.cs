@@ -279,6 +279,10 @@ public interface IPlannerWorkspaceQueryService
         Guid? planVersionId = null,
         CancellationToken cancellationToken = default);
 
+    Task<MaterialFlowWorkspaceView?> GetMaterialFlowAsync(
+        Guid? planVersionId = null,
+        CancellationToken cancellationToken = default);
+
     Task<PlanComparisonWorkspaceView?> GetPlanComparisonAsync(
         Guid baselinePlanVersionId,
         Guid newPlanVersionId,
