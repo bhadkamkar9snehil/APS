@@ -28,6 +28,31 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
         var intervalsByResource = schedulableResources.Keys
             .ToDictionary(id => id, _ => new List<IntervalVar>());
 
+        // Cumulative resources carry a demand alongside every interval; the two lists stay index-aligned.
+        var demandsByResource = schedulableResources
+            .Where(pair => pair.Value.SchedulingMode == ResourceSchedulingMode.Cumulative)
+            .ToDictionary(pair => pair.Key, _ => new List<long>());
+        var capacityByResource = new Dictionary<Guid, long>();
+        foreach (var resourceId in demandsByResource.Keys)
+        {
+            var resource = schedulableResources[resourceId];
+            var capacity = ResourceCapacityModel.EffectiveCapacityUnits(resource);
+            if (capacity <= 0)
+            {
+                issues.Add(new PlanningIssue(
+                    PlanningIssueSeverity.Error,
+                    "RESOURCE_CUMULATIVE_CAPACITY_MISSING",
+                    $"Resource {resource.Code} is configured Cumulative but has no usable NominalConcurrentCapacity.",
+                    resource.Id));
+            }
+            capacityByResource[resourceId] = capacity;
+        }
+
+        if (issues.Any(i => i.Severity == PlanningIssueSeverity.Error))
+        {
+            return new FiniteScheduleResult("InvalidInput", false, 0, Array.Empty<FiniteScheduleAssignment>(), issues);
+        }
+
         foreach (var task in request.Tasks)
         {
             if (task.ResourceOptions.Count == 0)
@@ -46,12 +71,32 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
 
             foreach (var option in task.ResourceOptions)
             {
-                if (!intervalsByResource.ContainsKey(option.ResourceId)) continue;
+                if (!intervalsByResource.TryGetValue(option.ResourceId, out var resourceIntervals)) continue;
+
+                var resource = schedulableResources[option.ResourceId];
+                long demand = 0;
+                if (demandsByResource.TryGetValue(option.ResourceId, out var resourceDemands))
+                {
+                    demand = ResourceCapacityModel.DemandUnits(resource, task.QuantityMt, option.CapacityDemand);
+                    if (demand > capacityByResource[option.ResourceId])
+                    {
+                        // The task cannot physically fit this unit even on its own. Drop the option
+                        // rather than handing CP-SAT a model that can only come back INFEASIBLE; if it
+                        // was the only option the TASK_WITHOUT_ACTIVE_RESOURCE check below reports it.
+                        issues.Add(new PlanningIssue(
+                            PlanningIssueSeverity.Warning,
+                            "TASK_DEMAND_EXCEEDS_RESOURCE_CAPACITY",
+                            $"Task {task.Name} demands more capacity than resource {resource.Code} offers and cannot run there.",
+                            task.TaskId));
+                        continue;
+                    }
+                    resourceDemands.Add(demand);
+                }
 
                 var selected = model.NewBoolVar($"task_{task.TaskId:N}_resource_{option.ResourceId:N}");
                 presence[option.ResourceId] = selected;
                 var duration = Math.Max(1, option.DurationMinutes);
-                intervalsByResource[option.ResourceId].Add(model.NewOptionalIntervalVar(
+                resourceIntervals.Add(model.NewOptionalIntervalVar(
                     start,
                     duration,
                     end,
@@ -83,17 +128,50 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
             return new FiniteScheduleResult("InvalidInput", false, 0, Array.Empty<FiniteScheduleAssignment>(), issues);
         }
 
-        foreach (var calendar in request.ResourceCalendars.Where(c => !c.IsAvailable))
+        foreach (var calendar in request.ResourceCalendars)
         {
             if (!intervalsByResource.TryGetValue(calendar.ResourceId, out var intervals)) continue;
             var start = Math.Clamp(ToMinute(calendar.Start, request.HorizonStartUtc, horizonMinutes), 0, horizonMinutes);
             var end = Math.Clamp(ToMinute(calendar.End, request.HorizonStartUtc, horizonMinutes), 0, horizonMinutes);
             if (end <= start) continue;
+
+            if (!demandsByResource.TryGetValue(calendar.ResourceId, out var calendarDemands))
+            {
+                // Disjunctive: an unavailable window is a block that owns the machine outright. A
+                // window that only derates capacity cannot be expressed against a unary machine, so
+                // it correctly changes nothing here.
+                if (!calendar.IsAvailable)
+                {
+                    intervals.Add(model.NewFixedSizeIntervalVar(start, end - start, $"calendar_block_{calendar.Id:N}"));
+                }
+                continue;
+            }
+
+            // Cumulative: an outage consumes the whole capacity, a derate consumes the part that is
+            // no longer offered. Both are just a fixed interval with the right demand.
+            var resource = schedulableResources[calendar.ResourceId];
+            var fullCapacity = capacityByResource[calendar.ResourceId];
+            var remainingCapacity = calendar.IsAvailable
+                ? ResourceCapacityModel.EffectiveCapacityUnits(
+                    resource,
+                    resource.CapacityFactorPct * (calendar.CapacityFactorPct ?? 100m) / 100m)
+                : 0;
+            var blockedCapacity = fullCapacity - Math.Clamp(remainingCapacity, 0, fullCapacity);
+            if (blockedCapacity <= 0) continue;
+
             intervals.Add(model.NewFixedSizeIntervalVar(start, end - start, $"calendar_block_{calendar.Id:N}"));
+            calendarDemands.Add(blockedCapacity);
         }
 
-        foreach (var intervals in intervalsByResource.Values)
+        foreach (var (resourceId, intervals) in intervalsByResource)
         {
+            if (demandsByResource.TryGetValue(resourceId, out var demands))
+            {
+                if (intervals.Count == 0) continue;
+                model.AddCumulative(capacityByResource[resourceId]).AddDemands(intervals, demands);
+                continue;
+            }
+
             if (intervals.Count > 1) model.AddNoOverlap(intervals);
         }
 
@@ -373,6 +451,11 @@ public sealed class FiniteScheduleOptimizer : IFiniteScheduleOptimizer
         // Optional self-loops remove tasks that CP-SAT assigns to another eligible resource.
         foreach (var resource in resources.Values)
         {
+            // A circuit imposes a total order on everything the resource runs, which would serialize a
+            // cumulative resource through the back door and defeat the point of modelling it that way.
+            // Resources that simply hold material also have no meaningful "previous job" to change over from.
+            if (resource.SchedulingMode == ResourceSchedulingMode.Cumulative || !resource.AppliesSequenceRules) continue;
+
             var nodes = request.Tasks
                 .Where(task => taskVars.TryGetValue(task.TaskId, out var variables) &&
                                variables.Presence.ContainsKey(resource.Id))

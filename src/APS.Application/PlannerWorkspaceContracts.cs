@@ -76,9 +76,21 @@ public sealed record ResourcePressureView(
     ProcessUnitType ProcessUnitType,
     ResourceOperatingState OperatingState,
     int ScheduledOperationCount,
+    /// <summary>
+    /// Sum of the resource's operation durations. This is work content, not occupancy: on a
+    /// cumulative resource concurrent blocks are counted once each, so it can exceed the time the
+    /// unit was actually busy. Use <see cref="OccupiedHours"/> to express utilization (#35).
+    /// </summary>
     double ScheduledHours,
     DateTime? FirstStartUtc,
-    DateTime? LastEndUtc);
+    DateTime? LastEndUtc,
+    ResourceSchedulingMode SchedulingMode = ResourceSchedulingMode.Disjunctive,
+    /// <summary>Wall-clock hours the resource was running anything, counting overlap once.</summary>
+    double OccupiedHours = 0d,
+    /// <summary>Most operations held at once - compare against <see cref="NominalConcurrentCapacity"/>.</summary>
+    int PeakConcurrentOperations = 0,
+    ResourceCapacityBasis CapacityBasis = ResourceCapacityBasis.NotApplicable,
+    decimal? NominalConcurrentCapacity = null);
 
 public sealed record PlanMaterialSummaryView(
     InventoryStage Stage,

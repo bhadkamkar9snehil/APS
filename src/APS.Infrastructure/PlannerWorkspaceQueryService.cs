@@ -1,5 +1,6 @@
 using APS.Application;
 using APS.Domain;
+using APS.Planning;
 using Microsoft.EntityFrameworkCore;
 
 namespace APS.Infrastructure;
@@ -111,6 +112,9 @@ public sealed partial class PlannerWorkspaceQueryService(ApsDbContext db, IPlanV
             {
                 resourceById.TryGetValue(group.Key, out var resource);
                 var ordered = group.OrderBy(x => x.StartUtc).ToArray();
+                // Occupancy is measured from the merged intervals so a cumulative resource is not
+                // reported as over-utilized simply because it legitimately held blocks concurrently (#35).
+                var spans = ordered.Select(x => (Start: x.StartUtc, End: x.EndUtc)).ToArray();
                 return new ResourcePressureView(
                     group.Key,
                     resource?.Code ?? group.Key.ToString("N")[..8],
@@ -120,7 +124,12 @@ public sealed partial class PlannerWorkspaceQueryService(ApsDbContext db, IPlanV
                     ordered.Length,
                     Math.Round(ordered.Sum(x => Math.Max(0d, (x.EndUtc - x.StartUtc).TotalHours)), 2),
                     ordered.FirstOrDefault()?.StartUtc,
-                    ordered.LastOrDefault()?.EndUtc);
+                    ordered.LastOrDefault()?.EndUtc,
+                    resource?.SchedulingMode ?? ResourceSchedulingMode.Disjunctive,
+                    Math.Round(ResourceCapacityModel.OccupiedHours(spans), 2),
+                    ResourceCapacityModel.PeakConcurrency(spans),
+                    resource?.CapacityBasis ?? ResourceCapacityBasis.NotApplicable,
+                    resource?.NominalConcurrentCapacity);
             })
             .OrderByDescending(x => x.ScheduledHours)
             .ThenBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)

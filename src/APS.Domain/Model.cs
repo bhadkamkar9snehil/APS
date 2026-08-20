@@ -25,6 +25,22 @@ public enum BilletSupplySourceType { InternalCastPlanned = 1, InternalCastActual
 public enum MaterialQualityStatus { Available = 1, QualityHold = 2, Blocked = 3, Rejected = 4, Released = 5 }
 public enum ChargeMode { HotDirect = 1, HotBuffered = 2, ColdCharge = 3 }
 
+/// <summary>
+/// How the finite scheduler must physically model occupancy of one resource.
+/// <see cref="Disjunctive"/> is the classic unary machine - one operation/block at a time
+/// (EAF, LRF, VD, a caster, a rolling mill). <see cref="Cumulative"/> is a residence-capacity
+/// unit that legitimately holds several material blocks at once up to a configured capacity
+/// (a shared reheating furnace, a cooling bed). This is resource master data, not a solver
+/// preference: it describes what the physical unit does.
+/// </summary>
+public enum ResourceSchedulingMode { Disjunctive = 1, Cumulative = 2 }
+
+/// <summary>
+/// Unit that <see cref="Resource.NominalConcurrentCapacity"/> and the matching per-task demand
+/// are expressed in. Only meaningful for <see cref="ResourceSchedulingMode.Cumulative"/> resources.
+/// </summary>
+public enum ResourceCapacityBasis { NotApplicable = 0, Slots = 1, MassEquivalentMt = 2, Positions = 3 }
+
 public abstract class Entity
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -213,6 +229,18 @@ public sealed class Resource : Entity
     public ProcessUnitType ProcessUnitType { get; set; }
     public ResourceOperatingState OperatingState { get; set; } = ResourceOperatingState.Available;
     public decimal CapacityFactorPct { get; set; } = 100m;
+
+    // How the finite scheduler must model occupancy of this physical unit. Disjunctive keeps the
+    // historical one-block-at-a-time behaviour, so existing master data schedules unchanged.
+    // Cumulative resources must also declare a basis and a positive nominal capacity.
+    public ResourceSchedulingMode SchedulingMode { get; set; } = ResourceSchedulingMode.Disjunctive;
+    public ResourceCapacityBasis CapacityBasis { get; set; } = ResourceCapacityBasis.NotApplicable;
+    public decimal? NominalConcurrentCapacity { get; set; }
+
+    // Whether sequence-dependent transition/changeover rules apply on this resource. A residence
+    // unit that simply holds material has no meaningful "previous job", so forcing a sequence onto
+    // it would serialize it through the back door.
+    public bool AppliesSequenceRules { get; set; } = true;
 
     // Heat/tap/capacity properties belong to the physical unit that owns them.
     public decimal? MinimumHeatWeightMt { get; set; }

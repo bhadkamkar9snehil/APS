@@ -218,7 +218,15 @@ public sealed record FiniteScheduleResourceOption(
     Guid ResourceId,
     int DurationMinutes,
     int AssignmentPenalty = 0,
-    string? EligibilityBasisCode = null);
+    string? EligibilityBasisCode = null,
+    /// <summary>
+    /// How much of a <see cref="ResourceSchedulingMode.Cumulative"/> resource's capacity this task
+    /// occupies while it runs, in that resource's <see cref="ResourceCapacityBasis"/>. Null lets the
+    /// optimizer derive it from the resource's basis and the task quantity, which is what every
+    /// projector relies on today; supply it explicitly only when the projector knows better.
+    /// Ignored for disjunctive resources, which are occupied wholly or not at all.
+    /// </summary>
+    decimal? CapacityDemand = null);
 
 public sealed record FiniteScheduleDependencyResourcePair(
     Guid PredecessorResourceId,

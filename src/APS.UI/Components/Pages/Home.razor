@@ -49,17 +49,24 @@ else
                                 <div class="text-xs text-slate-400">@resource.ProcessUnitType</div>
                             </div>
                             <div class="h-2 flex-1 rounded bg-slate-100">
-                                <div class="h-2 rounded bg-accent" style="width:@(PressureWidth(resource.ScheduledHours))%"></div>
+                                <div class="h-2 rounded bg-accent" style="width:@(PressureWidth(resource.OccupiedHours))%"></div>
                             </div>
                             <div class="w-20 shrink-0 text-right text-xs">
-                                <div class="font-medium">@resource.ScheduledHours.ToString("0.##") h</div>
-                                <div class="text-slate-400">@resource.ScheduledOperationCount ops</div>
+                                <div class="font-medium">@resource.OccupiedHours.ToString("0.##") h</div>
+                                @if (resource.SchedulingMode == ResourceSchedulingMode.Cumulative)
+                                {
+                                    <div class="text-slate-400">peak @resource.PeakConcurrentOperations/@(resource.NominalConcurrentCapacity?.ToString("0.##") ?? "?")</div>
+                                }
+                                else
+                                {
+                                    <div class="text-slate-400">@resource.ScheduledOperationCount ops</div>
+                                }
                             </div>
                             <span class="w-24 shrink-0 rounded px-1.5 py-0.5 text-center text-xs @ResourceStateClass(resource.OperatingState)">@resource.OperatingState</span>
                         </button>
                     }
                 </div>
-                <p class="mt-2 text-xs text-slate-400">Bar length is relative scheduled occupancy inside this Plan Version; it is not a utilization percentage.</p>
+                <p class="mt-2 text-xs text-slate-400">Bar length is relative wall-clock occupancy inside this Plan Version; it is not a utilization percentage. Cumulative resources show peak concurrent blocks against their configured capacity, because concurrent work on them is not overload.</p>
             }
         </section>
 
@@ -175,11 +182,11 @@ else
             resource.ResourceId,
             resource.ResourceCode));
 
-    private double MaxScheduledHours => view?.Resources.Select(x => x.ScheduledHours).DefaultIfEmpty(0d).Max() ?? 0d;
+    private double MaxOccupiedHours => view?.Resources.Select(x => x.OccupiedHours).DefaultIfEmpty(0d).Max() ?? 0d;
 
     private string PressureWidth(double hours)
     {
-        var max = MaxScheduledHours;
+        var max = MaxOccupiedHours;
         if (max <= 0d) return "0";
         return Math.Clamp(hours / max * 100d, 3d, 100d).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
     }

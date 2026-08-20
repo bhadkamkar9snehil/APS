@@ -1,5 +1,6 @@
 using APS.Application;
 using APS.Domain;
+using APS.Planning;
 using Microsoft.EntityFrameworkCore;
 
 namespace APS.Infrastructure;
@@ -135,12 +136,23 @@ public sealed partial class PlannerWorkspaceQueryService
             .ToListAsync(cancellationToken);
         var operationViews = await BuildOperationViewsAsync(operationRows, cancellationToken);
 
+        var laneResourceIds = operationViews.Select(x => x.ResourceId).Distinct().ToArray();
+        var laneResources = laneResourceIds.Length == 0
+            ? new Dictionary<Guid, Resource>()
+            : (await db.Resources.AsNoTracking()
+                    .Where(x => laneResourceIds.Contains(x.Id))
+                    .ToListAsync(cancellationToken))
+                .ToDictionary(x => x.Id);
+
         var lanes = operationViews
             .GroupBy(x => x.ResourceId)
             .Select(group =>
             {
                 var ordered = group.OrderBy(x => x.StartUtc).ToArray();
                 var resource = ordered[0];
+                laneResources.TryGetValue(group.Key, out var master);
+                // A cumulative lane's busy time is the merged span of its blocks, not their sum (#35).
+                var spans = ordered.Select(x => (Start: x.StartUtc, End: x.EndUtc)).ToArray();
                 return new ScheduleResourceLaneView(
                     group.Key,
                     resource.ResourceCode,
@@ -148,7 +160,11 @@ public sealed partial class PlannerWorkspaceQueryService
                     resource.ProcessUnitType,
                     resource.ResourceOperatingState,
                     Math.Round(ordered.Sum(x => Math.Max(0d, (x.EndUtc - x.StartUtc).TotalHours)), 2),
-                    ordered);
+                    ordered,
+                    master?.SchedulingMode ?? ResourceSchedulingMode.Disjunctive,
+                    Math.Round(ResourceCapacityModel.OccupiedHours(spans), 2),
+                    ResourceCapacityModel.PeakConcurrency(spans),
+                    master?.NominalConcurrentCapacity);
             })
             .OrderBy(x => ProcessOrder(x.ProcessUnitType))
             .ThenBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)

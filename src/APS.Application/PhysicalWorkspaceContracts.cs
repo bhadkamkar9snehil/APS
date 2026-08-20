@@ -57,8 +57,17 @@ public sealed record ScheduleResourceLaneView(
     string ResourceName,
     ProcessUnitType ProcessUnitType,
     ResourceOperatingState OperatingState,
+    /// <summary>
+    /// Sum of this lane's operation durations - work content. On a cumulative resource this counts
+    /// concurrent blocks separately, so it is not the time the unit was busy (#35).
+    /// </summary>
     double ScheduledHours,
-    IReadOnlyCollection<ScheduledProcessOperationView> Operations);
+    IReadOnlyCollection<ScheduledProcessOperationView> Operations,
+    ResourceSchedulingMode SchedulingMode = ResourceSchedulingMode.Disjunctive,
+    /// <summary>Wall-clock hours this lane was running anything, counting overlap once.</summary>
+    double OccupiedHours = 0d,
+    int PeakConcurrentOperations = 0,
+    decimal? NominalConcurrentCapacity = null);
 
 public sealed record FiniteScheduleWorkspaceView(
     PlanContextView Plan,

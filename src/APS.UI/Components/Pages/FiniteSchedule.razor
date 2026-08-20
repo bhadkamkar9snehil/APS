@@ -41,7 +41,13 @@ else
                 <div class="grid grid-cols-[160px_1fr] items-center py-1.5">
                     <button type="button" class="pr-2 text-left text-xs hover:text-accent" @onclick="() => SelectResource(lane)">
                         <strong class="block text-slate-800">@lane.ResourceCode</strong>
-                        <span class="text-slate-400">@lane.ProcessUnitType &middot; @lane.ScheduledHours.ToString("0.##") h</span>
+                        <span class="text-slate-400">
+                            @lane.ProcessUnitType &middot; @lane.OccupiedHours.ToString("0.##") h
+                            @if (lane.SchedulingMode == ResourceSchedulingMode.Cumulative)
+                            {
+                                <text> &middot; peak @lane.PeakConcurrentOperations/@(lane.NominalConcurrentCapacity?.ToString("0.##") ?? "?")</text>
+                            }
+                        </span>
                     </button>
                     <div class="relative h-6 rounded bg-slate-50">
                         @foreach (var operation in lane.Operations)
