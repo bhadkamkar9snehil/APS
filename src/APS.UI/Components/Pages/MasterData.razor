@@ -140,6 +140,9 @@ else
                 <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Grade code</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newGrade.GradeCode" /></label>
                 <label class="flex flex-col gap-1 col-span-2"><span class="text-xs text-slate-500">Description</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newGrade.Description" /></label>
                 <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Family</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newGrade.GradeFamilyCode" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Sequence class</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newGrade.SequenceClassCode" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Casting class</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newGrade.CastingClassCode" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Default route</span><input class="rounded border border-slate-300 px-2 py-1" @bind="newGrade.DefaultRouteCode" /></label>
                 <label class="flex items-center gap-2 pt-4"><input type="checkbox" @bind="newGrade.HotChargeEligible" /><span class="text-xs text-slate-600">Hot charge eligible</span></label>
             </div>
             <button type="button" class="mt-2 rounded bg-accent px-3 py-1.5 text-sm text-white disabled:opacity-50" disabled="@saving" @onclick="AddGradeAsync">Add</button>
