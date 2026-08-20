@@ -58,13 +58,17 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
                     .OrderBy(x => x.StartUtc)
                     .ToArray();
 
-                var steelmakingAssignments = allAssignments
-                    .Where(a => taskById.TryGetValue(a.TaskId, out var task) &&
-                                task.ProcessOperationType is ProcessOperationType.Eaf or ProcessOperationType.Lrf or ProcessOperationType.Vd)
-                    .ToArray();
+                // A heat is liquid steel and the caster is where it stops being liquid, so within a heat
+                // the split is casting versus everything upstream of it. Listing Eaf/Lrf/Vd instead
+                // dropped every other configured pre-caster operation - BOF, AOD/VOD, RH, induction, a
+                // second refining pass - out of the released plan while the schedule still contained it
+                // (#34). SteelmakingRouteProjector builds heat tasks as route.Take(ccmIndex) plus
+                // casting, so "on the heat and not casting" is exactly the route-derived upstream set.
                 var castingAssignments = allAssignments
-                    .Where(a => taskById.TryGetValue(a.TaskId, out var task) &&
-                                (task.ProcessOperationType == ProcessOperationType.Ccm || task.TaskType == FiniteScheduleTaskType.Casting))
+                    .Where(a => taskById.TryGetValue(a.TaskId, out var task) && IsCasting(task))
+                    .ToArray();
+                var steelmakingAssignments = allAssignments
+                    .Where(a => taskById.TryGetValue(a.TaskId, out var task) && !IsCasting(task))
                     .ToArray();
 
                 var materialCodes = matchingAllocations
@@ -207,6 +211,13 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
             AddScheduledOperations(request.PlanVersionId, workOrder.Id, assignments, planningKeyByTask, scheduledOperations);
         }
     }
+
+    /// <summary>
+    /// Casting is identified by operation type, with the task type accepted as well because legacy
+    /// projections set it without a process operation type.
+    /// </summary>
+    private static bool IsCasting(FiniteScheduleTask task) =>
+        task.ProcessOperationType == ProcessOperationType.Ccm || task.TaskType == FiniteScheduleTaskType.Casting;
 
     private static WorkOrder NewWorkOrder(
         string number,

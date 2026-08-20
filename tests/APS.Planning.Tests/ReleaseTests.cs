@@ -170,4 +170,135 @@ public sealed class PlanReleaseBuilderTests
         Assert.Equal(salesOrder.Id, Assert.Single(rm.Allocations).ProductionOrder!.SalesOrderId);
         Assert.Equal(2, release.Operations.Count);
     }
+
+    /// <summary>
+    /// GitHub #34. The release path classified steelmaking with a hard-coded Eaf/Lrf/Vd set, while
+    /// SteelmakingRouteProjector builds heat tasks from route.Take(ccmIndex) - anything the route
+    /// places before the caster. The two disagreed about what a steelmaking operation is, so a
+    /// pre-caster operation outside that set was scheduled and then silently dropped from the released
+    /// plan: correct schedule, incomplete release, no error anywhere.
+    /// </summary>
+    [Fact]
+    public void Pre_caster_operation_outside_eaf_lrf_vd_survives_release()
+    {
+        var campaign = new Campaign
+        {
+            CampaignNumber = "CMP-00002",
+            GradeSequenceClassCode = "SEQ-A",
+            CasterSectionCode = "150X150",
+            RouteCode = "BOF-RM",
+            PlannedQuantityMt = 60m,
+            FreshSteelRequirementMt = 60m,
+            RequiredDate = new DateTime(2026, 8, 22)
+        };
+        var po = new ProductionOrder
+        {
+            ProductionOrderNumber = "PO-2001",
+            DemandSource = DemandSourceType.MakeToOrder,
+            MaterialCode = "FG-16",
+            GradeCode = "G1",
+            GradeSequenceClassCode = "SEQ-A",
+            FinalCrossSectionCode = "16MM",
+            CasterSectionCode = "150X150",
+            RouteCode = "BOF-RM",
+            PlannedQuantityMt = 60m,
+            RemainingQuantityMt = 60m,
+            RequiredDate = campaign.RequiredDate
+        };
+        campaign.Allocations.Add(new CampaignAllocation
+        {
+            CampaignId = campaign.Id,
+            Campaign = campaign,
+            ProductionOrderId = po.Id,
+            ProductionOrder = po,
+            PlannedQuantityMt = 60m,
+            FreshSteelQuantityMt = 60m
+        });
+        var gradeSequence = new CampaignGradeSequence
+        {
+            CampaignId = campaign.Id,
+            Campaign = campaign,
+            SequenceNumber = 1,
+            GradeCode = "G1",
+            PlannedQuantityMt = 60m
+        };
+        campaign.GradeSequence.Add(gradeSequence);
+        var heat = new CampaignHeat
+        {
+            CampaignId = campaign.Id,
+            Campaign = campaign,
+            CampaignGradeSequenceId = gradeSequence.Id,
+            CampaignGradeSequence = gradeSequence,
+            SequenceNumber = 1,
+            GradeCode = "G1",
+            PlannedQuantityMt = 60m
+        };
+        campaign.Heats.Add(heat);
+
+        var start = new DateTime(2026, 8, 20, 8, 0, 0, DateTimeKind.Utc);
+
+        // A primary vessel that is not an EAF. ProcessOperationType has no BOF/AOD/RH member yet, so a
+        // plant configuring one today types it Unknown and the route still schedules it - which is
+        // exactly the operation the old whitelist discarded.
+        var primary = HeatTask(heat.Id, "Primary vessel", ProcessOperationType.Unknown, FiniteScheduleTaskType.Eaf);
+        var refining = HeatTask(heat.Id, "Refining", ProcessOperationType.Lrf, FiniteScheduleTaskType.Lrf);
+        var casting = HeatTask(heat.Id, "Cast", ProcessOperationType.Ccm, FiniteScheduleTaskType.Casting);
+
+        var structure = new ProductionStructurePlanningResult(
+            Array.Empty<CastSequence>(),
+            Array.Empty<RollingPlan>(),
+            Array.Empty<PlannedBilletSupply>(),
+            new[] { primary, refining, casting },
+            Array.Empty<PlanningIssue>());
+        var schedule = new FiniteScheduleResult(
+            "Optimal",
+            true,
+            0,
+            new[]
+            {
+                new FiniteScheduleAssignment(primary.TaskId, heat.Id, Guid.NewGuid(), start, start.AddHours(1)),
+                new FiniteScheduleAssignment(refining.TaskId, heat.Id, Guid.NewGuid(), start.AddHours(1), start.AddHours(2)),
+                new FiniteScheduleAssignment(casting.TaskId, heat.Id, Guid.NewGuid(), start.AddHours(2), start.AddHours(3))
+            },
+            Array.Empty<PlanningIssue>());
+
+        var release = new PlanReleaseBuilder().Build(new PlanReleaseBuildRequest(
+            Guid.NewGuid(),
+            new[] { campaign },
+            structure,
+            schedule));
+
+        var sms = release.WorkOrders.Single(w => w.WorkOrderType == WorkOrderType.Steelmaking);
+        var ccm = release.WorkOrders.Single(w => w.WorkOrderType == WorkOrderType.Casting);
+
+        // Every scheduled operation reaches the shop floor: two upstream on the SMS order, one on the
+        // caster. Under the whitelist the primary vessel vanished and the released plan began at the
+        // ladle furnace.
+        Assert.Equal(2, release.Operations.Count(x => x.WorkOrderId == sms.Id));
+        Assert.Equal(1, release.Operations.Count(x => x.WorkOrderId == ccm.Id));
+        Assert.Equal(3, release.Operations.Count);
+
+        // The work order still spans the real upstream window rather than starting an hour late.
+        Assert.Equal(start, sms.PlannedStart);
+        Assert.Equal(start.AddHours(2), sms.PlannedEnd);
+    }
+
+    private static FiniteScheduleTask HeatTask(
+        Guid heatId,
+        string name,
+        ProcessOperationType operationType,
+        FiniteScheduleTaskType taskType) => new(
+        Guid.NewGuid(),
+        heatId,
+        taskType,
+        name,
+        "G1",
+        "150X150",
+        60m,
+        null,
+        null,
+        0,
+        Array.Empty<FiniteScheduleResourceOption>(),
+        Array.Empty<FiniteScheduleDependency>(),
+        operationType);
 }

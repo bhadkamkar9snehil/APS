@@ -163,13 +163,18 @@ public sealed class PersistedPlanReleaseService(
                                 string.Equals(x.GradeCode, gradeSequence.GradeCode, StringComparison.OrdinalIgnoreCase))
                     .Select(x => x.CampaignHeatId)
                     .ToHashSet();
+                // A heat is liquid steel and the caster is where it stops being liquid, so within a heat
+                // the split is casting versus everything upstream of it. Listing Eaf/Lrf/Vd instead
+                // dropped every other configured pre-caster operation - BOF, AOD/VOD, RH, induction, a
+                // second refining pass - out of the released plan while the persisted schedule still
+                // contained it (#34). Mirrors PlanReleaseBuilder, which releases the unpersisted plan.
                 var heatOperations = operations.Where(x => heatIds.Contains(x.SourceEntityId)).ToArray();
-                var steelmaking = heatOperations
-                    .Where(x => x.ProcessOperationType is ProcessOperationType.Eaf or ProcessOperationType.Lrf or ProcessOperationType.Vd)
+                var casting = heatOperations
+                    .Where(IsCasting)
                     .OrderBy(x => x.StartUtc)
                     .ToArray();
-                var casting = heatOperations
-                    .Where(x => x.ProcessOperationType == ProcessOperationType.Ccm || x.OperationType == PlanOperationType.Casting)
+                var steelmaking = heatOperations
+                    .Where(x => !IsCasting(x))
                     .OrderBy(x => x.StartUtc)
                     .ToArray();
                 var materialCodes = matchingAllocations
@@ -299,6 +304,14 @@ public sealed class PersistedPlanReleaseService(
             AddScheduledOperations(planVersionId, wo.Id, planOperations, scheduledOperations);
         }
     }
+
+    /// <summary>
+    /// Casting is identified by operation type, with the plan operation type accepted as well because
+    /// legacy snapshots set it without a process operation type.
+    /// </summary>
+    private static bool IsCasting(PlanOperationSnapshot operation) =>
+        operation.ProcessOperationType == ProcessOperationType.Ccm ||
+        operation.OperationType == PlanOperationType.Casting;
 
     private static WorkOrder NewWorkOrder(
         string number,
