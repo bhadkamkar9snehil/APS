@@ -27,7 +27,7 @@
   </ItemGroup>
   <PropertyGroup>
     <!-- Read by build/release.ps1 to version the Velopack release unless -Version is passed explicitly. -->
-    <Version>0.2.4</Version>
+    <Version>0.2.5</Version>
     <OutputType>WinExe</OutputType>
     <StartupObject>APS.DesktopHost.Program</StartupObject>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>

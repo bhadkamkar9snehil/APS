@@ -247,3 +247,6 @@ obj/
 
 # Tailwind compiled output, regenerated on every build from wwwroot/tailwind-input.css
 src/APS.UI/wwwroot/tailwind.css
+
+# Local visual-design companion state
+.superpowers/
