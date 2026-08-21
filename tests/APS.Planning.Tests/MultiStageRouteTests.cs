@@ -121,6 +121,58 @@ public sealed class MultiStageRouteTests
         AssertAssignments(result, plans[2].Id, secondMill.Id);
     }
 
+    [Fact]
+    public void Required_reheat_hot_roll_and_finishing_remain_one_configured_route_chain()
+    {
+        var po = Order("PO-RHF-RM-FIN", "FINAL", 60m);
+        var plant = Guid.NewGuid();
+        var eaf = PrimaryFurnace(plant, "EAF-1");
+        var caster = Resource(plant, "CCM-1", ResourceType.Caster, ProcessUnitType.Ccm, 4);
+        var reheat = Resource(plant, "RHF-1", ResourceType.Furnace, ProcessUnitType.ReheatingFurnace);
+        reheat.NominalResidenceMinutes = 20;
+        var hotMill = Resource(plant, "HRM-1", ResourceType.RollingMill, ProcessUnitType.HotRollingMill);
+        var finishing = Resource(plant, "FIN-1", ResourceType.FinishingLine, ProcessUnitType.FinishingLine);
+
+        var routeId = Guid.NewGuid();
+        var routeOperations = new[]
+        {
+            Operation(routeId, 10, ProcessOperationType.Reheat, WorkOrderType.HotRolling, "150X150", "150X150"),
+            Operation(routeId, 20, ProcessOperationType.HotRoll, WorkOrderType.HotRolling, "150X150", "HRC"),
+            Operation(routeId, 30, ProcessOperationType.Finish, WorkOrderType.Finishing, "HRC", "FINAL")
+        };
+        var routeCapabilities = new[]
+        {
+            Capability(hotMill.Id, ProcessOperationType.HotRoll, "150X150", "HRC", 60m),
+            Capability(finishing.Id, ProcessOperationType.Finish, "HRC", "FINAL", 60m)
+        };
+        var links = new[]
+        {
+            Link(caster.Id, reheat.Id, ProcessOperationType.Ccm, ProcessOperationType.Reheat),
+            Link(reheat.Id, hotMill.Id, ProcessOperationType.Reheat, ProcessOperationType.HotRoll, hot: true),
+            Link(hotMill.Id, finishing.Id, ProcessOperationType.HotRoll, ProcessOperationType.Finish)
+        };
+
+        var result = Run(po, new[] { eaf, caster, reheat, hotMill, finishing }, routeOperations, routeCapabilities, links);
+
+        Assert.True(result.IsFeasible, string.Join("; ", result.Schedule.Issues.Select(x => x.Message)));
+        var plans = result.ProductionStructure.RouteOperationPlans!.OrderBy(x => x.SequenceNumber).ToArray();
+        Assert.Equal(
+            new[] { ProcessOperationType.Reheat, ProcessOperationType.HotRoll, ProcessOperationType.Finish },
+            plans.Select(x => x.ProcessOperationType).ToArray());
+        Assert.Contains(result.ProductionStructure.SchedulingTasks, x =>
+            x.SourceEntityId == plans[0].Id && x.TaskType == FiniteScheduleTaskType.Reheating);
+        AssertAssignments(result, plans[1].Id, hotMill.Id);
+        AssertAssignments(result, plans[2].Id, finishing.Id);
+
+        var release = new PlanReleaseBuilder().Build(new PlanReleaseBuildRequest(
+            result.PlanVersionId,
+            result.CampaignPlan.Campaigns,
+            result.ProductionStructure,
+            result.Schedule));
+        Assert.Contains(release.WorkOrders, x => x.WorkOrderType == WorkOrderType.HotRolling);
+        Assert.Contains(release.WorkOrders, x => x.WorkOrderType == WorkOrderType.Finishing);
+    }
+
     private static PlanningRunResult Run(
         ProductionOrder po,
         IReadOnlyCollection<Resource> resources,
