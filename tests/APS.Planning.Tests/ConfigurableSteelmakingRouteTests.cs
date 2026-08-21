@@ -6,11 +6,9 @@ using Xunit;
 namespace APS.Planning.Tests;
 
 /// <summary>
-/// GitHub #34: the pre-CCM steelmaking projector and its Make-feasibility pre-check must not
-/// silently drop or reject route operations whose ProcessOperationType isn't Eaf/Lrf/Vd. A plant
-/// can configure any secondary-metallurgy step (BOF, AOD/VOD, induction furnace, RH, a second
-/// refining pass, ...) between the primary vessel and the caster; the route master defines what
-/// exists, not a hard-coded type whitelist in code.
+/// The route master, not a hard-coded EAF/LRF/VD or first-HotRoll template, defines which operations
+/// exist. This regression keeps an unusual configured secondary-metallurgy step before CCM while the
+/// same route continues through reheating and rolling downstream.
 /// </summary>
 public sealed class ConfigurableSteelmakingRouteTests
 {
@@ -23,15 +21,10 @@ public sealed class ConfigurableSteelmakingRouteTests
         eaf.MinimumHeatWeightMt = 50m;
         eaf.NominalHeatWeightMt = 60m;
         eaf.MaximumHeatWeightMt = 70m;
-        // Stands in for a configured secondary-metallurgy step that is not Eaf/Lrf/Vd (e.g. RH, AOD/VOD,
-        // or a plant-specific step) positioned before CCM - the point is that its ProcessOperationType is
-        // outside the old whitelist and in a position (pre-CCM) that type would not normally occupy.
+        // Stands in for a configured secondary-metallurgy step outside the familiar EAF/LRF/VD names.
+        // The route position and capability are the important facts; the planner must not drop it.
         var middle = SteelResource("SECONDARY-1", ProcessUnitType.TmtWaterBox, ResourceType.Generic);
         var ccm = SteelResource("CCM-1", ProcessUnitType.Ccm, ResourceType.Caster);
-        // ConfiguredRouteProductionStructureBuilder currently requires every route to contain a HotRoll
-        // operation regardless of product, and RollingFeedProjector currently requires a physical Reheat
-        // hop between CCM and HotRoll - both are separate, still-open instances of the same #34 hard-coding
-        // problem. Included here only to isolate this test to the pre-CCM fix under test.
         var reheat = SteelResource("RHF-1", ProcessUnitType.ReheatingFurnace, ResourceType.Generic);
         var hotMill = SteelResource("HRM-1", ProcessUnitType.HotRollingMill, ResourceType.RollingMill);
         var resources = new[] { eaf, middle, ccm, reheat, hotMill };
@@ -55,8 +48,8 @@ public sealed class ConfigurableSteelmakingRouteTests
             new PlantFlowLink { FromResourceId = eaf.Id, ToResourceId = middle.Id, CouplingType = FlowCouplingType.HotTransfer, MinimumTransferTime = TimeSpan.FromMinutes(5), SupportsHotTransfer = true, IsEnabled = true },
             new PlantFlowLink { FromResourceId = middle.Id, ToResourceId = ccm.Id, CouplingType = FlowCouplingType.HotTransfer, MinimumTransferTime = TimeSpan.FromMinutes(5), SupportsHotTransfer = true, IsEnabled = true },
             new PlantFlowLink { FromResourceId = ccm.Id, ToResourceId = reheat.Id, CouplingType = FlowCouplingType.Buffered, MinimumTransferTime = TimeSpan.Zero, IsEnabled = true },
-            new PlantFlowLink { FromResourceId = reheat.Id, ToResourceId = hotMill.Id, CouplingType = FlowCouplingType.Buffered, MinimumTransferTime = TimeSpan.Zero, IsEnabled = true },
-            new PlantFlowLink { FromResourceId = ccm.Id, ToResourceId = hotMill.Id, CouplingType = FlowCouplingType.Buffered, MinimumTransferTime = TimeSpan.Zero, IsEnabled = true },
+            new PlantFlowLink { FromResourceId = reheat.Id, ToResourceId = hotMill.Id, CouplingType = FlowCouplingType.HotTransfer, MinimumTransferTime = TimeSpan.Zero, SupportsHotTransfer = true, IsEnabled = true },
+            new PlantFlowLink { FromResourceId = ccm.Id, ToResourceId = hotMill.Id, CouplingType = FlowCouplingType.HotTransfer, MinimumTransferTime = TimeSpan.Zero, SupportsHotTransfer = true, IsEnabled = true },
         };
 
         var engine = new PlanningEngine(
@@ -99,7 +92,12 @@ public sealed class ConfigurableSteelmakingRouteTests
         RouteCode = "FLEX-ROUTE",
         SequenceNumber = sequence,
         ProcessOperationType = operation,
-        ReleaseWorkOrderType = operation == ProcessOperationType.Ccm ? WorkOrderType.Casting : WorkOrderType.Steelmaking,
+        ReleaseWorkOrderType = operation switch
+        {
+            ProcessOperationType.Ccm => WorkOrderType.Casting,
+            ProcessOperationType.Reheat or ProcessOperationType.HotRoll => WorkOrderType.HotRolling,
+            _ => WorkOrderType.Steelmaking
+        },
         Requirement = RequirementDisposition.Required
     };
 
