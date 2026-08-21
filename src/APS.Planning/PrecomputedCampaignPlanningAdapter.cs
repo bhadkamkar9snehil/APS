@@ -4,7 +4,7 @@ using APS.Domain;
 namespace APS.Planning;
 
 /// <summary>
-/// Makes Campaign a consumer of canonical material facts when the upstream BOM/time-phased pass has already
+/// Makes Campaign a consumer of canonical material facts when the upstream BOM/time-phased material pass has already
 /// decided what each PO can cover from qualified steel feed and what billet/bloom/slab output must be made internally.
 /// Compatibility callers without precomputed material continue through CampaignPlanningService's legacy material path.
 /// </summary>
@@ -40,7 +40,8 @@ public static class PrecomputedCampaignPlanningAdapter
 
         // Run only Campaign compatibility/grouping logic. All supply pools are removed so the legacy service cannot
         // reserve inventory, committed receipts or external supply a second time. The legacy material answer is then
-        // replaced by the canonical answer below.
+        // replaced by the canonical answer below. PrecomputedMaterialDemand is deliberately removed only for this
+        // direct service call; otherwise CampaignPlanningService itself would treat it as an external material mode.
         var groupingRequest = request with
         {
             Inventory = Array.Empty<InventoryPosition>(),
@@ -117,6 +118,9 @@ public static class PrecomputedCampaignPlanningAdapter
                 .Where(a => a.ProductionOrderId == x.Id && a.Use == PlanningInventoryUse.ExternalIntermediateFeed)
                 .Sum(a => a.QuantityMt));
 
+        // #15 objective/candidate evidence is a planning fact, not a compatibility-side artifact. The
+        // canonical material adapter must carry it forward so PlanVersionRepository can persist the
+        // same composition decision that selected these Campaigns.
         return new CampaignPlanningResult(
             grouped.Campaigns,
             Array.Empty<ProductionOrder>(),
@@ -129,6 +133,7 @@ public static class PrecomputedCampaignPlanningAdapter
             Array.Empty<PlanningSupplyAllocation>(),
             activeOrders.ToDictionary(x => x.Id, _ => 0m),
             activeOrders.ToDictionary(x => x.Id, _ => 0m),
-            Array.Empty<PlanningSupplyAlternative>());
+            Array.Empty<PlanningSupplyAlternative>(),
+            grouped.CompositionDecisions);
     }
 }
