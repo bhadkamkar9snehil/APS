@@ -8,4 +8,5 @@
   <Project Path="src/APS.Service/APS.Service.csproj" />
   <Project Path="src/APS.DesktopHost/APS.DesktopHost.csproj" />
   <Project Path="tests/APS.Planning.Tests/APS.Planning.Tests.csproj" />
+  <Project Path="tests/APS.UI.Tests/APS.UI.Tests.csproj" />
 </Solution>
