@@ -203,14 +203,30 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
                     po.DemandSource == DemandSourceType.MakeToOrder))
                 .ToArray();
 
-            // Which requirements share a campaign is a decision with a cost, not a consequence of the
-            // order they happen to arrive in (#15). Candidate compositions are scored and the best is
-            // taken; service risk dominates efficiency lexicographically.
-            var composition = CampaignCandidateOptimizer.Choose(requirements, request.Policy, weights);
+            CampaignTechnicalEvaluation EvaluateTechnical(CampaignCandidate candidate) =>
+                CampaignTechnicalEvaluator.Evaluate(
+                    candidate,
+                    ordersById,
+                    rollingRequirements,
+                    freshSteelRequirements,
+                    request);
+
+            // Composition is now selected against both service/economic cost and the physical shape it
+            // will actually require: legal transition order, furnace-feasible heats and required route
+            // resources are evaluated before campaign identity is committed (#15).
+            var composition = CampaignCandidateOptimizer.Choose(
+                requirements,
+                request.Policy,
+                weights,
+                EvaluateTechnical);
             compositionDecisions.Add(new CampaignCompositionDecision(
                 group.Key.ToString(),
                 composition.Score,
-                CampaignCandidateOptimizer.Considered(requirements, request.Policy, weights)));
+                CampaignCandidateOptimizer.Considered(
+                    requirements,
+                    request.Policy,
+                    weights,
+                    EvaluateTechnical)));
 
             // Coverage already netted per PO is drawn down across that PO's slices in campaign order,
             // so a PO split over two campaigns consumes its existing intermediate stock in the first.
@@ -256,6 +272,7 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
 
                 if (current.PlannedQuantityMt <= 0m) continue;
                 BuildGradeSequenceAndHeats(current, request);
+                CampaignTechnicalEvaluator.ApplySelectedGradeSequence(current, candidate.Technical);
                 campaigns.Add(current);
             }
         }
