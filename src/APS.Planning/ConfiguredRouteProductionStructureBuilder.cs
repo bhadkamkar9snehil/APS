@@ -16,8 +16,6 @@ internal static class ConfiguredRouteProductionStructureBuilder
             .GroupBy(x => x.RouteCode, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.OrderBy(y => y.SequenceNumber).ToArray(), StringComparer.OrdinalIgnoreCase);
 
-        // Cast-sequence formation and physical caster assignment are split (#16): LogicalCastSequenceProjector
-        // forms logical sequences and leaves the physical CCM choice to CP-SAT.
         var casterStructure = LogicalCastSequenceProjector.Apply(
             new ProductionStructurePlanningResult(
                 Array.Empty<CastSequence>(),
@@ -37,9 +35,9 @@ internal static class ConfiguredRouteProductionStructureBuilder
             rollingPlans,
             finalIssues);
 
-        // In configured-route mode RollingPlan is an allocation/material-demand anchor only. No downstream
-        // process task is invented here. MultiStageRouteProjector projects every configured operation after
-        // CCM in route order, including the first HotRoll, so HotRoll is no longer an architectural pivot.
+        // In configured-route mode RollingPlan is an allocation/material-demand anchor only. It spans
+        // cast-intermediate input to the Production Order's requested final section; no mill or downstream
+        // process task is embedded here. MultiStageRouteProjector owns the actual configured operation chain.
         return new ProductionStructurePlanningResult(
             casterStructure.CastSequences,
             rollingPlans,
@@ -125,12 +123,9 @@ internal static class ConfiguredRouteProductionStructureBuilder
             }
 
             // A route with no HotRoll legitimately terminates at cast intermediate (billet/bloom/slab).
-            // Such a route has no RollingPlan and no invented downstream operation.
-            var firstHotRoll = operations.FirstOrDefault(x => x.ProcessOperationType == ProcessOperationType.HotRoll);
-            if (firstHotRoll is null) continue;
+            // Such a route has no rolling-demand anchor and no invented downstream operation.
+            if (!operations.Any(x => x.ProcessOperationType == ProcessOperationType.HotRoll)) continue;
 
-            var inputSection = firstHotRoll.InputCrossSectionCode ?? representative.CasterSectionCode;
-            var outputSection = firstHotRoll.OutputCrossSectionCode ?? representative.FinalCrossSectionCode;
             var quantity = groupLines.Sum(x => x.QuantityMt);
             var distinctCampaigns = groupLines.Select(x => x.Campaign.Id).Distinct().ToArray();
             var distinctPos = groupLines.Select(x => x.ProductionOrder.Id).Distinct().ToArray();
@@ -142,8 +137,8 @@ internal static class ConfiguredRouteProductionStructureBuilder
                 RollingMillResourceId = null,
                 SequenceNumber = ++planSequence,
                 GradeCode = representative.GradeCode,
-                InputCrossSectionCode = inputSection,
-                OutputCrossSectionCode = outputSection,
+                InputCrossSectionCode = representative.CasterSectionCode,
+                OutputCrossSectionCode = representative.FinalCrossSectionCode,
                 RouteCode = representative.RouteCode,
                 PlannedQuantityMt = quantity,
                 ExistingIntermediateInventoryMt = groupLines.Sum(x => x.ExistingIntermediateInventoryMt),
