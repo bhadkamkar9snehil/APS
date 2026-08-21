@@ -214,7 +214,7 @@ public sealed partial class PlannerWorkspaceQueryService
         return new BilletSupplyTraceView(
             requirement?.Status,
             requirement?.ShortfallQuantityMt ?? 0m,
-            requirement?.LateSupplyQuantityMt ?? 0m,
+            requirement?.LateSupplyQuantity ?? 0m,
             requirement?.Explanation,
             requiresReheat,
             sources);
