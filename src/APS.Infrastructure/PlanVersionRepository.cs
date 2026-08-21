@@ -280,7 +280,8 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
                     x.CapacityFactorPct,
                     x.AppliesSequenceRules))
                 .OrderBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)
-                .ToArray());
+                .ToArray(),
+            result.ProductionStructure.BilletThermalDecisions ?? Array.Empty<BilletThermalDecision>());
 
     public async Task<IReadOnlyCollection<BaselinePlanOperation>> GetBaselineOperationsAsync(
         Guid planVersionId,

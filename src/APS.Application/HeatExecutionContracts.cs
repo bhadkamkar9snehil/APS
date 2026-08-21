@@ -11,7 +11,10 @@ public sealed record StrandMaterialActualInput(
     string CrossSectionCode,
     decimal QuantityMt,
     DateTime ProducedOnUtc,
-    string? LocationCode = null);
+    string? LocationCode = null,
+    ChargeMode? ThermalState = null,
+    decimal? MeasuredTemperatureC = null,
+    DateTime? TemperatureObservedOnUtc = null);
 
 public sealed record HeatExecutionUpdate(
     Guid PlanVersionId,

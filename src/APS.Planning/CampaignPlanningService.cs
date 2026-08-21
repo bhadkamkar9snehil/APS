@@ -361,7 +361,11 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
                 quantity,
                 use,
                 null,
-                pool.Position.AvailableFromUtc));
+                pool.Position.AvailableFromUtc,
+                pool.Position.ThermalState,
+                pool.Position.EstimatedTemperatureC,
+                pool.Position.ThermalBasis,
+                pool.Position.TemperatureObservedOnUtc));
         }
         return allocated;
     }
@@ -399,7 +403,11 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
                 quantity,
                 PlanningInventoryUse.CommittedInternalProductionFeed,
                 pool.Supply.SupplyReference,
-                pool.Supply.AvailableFromUtc));
+                pool.Supply.AvailableFromUtc,
+                pool.Supply.ThermalState,
+                pool.Supply.EstimatedTemperatureC,
+                pool.Supply.ThermalBasis ?? BilletThermalSourceBasis.CategoricalCommitted,
+                pool.Supply.TemperatureObservedOnUtc));
         }
         return allocated;
     }
@@ -437,6 +445,10 @@ public sealed class CampaignPlanningService : ICampaignPlanningService
                 quantity,
                 PlanningInventoryUse.ExternalIntermediateFeed,
                 pool.Supply.SupplyReference,
+                pool.Supply.AvailableFromUtc,
+                pool.Supply.ThermalState,
+                pool.Supply.EstimatedTemperatureC,
+                BilletThermalSourceBasis.CategoricalExternal,
                 pool.Supply.AvailableFromUtc));
         }
         return allocated;

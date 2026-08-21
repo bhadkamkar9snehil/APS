@@ -64,8 +64,8 @@ public sealed class HeatExecutionTests
 
         var outputs = new[]
         {
-            new StrandMaterialActualInput(1, 1, "BILLET-001", "BILLET-G1", "G1", "150X150", 24m, start.AddMinutes(55), "YARD-A"),
-            new StrandMaterialActualInput(2, 1, "BILLET-002", "BILLET-G1", "G1", "150X150", 25m, start.AddMinutes(55), "YARD-A")
+            new StrandMaterialActualInput(1, 1, "BILLET-001", "BILLET-G1", "G1", "150X150", 24m, start.AddMinutes(55), "YARD-A", ChargeMode.HotBuffered, 1060m, start.AddMinutes(55)),
+            new StrandMaterialActualInput(2, 1, "BILLET-002", "BILLET-G1", "G1", "150X150", 25m, start.AddMinutes(55), "YARD-A", ChargeMode.HotBuffered, 1060m, start.AddMinutes(55))
         };
         var completed = new HeatExecutionUpdate(
             planVersionId,
@@ -92,6 +92,9 @@ public sealed class HeatExecutionTests
         {
             Assert.Equal(MaterialLotStatus.Available, lot.Status);
             Assert.Equal(InventoryStage.CastIntermediate, lot.Stage);
+            Assert.Equal(ChargeMode.HotBuffered, lot.ThermalState);
+            Assert.Equal(1060m, lot.EstimatedTemperatureC);
+            Assert.Equal(start.AddMinutes(55), lot.TemperatureObservedOnUtc);
         });
         Assert.Equal(2, await db.StrandMaterialActuals.CountAsync());
         Assert.Equal(2, await db.HeatExecutionActuals.CountAsync());
@@ -100,6 +103,8 @@ public sealed class HeatExecutionTests
         var billet = Assert.Single(inventory);
         Assert.Equal(49m, billet.ProjectedAvailableQuantityMt);
         Assert.Equal(InventoryStage.CastIntermediate, billet.Stage);
+        Assert.Equal(BilletThermalSourceBasis.ActualMeasurement, billet.ThermalBasis);
+        Assert.Equal(1060m, billet.EstimatedTemperatureC);
 
         var po = new ProductionOrder
         {
@@ -123,5 +128,8 @@ public sealed class HeatExecutionTests
         Assert.Equal(100m, campaignPlan.RollingRequirementsMt[po.Id]);
         Assert.Equal(49m, campaignPlan.IntermediateInventoryAllocatedMt[po.Id]);
         Assert.Equal(51m, campaignPlan.FreshSteelRequirementsMt[po.Id]);
+        var allocation = Assert.Single(campaignPlan.InventoryAllocations, x => x.Use == PlanningInventoryUse.IntermediateFeed);
+        Assert.Equal(BilletThermalSourceBasis.ActualMeasurement, allocation.ThermalBasis);
+        Assert.Equal(1060m, allocation.EstimatedTemperatureC);
     }
 }

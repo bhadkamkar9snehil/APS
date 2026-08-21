@@ -60,11 +60,81 @@ public sealed class DownstreamRouteHotChargeTests
         Assert.Contains(result.SchedulingTasks, x => x.SourceEntityId == reheat.Id && x.TaskType == FiniteScheduleTaskType.Reheating);
     }
 
+    [Fact]
+    public void Actual_measured_temperature_overrides_stale_hot_label_and_requires_reheat()
+    {
+        var result = Run(
+            PlanningInventoryUse.CommittedInternalProductionFeed,
+            ChargeMode.HotDirect,
+            estimatedTemperatureC: 950m,
+            thermalBasis: BilletThermalSourceBasis.ActualMeasurement,
+            minimumRollingEntryTemperatureC: 1000m);
+
+        Assert.Contains(result.SchedulingTasks, x => x.ProcessOperationType == ProcessOperationType.Reheat);
+        Assert.Contains(result.RouteOperationDecisions!, x =>
+            x.ProcessOperationType == ProcessOperationType.Reheat &&
+            x.Outcome == RouteOperationOutcome.Included &&
+            x.ReasonCode == "ACTUAL_TEMPERATURE_BELOW_ROLLING_MINIMUM");
+        var thermal = Assert.Single(result.BilletThermalDecisions!);
+        Assert.Equal(BilletThermalSourceBasis.ActualMeasurement, thermal.SourceBasis);
+        Assert.Equal(950m, thermal.SourceTemperatureC);
+        Assert.Equal(1000m, thermal.MinimumRollingEntryTemperatureC);
+        Assert.Equal(BilletThermalOutcome.Reheated, thermal.Outcome);
+        Assert.True(thermal.ReheatRequiredByThermalState);
+        Assert.False(thermal.ReheatRequiredByPolicy);
+        Assert.Contains("ACTUAL_TEMPERATURE_BELOW_ROLLING_MINIMUM", thermal.RejectedHotPaths);
+    }
+
+    [Fact]
+    public void Actual_measured_temperature_above_threshold_overrides_stale_cold_label()
+    {
+        var result = Run(
+            PlanningInventoryUse.CommittedInternalProductionFeed,
+            ChargeMode.ColdCharge,
+            estimatedTemperatureC: 1050m,
+            thermalBasis: BilletThermalSourceBasis.ActualMeasurement,
+            minimumRollingEntryTemperatureC: 1000m);
+
+        Assert.DoesNotContain(result.SchedulingTasks, x => x.ProcessOperationType == ProcessOperationType.Reheat);
+        Assert.Contains(result.SchedulingTasks, x => x.ProcessOperationType == ProcessOperationType.HotRoll);
+        var thermal = Assert.Single(result.BilletThermalDecisions!);
+        Assert.Equal(BilletThermalSourceBasis.ActualMeasurement, thermal.SourceBasis);
+        Assert.Equal(BilletThermalOutcome.HotDirect, thermal.Outcome);
+        Assert.Equal(1050m, thermal.SourceTemperatureC);
+    }
+
+    [Fact]
+    public void Actual_measurement_ages_out_when_its_configured_hot_hold_window_expires()
+    {
+        var observed = new DateTime(2026, 8, 19, 0, 0, 0, DateTimeKind.Utc);
+        var result = Run(
+            PlanningInventoryUse.CommittedInternalProductionFeed,
+            ChargeMode.HotDirect,
+            estimatedTemperatureC: 1050m,
+            thermalBasis: BilletThermalSourceBasis.ActualMeasurement,
+            minimumRollingEntryTemperatureC: 1000m,
+            maximumHotHoldMinutes: 30,
+            temperatureObservedOnUtc: observed,
+            thermalReferenceTimeUtc: observed.AddHours(2));
+
+        Assert.Contains(result.SchedulingTasks, x => x.ProcessOperationType == ProcessOperationType.Reheat);
+        Assert.Contains(result.RouteOperationDecisions!, x =>
+            x.ProcessOperationType == ProcessOperationType.Reheat &&
+            x.ReasonCode == "ACTUAL_THERMAL_STATE_EXPIRED");
+    }
+
     private static ProductionStructurePlanningResult Run(
         PlanningInventoryUse use,
         ChargeMode? thermalState,
-        bool forbidHotCharge = false)
+        bool forbidHotCharge = false,
+        decimal? estimatedTemperatureC = null,
+        BilletThermalSourceBasis? thermalBasis = null,
+        decimal? minimumRollingEntryTemperatureC = null,
+        int? maximumHotHoldMinutes = null,
+        DateTime? temperatureObservedOnUtc = null,
+        DateTime? thermalReferenceTimeUtc = null)
     {
+        var grade = new SteelGrade { GradeCode = "G1", Description = "G1" };
         var po = new ProductionOrder
         {
             ProductionOrderNumber = "PO-HOTCHARGE-1",
@@ -78,6 +148,7 @@ public sealed class DownstreamRouteHotChargeTests
             RemainingQuantityMt = 50m,
             RequiredDate = new DateTime(2026, 8, 20, 0, 0, 0, DateTimeKind.Utc)
         };
+        po.SteelGrade = grade;
         if (forbidHotCharge)
         {
             po.Requirement = new ProductionOrderRequirement
@@ -156,7 +227,10 @@ public sealed class DownstreamRouteHotChargeTests
                     50m,
                     new DateTime(2026, 8, 19, 0, 0, 0, DateTimeKind.Utc),
                     "YARD",
-                    thermalState)
+                    thermalState,
+                    estimatedTemperatureC,
+                    thermalBasis,
+                    temperatureObservedOnUtc ?? new DateTime(2026, 8, 19, 0, 0, 0, DateTimeKind.Utc))
             }
             : Array.Empty<CommittedMaterialSupply>();
 
@@ -220,7 +294,20 @@ public sealed class DownstreamRouteHotChargeTests
                 }
             },
             Array.Empty<ExternalMaterialSupply>(),
-            committedSupplies);
+            committedSupplies,
+            minimumRollingEntryTemperatureC.HasValue || maximumHotHoldMinutes.HasValue
+                ? new[]
+                {
+                    new GradeProcessTemperatureRequirement
+                    {
+                        SteelGradeId = grade.Id,
+                        ProcessOperationType = ProcessOperationType.HotRoll,
+                        MinimumEntryTemperatureC = minimumRollingEntryTemperatureC,
+                        MaximumHoldingMinutesAfterExit = maximumHotHoldMinutes
+                    }
+                }
+                : Array.Empty<GradeProcessTemperatureRequirement>(),
+            thermalReferenceTimeUtc ?? new DateTime(2026, 8, 19, 0, 0, 0, DateTimeKind.Utc));
     }
 
     private static Resource Resource(string code, ProcessUnitType unitType, ResourceType type) => new()

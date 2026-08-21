@@ -57,7 +57,7 @@ public sealed class PlanningAssumptionsAuditTests
 
         var saved = await repository.SaveAsync(new PersistPlanningRunRequest(
             PlanningRequest(new[] { furnace, mill }, weights, ScenarioCode("SMS-DOWN")),
-            PlanningResult(decision),
+            PlanningResult(new[] { decision }),
             PlanTriggerType.Manual,
             Now,
             "Assumption capture"));
@@ -120,6 +120,48 @@ public sealed class PlanningAssumptionsAuditTests
         Assert.Null(saved.Assumptions!.ScenarioCode);
     }
 
+    [Fact]
+    public async Task Billet_thermal_decision_survives_plan_version_reload()
+    {
+        await using var db = CreateDb();
+        var repository = new PlanVersionRepository(db);
+        var decision = new BilletThermalDecision(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "ROUTE-HOT",
+            "G1",
+            "150X150",
+            BilletThermalSourceBasis.ActualMeasurement,
+            1080m,
+            Now.AddMinutes(-5),
+            1000m,
+            1055m,
+            5,
+            5m,
+            16,
+            BilletThermalOutcome.HotDirect,
+            "ACTUAL_ROLLING_ENTRY_TEMPERATURE_PROVEN",
+            "MEASURED_AT_SOURCE_PLUS_SCHEDULED_WAIT",
+            false,
+            false,
+            Array.Empty<string>(),
+            Array.Empty<string>());
+
+        var saved = await repository.SaveAsync(new PersistPlanningRunRequest(
+            PlanningRequest(Array.Empty<Resource>(), CampaignObjectiveWeights.Default, scenario: null),
+            PlanningResult(thermalDecisions: new[] { decision }),
+            PlanTriggerType.ExecutionFeedback,
+            Now));
+        var reloaded = await repository.GetAsync(saved.PlanVersionId);
+
+        var recorded = Assert.Single(reloaded!.Assumptions!.BilletThermalDecisions!);
+        Assert.Equal(BilletThermalSourceBasis.ActualMeasurement, recorded.SourceBasis);
+        Assert.Equal(1080m, recorded.SourceTemperatureC);
+        Assert.Equal(1055m, recorded.PredictedOrActualRollingEntryTemperatureC);
+        Assert.Equal("ACTUAL_ROLLING_ENTRY_TEMPERATURE_PROVEN", recorded.ReasonCode);
+    }
+
     private static PlanningScenario ScenarioCode(string code) => new()
     {
         ScenarioCode = code,
@@ -144,7 +186,9 @@ public sealed class PlanningAssumptionsAuditTests
             Now.AddDays(7),
             Scenario: scenario);
 
-    private static PlanningRunResult PlanningResult(params CampaignCompositionDecision[] decisions) =>
+    private static PlanningRunResult PlanningResult(
+        CampaignCompositionDecision[]? decisions = null,
+        IReadOnlyCollection<BilletThermalDecision>? thermalDecisions = null) =>
         new(
             Guid.NewGuid(),
             Now,
@@ -155,13 +199,14 @@ public sealed class PlanningAssumptionsAuditTests
                 new Dictionary<Guid, decimal>(),
                 new Dictionary<Guid, decimal>(),
                 Array.Empty<PlanningInventoryAllocation>(),
-                CompositionDecisions: decisions),
+                CompositionDecisions: decisions ?? Array.Empty<CampaignCompositionDecision>()),
             new ProductionStructurePlanningResult(
                 Array.Empty<CastSequence>(),
                 Array.Empty<RollingPlan>(),
                 Array.Empty<PlannedBilletSupply>(),
                 Array.Empty<FiniteScheduleTask>(),
-                Array.Empty<PlanningIssue>()),
+                Array.Empty<PlanningIssue>(),
+                BilletThermalDecisions: thermalDecisions),
             new FiniteScheduleResult(
                 "Optimal",
                 true,

@@ -8,8 +8,13 @@ public sealed class PlanningEngine(
     IProductionStructurePlanningService structurePlanning,
     IFiniteScheduleOptimizer scheduleOptimizer) : IPlanningEngine
 {
-    public PlanningRunResult Run(PlanningRunRequest request)
+    public PlanningRunResult Run(PlanningRunRequest request) => RunCore(request, null);
+
+    private PlanningRunResult RunCore(
+        PlanningRunRequest request,
+        IReadOnlySet<string>? forcedThermalReheatRoutes)
     {
+        var sourceRequest = request;
         if (request.ExecutionMode == PlanningExecutionMode.Production && request.RoutePlanning is null)
         {
             throw new PlanningConfigurationException(
@@ -130,14 +135,18 @@ public sealed class PlanningEngine(
                 request.Capabilities,
                 request.FlowLinks,
                 request.ExternalMaterialSupplies,
-                request.CommittedMaterialSupplies);
+                request.CommittedMaterialSupplies,
+                request.GradeTemperatureRequirements,
+                request.HorizonStartUtc,
+                forcedThermalReheatRoutes);
             if (HasErrors(structure))
                 return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
         }
 
         // Thermal/superheat envelopes narrow the allowed resource pairs and transfer windows between
-        // liquid-steel operations (#9). It runs last so every route operation already exists, and
-        // before task identities are taken so the solver sees the constrained dependencies.
+        // liquid-steel operations (#9) and the configured CCM->HotRoll hot-charge path (#56). It runs
+        // last so every route operation already exists, and before task identities are taken so the
+        // solver sees the constrained dependencies.
         structure = ThermalConstraintProjector.Apply(
             structure,
             request.Resources,
@@ -185,12 +194,25 @@ public sealed class PlanningEngine(
             serviceObligations,
             linkedResourceGroups));
 
+        if (!finiteSchedule.IsFeasible && forcedThermalReheatRoutes is null)
+        {
+            var recoveryRoutes = ThermalRecoveryRoutes(structure, request.RoutePlanning);
+            if (recoveryRoutes.Count > 0)
+                return RunCore(sourceRequest, recoveryRoutes);
+        }
+
         if (finiteSchedule.IsFeasible)
         {
             // Physical caster assignment was left open for CP-SAT (#16); resolve CastSequence.CasterResourceId
             // and PlannedStrandMaterialUnits from the actually-solved assignment before anything downstream
             // (material planning, Plan Version persistence, read models) reads them.
             structure = ResolvedCastingPlanProjector.Apply(structure, finiteSchedule, request.Resources, heatAllocations);
+            structure = BilletThermalEvidenceProjector.Apply(
+                structure,
+                finiteSchedule,
+                request.FlowLinks,
+                request.GradeTemperatureRequirements,
+                request.ResourceTemperatureCapabilities);
         }
 
         var materialPlan = finiteSchedule.IsFeasible
@@ -238,6 +260,32 @@ public sealed class PlanningEngine(
 
     private static bool HasErrors(ProductionStructurePlanningResult structure) =>
         structure.Issues.Any(i => i.Severity == PlanningIssueSeverity.Error);
+
+    private static IReadOnlySet<string> ThermalRecoveryRoutes(
+        ProductionStructurePlanningResult structure,
+        RoutePlanningInput? routePlanning)
+    {
+        if (routePlanning is null) return new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var tasks = structure.SchedulingTasks.ToDictionary(x => x.TaskId);
+        var routePlans = (structure.RouteOperationPlans ?? Array.Empty<RouteOperationPlan>()).ToDictionary(x => x.Id);
+        var routesWithOptionalReheat = routePlanning.Operations
+            .Where(x =>
+                x.ProcessOperationType == ProcessOperationType.Reheat &&
+                x.Requirement == RequirementDisposition.Optional)
+            .Select(x => x.RouteCode)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return tasks.Values
+            .Where(x => x.ProcessOperationType == ProcessOperationType.HotRoll && routePlans.ContainsKey(x.SourceEntityId))
+            .Where(x => x.Dependencies.Any(dependency =>
+                tasks.TryGetValue(dependency.PredecessorTaskId, out var predecessor) &&
+                predecessor.ProcessOperationType == ProcessOperationType.Ccm &&
+                (dependency.MaximumLagMinutes.HasValue ||
+                 dependency.AllowedResourcePairs?.Any(pair => pair.MaximumLagMinutes.HasValue) == true)))
+            .Select(x => routePlans[x.SourceEntityId].RouteCode)
+            .Where(routesWithOptionalReheat.Contains)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     /// Every heat in one continuous cast sequence must physically land on the same CCM even though CP-SAT

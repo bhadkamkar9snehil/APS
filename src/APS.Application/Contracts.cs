@@ -177,7 +177,11 @@ public sealed record PlanningInventoryAllocation(
     decimal QuantityMt,
     PlanningInventoryUse Use,
     string? SourceReference = null,
-    DateTime? AvailableFromUtc = null);
+    DateTime? AvailableFromUtc = null,
+    ChargeMode? ThermalState = null,
+    decimal? EstimatedTemperatureC = null,
+    BilletThermalSourceBasis? ThermalBasis = null,
+    DateTime? TemperatureObservedOnUtc = null);
 
 public sealed record PlanningSupplyAllocation(
     Guid ProductionOrderId,
@@ -306,7 +310,12 @@ public sealed record ProductionStructurePlanningResult(
     /// skipped ones a plan records only the operations that survived, and a heat whose VD was skipped
     /// is indistinguishable from a heat on a route that never had one.
     /// </summary>
-    IReadOnlyCollection<RouteOperationDecision>? RouteOperationDecisions = null);
+    IReadOnlyCollection<RouteOperationDecision>? RouteOperationDecisions = null,
+    /// <summary>
+    /// Time/temperature-aware billet-feed decisions captured after scheduling (#56). These are
+    /// persisted with the Plan Version so historical hot-charge/reheat choices remain explainable.
+    /// </summary>
+    IReadOnlyCollection<BilletThermalDecision>? BilletThermalDecisions = null);
 
 /// <summary>What the planner did with one operation of a configured route (#34).</summary>
 public enum RouteOperationOutcome

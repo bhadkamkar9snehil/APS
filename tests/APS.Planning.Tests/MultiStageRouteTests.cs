@@ -7,6 +7,195 @@ namespace APS.Planning.Tests;
 
 public sealed class MultiStageRouteTests
 {
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Mill_outage_that_expires_direct_hot_window_preserves_upstream_billet_plan(
+        bool reheatAvailable)
+    {
+        var grade = new SteelGrade { GradeCode = "G1", Description = "G1" };
+        var po = Order("PO-THERMAL-RECOVERY", "HRC", 60m);
+        po.SteelGrade = grade;
+        var plant = Guid.NewGuid();
+        var eaf = PrimaryFurnace(plant, "EAF-1");
+        var caster = Resource(plant, "CCM-1", ResourceType.Caster, ProcessUnitType.Ccm, 4);
+        var reheat = Resource(plant, "RHF-1", ResourceType.Furnace, ProcessUnitType.ReheatingFurnace);
+        reheat.NominalResidenceMinutes = 30;
+        if (!reheatAvailable) reheat.OperatingState = ResourceOperatingState.Breakdown;
+        var hotMill = Resource(plant, "HRM-1", ResourceType.RollingMill, ProcessUnitType.HotRollingMill);
+        var start = new DateTime(2026, 8, 17, 8, 0, 0, DateTimeKind.Utc);
+        var routeId = Guid.NewGuid();
+        var direct = Link(caster.Id, hotMill.Id, ProcessOperationType.Ccm, ProcessOperationType.HotRoll, hot: true, minMinutes: 10);
+        direct.NominalTemperatureLossCPerMinute = 5m;
+
+        var result = Run(
+            po,
+            new[] { eaf, caster, reheat, hotMill },
+            new[]
+            {
+                Operation(routeId, 10, ProcessOperationType.Reheat, WorkOrderType.HotRolling, "150X150", "150X150", requirement: RequirementDisposition.Optional),
+                Operation(routeId, 20, ProcessOperationType.HotRoll, WorkOrderType.HotRolling, "150X150", "HRC")
+            },
+            new[] { Capability(hotMill.Id, ProcessOperationType.HotRoll, "150X150", "HRC", 60m) },
+            new[]
+            {
+                direct,
+                Link(caster.Id, reheat.Id, ProcessOperationType.Ccm, ProcessOperationType.Reheat),
+                Link(reheat.Id, hotMill.Id, ProcessOperationType.Reheat, ProcessOperationType.HotRoll, hot: true)
+            },
+            new[]
+            {
+                new GradeProcessTemperatureRequirement
+                {
+                    SteelGradeId = grade.Id,
+                    ProcessOperationType = ProcessOperationType.HotRoll,
+                    MinimumEntryTemperatureC = 1000m
+                }
+            },
+            new[]
+            {
+                new ResourceTemperatureCapability
+                {
+                    ResourceId = caster.Id,
+                    ProcessOperationType = ProcessOperationType.Ccm,
+                    NominalExitTemperatureC = 1100m
+                },
+                new ResourceTemperatureCapability
+                {
+                    ResourceId = reheat.Id,
+                    ProcessOperationType = ProcessOperationType.Reheat,
+                    NominalExitTemperatureC = 1100m,
+                    CanCorrectTemperature = true
+                }
+            },
+            new[] { grade },
+            new[]
+            {
+                new ResourceCalendar
+                {
+                    ResourceId = caster.Id,
+                    Start = start.AddHours(3),
+                    End = start.AddDays(10),
+                    IsAvailable = false,
+                    ReasonCode = "CASTER_MAINTENANCE"
+                },
+                new ResourceCalendar
+                {
+                    ResourceId = hotMill.Id,
+                    Start = start,
+                    End = start.AddHours(5),
+                    IsAvailable = false,
+                    ReasonCode = "MILL_OUTAGE"
+                }
+            });
+
+        Assert.Contains(result.ProductionStructure.SchedulingTasks, x => x.ProcessOperationType == ProcessOperationType.Ccm);
+        if (reheatAvailable)
+        {
+            Assert.True(result.IsFeasible, string.Join("; ", result.Schedule.Issues.Select(x => x.Message)));
+            Assert.Contains(result.ProductionStructure.SchedulingTasks, x => x.ProcessOperationType == ProcessOperationType.Reheat);
+            Assert.Contains(result.ProductionStructure.RouteOperationDecisions!, x =>
+                x.ProcessOperationType == ProcessOperationType.Reheat &&
+                x.ReasonCode == "SCHEDULED_THERMAL_WINDOW_REQUIRES_REHEAT");
+            var thermal = Assert.Single(result.ProductionStructure.BilletThermalDecisions!);
+            Assert.Equal(BilletThermalOutcome.Reheated, thermal.Outcome);
+            Assert.True(thermal.ReheatRequiredByThermalState);
+        }
+        else
+        {
+            Assert.False(result.IsFeasible);
+            Assert.Contains(result.ProductionStructure.Issues, x => x.Code == "REHEAT_RESOURCE_MISSING");
+            Assert.DoesNotContain(result.ProductionStructure.SchedulingTasks, x => x.ProcessOperationType == ProcessOperationType.HotRoll);
+        }
+    }
+
+    [Theory]
+    [InlineData(null, 20)]
+    [InlineData(12, 12)]
+    public void Fresh_internal_billet_carries_effective_hot_charge_window_into_the_solver(
+        int? orderMaximumQueueMinutes,
+        int expectedMaximumLagMinutes)
+    {
+        var grade = new SteelGrade { GradeCode = "G1", Description = "G1" };
+        var po = Order("PO-THERMAL-HOT", "HRC", 60m);
+        po.SteelGrade = grade;
+        if (orderMaximumQueueMinutes.HasValue)
+        {
+            po.Requirement = new ProductionOrderRequirement
+            {
+                ProductionOrderId = po.Id,
+                ProductionOrder = po,
+                ProcessOverrides =
+                {
+                    new OrderProcessRequirement
+                    {
+                        ProcessOperationType = ProcessOperationType.HotRoll,
+                        Requirement = RequirementDisposition.Required,
+                        MaximumQueueMinutes = orderMaximumQueueMinutes
+                    }
+                }
+            };
+        }
+
+        var plant = Guid.NewGuid();
+        var eaf = PrimaryFurnace(plant, "EAF-1");
+        var caster = Resource(plant, "CCM-1", ResourceType.Caster, ProcessUnitType.Ccm, 4);
+        var hotMill = Resource(plant, "HRM-1", ResourceType.RollingMill, ProcessUnitType.HotRollingMill);
+        var routeId = Guid.NewGuid();
+        var link = Link(
+            caster.Id,
+            hotMill.Id,
+            ProcessOperationType.Ccm,
+            ProcessOperationType.HotRoll,
+            hot: true,
+            minMinutes: 10);
+        link.NominalTemperatureLossCPerMinute = 5m;
+
+        var result = Run(
+            po,
+            new[] { eaf, caster, hotMill },
+            new[] { Operation(routeId, 10, ProcessOperationType.HotRoll, WorkOrderType.HotRolling, "150X150", "HRC") },
+            new[] { Capability(hotMill.Id, ProcessOperationType.HotRoll, "150X150", "HRC", 60m) },
+            new[] { link },
+            new[]
+            {
+                new GradeProcessTemperatureRequirement
+                {
+                    SteelGradeId = grade.Id,
+                    ProcessOperationType = ProcessOperationType.HotRoll,
+                    MinimumEntryTemperatureC = 1000m
+                }
+            },
+            new[]
+            {
+                new ResourceTemperatureCapability
+                {
+                    ResourceId = caster.Id,
+                    ProcessOperationType = ProcessOperationType.Ccm,
+                    NominalExitTemperatureC = 1100m
+                }
+            },
+            new[] { grade });
+
+        Assert.True(result.IsFeasible, string.Join("; ", result.Schedule.Issues.Select(x => x.Message)));
+        var hotRoll = Assert.Single(result.ProductionStructure.SchedulingTasks, x =>
+            x.ProcessOperationType == ProcessOperationType.HotRoll);
+        var dependency = Assert.Single(hotRoll.Dependencies);
+        var pair = Assert.Single(dependency.AllowedResourcePairs!);
+        Assert.Equal(10, pair.MinimumLagMinutes);
+        Assert.Equal(expectedMaximumLagMinutes, pair.MaximumLagMinutes);
+
+        var thermal = Assert.Single(result.ProductionStructure.BilletThermalDecisions!);
+        Assert.Equal(BilletThermalSourceBasis.PlannedCcm, thermal.SourceBasis);
+        Assert.Equal(BilletThermalOutcome.HotDirect, thermal.Outcome);
+        Assert.Equal("ROLLING_ENTRY_TEMPERATURE_PROVEN", thermal.ReasonCode);
+        Assert.Equal(1100m, thermal.SourceTemperatureC);
+        Assert.Equal(1000m, thermal.MinimumRollingEntryTemperatureC);
+        Assert.Equal(5m, thermal.TemperatureLossCPerMinute);
+        Assert.Equal(expectedMaximumLagMinutes, thermal.MaximumHotHoldMinutes);
+        Assert.True(thermal.PredictedOrActualRollingEntryTemperatureC >= 1000m);
+    }
+
     [Fact]
     public void Configured_route_projects_first_hot_roll_cold_roll_and_finishing_as_one_route_chain()
     {
@@ -178,7 +367,11 @@ public sealed class MultiStageRouteTests
         IReadOnlyCollection<Resource> resources,
         IReadOnlyCollection<ManufacturingRouteOperation> operations,
         IReadOnlyCollection<RouteResourceCapability> routeCapabilities,
-        IReadOnlyCollection<PlantFlowLink> links)
+        IReadOnlyCollection<PlantFlowLink> links,
+        IReadOnlyCollection<GradeProcessTemperatureRequirement>? gradeTemperatureRequirements = null,
+        IReadOnlyCollection<ResourceTemperatureCapability>? resourceTemperatureCapabilities = null,
+        IReadOnlyCollection<SteelGrade>? steelGrades = null,
+        IReadOnlyCollection<ResourceCalendar>? resourceCalendars = null)
     {
         var caster = resources.Single(x => x.ProcessUnitType == ProcessUnitType.Ccm);
         var capabilities = new[]
@@ -201,7 +394,7 @@ public sealed class MultiStageRouteTests
                 Array.Empty<InventoryPosition>(),
                 resources,
                 capabilities,
-                Array.Empty<ResourceCalendar>(),
+                resourceCalendars ?? Array.Empty<ResourceCalendar>(),
                 Array.Empty<TransitionRule>(),
                 links,
                 new CampaignPlanningPolicy(60m, 50m, 70m, 250m, 300m),
@@ -209,7 +402,10 @@ public sealed class MultiStageRouteTests
                 start,
                 start.AddDays(10),
                 5,
-                RoutePlanning: new RoutePlanningInput(operations, routeCapabilities)));
+                RoutePlanning: new RoutePlanningInput(operations, routeCapabilities),
+                SteelGrades: steelGrades,
+                GradeTemperatureRequirements: gradeTemperatureRequirements,
+                ResourceTemperatureCapabilities: resourceTemperatureCapabilities));
     }
 
     private static void AssertAssignments(PlanningRunResult result, Guid sourceId, Guid resourceId)
@@ -250,16 +446,16 @@ public sealed class MultiStageRouteTests
         ResourceType type,
         ProcessUnitType unitType,
         int? strands = null) => new()
-    {
-        PlantId = plant,
-        ProcessStageId = Guid.NewGuid(),
-        Code = code,
-        Name = code,
-        ResourceType = type,
-        ProcessUnitType = unitType,
-        StrandCount = strands,
-        OperatingState = ResourceOperatingState.Available
-    };
+        {
+            PlantId = plant,
+            ProcessStageId = Guid.NewGuid(),
+            Code = code,
+            Name = code,
+            ResourceType = type,
+            ProcessUnitType = unitType,
+            StrandCount = strands,
+            OperatingState = ResourceOperatingState.Available
+        };
 
     private static ManufacturingRouteOperation Operation(
         Guid routeId,
@@ -268,19 +464,20 @@ public sealed class MultiStageRouteTests
         WorkOrderType workOrderType,
         string input,
         string output,
-        int minQueueMinutes = 0) => new()
-    {
-        ManufacturingRouteId = routeId,
-        RouteCode = "ROUTE-COLD",
-        SequenceNumber = sequence,
-        ProcessOperationType = processType,
-        ReleaseWorkOrderType = workOrderType,
-        Requirement = RequirementDisposition.Required,
-        InputCrossSectionCode = input,
-        OutputCrossSectionCode = output,
-        MinimumQueueTime = TimeSpan.FromMinutes(minQueueMinutes),
-        YieldPct = 100m
-    };
+        int minQueueMinutes = 0,
+        RequirementDisposition requirement = RequirementDisposition.Required) => new()
+        {
+            ManufacturingRouteId = routeId,
+            RouteCode = "ROUTE-COLD",
+            SequenceNumber = sequence,
+            ProcessOperationType = processType,
+            ReleaseWorkOrderType = workOrderType,
+            Requirement = requirement,
+            InputCrossSectionCode = input,
+            OutputCrossSectionCode = output,
+            MinimumQueueTime = TimeSpan.FromMinutes(minQueueMinutes),
+            YieldPct = 100m
+        };
 
     private static RouteResourceCapability Capability(
         Guid resourceId,
@@ -288,15 +485,15 @@ public sealed class MultiStageRouteTests
         string input,
         string output,
         decimal throughput) => new()
-    {
-        ResourceId = resourceId,
-        RouteCode = "ROUTE-COLD",
-        ProcessOperationType = processType,
-        GradeCode = "G1",
-        InputCrossSectionCode = input,
-        OutputCrossSectionCode = output,
-        ThroughputMtPerHour = throughput
-    };
+        {
+            ResourceId = resourceId,
+            RouteCode = "ROUTE-COLD",
+            ProcessOperationType = processType,
+            GradeCode = "G1",
+            InputCrossSectionCode = input,
+            OutputCrossSectionCode = output,
+            ThroughputMtPerHour = throughput
+        };
 
     private static PlantFlowLink Link(
         Guid from,
@@ -305,14 +502,14 @@ public sealed class MultiStageRouteTests
         ProcessOperationType toProcess,
         bool hot = false,
         int minMinutes = 0) => new()
-    {
-        FromResourceId = from,
-        ToResourceId = to,
-        FromProcessOperationType = fromProcess,
-        ToProcessOperationType = toProcess,
-        CouplingType = hot ? FlowCouplingType.HotTransfer : FlowCouplingType.Buffered,
-        MinimumTransferTime = TimeSpan.FromMinutes(minMinutes),
-        SupportsHotTransfer = hot,
-        IsEnabled = true
-    };
+        {
+            FromResourceId = from,
+            ToResourceId = to,
+            FromProcessOperationType = fromProcess,
+            ToProcessOperationType = toProcess,
+            CouplingType = hot ? FlowCouplingType.HotTransfer : FlowCouplingType.Buffered,
+            MinimumTransferTime = TimeSpan.FromMinutes(minMinutes),
+            SupportsHotTransfer = hot,
+            IsEnabled = true
+        };
 }

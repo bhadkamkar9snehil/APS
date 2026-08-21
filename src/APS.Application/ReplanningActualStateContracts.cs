@@ -20,7 +20,9 @@ public sealed record CommittedMaterialSupply(
     DateTime AvailableFromUtc,
     string? LocationCode = null,
     ChargeMode? ThermalState = null,
-    decimal? EstimatedTemperatureC = null);
+    decimal? EstimatedTemperatureC = null,
+    BilletThermalSourceBasis? ThermalBasis = null,
+    DateTime? TemperatureObservedOnUtc = null);
 
 public sealed record ReplanningActualState(
     IReadOnlyCollection<BaselinePlanOperation> BaselineOperations,

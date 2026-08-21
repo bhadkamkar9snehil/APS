@@ -31,7 +31,10 @@ public sealed class SqlInventorySnapshotProvider(ApsDbContext db) : IInventorySn
                 x.Stage,
                 x.LocationCode,
                 x.AvailableFromUtc,
-                x.QualityStatus))
+                x.QualityStatus,
+                x.ThermalState,
+                x.EstimatedTemperatureC,
+                x.TemperatureObservedOnUtc))
             .Select(group =>
             {
                 var available = group.Sum(x => x.QuantityMt);
@@ -52,6 +55,12 @@ public sealed class SqlInventorySnapshotProvider(ApsDbContext db) : IInventorySn
                     LocationCode = group.Key.LocationCode,
                     AvailableFromUtc = group.Key.AvailableFromUtc,
                     QualityStatus = group.Key.QualityStatus,
+                    ThermalState = group.Key.ThermalState,
+                    EstimatedTemperatureC = group.Key.EstimatedTemperatureC,
+                    ThermalBasis = group.Key.EstimatedTemperatureC.HasValue
+                        ? BilletThermalSourceBasis.ActualMeasurement
+                        : null,
+                    TemperatureObservedOnUtc = group.Key.TemperatureObservedOnUtc,
                     AvailableQuantityMt = available,
                     ReservedQuantityMt = reserved
                 };
@@ -72,5 +81,8 @@ public sealed class SqlInventorySnapshotProvider(ApsDbContext db) : IInventorySn
         InventoryStage Stage,
         string? LocationCode,
         DateTime? AvailableFromUtc,
-        MaterialQualityStatus QualityStatus);
+        MaterialQualityStatus QualityStatus,
+        ChargeMode? ThermalState,
+        decimal? EstimatedTemperatureC,
+        DateTime? TemperatureObservedOnUtc);
 }

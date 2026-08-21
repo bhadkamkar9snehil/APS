@@ -541,6 +541,7 @@ public sealed class MaterialLot : Entity
     public DateTime? AvailableFromUtc { get; set; }
     public ChargeMode? ThermalState { get; set; }
     public decimal? EstimatedTemperatureC { get; set; }
+    public DateTime? TemperatureObservedOnUtc { get; set; }
 }
 
 public sealed class LotGenealogy : Entity
@@ -601,6 +602,10 @@ public sealed class InventoryPosition
     public string? LocationCode { get; init; }
     public DateTime? AvailableFromUtc { get; init; }
     public MaterialQualityStatus QualityStatus { get; init; } = MaterialQualityStatus.Available;
+    public ChargeMode? ThermalState { get; init; }
+    public decimal? EstimatedTemperatureC { get; init; }
+    public BilletThermalSourceBasis? ThermalBasis { get; init; }
+    public DateTime? TemperatureObservedOnUtc { get; init; }
     public decimal AvailableQuantityMt { get; init; }
     public decimal ReservedQuantityMt { get; init; }
     public decimal ConfirmedIncomingQuantityMt { get; init; }

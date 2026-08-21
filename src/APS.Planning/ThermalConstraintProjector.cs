@@ -33,17 +33,31 @@ internal static class ThermalConstraintProjector
             .GroupBy(x => (x.ResourceId, x.ProcessOperationType))
             .ToDictionary(x => x.Key, x => x.First());
 
-        foreach (var task in tasks.Values.Where(x => x.Dependencies.Count > 0 && liquidSteelOperations.Contains(x.ProcessOperationType)).ToArray())
+        foreach (var task in tasks.Values.Where(x =>
+                     x.Dependencies.Count > 0 &&
+                     (liquidSteelOperations.Contains(x.ProcessOperationType) ||
+                      x.ProcessOperationType == ProcessOperationType.HotRoll)).ToArray())
         {
-            if (!allocationsByHeat.TryGetValue(task.SourceEntityId, out var orders) || orders.Length == 0) continue;
-            var grade = orders.Select(x => x.SteelGrade).FirstOrDefault(x => x is not null);
-            if (grade is null) continue;
-
             var updatedDependencies = new List<FiniteScheduleDependency>();
             foreach (var dependency in task.Dependencies)
             {
                 if (!tasks.TryGetValue(dependency.PredecessorTaskId, out var predecessor) ||
                     !liquidSteelOperations.Contains(predecessor.ProcessOperationType))
+                {
+                    updatedDependencies.Add(dependency);
+                    continue;
+                }
+
+                var allocationSourceId = task.ProcessOperationType == ProcessOperationType.HotRoll
+                    ? predecessor.SourceEntityId
+                    : task.SourceEntityId;
+                if (!allocationsByHeat.TryGetValue(allocationSourceId, out var orders) || orders.Length == 0)
+                {
+                    updatedDependencies.Add(dependency);
+                    continue;
+                }
+                var grade = orders.Select(x => x.SteelGrade).FirstOrDefault(x => x is not null);
+                if (grade is null)
                 {
                     updatedDependencies.Add(dependency);
                     continue;
@@ -116,9 +130,21 @@ internal static class ThermalConstraintProjector
 
             var minLag = Math.Max(pair.MinimumLagMinutes, Minutes(link.MinimumTransferTime));
             var maxLag = MinNullable(pair.MaximumLagMinutes, link.MaximumTransferTime.HasValue ? Minutes(link.MaximumTransferTime.Value) : null);
+            var orderMaximumLag = orders
+                .SelectMany(x => x.Requirement?.ProcessOverrides ?? Array.Empty<OrderProcessRequirement>())
+                .Where(x =>
+                    x.ProcessOperationType == successor.ProcessOperationType &&
+                    x.MaximumQueueMinutes.HasValue)
+                .Select(x => x.MaximumQueueMinutes!.Value)
+                .DefaultIfEmpty(int.MaxValue)
+                .Min();
+            if (orderMaximumLag != int.MaxValue)
+                maxLag = MinNullable(maxLag, orderMaximumLag);
             if (downstreamRange.Minimum.HasValue || downstreamRange.Maximum.HasValue)
             {
-                if (!upstreamRange.Minimum.HasValue && !upstreamRange.Maximum.HasValue)
+                if (!upstreamRange.Minimum.HasValue &&
+                    !upstreamRange.Target.HasValue &&
+                    !upstreamRange.Maximum.HasValue)
                 {
                     // Temperature-constrained grade with no upstream thermal master cannot be proven feasible.
                     continue;

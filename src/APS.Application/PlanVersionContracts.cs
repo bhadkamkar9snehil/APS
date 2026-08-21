@@ -20,7 +20,8 @@ public sealed record PlanningAssumptions(
     string? ScenarioCode,
     CampaignObjectiveWeights CampaignObjectiveWeights,
     IReadOnlyCollection<CampaignCompositionDecision> CampaignCompositionDecisions,
-    IReadOnlyCollection<ResourceSchedulingAssumption> ResourceScheduling);
+    IReadOnlyCollection<ResourceSchedulingAssumption> ResourceScheduling,
+    IReadOnlyCollection<BilletThermalDecision>? BilletThermalDecisions = null);
 
 /// <summary>How one physical resource was modelled by the solver for this plan (#35).</summary>
 public sealed record ResourceSchedulingAssumption(

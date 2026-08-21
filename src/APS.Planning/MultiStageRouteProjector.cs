@@ -9,9 +9,9 @@ namespace APS.Planning;
 /// the first HotRoll) becomes a RouteOperationPlan in configured sequence order.
 ///
 /// Reheat is a route decision, not a fixed topology stage. Fresh/hot feed prefers direct hot charge when
-/// the route, order/grade policy and physical hot-transfer links allow it. Yard/cold feed selects a
-/// configured Reheat step before HotRoll. Detailed temperature decay and execution-time thermal choice
-/// remain #56; resource commitment/redispatch remains #16.
+/// the route, order/grade policy, effective thermal state and physical hot-transfer links allow it.
+/// Yard/cold feed selects a configured Reheat step before HotRoll; a scheduled direct-hot window that
+/// cannot be met is reprojected through that same configured step. Resource commitment/redispatch remains #16.
 /// </summary>
 internal static class MultiStageRouteProjector
 {
@@ -23,12 +23,16 @@ internal static class MultiStageRouteProjector
         IReadOnlyCollection<ResourceCapability> genericCapabilities,
         IReadOnlyCollection<PlantFlowLink>? flowLinks = null,
         IReadOnlyCollection<ExternalMaterialSupply>? externalSupplies = null,
-        IReadOnlyCollection<CommittedMaterialSupply>? committedSupplies = null)
+        IReadOnlyCollection<CommittedMaterialSupply>? committedSupplies = null,
+        IReadOnlyCollection<GradeProcessTemperatureRequirement>? gradeTemperatureRequirements = null,
+        DateTime? thermalReferenceTimeUtc = null,
+        IReadOnlySet<string>? forcedThermalReheatRoutes = null)
     {
         var issues = structure.Issues.ToList();
         var tasks = structure.SchedulingTasks.ToList();
         var routePlans = (structure.RouteOperationPlans ?? Array.Empty<RouteOperationPlan>()).ToList();
         var decisions = (structure.RouteOperationDecisions ?? Array.Empty<RouteOperationDecision>()).ToList();
+        var thermalDecisions = (structure.BilletThermalDecisions ?? Array.Empty<BilletThermalDecision>()).ToList();
         var links = flowLinks ?? Array.Empty<PlantFlowLink>();
 
         var activeResources = resources
@@ -153,11 +157,12 @@ internal static class MultiStageRouteProjector
                 }
 
                 var optionalReheatSelected = false;
+                string? optionalReheatReason = null;
                 if (effective == EffectiveRequirement.Optional)
                 {
                     if (operation.ProcessOperationType == ProcessOperationType.Reheat)
                     {
-                        optionalReheatSelected = NeedsOptionalReheat(
+                        optionalReheatReason = OptionalReheatReason(
                             operationIndex,
                             operations,
                             currentSection,
@@ -168,7 +173,11 @@ internal static class MultiStageRouteProjector
                             activeResources,
                             routeCapabilities,
                             capabilities,
-                            links);
+                            links,
+                            gradeTemperatureRequirements ?? Array.Empty<GradeProcessTemperatureRequirement>(),
+                            thermalReferenceTimeUtc,
+                            forcedThermalReheatRoutes?.Contains(rolling.RouteCode) == true);
+                        optionalReheatSelected = optionalReheatReason is not null;
                         if (!optionalReheatSelected)
                         {
                             decisions.Add(Decision(
@@ -313,6 +322,54 @@ internal static class MultiStageRouteProjector
                 }
                 tasks.AddRange(newTasks);
 
+                if (operation.ProcessOperationType == ProcessOperationType.HotRoll)
+                {
+                    var gradeIds = orders
+                        .Select(x => x.SteelGrade?.Id)
+                        .Where(x => x.HasValue)
+                        .Select(x => x!.Value)
+                        .ToHashSet();
+                    var minimumEntry = (gradeTemperatureRequirements ?? Array.Empty<GradeProcessTemperatureRequirement>())
+                        .Where(x =>
+                            gradeIds.Contains(x.SteelGradeId) &&
+                            x.ProcessOperationType == ProcessOperationType.HotRoll &&
+                            x.MinimumEntryTemperatureC.HasValue)
+                        .Select(x => x.MinimumEntryTemperatureC!.Value)
+                        .DefaultIfEmpty(decimal.MinValue)
+                        .Max();
+                    for (var cursorIndex = 0; cursorIndex < cursors.Count; cursorIndex++)
+                    {
+                        var cursor = cursors[cursorIndex];
+                        var reheatReason = cursor.ReheatReason;
+                        var thermalReheat = IsThermalReheatReason(reheatReason);
+                        var policyReheat = reheatReason is not null && !thermalReheat;
+                        thermalDecisions.Add(new BilletThermalDecision(
+                            rolling.Id,
+                            newTasks[cursorIndex].TaskId,
+                            cursor.Predecessor?.TaskId,
+                            rolling.RouteCode,
+                            rolling.GradeCode,
+                            currentSection,
+                            cursor.ThermalBasis ?? (cursor.PassedReheat
+                                ? BilletThermalSourceBasis.UnknownYard
+                                : BilletThermalSourceBasis.PlannedCcm),
+                            cursor.TemperatureC,
+                            cursor.TemperatureObservedOnUtc,
+                            minimumEntry == decimal.MinValue ? null : minimumEntry,
+                            cursor.PassedReheat ? null : cursor.TemperatureC,
+                            null,
+                            null,
+                            null,
+                            cursor.PassedReheat ? BilletThermalOutcome.Reheated : BilletThermalOutcome.HotDirect,
+                            reheatReason ?? "HOT_CHARGE_PATH_SELECTED",
+                            cursor.PassedReheat ? "CONFIGURED_REHEAT_PATH" : "PENDING_SCHEDULED_TRANSFER",
+                            thermalReheat,
+                            policyReheat,
+                            thermalReheat && reheatReason is not null ? new[] { reheatReason } : Array.Empty<string>(),
+                            Array.Empty<string>()));
+                    }
+                }
+
                 decisions.Add(Decision(
                     routePlan.Id,
                     rolling.RouteCode,
@@ -321,7 +378,7 @@ internal static class MultiStageRouteProjector
                     effective == EffectiveRequirement.Required
                         ? "REQUIRED"
                         : optionalReheatSelected
-                            ? "FEED_REQUIRES_REHEAT"
+                            ? optionalReheatReason!
                             : "ROUTE_TRANSFORMATION_REQUIRED"));
 
                 for (var i = 0; i < cursors.Count; i++)
@@ -332,6 +389,7 @@ internal static class MultiStageRouteProjector
                     {
                         cursors[i].IsKnownHot = true;
                         cursors[i].PassedReheat = true;
+                        cursors[i].ReheatReason = optionalReheatReason ?? "REHEAT_REQUIRED_BY_ROUTE_OR_POLICY";
                     }
                     else if (operation.ProcessOperationType == ProcessOperationType.HotRoll)
                     {
@@ -373,7 +431,8 @@ internal static class MultiStageRouteProjector
             SchedulingTasks = tasks,
             Issues = issues,
             RouteOperationPlans = routePlans,
-            RouteOperationDecisions = decisions
+            RouteOperationDecisions = decisions,
+            BilletThermalDecisions = thermalDecisions
         };
     }
 
@@ -485,12 +544,24 @@ internal static class MultiStageRouteProjector
             .Select(x => x.AvailableFromUtc!.Value)
             .ToArray();
         var availableFrom = availability.Length == 0 ? (DateTime?)null : availability.Max();
-        var allKnownHot = sourceAllocations.All(x => IsKnownHotFeed(x, externalByReference, committedByReference));
-        result.Add(new FeedCursor(rolling.PlannedQuantityMt, null, availableFrom, allKnownHot));
+        var thermalFacts = sourceAllocations
+            .Select(x => ResolveFeedThermalFact(x, externalByReference, committedByReference))
+            .ToArray();
+        var allKnownHot = thermalFacts.All(x => x.State is ChargeMode.HotDirect or ChargeMode.HotBuffered);
+        var numericFacts = thermalFacts.Where(x => x.TemperatureC.HasValue).ToArray();
+        var conservativeNumeric = numericFacts.OrderBy(x => x.TemperatureC).FirstOrDefault();
+        result.Add(new FeedCursor(
+            rolling.PlannedQuantityMt,
+            null,
+            availableFrom,
+            allKnownHot,
+            conservativeNumeric?.TemperatureC,
+            conservativeNumeric?.Basis,
+            conservativeNumeric?.ObservedOnUtc));
         return result;
     }
 
-    private static bool NeedsOptionalReheat(
+    private static string? OptionalReheatReason(
         int operationIndex,
         IReadOnlyList<ManufacturingRouteOperation> operations,
         string currentSection,
@@ -501,17 +572,59 @@ internal static class MultiStageRouteProjector
         IReadOnlyDictionary<Guid, Resource> activeResources,
         IReadOnlyDictionary<Guid, RouteResourceCapability[]> routeCapabilities,
         IReadOnlyDictionary<Guid, ResourceCapability[]> genericCapabilities,
-        IReadOnlyCollection<PlantFlowLink> links)
+        IReadOnlyCollection<PlantFlowLink> links,
+        IReadOnlyCollection<GradeProcessTemperatureRequirement> gradeTemperatureRequirements,
+        DateTime? thermalReferenceTimeUtc,
+        bool forceThermalRecovery)
     {
-        if (RequiresReheat(orders)) return true;
-        if (!seenHotRoll && DirectHotChargeForbidden(orders)) return true;
-        if (cursors.Any(x => !x.IsKnownHot)) return true;
+        if (RequiresReheat(orders)) return "POLICY_REQUIRES_REHEAT";
+        if (!seenHotRoll && DirectHotChargeForbidden(orders)) return "DIRECT_HOT_CHARGE_FORBIDDEN";
+        if (forceThermalRecovery) return "SCHEDULED_THERMAL_WINDOW_REQUIRES_REHEAT";
+
+        var gradeIds = orders
+            .Select(x => x.SteelGrade?.Id)
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .ToHashSet();
+        var rollingRequirements = gradeTemperatureRequirements
+            .Where(x => gradeIds.Contains(x.SteelGradeId) && x.ProcessOperationType == ProcessOperationType.HotRoll)
+            .ToArray();
+        var minimumEntry = rollingRequirements
+            .Where(x => x.MinimumEntryTemperatureC.HasValue)
+            .Select(x => x.MinimumEntryTemperatureC!.Value)
+            .DefaultIfEmpty(decimal.MinValue)
+            .Max();
+        var maximumHotHold = rollingRequirements
+            .Where(x => x.MaximumHoldingMinutesAfterExit.HasValue)
+            .Select(x => x.MaximumHoldingMinutesAfterExit!.Value)
+            .DefaultIfEmpty(int.MaxValue)
+            .Min();
+
+        foreach (var cursor in cursors.Where(x => x.TemperatureC.HasValue))
+        {
+            if (maximumHotHold != int.MaxValue &&
+                thermalReferenceTimeUtc.HasValue &&
+                cursor.TemperatureObservedOnUtc.HasValue &&
+                thermalReferenceTimeUtc.Value > cursor.TemperatureObservedOnUtc.Value.AddMinutes(maximumHotHold))
+                return cursor.ThermalBasis == BilletThermalSourceBasis.ActualMeasurement
+                    ? "ACTUAL_THERMAL_STATE_EXPIRED"
+                    : "PLANNED_THERMAL_STATE_EXPIRED";
+            if (minimumEntry != decimal.MinValue && cursor.TemperatureC!.Value < minimumEntry)
+                return cursor.ThermalBasis == BilletThermalSourceBasis.ActualMeasurement
+                    ? "ACTUAL_TEMPERATURE_BELOW_ROLLING_MINIMUM"
+                    : "PREDICTED_TEMPERATURE_BELOW_ROLLING_MINIMUM";
+            if (minimumEntry != decimal.MinValue)
+                cursor.IsKnownHot = true;
+        }
+
+        if (cursors.Any(x => !x.TemperatureC.HasValue && !x.IsKnownHot))
+            return "THERMAL_STATE_REQUIRES_REHEAT";
 
         var nextHotRoll = operations
             .Skip(operationIndex + 1)
             .FirstOrDefault(x => x.ProcessOperationType == ProcessOperationType.HotRoll);
-        if (nextHotRoll is null) return false;
-        if (nextHotRoll.RequiredChargeMode == ChargeMode.ColdCharge) return true;
+        if (nextHotRoll is null) return null;
+        if (nextHotRoll.RequiredChargeMode == ChargeMode.ColdCharge) return "COLD_CHARGE_REQUIRED";
 
         var input = nextHotRoll.InputCrossSectionCode ?? currentSection;
         var output = nextHotRoll.OutputCrossSectionCode ?? rolling.OutputCrossSectionCode;
@@ -524,7 +637,7 @@ internal static class MultiStageRouteProjector
             activeResources,
             routeCapabilities,
             genericCapabilities);
-        if (eligibleHotRoll.Count == 0) return false;
+        if (eligibleHotRoll.Count == 0) return null;
 
         // Inventory/committed hot supply has no producing resource in this run. Its thermal state is the
         // authoritative evidence. Fresh/internal feed has a predecessor and must also have a physical
@@ -539,9 +652,9 @@ internal static class MultiStageRouteProjector
                     link.ToResourceId == to.Resource.Id &&
                     (!link.FromProcessOperationType.HasValue || link.FromProcessOperationType == cursor.Predecessor.ProcessOperationType) &&
                     (!link.ToProcessOperationType.HasValue || link.ToProcessOperationType == ProcessOperationType.HotRoll))));
-            if (!direct) return true;
+            if (!direct) return "DIRECT_HOT_TRANSFER_UNAVAILABLE";
         }
-        return false;
+        return null;
     }
 
     private static IReadOnlyList<EligibleResource> BuildEligibleResources(
@@ -673,25 +786,25 @@ internal static class MultiStageRouteProjector
     {
         var pairs = new List<FiniteScheduleDependencyResourcePair>();
         foreach (var from in predecessor.ResourceOptions)
-        foreach (var to in successorOptions)
-        {
-            var link = links.FirstOrDefault(x =>
-                x.IsEnabled &&
-                x.FromResourceId == from.ResourceId &&
-                x.ToResourceId == to.ResourceId &&
-                (!x.FromProcessOperationType.HasValue || x.FromProcessOperationType == predecessor.ProcessOperationType) &&
-                (!x.ToProcessOperationType.HasValue || x.ToProcessOperationType == operation.ProcessOperationType) &&
-                (!requireHotTransfer || x.SupportsHotTransfer));
-            if (link is null) continue;
+            foreach (var to in successorOptions)
+            {
+                var link = links.FirstOrDefault(x =>
+                    x.IsEnabled &&
+                    x.FromResourceId == from.ResourceId &&
+                    x.ToResourceId == to.ResourceId &&
+                    (!x.FromProcessOperationType.HasValue || x.FromProcessOperationType == predecessor.ProcessOperationType) &&
+                    (!x.ToProcessOperationType.HasValue || x.ToProcessOperationType == operation.ProcessOperationType) &&
+                    (!requireHotTransfer || x.SupportsHotTransfer));
+                if (link is null) continue;
 
-            pairs.Add(new FiniteScheduleDependencyResourcePair(
-                from.ResourceId,
-                to.ResourceId,
-                Math.Max(Minutes(operation.MinimumQueueTime), Minutes(link.MinimumTransferTime)),
-                MinNullable(
-                    operation.MaximumQueueTime.HasValue ? Minutes(operation.MaximumQueueTime.Value) : null,
-                    link.MaximumTransferTime.HasValue ? Minutes(link.MaximumTransferTime.Value) : null)));
-        }
+                pairs.Add(new FiniteScheduleDependencyResourcePair(
+                    from.ResourceId,
+                    to.ResourceId,
+                    Math.Max(Minutes(operation.MinimumQueueTime), Minutes(link.MinimumTransferTime)),
+                    MinNullable(
+                        operation.MaximumQueueTime.HasValue ? Minutes(operation.MaximumQueueTime.Value) : null,
+                        link.MaximumTransferTime.HasValue ? Minutes(link.MaximumTransferTime.Value) : null)));
+            }
 
         if (pairs.Count > 0) return new FiniteScheduleDependency(predecessor.TaskId, 0, null, pairs);
 
@@ -782,21 +895,40 @@ internal static class MultiStageRouteProjector
             .Any(next => Same(next.InputCrossSectionCode, operation.OutputCrossSectionCode));
     }
 
-    private static bool IsKnownHotFeed(
+    private static FeedThermalFact ResolveFeedThermalFact(
         PlanningInventoryAllocation allocation,
         IReadOnlyDictionary<string, ExternalMaterialSupply> externalByReference,
         IReadOnlyDictionary<string, CommittedMaterialSupply> committedByReference)
     {
-        if (allocation.SourceReference is null) return false;
+        if (allocation.ThermalState.HasValue || allocation.EstimatedTemperatureC.HasValue)
+        {
+            return new FeedThermalFact(
+                allocation.ThermalState,
+                allocation.EstimatedTemperatureC,
+                allocation.ThermalBasis ?? BilletThermalSourceBasis.UnknownYard,
+                allocation.TemperatureObservedOnUtc ?? allocation.AvailableFromUtc);
+        }
+        if (allocation.SourceReference is null)
+            return new FeedThermalFact(null, null, BilletThermalSourceBasis.UnknownYard, null);
         return allocation.Use switch
         {
             PlanningInventoryUse.ExternalIntermediateFeed =>
-                externalByReference.TryGetValue(allocation.SourceReference, out var external) &&
-                external.ThermalState is ChargeMode.HotDirect or ChargeMode.HotBuffered,
+                externalByReference.TryGetValue(allocation.SourceReference, out var external)
+                    ? new FeedThermalFact(
+                        external.ThermalState,
+                        external.EstimatedTemperatureC,
+                        BilletThermalSourceBasis.CategoricalExternal,
+                        external.AvailableFromUtc)
+                    : new FeedThermalFact(null, null, BilletThermalSourceBasis.UnknownYard, null),
             PlanningInventoryUse.CommittedInternalProductionFeed =>
-                committedByReference.TryGetValue(allocation.SourceReference, out var committed) &&
-                committed.ThermalState is ChargeMode.HotDirect or ChargeMode.HotBuffered,
-            _ => false
+                committedByReference.TryGetValue(allocation.SourceReference, out var committed)
+                    ? new FeedThermalFact(
+                        committed.ThermalState,
+                        committed.EstimatedTemperatureC,
+                        committed.ThermalBasis ?? BilletThermalSourceBasis.CategoricalCommitted,
+                        committed.TemperatureObservedOnUtc ?? committed.AvailableFromUtc)
+                    : new FeedThermalFact(null, null, BilletThermalSourceBasis.UnknownYard, null),
+            _ => new FeedThermalFact(null, null, BilletThermalSourceBasis.UnknownYard, null)
         };
     }
 
@@ -876,6 +1008,15 @@ internal static class MultiStageRouteProjector
     private static PlanningIssue Error(string code, string message, Guid sourceId) =>
         new(PlanningIssueSeverity.Error, code, message, sourceId);
 
+    private static bool IsThermalReheatReason(string? reason) => reason is
+        "ACTUAL_THERMAL_STATE_EXPIRED" or
+        "PLANNED_THERMAL_STATE_EXPIRED" or
+        "ACTUAL_TEMPERATURE_BELOW_ROLLING_MINIMUM" or
+        "PREDICTED_TEMPERATURE_BELOW_ROLLING_MINIMUM" or
+        "SCHEDULED_THERMAL_WINDOW_REQUIRES_REHEAT" or
+        "THERMAL_STATE_REQUIRES_REHEAT" or
+        "DIRECT_HOT_TRANSFER_UNAVAILABLE";
+
     private sealed record EligibleResource(
         Resource Resource,
         IReadOnlyCollection<RouteResourceCapability> RouteCapabilities,
@@ -886,14 +1027,27 @@ internal static class MultiStageRouteProjector
         decimal quantityMt,
         FiniteScheduleTask? predecessor,
         DateTime? availableFromUtc,
-        bool isKnownHot)
+        bool isKnownHot,
+        decimal? temperatureC = null,
+        BilletThermalSourceBasis? thermalBasis = null,
+        DateTime? temperatureObservedOnUtc = null)
     {
         public decimal QuantityMt { get; } = quantityMt;
         public FiniteScheduleTask? Predecessor { get; set; } = predecessor;
         public DateTime? AvailableFromUtc { get; set; } = availableFromUtc;
         public bool IsKnownHot { get; set; } = isKnownHot;
+        public decimal? TemperatureC { get; } = temperatureC;
+        public BilletThermalSourceBasis? ThermalBasis { get; } = thermalBasis;
+        public DateTime? TemperatureObservedOnUtc { get; } = temperatureObservedOnUtc;
         public bool PassedReheat { get; set; }
+        public string? ReheatReason { get; set; }
     }
+
+    private sealed record FeedThermalFact(
+        ChargeMode? State,
+        decimal? TemperatureC,
+        BilletThermalSourceBasis Basis,
+        DateTime? ObservedOnUtc);
 
     private enum EffectiveRequirement
     {

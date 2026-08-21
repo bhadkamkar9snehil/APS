@@ -112,7 +112,10 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
                 CrossSectionCode = output.CrossSectionCode,
                 QuantityMt = output.QuantityMt,
                 ProducedOnUtc = output.ProducedOnUtc,
-                LocationCode = output.LocationCode
+                LocationCode = output.LocationCode,
+                ThermalState = output.ThermalState,
+                MeasuredTemperatureC = output.MeasuredTemperatureC,
+                TemperatureObservedOnUtc = output.TemperatureObservedOnUtc
             });
 
             var lotNumber = output.ExternalLotNumber ?? $"{update.PlanningKey}:S{output.StrandNumber:00}:U{output.UnitSequence:000}";
@@ -132,7 +135,10 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
                     HeatNumber = actual.ExternalHeatNumber,
                     CastNumber = actual.ExternalCastNumber,
                     StrandNumber = output.StrandNumber,
-                    ProducedOnUtc = output.ProducedOnUtc
+                    ProducedOnUtc = output.ProducedOnUtc,
+                    ThermalState = output.ThermalState,
+                    EstimatedTemperatureC = output.MeasuredTemperatureC,
+                    TemperatureObservedOnUtc = output.TemperatureObservedOnUtc
                 });
             }
         }
@@ -157,7 +163,10 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
                 x.CrossSectionCode,
                 x.QuantityMt,
                 x.ProducedOnUtc,
-                x.LocationCode))
+                x.LocationCode,
+                x.ThermalState,
+                x.MeasuredTemperatureC,
+                x.TemperatureObservedOnUtc))
             .ToListAsync(cancellationToken);
         return Snapshot(actual, outputs);
     }

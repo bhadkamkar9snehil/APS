@@ -59,4 +59,7 @@ public sealed class StrandMaterialActual : Entity
     public decimal QuantityMt { get; set; }
     public DateTime ProducedOnUtc { get; set; }
     public string? LocationCode { get; set; }
+    public ChargeMode? ThermalState { get; set; }
+    public decimal? MeasuredTemperatureC { get; set; }
+    public DateTime? TemperatureObservedOnUtc { get; set; }
 }
