@@ -12,7 +12,7 @@ public sealed class DownstreamRouteProjectionTests
     [Fact]
     public void Required_operation_before_first_hot_roll_is_projected_in_configured_order()
     {
-        var fixture = InventoryFixture();
+        var fixture = InventoryFixture(knownHot: true);
         var conditioning = Resource("COND-1", ProcessUnitType.FinishingLine, ResourceType.FinishingLine);
         var hotMill = Resource("HRM-1", ProcessUnitType.HotRollingMill, ResourceType.RollingMill);
         var route = new RoutePlanningInput(
@@ -41,10 +41,12 @@ public sealed class DownstreamRouteProjectionTests
                     ToResourceId = hotMill.Id,
                     FromProcessOperationType = ProcessOperationType.Finish,
                     ToProcessOperationType = ProcessOperationType.HotRoll,
-                    CouplingType = FlowCouplingType.Direct,
+                    CouplingType = FlowCouplingType.HotTransfer,
+                    SupportsHotTransfer = true,
                     IsEnabled = true
                 }
-            });
+            },
+            committedSupplies: fixture.CommittedSupplies);
 
         Assert.DoesNotContain(result.Issues, x => x.Severity == PlanningIssueSeverity.Error);
         var plans = result.RouteOperationPlans!.OrderBy(x => x.SequenceNumber).ToArray();
@@ -60,7 +62,7 @@ public sealed class DownstreamRouteProjectionTests
     [Fact]
     public void Required_reheat_without_eligible_furnace_reports_named_infeasibility()
     {
-        var fixture = InventoryFixture();
+        var fixture = InventoryFixture(knownHot: false);
         var hotMill = Resource("HRM-1", ProcessUnitType.HotRollingMill, ResourceType.RollingMill);
         var route = new RoutePlanningInput(
             new[]
@@ -85,7 +87,7 @@ public sealed class DownstreamRouteProjectionTests
             x.Code == "REHEAT_RESOURCE_MISSING");
     }
 
-    private static Fixture InventoryFixture()
+    private static Fixture InventoryFixture(bool knownHot)
     {
         var po = new ProductionOrder
         {
@@ -122,6 +124,11 @@ public sealed class DownstreamRouteProjectionTests
             ExistingIntermediateInventoryMt = 50m
         });
 
+        var sourceReference = knownHot ? "COMMITTED-HOT" : "YARD-LOT";
+        var use = knownHot
+            ? PlanningInventoryUse.CommittedInternalProductionFeed
+            : PlanningInventoryUse.IntermediateFeed;
+        var availableFrom = new DateTime(2026, 8, 30, 0, 0, 0, DateTimeKind.Utc);
         var material = new PlanningInventoryAllocation(
             po.Id,
             InventoryStage.CastIntermediate,
@@ -130,9 +137,9 @@ public sealed class DownstreamRouteProjectionTests
             po.CasterSectionCode,
             "YARD",
             50m,
-            PlanningInventoryUse.IntermediateFeed,
-            "YARD-LOT",
-            new DateTime(2026, 8, 30, 0, 0, 0, DateTimeKind.Utc));
+            use,
+            sourceReference,
+            availableFrom);
         var campaignPlan = new CampaignPlanningResult(
             Array.Empty<Campaign>(),
             Array.Empty<ProductionOrder>(),
@@ -146,7 +153,25 @@ public sealed class DownstreamRouteProjectionTests
             Array.Empty<PlannedBilletSupply>(),
             Array.Empty<FiniteScheduleTask>(),
             Array.Empty<PlanningIssue>());
-        return new Fixture(rolling, campaignPlan, structure);
+        var committed = knownHot
+            ? new[]
+            {
+                new CommittedMaterialSupply(
+                    Guid.NewGuid(),
+                    po.Id,
+                    null,
+                    sourceReference,
+                    BilletSupplySourceType.InternalCastPlanned,
+                    null,
+                    po.GradeCode,
+                    po.CasterSectionCode,
+                    50m,
+                    availableFrom,
+                    "YARD",
+                    ChargeMode.HotBuffered)
+            }
+            : Array.Empty<CommittedMaterialSupply>();
+        return new Fixture(rolling, campaignPlan, structure, committed);
     }
 
     private static ManufacturingRouteOperation Operation(
@@ -195,5 +220,6 @@ public sealed class DownstreamRouteProjectionTests
     private sealed record Fixture(
         RollingPlan RollingPlan,
         CampaignPlanningResult CampaignPlan,
-        ProductionStructurePlanningResult Structure);
+        ProductionStructurePlanningResult Structure,
+        IReadOnlyCollection<CommittedMaterialSupply> CommittedSupplies);
 }
