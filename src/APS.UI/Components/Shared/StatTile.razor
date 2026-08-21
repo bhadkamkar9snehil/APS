@@ -1,9 +1,14 @@
-<div class="rounded border border-border bg-surface-raised p-3">
-    <div class="text-xs text-muted">@Label</div>
-    <div class="mt-1 truncate text-lg font-semibold">@Value</div>
+@*
+    A raised tile, not a bordered box (#UI-depth): shadow-soft gives it its own plane above the
+    canvas, and the figure uses the tabular-numeral type tier so a row of tiles lines up on its
+    decimal points instead of each number setting its own width.
+*@
+<div class="aps-page p-3">
+    <div class="aps-text-label">@Label</div>
+    <div class="mt-1 truncate aps-text-figure text-base">@Value</div>
     @if (!string.IsNullOrWhiteSpace(Sub))
     {
-        <div class="truncate text-xs text-muted">@Sub</div>
+        <div class="truncate aps-text-caption">@Sub</div>
     }
 </div>
 

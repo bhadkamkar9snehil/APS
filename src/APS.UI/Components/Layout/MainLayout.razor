@@ -10,9 +10,9 @@
     <main class="min-h-0 flex-1 bg-canvas @(IsWorkbench ? "overflow-hidden" : "overflow-y-auto p-6")">
         @if (backendUnavailable)
         {
-            <div class="rounded-surface border border-dashed border-border-strong bg-surface p-8 text-center shadow-soft">
-                <strong class="text-primary">Production planner workspace is unavailable</strong>
-                <p class="mt-1 text-sm text-secondary">@backendUnavailableMessage</p>
+            <div class="aps-page border border-dashed border-border-strong p-8 text-center">
+                <strong class="aps-text-heading">Production planner workspace is unavailable</strong>
+                <p class="mt-1 aps-text-body text-secondary">@backendUnavailableMessage</p>
             </div>
         }
         else

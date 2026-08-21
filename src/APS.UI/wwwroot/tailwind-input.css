@@ -32,10 +32,33 @@
   --aps-process-hot-roll: #506a7d;
   --aps-process-cold-roll: #67518f;
   --aps-process-finishing: #27777a;
-  --aps-shadow-soft: 0 1px 2px rgba(39, 35, 31, .07), 0 9px 24px rgba(39, 35, 31, .05);
-  --aps-shadow-raised: 0 1px 2px rgba(39, 35, 31, .10), 0 16px 38px rgba(39, 35, 31, .10);
+  /*
+    Elevation ladder (three steps, each a fully separate rendered plane rather than a bigger blur on
+    the same box): soft for content that sits just above the canvas (cards, panels), raised for a
+    surface actively in front of other surfaces (the active operation, an open dropdown), popover for
+    something floating disconnected from the page flow (menus, the drag ghost, modals). Each also gets
+    a barely-visible top highlight - the edge that would catch light on a physical sheet - so a raised
+    surface reads as a separate piece of material, not a box with a drop shadow glued under it.
+  */
+  --aps-edge-highlight: inset 0 1px 0 rgba(255, 255, 255, .5);
+  --aps-shadow-soft: var(--aps-edge-highlight), 0 1px 2px rgba(39, 35, 31, .07), 0 9px 24px rgba(39, 35, 31, .05);
+  --aps-shadow-raised: var(--aps-edge-highlight), 0 1px 2px rgba(39, 35, 31, .10), 0 16px 38px rgba(39, 35, 31, .10);
+  --aps-shadow-popover: var(--aps-edge-highlight), 0 2px 6px rgba(39, 35, 31, .14), 0 28px 56px rgba(39, 35, 31, .16);
   --aps-radius-control: .5rem;
   --aps-radius-surface: .75rem;
+
+  /*
+    Type scale. Every size below pairs a fixed weight and color with the size, so "what tier is this
+    text" is one class instead of three independent judgment calls made differently on every page -
+    which is what produced a dozen ad hoc text-[10px]/text-[11px] one-offs. Tightest at the bottom
+    because a planner spends its life reading dense tabular figures, not prose.
+  */
+  --aps-text-title: 600 1.0625rem/1.35 var(--font-sans);
+  --aps-text-heading: 600 .8125rem/1.4 var(--font-sans);
+  --aps-text-body: 400 .8125rem/1.5 var(--font-sans);
+  --aps-text-label: 600 .6875rem/1.3 var(--font-sans);
+  --aps-text-caption: 500 .6875rem/1.3 var(--font-sans);
+  --aps-text-figure: 600 .8125rem/1.3 var(--font-mono);
 }
 
 [data-theme="dark"] {
@@ -67,8 +90,11 @@
   --aps-process-hot-roll: #8fa9bd;
   --aps-process-cold-roll: #ad96d2;
   --aps-process-finishing: #69bdc0;
-  --aps-shadow-soft: 0 1px 2px rgba(0, 0, 0, .32), 0 10px 28px rgba(0, 0, 0, .20);
-  --aps-shadow-raised: 0 2px 4px rgba(0, 0, 0, .38), 0 18px 44px rgba(0, 0, 0, .30);
+  /* A dark surface's "light-catching" edge is a faint lift, not a bright highlight. */
+  --aps-edge-highlight: inset 0 1px 0 rgba(255, 255, 255, .04);
+  --aps-shadow-soft: var(--aps-edge-highlight), 0 1px 2px rgba(0, 0, 0, .32), 0 10px 28px rgba(0, 0, 0, .20);
+  --aps-shadow-raised: var(--aps-edge-highlight), 0 2px 4px rgba(0, 0, 0, .38), 0 18px 44px rgba(0, 0, 0, .30);
+  --aps-shadow-popover: var(--aps-edge-highlight), 0 4px 10px rgba(0, 0, 0, .44), 0 32px 64px rgba(0, 0, 0, .42);
 }
 
 [data-accent="amber"] {
@@ -227,9 +253,74 @@
   --radius-surface: var(--aps-radius-surface);
   --shadow-soft: var(--aps-shadow-soft);
   --shadow-raised: var(--aps-shadow-raised);
+  --shadow-popover: var(--aps-shadow-popover);
 }
 
 html, body, #app { min-height: 100%; }
+
+/*
+  Type scale utilities (#UI-depth). One class picks size, weight, line-height and color together, so
+  a heading reads as a heading everywhere instead of each page inventing its own text-[Npx] weight
+  combination. `body`/`figure` don't set color - they inherit, since body text is used inside colored
+  banners (danger/warning/success) where the ambient color has to win.
+*/
+.aps-text-title    { font: var(--aps-text-title);   color: var(--aps-text-primary); }
+.aps-text-heading  { font: var(--aps-text-heading); color: var(--aps-text-primary); }
+.aps-text-body     { font: var(--aps-text-body); }
+.aps-text-label    { font: var(--aps-text-label);   color: var(--aps-text-muted); letter-spacing: .04em; text-transform: uppercase; }
+.aps-text-caption  { font: var(--aps-text-caption); color: var(--aps-text-muted); }
+.aps-text-figure   { font: var(--aps-text-figure);  color: var(--aps-text-primary); font-variant-numeric: tabular-nums; }
+
+/*
+  A "page" is a raised sheet sitting on the canvas desk, not the canvas itself - the margin around it
+  that reveals --aps-canvas underneath is what reads as depth, not the shadow alone. Reused wherever a
+  workspace wants the layered-paper look instead of edge-to-edge canvas.
+*/
+.aps-page {
+  background: var(--aps-surface);
+  border-radius: var(--aps-radius-surface);
+  box-shadow: var(--aps-shadow-raised);
+}
+
+/*
+  Movement/calculation feedback. A planner backed by a CP-SAT solver needs to visibly be "thinking" -
+  disabling a button is not itself feedback. All three read as motion at a glance without narrating
+  every frame, and all three collapse to a static state under prefers-reduced-motion via the existing
+  global rule below.
+*/
+@keyframes aps-shimmer-sweep {
+  0%   { background-position: -120% 0; }
+  100% { background-position: 220% 0; }
+}
+.aps-shimmer {
+  background: linear-gradient(100deg, var(--aps-surface-inset) 40%, var(--aps-surface-hover) 50%, var(--aps-surface-inset) 60%);
+  background-size: 250% 100%;
+  animation: aps-shimmer-sweep 1.6s ease-in-out infinite;
+}
+
+@keyframes aps-pulse-dot {
+  0%, 100% { transform: scale(1);    opacity: 1; }
+  50%      { transform: scale(1.7); opacity: .35; }
+}
+.aps-pulse-dot { position: relative; }
+.aps-pulse-dot::after {
+  content: ""; position: absolute; inset: 0; border-radius: 999px;
+  background: currentcolor; animation: aps-pulse-dot 1.2s ease-in-out infinite;
+}
+
+@keyframes aps-activity-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}
+.aps-activity-rail {
+  position: relative; overflow: hidden; height: 2px;
+  background: var(--aps-border);
+}
+.aps-activity-rail::after {
+  content: ""; position: absolute; inset: 0; width: 30%;
+  background: linear-gradient(90deg, transparent, var(--aps-accent), transparent);
+  animation: aps-activity-sweep 1.1s ease-in-out infinite;
+}
 
 body {
   @apply m-0 bg-canvas font-sans text-primary antialiased;

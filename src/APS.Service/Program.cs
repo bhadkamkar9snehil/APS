@@ -42,6 +42,7 @@ builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 // in one window; a browser host serves many concurrent circuits, and a singleton would leak one
 // planner's selected plan version and workspace state into everyone else's session.
 builder.Services.AddScoped<PlannerWorkspaceState>();
+builder.Services.AddScoped<PlannerCockpitState>();
 builder.Services.AddScoped<ThemeService>();
 
 // MainLayout injects IUpdateService for the desktop app's self-update banner. A server-hosted UI has
