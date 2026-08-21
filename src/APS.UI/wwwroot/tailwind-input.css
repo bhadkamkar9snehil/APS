@@ -352,6 +352,50 @@ html, body, #app { min-height: 100%; }
   background: var(--aps-accent); pointer-events: none; z-index: 25;
 }
 
+/*
+  Operation card (#UI-depth). Every planner-facing APS (Preactor, PlanetTogether, Opcenter) treats the
+  Gantt bar as the primary information surface, not a coloured label - it carries identity, timing,
+  quantity, material and risk at a glance because the planner spends the whole session reading these,
+  not the inspector. A flat rectangle with one truncated line answers none of that.
+*/
+.aps-op-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), 0 1px 2px rgba(0, 0, 0, .16), 0 1px 1px rgba(0, 0, 0, .08);
+  transition: box-shadow 120ms ease, transform 120ms ease;
+}
+.aps-op-card:hover { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .3), var(--aps-shadow-raised); transform: translateY(-1px); }
+.aps-op-card.aps-operation-dragging:hover { transform: none; }
+
+/* A slice of the fill colour darkened, not a second hue - reads as "which process step" even edge to
+   edge in a packed lane, without competing with the badge/text layer on top. */
+.aps-op-card::before {
+  content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: rgba(0, 0, 0, .24);
+}
+
+.aps-op-card__badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 12px; height: 12px; padding: 0 1px; border-radius: 9999px;
+  background: rgba(0, 0, 0, .28); font-size: 8px; line-height: 1;
+}
+
+/* Elapsed-time fill for a Running operation, anchored to the plan's reference clock - the one place the
+   card says "here is how far through this we actually are" rather than only "here is what was planned". */
+.aps-op-card__progress {
+  position: absolute; inset: auto 0 0 0; height: 3px; background: rgba(255, 255, 255, .65);
+  width: var(--aps-op-progress, 0%);
+}
+
+/* Order numbers in this plant share a long prefix (PO-FLEX-1 vs PO-FLEX-2 ...) - truncating from the
+   end hides the one character that tells two cards apart. Truncating from the start keeps the suffix
+   readable at any card width, which is the part that actually identifies the order. */
+.aps-truncate-start {
+  direction: rtl;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
 body {
   @apply m-0 bg-canvas font-sans text-primary antialiased;
   font-variant-numeric: tabular-nums;

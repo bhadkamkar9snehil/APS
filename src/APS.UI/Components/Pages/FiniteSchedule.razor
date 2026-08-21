@@ -196,14 +196,36 @@
                                             @foreach (var operation in VisibleOperations(lane))
                                             {
                                                 var selected = state.SelectedPlanningKey == operation.PlanningKey;
-                                                var execution = FindDetail(operation.PlanningKey)?.ExecutionStatus ?? OperationExecutionStatus.Planned;
-                                                <button class="aps-operation absolute inset-y-2 z-10 min-w-2 overflow-hidden rounded-control border px-1.5 py-1 text-left text-[10px] leading-tight shadow-soft transition @(ProcessClass(operation.ProcessOperationType)) @(ExecutionClass(execution)) @(selected ? "border-accent ring-2 ring-accent" : "border-transparent hover:border-primary") @(state.StagedMove?.PlanningKey == operation.PlanningKey ? "opacity-55" : "") @(state.ShowCriticalPath && IsTightChain(operation) ? "ring-2 ring-warning" : "")"
+                                                var opDetail = FindDetail(operation.PlanningKey);
+                                                var execution = opDetail?.ExecutionStatus ?? OperationExecutionStatus.Planned;
+                                                var frozenHere = FrozenFenceEndUtc > operation.StartUtc && workbench.Plan.ReferenceTimeUtc < operation.EndUtc;
+                                                var tight = state.ShowCriticalPath && IsTightChain(operation);
+                                                var singleSourced = opDetail is { ResourceOptions.Count: 1 };
+                                                <button class="aps-operation aps-op-card absolute inset-y-2 z-10 min-w-2 overflow-hidden rounded-control border px-1.5 py-1 text-left text-[10px] leading-tight @(ProcessClass(operation.ProcessOperationType)) @(ExecutionClass(execution)) @(selected ? "border-accent ring-2 ring-accent" : "border-transparent hover:border-primary") @(state.StagedMove?.PlanningKey == operation.PlanningKey ? "opacity-55" : "") @(tight ? "ring-2 ring-warning" : "")"
                                                         style="left:calc(@Percent(operation.StartUtc)% + 1px);width:calc(@WidthPercent(operation.StartUtc, operation.EndUtc)% - 2px)" data-planning-key="@operation.PlanningKey" title="@OperationTitle(operation)" @onclick="() => SelectOperation(operation)">
-                                                    <strong class="block truncate text-inverted">@OperationBlockLabel(operation)</strong>
-                                                    <span class="flex items-baseline gap-1 text-inverted/80">
-                                                        <span class="min-w-0 truncate">@(state.Mode == PlanningWorkbenchMode.Execution ? execution.ToString() : operation.StartUtc.ToString("HH:mm"))</span>
-                                                        <span class="shrink-0">@operation.QuantityMt.ToString("0.#") MT</span>
+                                                    <span class="flex items-start justify-between gap-1">
+                                                        <strong class="aps-truncate-start min-w-0 text-inverted">@OperationBlockLabel(operation)</strong>
+                                                        <span class="flex shrink-0 items-center gap-0.5">
+                                                            @if (execution == OperationExecutionStatus.Running) { <span class="aps-pulse-dot h-1.5 w-1.5 rounded-full bg-inverted" title="Running now"></span> }
+                                                            else if (execution == OperationExecutionStatus.Completed) { <span class="aps-op-card__badge text-inverted" title="Completed">&#10003;</span> }
+                                                            @if (frozenHere) { <span class="aps-op-card__badge text-inverted" title="Inside the frozen fence - needs an authorized override to move">&#128274;</span> }
+                                                            @if (tight) { <span class="aps-op-card__badge text-inverted" title="Tight chain - no slack to its predecessor">&#9889;</span> }
+                                                            @if (singleSourced) { <span class="aps-op-card__badge text-inverted" title="Only one eligible resource - no fallback if this slips">!</span> }
+                                                        </span>
                                                     </span>
+                                                    <span class="flex items-baseline justify-between gap-1 text-inverted/85">
+                                                        <span class="min-w-0 truncate">@operation.StartUtc.ToString("HH:mm")&ndash;@operation.EndUtc.ToString("HH:mm")</span>
+                                                        <span class="shrink-0 font-semibold">@operation.QuantityMt.ToString("0.#") MT</span>
+                                                    </span>
+                                                    <span class="flex items-baseline justify-between gap-1 text-inverted/70">
+                                                        <span class="min-w-0 truncate">@operation.GradeCode</span>
+                                                        @if (state.Mode == PlanningWorkbenchMode.Execution) { <span class="shrink-0 truncate">@execution</span> }
+                                                        else if (opDetail?.CampaignNumber is not null) { <span class="shrink-0 truncate">Heat @(opDetail.HeatSequenceNumber?.ToString("00"))</span> }
+                                                    </span>
+                                                    @if (execution == OperationExecutionStatus.Running)
+                                                    {
+                                                        <span class="aps-op-card__progress" style="--aps-op-progress:@(RunningProgressPercent(operation))%"></span>
+                                                    }
                                                 </button>
                                             }
                                             @if (state.StagedMove is not null && state.StagedMove.TargetResourceId == lane.ResourceId)
@@ -527,6 +549,15 @@
     private static string CampaignLabel(PlanningOperationWorkbenchDetail? d) => d is null ? "—" : $"{d.CampaignNumber ?? "—"}{(d.HeatSequenceNumber.HasValue ? $" · Heat {d.HeatSequenceNumber}" : "")}";
     private static string OrderLabel(PlanningOperationWorkbenchDetail? d) => d is null || d.ProductionOrderNumbers.Count == 0 ? "—" : string.Join(", ", d.ProductionOrderNumbers);
     private static string FormatActual(DateTime? value) => value?.ToString("dd MMM yyyy HH:mm") ?? "Not recorded";
+    // The card's progress fill reads off the plan's reference clock, not wall-clock time, so it stays
+    // correct against whatever moment the loaded scenario represents rather than the browser's "now".
+    private double RunningProgressPercent(ScheduledProcessOperationView op)
+    {
+        var total = (op.EndUtc - op.StartUtc).TotalMinutes;
+        if (total <= 0d) return 0d;
+        var elapsed = (workbench!.Plan.ReferenceTimeUtc - op.StartUtc).TotalMinutes;
+        return Math.Clamp(elapsed / total * 100d, 0d, 100d);
+    }
 
     private sealed record AxisTick(DateTime Time, string Format);
     private sealed record DueMarker(DateTime Time, string Label);
