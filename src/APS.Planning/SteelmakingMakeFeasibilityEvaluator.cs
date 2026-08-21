@@ -34,7 +34,9 @@ internal static class SteelmakingMakeFeasibilityEvaluator
         }
 
         var links = request.FlowLinks ?? Array.Empty<PlantFlowLink>();
-        if (links.Count > 0)
+        var hasCompleteConfiguredSteelmakingRoute = request.RoutePlanning?.Operations.Any(x =>
+            Same(x.RouteCode, po.RouteCode) && x.ProcessOperationType == ProcessOperationType.Ccm) == true;
+        if (links.Count > 0 && hasCompleteConfiguredSteelmakingRoute)
         {
             for (var i = 0; i < operations.Count - 1; i++)
             {
@@ -81,9 +83,12 @@ internal static class SteelmakingMakeFeasibilityEvaluator
         // Whatever the route places at or before CCM is a candidate steelmaking step - not a fixed
         // Eaf/Lrf/Vd type whitelist. A plant may configure BOF, AOD/VOD, induction furnace, RH, or any
         // number of secondary-metallurgy passes; the route master decides what exists, not this list (#34).
+        // A route fragment that starts after CCM describes downstream transformation only. It must
+        // not be reinterpreted as the complete steelmaking path or force implicit EAF/CCM resources
+        // to have adjacency links that the fragment never configured.
         var routeOperations = ccmSequence.HasValue
             ? routeOperationsAll.Where(x => x.SequenceNumber <= ccmSequence.Value).ToArray()
-            : routeOperationsAll;
+            : Array.Empty<ManufacturingRouteOperation>();
         var preCcmTypes = routeOperations.Select(x => x.ProcessOperationType).ToHashSet();
 
         foreach (var routeOperation in routeOperations)

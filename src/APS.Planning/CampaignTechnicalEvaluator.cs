@@ -182,7 +182,7 @@ internal static class CampaignTechnicalEvaluator
                 if (disposition != RequirementDisposition.Required && !changesTowardFinal) continue;
 
                 var inputSection = operation.InputCrossSectionCode ?? currentSection;
-                var outputSection = operation.OutputCrossSectionCode ?? currentSection;
+                var outputSection = ResolveOutputSection(operation, po, inputSection, currentSection, request);
                 if (!string.Equals(inputSection, currentSection, StringComparison.OrdinalIgnoreCase))
                 {
                     return Reject(
@@ -208,6 +208,50 @@ internal static class CampaignTechnicalEvaluator
         }
 
         return CampaignTechnicalEvaluation.Neutral;
+    }
+
+    private static string ResolveOutputSection(
+        ManufacturingRouteOperation operation,
+        ProductionOrder po,
+        string inputSection,
+        string currentSection,
+        CampaignPlanningRequest request)
+    {
+        if (!string.IsNullOrWhiteSpace(operation.OutputCrossSectionCode))
+            return operation.OutputCrossSectionCode;
+
+        // Sparse route masters commonly leave section details on the resource capability. Treating
+        // a missing route output as "unchanged" rejects a perfectly configured final transformation.
+        var routeOutputs = request.RoutePlanning?.ResourceCapabilities
+            .Where(x => x.ProcessOperationType == operation.ProcessOperationType &&
+                        Matches(x.RouteCode, po.RouteCode) &&
+                        Matches(x.GradeCode, po.GradeCode) &&
+                        Matches(x.GradeFamilyCode, po.GradeFamilyCode) &&
+                        Matches(x.ProductFamilyCode, po.ProductFamilyCode) &&
+                        Matches(x.InputCrossSectionCode, inputSection))
+            .Select(x => x.OutputCrossSectionCode) ?? Enumerable.Empty<string?>();
+        var resourcesById = (request.Resources ?? Array.Empty<Resource>()).ToDictionary(x => x.Id);
+        var expectedUnit = SteelmakingRouteProjector.UnitTypeFor(operation.ProcessOperationType);
+        var genericOutputs = (request.ResourceCapabilities ?? Array.Empty<ResourceCapability>())
+            .Where(x => (x.ProcessOperationType == operation.ProcessOperationType ||
+                         (!x.ProcessOperationType.HasValue &&
+                          resourcesById.TryGetValue(x.ResourceId, out var resource) &&
+                          resource.ProcessUnitType == expectedUnit)) &&
+                        Matches(x.RouteCode, po.RouteCode) &&
+                        Matches(x.GradeCode, po.GradeCode) &&
+                        Matches(x.GradeFamilyCode, po.GradeFamilyCode) &&
+                        Matches(x.ProductFamilyCode, po.ProductFamilyCode) &&
+                        Matches(x.InputCrossSectionCode, inputSection))
+            .Select(x => x.OutputCrossSectionCode);
+        var outputs = routeOutputs
+            .Concat(genericOutputs)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return outputs.FirstOrDefault(x => string.Equals(x, po.FinalCrossSectionCode, StringComparison.OrdinalIgnoreCase))
+               ?? (outputs.Length == 1 ? outputs[0] : currentSection);
     }
 
     private static RequirementDisposition ResolveRequirement(ManufacturingRouteOperation operation, ProductionOrder po)
@@ -329,6 +373,10 @@ internal static class CampaignTechnicalEvaluator
     {
         var unique = grades.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
         if (unique.Length <= 1) return new SequenceResult(true, unique, 0m);
+        // With no transition evidence every ordering has the same technical cost. Preserve the
+        // canonical campaign/allocation order instead of letting the dynamic-programming terminal
+        // tie-break accidentally reverse an otherwise equivalent sequence.
+        if (rules.Count == 0) return new SequenceResult(true, unique, 0m);
         return unique.Length <= 15
             ? ExactSequence(unique, rules)
             : GreedySequence(unique, rules);

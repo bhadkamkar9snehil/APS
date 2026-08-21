@@ -193,7 +193,15 @@ internal static class MultiStageRouteProjector
                 }
 
                 var inputSection = operation.InputCrossSectionCode ?? currentSection;
-                var outputSection = operation.OutputCrossSectionCode ?? currentSection;
+                var outputSection = ResolveOutputSection(
+                    operation,
+                    orders,
+                    inputSection,
+                    currentSection,
+                    finalSection,
+                    activeResources,
+                    routeCapabilities,
+                    capabilities);
                 if (!Same(inputSection, currentSection))
                 {
                     issues.Add(Error(
@@ -576,7 +584,8 @@ internal static class MultiStageRouteProjector
 
             var genericValues = genericCapabilities.TryGetValue(resource.Id, out var genericAll)
                 ? genericAll.Where(x =>
-                    (!x.ProcessOperationType.HasValue || x.ProcessOperationType == operation.ProcessOperationType) &&
+                    (x.ProcessOperationType == operation.ProcessOperationType ||
+                     (!x.ProcessOperationType.HasValue && resource.ProcessUnitType == unitType)) &&
                     orders.All(order =>
                         Matches(x.RouteCode, order.RouteCode) &&
                         Matches(x.GradeCode, order.GradeCode) &&
@@ -601,6 +610,55 @@ internal static class MultiStageRouteProjector
             result.Add(new EligibleResource(resource, routeValues, genericValues, penalty));
         }
         return result;
+    }
+
+    private static string ResolveOutputSection(
+        ManufacturingRouteOperation operation,
+        IReadOnlyCollection<ProductionOrder> orders,
+        string inputSection,
+        string currentSection,
+        string finalSection,
+        IReadOnlyDictionary<Guid, Resource> resources,
+        IReadOnlyDictionary<Guid, RouteResourceCapability[]> routeCapabilities,
+        IReadOnlyDictionary<Guid, ResourceCapability[]> genericCapabilities)
+    {
+        if (!string.IsNullOrWhiteSpace(operation.OutputCrossSectionCode))
+            return operation.OutputCrossSectionCode;
+
+        var expectedUnit = SteelmakingRouteProjector.UnitTypeFor(operation.ProcessOperationType);
+        var outputs = new List<string>();
+        foreach (var resource in resources.Values.Where(x => x.ProcessUnitType == expectedUnit))
+        {
+            if (routeCapabilities.TryGetValue(resource.Id, out var routeValues))
+            {
+                outputs.AddRange(routeValues
+                    .Where(x => x.ProcessOperationType == operation.ProcessOperationType &&
+                                orders.All(order => Matches(x.RouteCode, order.RouteCode) &&
+                                                    Matches(x.GradeCode, order.GradeCode) &&
+                                                    Matches(x.GradeFamilyCode, order.GradeFamilyCode) &&
+                                                    Matches(x.ProductFamilyCode, order.ProductFamilyCode)) &&
+                                Matches(x.InputCrossSectionCode, inputSection) &&
+                                !string.IsNullOrWhiteSpace(x.OutputCrossSectionCode))
+                    .Select(x => x.OutputCrossSectionCode!));
+            }
+
+            if (genericCapabilities.TryGetValue(resource.Id, out var genericValues))
+            {
+                outputs.AddRange(genericValues
+                    .Where(x => (x.ProcessOperationType == operation.ProcessOperationType || !x.ProcessOperationType.HasValue) &&
+                                orders.All(order => Matches(x.RouteCode, order.RouteCode) &&
+                                                    Matches(x.GradeCode, order.GradeCode) &&
+                                                    Matches(x.GradeFamilyCode, order.GradeFamilyCode) &&
+                                                    Matches(x.ProductFamilyCode, order.ProductFamilyCode)) &&
+                                Matches(x.InputCrossSectionCode, inputSection) &&
+                                !string.IsNullOrWhiteSpace(x.OutputCrossSectionCode))
+                    .Select(x => x.OutputCrossSectionCode!));
+            }
+        }
+
+        var distinct = outputs.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        return distinct.FirstOrDefault(x => Same(x, finalSection))
+               ?? (distinct.Length == 1 ? distinct[0] : currentSection);
     }
 
     private static FiniteScheduleDependency BuildDependency(
