@@ -90,4 +90,12 @@ public interface IPlanVersionRepository
     Task<IReadOnlyCollection<BaselinePlanOperation>> GetBaselineOperationsAsync(
         Guid planVersionId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Historical PO->Campaign quantity membership used only as a stability baseline on replan (#15).
+    /// New campaigns remain new entities; this is comparison evidence, not identity reuse.
+    /// </summary>
+    Task<IReadOnlyCollection<BaselineCampaignAllocation>> GetBaselineCampaignAllocationsAsync(
+        Guid planVersionId,
+        CancellationToken cancellationToken = default);
 }
