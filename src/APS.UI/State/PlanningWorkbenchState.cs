@@ -2,13 +2,20 @@ using APS.Application;
 
 namespace APS.UI.State;
 
-public enum PlanningWorkbenchLens
+public enum PlanningWorkbenchMode
 {
-    Resources,
+    Plan,
     Campaigns,
-    Orders,
-    Materials,
-    Exceptions
+    Execution,
+    Recovery
+}
+
+public enum PlanningScenarioIntent
+{
+    Existing,
+    New,
+    Clone,
+    Recovery
 }
 
 public enum PlanningWorkbenchZoom
@@ -20,11 +27,10 @@ public enum PlanningWorkbenchZoom
     Fit
 }
 
-public enum PlanningWorkbenchQueueTab
+public enum PlanningWorkbenchQueueContent
 {
     Demand,
     Campaigns,
-    Materials,
     Exceptions
 }
 
@@ -33,9 +39,15 @@ public sealed class PlanningWorkbenchState
     private readonly Stack<PlanHistoryEntry> undo = new();
     private readonly Stack<PlanHistoryEntry> redo = new();
 
-    public PlanningWorkbenchLens Lens { get; private set; } = PlanningWorkbenchLens.Resources;
+    public PlanningWorkbenchMode Mode { get; private set; } = PlanningWorkbenchMode.Plan;
+    public PlanningScenarioIntent ScenarioIntent { get; private set; } = PlanningScenarioIntent.Existing;
     public PlanningWorkbenchZoom Zoom { get; private set; } = PlanningWorkbenchZoom.Fit;
-    public PlanningWorkbenchQueueTab QueueTab { get; private set; } = PlanningWorkbenchQueueTab.Demand;
+    public PlanningWorkbenchQueueContent QueueContent => Mode switch
+    {
+        PlanningWorkbenchMode.Campaigns => PlanningWorkbenchQueueContent.Campaigns,
+        PlanningWorkbenchMode.Execution or PlanningWorkbenchMode.Recovery => PlanningWorkbenchQueueContent.Exceptions,
+        _ => PlanningWorkbenchQueueContent.Demand
+    };
     public DateTime PlanStartUtc { get; private set; }
     public DateTime PlanEndUtc { get; private set; }
     public DateTime ContentStartUtc { get; private set; }
@@ -47,10 +59,14 @@ public sealed class PlanningWorkbenchState
     public PlanningMoveProposal? StagedMove { get; private set; }
     public PlanningProposalImpact? Impact { get; private set; }
     public bool ShowBaseline { get; private set; } = true;
-    public bool ShowDependencies { get; private set; } = true;
+    public bool ShowDependencies { get; private set; }
     public bool ShowCriticalPath { get; private set; }
     public bool QueueOpen { get; private set; } = true;
     public bool InspectorOpen { get; private set; }
+    public bool AnalysisDockOpen { get; private set; }
+    public bool IsReleasedPlan { get; private set; }
+    public bool CanEditSchedule => !IsReleasedPlan || ScenarioIntent is PlanningScenarioIntent.New or PlanningScenarioIntent.Clone or PlanningScenarioIntent.Recovery;
+    public bool CanStartRecovery => IsReleasedPlan && ScenarioIntent != PlanningScenarioIntent.Recovery;
 
     public event Action? Changed;
 
@@ -72,10 +88,16 @@ public sealed class PlanningWorkbenchState
         ApplyZoom();
     }
 
-    public void SetLens(PlanningWorkbenchLens lens) { Lens = lens; Notify(); }
-    public void SetQueueTab(PlanningWorkbenchQueueTab tab) { QueueTab = tab; Notify(); }
     public void SetSearch(string? value) { SearchText = value?.Trim() ?? string.Empty; Notify(); }
     public void SelectOperation(string? planningKey) { SelectedPlanningKey = planningKey; InspectorOpen = !string.IsNullOrWhiteSpace(planningKey); ClearMove(false); Notify(); }
+    public void ClearFocus()
+    {
+        SearchText = string.Empty;
+        SelectedPlanningKey = null;
+        InspectorOpen = false;
+        ClearMove(false);
+        Notify();
+    }
     public void SetZoom(PlanningWorkbenchZoom zoom) { Zoom = zoom; ApplyZoom(); }
 
     public void Pan(double viewportFraction)
@@ -97,6 +119,7 @@ public sealed class PlanningWorkbenchState
     public void ToggleCriticalPath() { ShowCriticalPath = !ShowCriticalPath; Notify(); }
     public void ToggleQueue() { QueueOpen = !QueueOpen; Notify(); }
     public void ToggleInspector() { InspectorOpen = !InspectorOpen; Notify(); }
+    public void ToggleAnalysisDock() { AnalysisDockOpen = !AnalysisDockOpen; Notify(); }
 
     public void StageMove(PlanningMoveProposal proposal)
     {
@@ -191,6 +214,42 @@ public sealed class PlanningWorkbenchState
         StagedMove = null;
         Impact = null;
         if (notify) Notify();
+    }
+
+    public void SetMode(PlanningWorkbenchMode mode)
+    {
+        Mode = mode;
+        Notify();
+    }
+    public void SetReleasedPlan(bool released)
+    {
+        IsReleasedPlan = released;
+        if (released && ScenarioIntent != PlanningScenarioIntent.Recovery)
+        {
+            Mode = PlanningWorkbenchMode.Execution;
+        }
+        Notify();
+    }
+
+    public void StartRecovery()
+    {
+        if (!CanStartRecovery) return;
+        ScenarioIntent = PlanningScenarioIntent.Recovery;
+        Mode = PlanningWorkbenchMode.Recovery;
+        Notify();
+    }
+
+    public void StartPlanningScenario()
+    {
+        ScenarioIntent = PlanningScenarioIntent.Clone;
+        Mode = PlanningWorkbenchMode.Plan;
+        Notify();
+    }
+
+    public void SetScenarioIntent(PlanningScenarioIntent intent)
+    {
+        ScenarioIntent = intent;
+        Notify();
     }
 
     private void Notify() => Changed?.Invoke();

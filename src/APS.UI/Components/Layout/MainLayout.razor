@@ -7,34 +7,44 @@
 @inject ThemeService Theme
 
 <div class="flex h-screen w-screen overflow-hidden bg-canvas text-sm text-primary">
-    <aside class="flex w-56 shrink-0 flex-col border-r border-border bg-surface shadow-soft">
-        <div class="flex items-center gap-2.5 border-b border-border px-4 py-3">
+    <aside class="flex shrink-0 flex-col border-r border-border bg-surface shadow-soft transition-[width] duration-200 @(navigationCollapsed ? "w-16" : "w-56")">
+        <div class="flex items-center border-b border-border py-3 @(navigationCollapsed ? "flex-col gap-2 px-2" : "gap-2.5 px-4")">
             <img src="_content/APS.UI/app-icon.png" alt="" class="h-8 w-8 object-contain" />
-            <div class="text-sm font-bold tracking-wide">APS</div>
+            @if (!navigationCollapsed)
+            {
+                <div class="text-sm font-bold tracking-wide">APS</div>
+                <button type="button" class="ml-auto rounded-control border border-border px-2 py-1 text-[10px] text-muted hover:bg-surface-hover" aria-label="Collapse navigation" @onclick="ToggleNavigation">Collapse</button>
+            }
+            else
+            {
+                <button type="button" class="w-full rounded-control border border-border px-1 py-1 text-[10px] text-secondary hover:bg-surface-hover" aria-label="Open navigation" @onclick="ToggleNavigation">Menu</button>
+            }
         </div>
 
+        @if (!navigationCollapsed)
+        {
         <nav class="flex-1 overflow-y-auto px-2 py-3">
             <NavItem Href="/" Match="NavLinkMatch.All" Label="Planning Workbench" />
+            <NavItem Href="/plan/versions" Label="Plans & Scenarios" />
+            <NavItem Href="/operate/work-orders" Label="Execution Monitor" />
             <NavItem Href="/control-tower" Label="Control Tower" />
 
-            <NavGroup Title="PLAN">
-                <NavItem Href="/plan/versions" Label="Plan Versions" />
-                <NavItem Href="/plan/demand" Label="Demand & Supply" />
-                <NavItem Href="/plan/campaigns" Label="Campaign Studio" />
-                <NavItem Href="/plan/steelmaking" Label="Steelmaking & Casting" />
-                <NavItem Href="/plan/rolling" Label="Rolling & Finishing" />
-                <NavItem Href="/plan/inventory" Label="Inventory" />
-                <NavItem Href="/plan/material-flow" Label="Material Flow" />
-                <NavItem Href="/plan/master-data" Label="Master Data" />
-            </NavGroup>
-
-            <NavGroup Title="OPERATE">
-                <NavItem Href="/operate/work-orders" Label="Work Orders" />
+            <NavGroup Title="ANALYZE">
+                <NavItem Href="/decide/compare" Label="Scenario Comparison" />
                 <NavItem Href="/operate/traceability" Label="Traceability" />
             </NavGroup>
 
-            <NavGroup Title="COMPARE">
-                <NavItem Href="/decide/compare" Label="Plan Compare" />
+            <NavGroup Title="SETUP">
+                <NavItem Href="/plan/demand" Label="Demand & Supply" />
+                <NavItem Href="/plan/inventory" Label="Inventory" />
+                <NavItem Href="/plan/master-data" Label="Master Data" />
+            </NavGroup>
+
+            <NavGroup Title="DETAIL">
+                <NavItem Href="/plan/campaigns" Label="Campaign Register" />
+                <NavItem Href="/plan/steelmaking" Label="Steelmaking & Casting" />
+                <NavItem Href="/plan/rolling" Label="Rolling & Finishing" />
+                <NavItem Href="/plan/material-flow" Label="Material Flow" />
             </NavGroup>
         </nav>
 
@@ -46,11 +56,11 @@
             </div>
         }
         <AppearancePopover />
+        }
     </aside>
 
     <section class="flex min-w-0 flex-1 flex-col">
-        <PlanContextBar Plan="currentPlan" />
-        <main class="flex-1 overflow-y-auto bg-canvas p-6">
+        <main class="min-h-0 flex-1 overflow-y-auto bg-canvas p-6">
             @if (backendUnavailable)
             {
                 <div class="rounded-surface border border-dashed border-border-strong bg-surface p-8 text-center shadow-soft">
@@ -99,6 +109,7 @@
 
 @code {
     private PlanContextView? currentPlan;
+    private bool navigationCollapsed;
     private bool demoModeEnabled;
     private bool backendUnavailable;
     private string? backendUnavailableMessage;
@@ -164,6 +175,7 @@
 
     private void OnUpdatesChanged() => _ = InvokeAsync(StateHasChanged);
     private void OnThemeChanged() => _ = InvokeAsync(StateHasChanged);
+    private void ToggleNavigation() => navigationCollapsed = !navigationCollapsed;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

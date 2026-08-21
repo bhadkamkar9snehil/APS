@@ -70,6 +70,6 @@ public sealed class LayoutThemeContractTests
         Assert.Contains(".sticky", css);
         Assert.Contains(".min-h-0", css);
         Assert.Contains(".grid-cols-\\[176px_1fr\\]", css);
-        Assert.Contains(".grid-cols-\\[18rem_minmax\\(0\\,1fr\\)_20rem\\]", css);
+        Assert.Contains(".grid-cols-\\[16rem_minmax\\(0\\,1fr\\)_20rem\\]", css);
     }
 }

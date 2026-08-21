@@ -110,7 +110,10 @@ public sealed class PlanningWorkbenchQueryTests
             EndUtc = start.AddHours(1),
             QuantityMt = 70m,
             GradeCode = "SAE1008",
-            CrossSectionCode = "BLT-150SQ"
+            CrossSectionCode = "BLT-150SQ",
+            ExecutionStatus = OperationExecutionStatus.Running,
+            ActualStartUtc = start.AddMinutes(5),
+            ActualQuantityMt = 32m
         });
         db.PlanOperationResourceOptionSnapshots.Add(new PlanOperationResourceOptionSnapshot
         {
@@ -135,6 +138,9 @@ public sealed class PlanningWorkbenchQueryTests
         Assert.Single(result.Campaigns.Campaigns);
         Assert.Single(result.OperationDetails);
         Assert.Single(result.OperationDetails.Single().ResourceOptions);
+        Assert.Equal(OperationExecutionStatus.Running, result.OperationDetails.Single().ExecutionStatus);
+        Assert.Equal(start.AddMinutes(5), result.OperationDetails.Single().ActualStartUtc);
+        Assert.Equal(32m, result.OperationDetails.Single().ActualQuantityMt);
         Assert.Empty(result.Material.Pools);
         Assert.Equal(1, result.Queue.TotalDemand);
         Assert.Equal(0, result.Queue.UnscheduledDemand);

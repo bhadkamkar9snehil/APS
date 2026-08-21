@@ -1,0 +1,47 @@
+@using APS.UI.State
+
+<nav class="flex min-w-0 items-stretch gap-1" aria-label="Planning lifecycle">
+    @foreach (var item in items)
+    {
+        var selected = Mode == item.Mode;
+        <button type="button"
+                class="group min-w-28 border-b-2 px-3 py-2 text-left transition @(selected ? "border-accent bg-accent-soft text-primary" : "border-transparent text-secondary hover:bg-surface-hover")"
+                aria-current="@(selected ? "step" : null)"
+                @onclick="() => SelectAsync(item.Mode)">
+            <span class="block text-xs font-semibold">@item.Label</span>
+            <span class="mt-0.5 block text-[10px] text-muted">@item.Description</span>
+        </button>
+    }
+
+    @if (IsReleased && Mode == PlanningWorkbenchMode.Execution)
+    {
+        <button type="button" class="ml-2 self-center rounded-control border border-accent-border bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent" @onclick="() => StartRecovery.InvokeAsync()">
+            Create recovery scenario
+        </button>
+    }
+    else if (IsReleased && Mode is PlanningWorkbenchMode.Plan or PlanningWorkbenchMode.Campaigns)
+    {
+        <button type="button" class="ml-2 self-center rounded-control border border-accent-border bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent" @onclick="() => StartPlanning.InvokeAsync()">
+            Create planning scenario
+        </button>
+    }
+</nav>
+
+@code {
+    [Parameter, EditorRequired] public PlanningWorkbenchMode Mode { get; set; }
+    [Parameter] public bool IsReleased { get; set; }
+    [Parameter] public EventCallback<PlanningWorkbenchMode> ModeChanged { get; set; }
+    [Parameter] public EventCallback StartRecovery { get; set; }
+    [Parameter] public EventCallback StartPlanning { get; set; }
+
+    private readonly LifecycleItem[] items =
+    [
+        new(PlanningWorkbenchMode.Plan, "Plan", "Optimize and adjust"),
+        new(PlanningWorkbenchMode.Campaigns, "Campaigns", "Compose heats and casts"),
+        new(PlanningWorkbenchMode.Execution, "Execution", "Compare plan with actuals"),
+        new(PlanningWorkbenchMode.Recovery, "Recovery", "Repair future work")
+    ];
+
+    private Task SelectAsync(PlanningWorkbenchMode mode) => ModeChanged.InvokeAsync(mode);
+    private sealed record LifecycleItem(PlanningWorkbenchMode Mode, string Label, string Description);
+}

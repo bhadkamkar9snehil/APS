@@ -1,0 +1,24 @@
+<section class="shrink-0 border-t border-border bg-surface" aria-label="Impact summary">
+    <div class="flex items-center gap-3 px-3 py-2">
+        <strong class="text-xs">Impact summary</strong>
+        <span class="text-[10px] text-muted">Plan health and consequences of the selected change</span>
+        <button type="button" class="ml-auto px-2 text-xs text-muted" @onclick="() => Toggle.InvokeAsync()">@(Expanded ? "Collapse" : "Expand")</button>
+    </div>
+    @if (Expanded)
+    {
+        <div class="grid grid-cols-4 gap-px border-t border-border bg-border">
+            <div class="bg-surface-raised p-3"><span class="text-[10px] uppercase tracking-wide text-muted">Critical</span><strong class="mt-1 block text-base">@CriticalCount</strong></div>
+            <div class="bg-surface-raised p-3"><span class="text-[10px] uppercase tracking-wide text-muted">Warnings</span><strong class="mt-1 block text-base">@WarningCount</strong></div>
+            <div class="bg-surface-raised p-3"><span class="text-[10px] uppercase tracking-wide text-muted">Late demand</span><strong class="mt-1 block text-base">@LateDemand</strong></div>
+            <div class="bg-surface-raised p-3"><span class="text-[10px] uppercase tracking-wide text-muted">Selected impact</span><strong class="mt-1 block text-sm">No proposed change</strong><span class="mt-1 block text-[10px] text-muted">Select or move an operation to inspect consequences.</span></div>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public bool Expanded { get; set; }
+    [Parameter] public int CriticalCount { get; set; }
+    [Parameter] public int WarningCount { get; set; }
+    [Parameter] public int LateDemand { get; set; }
+    [Parameter] public EventCallback Toggle { get; set; }
+}

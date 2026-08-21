@@ -1,0 +1,50 @@
+@using APS.Domain
+
+<header class="border-b border-border bg-surface px-4 py-3">
+    <div class="flex flex-wrap items-center gap-3">
+        <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+                <span class="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Working scenario</span>
+                <h1 class="truncate text-lg font-semibold">@ScenarioName</h1>
+                <span class="rounded px-2 py-0.5 text-xs font-semibold @StateClass">@StateLabel</span>
+                @if (IsReleased) { <span class="rounded border border-border-strong px-2 py-0.5 text-xs text-secondary">Execution baseline</span> }
+            </div>
+            <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted">
+                <span>@OperationCount operations</span>
+                <span>@ResourceCount resources</span>
+                <span>@ScheduleStartUtc.ToString("dd MMM HH:mm") → @ScheduleEndUtc.ToString("dd MMM HH:mm")</span>
+                <span>Actuals @ActualsTimeUtc.ToString("dd MMM HH:mm") UTC</span>
+            </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2" aria-label="Scenario actions">
+            <button class="rounded-control border border-border-strong px-3 py-1.5 text-xs disabled:opacity-40" disabled="@(!CanUndo)" @onclick="Undo">Undo</button>
+            <button class="rounded-control border border-border-strong px-3 py-1.5 text-xs disabled:opacity-40" disabled="@(!CanRedo)" @onclick="Redo">Redo</button>
+            <span class="rounded-control border border-border bg-surface-inset px-3 py-1.5 text-[10px] text-muted" title="Applied moves and optimizations create recoverable child plan versions">Persisted checkpoint</span>
+            <button class="rounded-control border border-accent-border bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent disabled:opacity-40" disabled="@(!CanEdit)" @onclick="Optimize">Optimize</button>
+            <button class="rounded-control border border-border-strong px-3 py-1.5 text-xs disabled:opacity-40" disabled="@(!CanEdit)" @onclick="Validate">Validate</button>
+            <button class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-40" disabled="@(!CanRelease)" @onclick="Release">Release plan</button>
+        </div>
+    </div>
+</header>
+
+@code {
+    [Parameter, EditorRequired] public string ScenarioName { get; set; } = "Scenario";
+    [Parameter, EditorRequired] public string StateLabel { get; set; } = "Draft";
+    [Parameter] public string StateClass { get; set; } = "bg-surface-inset text-secondary";
+    [Parameter] public bool IsReleased { get; set; }
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public bool CanUndo { get; set; }
+    [Parameter] public bool CanRedo { get; set; }
+    [Parameter] public bool CanRelease { get; set; }
+    [Parameter] public int OperationCount { get; set; }
+    [Parameter] public int ResourceCount { get; set; }
+    [Parameter] public DateTime ScheduleStartUtc { get; set; }
+    [Parameter] public DateTime ScheduleEndUtc { get; set; }
+    [Parameter] public DateTime ActualsTimeUtc { get; set; }
+    [Parameter] public EventCallback Undo { get; set; }
+    [Parameter] public EventCallback Redo { get; set; }
+    [Parameter] public EventCallback Optimize { get; set; }
+    [Parameter] public EventCallback Validate { get; set; }
+    [Parameter] public EventCallback Release { get; set; }
+}
