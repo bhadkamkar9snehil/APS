@@ -110,6 +110,15 @@ public sealed class UnavailablePlannerWorkspaceQueryService : IPlannerWorkspaceQ
         return Task.FromResult<PlanComparisonWorkspaceView?>(null);
     }
 
+    public Task<PlanningWorkbenchView?> GetPlanningWorkbenchAsync(
+        Guid? planVersionId = null,
+        Guid? baselinePlanVersionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureAvailable();
+        return Task.FromResult<PlanningWorkbenchView?>(null);
+    }
+
     private void EnsureAvailable()
     {
         if (_allowEmptyDemoWorkspace) return;

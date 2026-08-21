@@ -299,4 +299,9 @@ public interface IPlannerWorkspaceQueryService
         Guid baselinePlanVersionId,
         Guid newPlanVersionId,
         CancellationToken cancellationToken = default);
+
+    Task<PlanningWorkbenchView?> GetPlanningWorkbenchAsync(
+        Guid? planVersionId = null,
+        Guid? baselinePlanVersionId = null,
+        CancellationToken cancellationToken = default);
 }
