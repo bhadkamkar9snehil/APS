@@ -37,6 +37,16 @@ public sealed record BaselinePlanOperation(
     string? RouteCode = null,
     int? RouteSequenceNumber = null);
 
+/// <summary>
+/// Quantity membership of one Production Order in one baseline Campaign. Campaign IDs are historical
+/// identity only; the replan optimizer uses them to measure split/merge movement, never to force a new
+/// Campaign to reuse the old primary key.
+/// </summary>
+public sealed record BaselineCampaignAllocation(
+    Guid CampaignId,
+    Guid ProductionOrderId,
+    decimal PlannedQuantityMt);
+
 public sealed record OperationResourceOverride(
     string PlanningKey,
     Guid ResourceId,
@@ -56,7 +66,8 @@ public sealed record PlanningReplanContext(
     PlanningTimeFencePolicy TimeFencePolicy,
     IReadOnlyCollection<BaselinePlanOperation> BaselineOperations,
     IReadOnlyCollection<OperationResourceOverride>? ResourceOverrides = null,
-    RepairScopePolicy? RepairScope = null);
+    RepairScopePolicy? RepairScope = null,
+    IReadOnlyCollection<BaselineCampaignAllocation>? BaselineCampaignAllocations = null);
 
 public sealed record PlanningTaskIdentity(
     Guid TaskId,
