@@ -5,11 +5,11 @@
     {
         var selected = Mode == item.Mode;
         <button type="button"
-                class="group min-w-28 border-b-2 px-3 py-2 text-left transition @(selected ? "border-accent bg-accent-soft text-primary" : "border-transparent text-secondary hover:bg-surface-hover")"
+                class="group min-w-24 border-b-2 px-3 py-1.5 text-left transition @(selected ? "border-accent bg-accent-soft text-primary" : "border-transparent text-secondary hover:bg-surface-hover")"
                 aria-current="@(selected ? "step" : null)"
+                title="@item.Description"
                 @onclick="() => SelectAsync(item.Mode)">
             <span class="block text-xs font-semibold">@item.Label</span>
-            <span class="mt-0.5 block text-[10px] text-muted">@item.Description</span>
         </button>
     }
 

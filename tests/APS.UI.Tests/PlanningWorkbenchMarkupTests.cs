@@ -18,7 +18,7 @@ public sealed class PlanningWorkbenchMarkupTests
     {
         var header = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/WorkbenchScenarioHeader.razor"));
 
-        foreach (var label in new[] { "Persisted checkpoint", "Optimize", "Validate", "Release plan" })
+        foreach (var label in new[] { "Scenario", "Optimize", "Validate", "Release" })
             Assert.Contains(label, header);
 
         Assert.DoesNotContain(">Approve<", header);
@@ -27,16 +27,13 @@ public sealed class PlanningWorkbenchMarkupTests
     }
 
     [Fact]
-    public void Workbench_has_one_compact_impact_summary_below_the_schedule()
+    public void Workbench_has_one_consolidated_analysis_dock_below_the_schedule()
     {
         var dock = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/WorkbenchAnalysisDock.razor"));
 
-        Assert.Contains("Impact summary", dock);
-        Assert.Contains("Late demand", dock);
-        Assert.Contains("Selected impact", dock);
-        Assert.DoesNotContain("Campaign KPIs", dock);
-        Assert.DoesNotContain("Scenario comparison", dock);
-        Assert.DoesNotContain("foreach (var tab", dock);
+        foreach (var label in new[] { "Overview", "Exceptions", "Capacity", "Delivery", "Material", "Compare", "Execution", "Traceability" })
+            Assert.Contains(label, dock);
+        Assert.Contains("PlannerAnalysisView", dock);
     }
 
     [Fact]
@@ -86,36 +83,4 @@ public sealed class PlanningWorkbenchMarkupTests
         Assert.DoesNotContain("@foreach (var edge in DependencyLines())", page);
     }
 
-    [Fact]
-    public void Supporting_configuration_is_secondary_to_the_workbench()
-    {
-        var layout = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/MainLayout.razor"));
-
-        Assert.Contains("Title=\"SETUP\"", layout);
-        Assert.Contains("Label=\"Execution Monitor\"", layout);
-        Assert.True(layout.IndexOf("Label=\"Planning Workbench\"", StringComparison.Ordinal) <
-                    layout.IndexOf("Title=\"SETUP\"", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void Global_navigation_collapses_without_showing_plan_context()
-    {
-        var layout = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/MainLayout.razor"));
-
-        Assert.Contains("navigationCollapsed", layout);
-        Assert.Contains("Collapse navigation", layout);
-        Assert.Contains("Open navigation", layout);
-        Assert.DoesNotContain("<PlanContextBar", layout);
-    }
-
-    [Fact]
-    public void Queue_is_bounded_and_focus_can_be_cleared_from_the_workbench()
-    {
-        var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
-
-        Assert.Contains("Clear focus", page);
-        Assert.Contains("ClearFocus", page);
-        Assert.Contains("max-h-[36rem]", page);
-        Assert.Contains("min-h-16", page);
-    }
 }

@@ -5,7 +5,7 @@ public sealed class LayoutThemeContractTests
     [Fact]
     public void Main_layout_uses_icon_and_single_APS_brand()
     {
-        var razor = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/MainLayout.razor"));
+        var razor = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/DesktopMenuBar.razor"));
 
         Assert.Contains("app-icon.png", razor);
         Assert.Contains(">APS<", razor);
@@ -49,27 +49,24 @@ public sealed class LayoutThemeContractTests
     {
         var workbench = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
         var controlTower = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/Home.razor"));
-        var layout = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/MainLayout.razor"));
+        var menu = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/DesktopMenuBar.razor"));
 
         Assert.Contains("@page \"/\"", workbench);
         Assert.Contains("@page \"/control-tower\"", controlTower);
-        Assert.Contains("Href=\"/\" Match=\"NavLinkMatch.All\" Label=\"Planning Workbench\"", layout);
-        Assert.Contains("Href=\"/control-tower\" Label=\"Control Tower\"", layout);
-        Assert.True(layout.IndexOf("Label=\"Planning Workbench\"", StringComparison.Ordinal) <
-                    layout.IndexOf("Label=\"Control Tower\"", StringComparison.Ordinal));
+        Assert.Contains("Href=\"/\" Label=\"Planning Workbench\"", menu);
+        Assert.Contains("Label=\"Control overview\"", menu);
     }
 
     [Fact]
     public void Tailwind_rebuild_tracks_Razor_sources_and_contains_workbench_geometry()
     {
         var project = File.ReadAllText(Repo.File("src/APS.UI/APS.UI.csproj"));
-        var css = File.ReadAllText(Repo.File("src/APS.UI/wwwroot/tailwind.css"));
+        var input = File.ReadAllText(Repo.File("src/APS.UI/wwwroot/tailwind-input.css"));
 
         Assert.Contains("TailwindSource", project);
         Assert.Contains("@(TailwindSource)", project);
-        Assert.Contains(".sticky", css);
-        Assert.Contains(".min-h-0", css);
-        Assert.Contains(".grid-cols-\\[176px_1fr\\]", css);
-        Assert.Contains(".grid-cols-\\[16rem_minmax\\(0\\,1fr\\)_20rem\\]", css);
+        Assert.Contains("Inputs=\"$(TailwindInputCss);@(TailwindSource)\"", project);
+        Assert.Contains("Outputs=\"$(TailwindOutputCss)\"", project);
+        Assert.Contains(".aps-gantt-lanes", input);
     }
 }

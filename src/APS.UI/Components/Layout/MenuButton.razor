@@ -1,0 +1,10 @@
+<button type="button" class="flex w-full items-center rounded-control px-3 py-2 text-left text-xs text-secondary hover:bg-surface-hover hover:text-primary" role="menuitem" @onclick="OnClick">
+    <span>@Label</span>
+    @if (!string.IsNullOrWhiteSpace(Shortcut)) { <span class="ml-auto pl-6 text-[10px] text-muted">@Shortcut</span> }
+</button>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter] public string? Shortcut { get; set; }
+    [Parameter] public EventCallback OnClick { get; set; }
+}

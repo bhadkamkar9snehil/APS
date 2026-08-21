@@ -1,24 +1,78 @@
-<section class="shrink-0 border-t border-border bg-surface" aria-label="Impact summary">
-    <div class="flex items-center gap-3 px-3 py-2">
-        <strong class="text-xs">Impact summary</strong>
-        <span class="text-[10px] text-muted">Plan health and consequences of the selected change</span>
-        <button type="button" class="ml-auto px-2 text-xs text-muted" @onclick="() => Toggle.InvokeAsync()">@(Expanded ? "Collapse" : "Expand")</button>
+<section class="shrink-0 border-t border-border bg-surface" aria-label="Planner analysis">
+    <div class="flex h-8 items-center gap-1 overflow-x-auto px-2">
+        @foreach (var item in Views)
+        {
+            <button type="button"
+                    class="h-full shrink-0 border-b-2 px-2 text-[11px] @(Expanded && View == item.View ? "border-accent text-accent" : "border-transparent text-secondary hover:text-primary")"
+                    @onclick="() => SelectAsync(item.View)">@item.Label</button>
+        }
+        <button type="button" class="ml-auto shrink-0 px-2 text-[11px] text-muted" @onclick="() => Toggle.InvokeAsync()">@(Expanded ? "Collapse" : "Open")</button>
     </div>
+
     @if (Expanded)
     {
-        <div class="grid grid-cols-4 gap-px border-t border-border bg-border">
-            <div class="bg-surface-raised p-3"><span class="text-[10px] uppercase tracking-wide text-muted">Critical</span><strong class="mt-1 block text-base">@CriticalCount</strong></div>
-            <div class="bg-surface-raised p-3"><span class="text-[10px] uppercase tracking-wide text-muted">Warnings</span><strong class="mt-1 block text-base">@WarningCount</strong></div>
-            <div class="bg-surface-raised p-3"><span class="text-[10px] uppercase tracking-wide text-muted">Late demand</span><strong class="mt-1 block text-base">@LateDemand</strong></div>
-            <div class="bg-surface-raised p-3"><span class="text-[10px] uppercase tracking-wide text-muted">Selected impact</span><strong class="mt-1 block text-sm">No proposed change</strong><span class="mt-1 block text-[10px] text-muted">Select or move an operation to inspect consequences.</span></div>
+        <div class="h-[30vh] min-h-40 overflow-auto border-t border-border bg-surface-raised p-3">
+            @switch (View)
+            {
+                case PlannerAnalysisView.ControlOverview:
+                    <div class="grid gap-3 lg:grid-cols-4">
+                        <SummaryCard Label="Plan health" Value="@(CriticalCount == 0 ? "Ready" : $"{CriticalCount} critical")" Detail="@($"{WarningCount} warnings across the active scenario")" />
+                        <SummaryCard Label="Delivery exposure" Value="@($"{LateDemand} late")" Detail="Orders projected beyond their required date" />
+                        <SummaryCard Label="Planning focus" Value="Review exceptions" Detail="Open the queue or select an operation to investigate" />
+                        <SummaryCard Label="Next decision" Value="Validate or iterate" Detail="Compare consequences before releasing the scenario" />
+                    </div>
+                    break;
+                case PlannerAnalysisView.Exceptions:
+                    <AnalysisMessage Title="Exceptions" Detail="Constraint failures and warnings for the visible scenario." Primary="@($"{CriticalCount} critical")" Secondary="@($"{WarningCount} warnings")" />
+                    break;
+                case PlannerAnalysisView.Capacity:
+                    <AnalysisMessage Title="Capacity" Detail="Resource load, idle windows, and bottleneck exposure stay aligned with the visible Gantt window." Primary="Inspect loaded lanes" Secondary="Use the resource rows above" />
+                    break;
+                case PlannerAnalysisView.Delivery:
+                    <AnalysisMessage Title="Delivery" Detail="Demand-at-risk and due-date consequences of the current sequence." Primary="@($"{LateDemand} late orders")" Secondary="Open Demand queue to focus an order" />
+                    break;
+                case PlannerAnalysisView.Material:
+                    <AnalysisMessage Title="Material" Detail="Supply, reservations, and time-phased material balance for the selected chain." Primary="Material consequences" Secondary="Open detailed material flow only when needed" Href="/plan/material-flow" LinkLabel="Open material details" />
+                    break;
+                case PlannerAnalysisView.ScenarioComparison:
+                    <AnalysisMessage Title="Scenario comparison" Detail="Compare the working scenario against its released baseline before committing it." Primary="Baseline versus working plan" Secondary="Schedule, delivery, and capacity deltas" Href="/decide/compare" LinkLabel="Open full comparison" />
+                    break;
+                case PlannerAnalysisView.Execution:
+                    <AnalysisMessage Title="Execution monitor" Detail="Planned versus actual timing, held work, and recovery triggers." Primary="Execution status" Secondary="Select an operation above for actual timestamps" Href="/operate/work-orders" LinkLabel="Open work orders" />
+                    break;
+                case PlannerAnalysisView.Traceability:
+                    <AnalysisMessage Title="Traceability" Detail="Commercial demand, campaign, heat, material, and work-order lineage for the selected item." Primary="Selected-object genealogy" Secondary="Select an operation or demand item first" Href="/operate/traceability" LinkLabel="Open traceability details" />
+                    break;
+            }
         </div>
     }
 </section>
 
 @code {
     [Parameter] public bool Expanded { get; set; }
+    [Parameter] public PlannerAnalysisView View { get; set; }
     [Parameter] public int CriticalCount { get; set; }
     [Parameter] public int WarningCount { get; set; }
     [Parameter] public int LateDemand { get; set; }
+    [Parameter] public EventCallback<PlannerAnalysisView> ViewChanged { get; set; }
     [Parameter] public EventCallback Toggle { get; set; }
+
+    private static readonly (PlannerAnalysisView View, string Label)[] Views =
+    [
+        (PlannerAnalysisView.ControlOverview, "Overview"),
+        (PlannerAnalysisView.Exceptions, "Exceptions"),
+        (PlannerAnalysisView.Capacity, "Capacity"),
+        (PlannerAnalysisView.Delivery, "Delivery"),
+        (PlannerAnalysisView.Material, "Material"),
+        (PlannerAnalysisView.ScenarioComparison, "Compare"),
+        (PlannerAnalysisView.Execution, "Execution"),
+        (PlannerAnalysisView.Traceability, "Traceability")
+    ];
+
+    private async Task SelectAsync(PlannerAnalysisView view)
+    {
+        if (!Expanded && view == View)
+            await Toggle.InvokeAsync();
+        await ViewChanged.InvokeAsync(view);
+    }
 }

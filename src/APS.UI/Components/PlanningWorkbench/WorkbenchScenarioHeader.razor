@@ -1,15 +1,13 @@
 @using APS.Domain
 
-<header class="border-b border-border bg-surface px-4 py-3">
-    <div class="flex flex-wrap items-center gap-3">
-        <div class="min-w-0 flex-1">
-            <div class="flex flex-wrap items-center gap-2">
-                <span class="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Working scenario</span>
-                <h1 class="truncate text-lg font-semibold">@ScenarioName</h1>
+<header class="border-b border-border bg-surface px-3 py-1.5">
+    <div class="flex min-h-9 flex-wrap items-center gap-2">
+        <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+                <span class="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Scenario</span>
+                <h1 class="max-w-72 truncate text-sm font-semibold">@ScenarioName</h1>
                 <span class="rounded px-2 py-0.5 text-xs font-semibold @StateClass">@StateLabel</span>
                 @if (IsReleased) { <span class="rounded border border-border-strong px-2 py-0.5 text-xs text-secondary">Execution baseline</span> }
-            </div>
-            <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted">
+            <div class="ml-2 hidden gap-x-3 text-[10px] text-muted lg:flex">
                 <span>@OperationCount operations</span>
                 <span>@ResourceCount resources</span>
                 <span>@ScheduleStartUtc.ToString("dd MMM HH:mm") → @ScheduleEndUtc.ToString("dd MMM HH:mm")</span>
@@ -17,13 +15,12 @@
             </div>
         </div>
 
-        <div class="flex flex-wrap items-center gap-2" aria-label="Scenario actions">
-            <button class="rounded-control border border-border-strong px-3 py-1.5 text-xs disabled:opacity-40" disabled="@(!CanUndo)" @onclick="Undo">Undo</button>
-            <button class="rounded-control border border-border-strong px-3 py-1.5 text-xs disabled:opacity-40" disabled="@(!CanRedo)" @onclick="Redo">Redo</button>
-            <span class="rounded-control border border-border bg-surface-inset px-3 py-1.5 text-[10px] text-muted" title="Applied moves and optimizations create recoverable child plan versions">Persisted checkpoint</span>
-            <button class="rounded-control border border-accent-border bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent disabled:opacity-40" disabled="@(!CanEdit)" @onclick="Optimize">Optimize</button>
-            <button class="rounded-control border border-border-strong px-3 py-1.5 text-xs disabled:opacity-40" disabled="@(!CanEdit)" @onclick="Validate">Validate</button>
-            <button class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-40" disabled="@(!CanRelease)" @onclick="Release">Release plan</button>
+        <div class="flex items-center gap-1.5" aria-label="Scenario actions">
+            <button class="rounded-control border border-border-strong px-2.5 py-1 text-xs disabled:opacity-40" disabled="@(!CanUndo)" @onclick="Undo">Undo</button>
+            <button class="rounded-control border border-border-strong px-2.5 py-1 text-xs disabled:opacity-40" disabled="@(!CanRedo)" @onclick="Redo">Redo</button>
+            <button class="rounded-control border border-accent-border bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent disabled:opacity-40" disabled="@(!CanEdit)" @onclick="Optimize">Optimize</button>
+            <button class="rounded-control border border-border-strong px-2.5 py-1 text-xs disabled:opacity-40" disabled="@(!CanEdit)" @onclick="Validate">Validate</button>
+            <button class="rounded-control bg-accent px-2.5 py-1 text-xs font-semibold text-accent-foreground disabled:opacity-40" disabled="@(!CanRelease)" @onclick="Release">Release</button>
         </div>
     </div>
 </header>

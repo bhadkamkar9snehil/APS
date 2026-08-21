@@ -238,6 +238,21 @@ body {
 }
 
 button, input, select, textarea { font: inherit; }
+
+.aps-gantt-lanes {
+  display: grid;
+  min-height: calc(100% - 2.5rem);
+  grid-template-rows: repeat(var(--aps-visible-lanes), minmax(64px, 1fr));
+}
+
+.aps-gantt-lane {
+  min-height: 64px;
+}
+
+@media (max-height: 760px) {
+  .aps-gantt-lanes { grid-template-rows: repeat(var(--aps-visible-lanes), 64px); }
+}
+
 input, select, textarea {
   color-scheme: inherit;
   color: var(--aps-text-primary);

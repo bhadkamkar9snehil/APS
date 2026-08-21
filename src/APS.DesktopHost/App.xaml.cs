@@ -37,6 +37,7 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<IUpdateService>(sp => sp.GetRequiredService<VelopackUpdateService>());
                 services.AddHostedService<UpdateCheckWorker>();
                 services.AddSingleton<PlannerWorkspaceState>();
+                services.AddScoped<PlannerCockpitState>();
                 services.AddScoped<ThemeService>();
                 services.AddSingleton<MainWindow>();
             })

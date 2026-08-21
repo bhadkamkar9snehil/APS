@@ -6,11 +6,12 @@
 @inject IPlanningLifecycleService Lifecycle
 @inject IPersistedPlanReleaseService ReleaseService
 @inject PlannerWorkspaceState WorkspaceState
+@inject PlannerCockpitState Cockpit
 @inject IJSRuntime JS
 
 <PageTitle>Planning Workbench - APS</PageTitle>
 
-<div @ref="workbenchRoot" class="-m-6 flex h-[calc(100%+3rem)] min-h-0 flex-col overflow-hidden bg-canvas" data-aps-workbench>
+<div @ref="workbenchRoot" class="flex h-full min-h-0 flex-col overflow-hidden bg-canvas" data-aps-workbench tabindex="-1" @onkeydown="HandleWorkbenchKeyDown">
     @if (loading)
     {
         <div class="grid flex-1 place-items-center text-sm text-muted">Loading the planning workbench…</div>
@@ -72,8 +73,8 @@
                 <ToggleButton Active="state.ShowBaseline" Label="Baseline" OnClick="state.ToggleBaseline" />
                 <ToggleButton Active="state.ShowDependencies" Label="Selected chain" OnClick="state.ToggleDependencies" />
                 <ToggleButton Active="state.ShowCriticalPath" Label="Tight chain" OnClick="state.ToggleCriticalPath" />
-                <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="state.ToggleQueue">@(state.QueueOpen ? "Hide queue" : "Show queue")</button>
-                <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="state.ToggleInspector">@(state.InspectorOpen ? "Hide inspector" : "Show inspector")</button>
+                <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="Cockpit.ToggleQueue">@(Cockpit.QueueOpen ? "Hide queue" : "Demand queue")</button>
+                <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="Cockpit.ToggleInspector">@(Cockpit.InspectorOpen ? "Hide inspector" : "Inspector")</button>
             </div>
         </header>
 
@@ -82,10 +83,10 @@
             <div class="shrink-0 border-b px-4 py-2 text-xs @(messageIsError ? "border-danger bg-danger-soft text-danger" : "border-success bg-success-soft text-success")">@message</div>
         }
 
-        <div class="grid min-h-0 flex-1 @(BodyGridClass())">
-            @if (state.QueueOpen)
+        <div class="relative min-h-0 flex-1 overflow-hidden">
+            @if (Cockpit.QueueOpen)
             {
-                <aside class="flex h-full max-h-[36rem] min-h-0 w-64 self-start overflow-hidden border-r border-border bg-surface">
+                <aside class="absolute inset-y-0 left-0 z-40 flex min-h-0 w-80 overflow-hidden border-r border-border bg-surface shadow-raised">
                     <div class="flex min-h-0 w-full flex-col">
                     <div class="flex items-start justify-between gap-2 border-b border-border px-3 py-2">
                         <div><strong class="block text-xs">@QueueTitle</strong><span class="mt-0.5 block text-[10px] text-muted">@QueueDescription</span></div>
@@ -132,14 +133,14 @@
                 </aside>
             }
 
-            <main class="min-w-0 overflow-hidden bg-canvas">
+            <main class="h-full min-w-0 overflow-hidden bg-canvas">
                 <div class="flex h-full min-h-0 flex-col">
                     <div class="flex shrink-0 items-center justify-between border-b border-border bg-surface-raised px-3 py-2 text-xs">
                         <div class="flex gap-4"><span><span class="text-muted">Visible </span><strong>@state.VisibleStartUtc.ToString("dd MMM HH:mm") → @state.VisibleEndUtc.ToString("dd MMM HH:mm")</strong></span><span><span class="text-muted">Mode </span><strong>@ModeLabel(state.Mode)</strong></span><span><strong>@VisibleOperationCount</strong> shown</span></div>
                         <div class="flex gap-3 text-[10px] text-muted"><span>EAF</span><span>LRF</span><span>Cast</span><span>Roll</span></div>
                     </div>
                     <div class="min-h-0 flex-1 overflow-auto" data-gantt-scroll>
-                        <div class="min-w-[900px]">
+                        <div class="h-full min-w-[900px]">
                             <div class="sticky top-0 z-30 grid grid-cols-[176px_1fr] border-b border-border bg-surface-raised shadow-soft">
                                 <div class="border-r border-border px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted">Resource / load</div>
                                 <div class="relative h-10 overflow-hidden">
@@ -151,33 +152,33 @@
                                     @if (FrozenFenceEndUtc > state.VisibleStartUtc && workbench.Plan.ReferenceTimeUtc < state.VisibleEndUtc) { <div class="absolute bottom-0 top-5 w-px bg-danger" style="left:@Percent(FrozenFenceEndUtc)%" title="Frozen fence ends @FrozenFenceEndUtc.ToString("dd MMM HH:mm")"></div> }
                                 </div>
                             </div>
-                            <div class="relative">
+                            <div class="aps-gantt-lanes relative" style="@($"--aps-visible-lanes: {Math.Max(1, VisibleLanes.Count)}")">
                                 @if (state.ShowDependencies && state.SelectedPlanningKey is not null)
                                 {
                                     <svg class="pointer-events-none absolute inset-0 z-20 h-full w-full overflow-visible" aria-hidden="true">
-                                        @foreach (var edge in FocusedDependencyLines()) { <line x1="calc(176px + (100% - 176px) * @(edge.X1 / 100d))" y1="@edge.Y1" x2="calc(176px + (100% - 176px) * @(edge.X2 / 100d))" y2="@edge.Y2" stroke="var(--aps-border-strong)" stroke-width="1" stroke-dasharray="3 3" /> }
+                                        @foreach (var edge in FocusedDependencyLines()) { <line x1="calc(176px + (100% - 176px) * @(edge.X1 / 100d))" y1="@($"{edge.Y1}%")" x2="calc(176px + (100% - 176px) * @(edge.X2 / 100d))" y2="@($"{edge.Y2}%")" stroke="var(--aps-border-strong)" stroke-width="1" stroke-dasharray="3 3" /> }
                                     </svg>
                                 }
                                 @for (var laneIndex = 0; laneIndex < VisibleLanes.Count; laneIndex++)
                                 {
                                     var lane = VisibleLanes[laneIndex];
-                                    <div class="grid min-h-16 grid-cols-[176px_1fr] border-b border-border @(laneIndex % 2 == 0 ? "bg-surface" : "bg-surface-raised")" data-resource-id="@lane.ResourceId">
+                                    <div class="aps-gantt-lane grid grid-cols-[176px_1fr] border-b border-border @(laneIndex % 2 == 0 ? "bg-surface" : "bg-surface-raised")" data-resource-id="@lane.ResourceId">
                                         <button class="sticky left-0 z-10 border-r border-border bg-inherit px-3 py-2 text-left hover:bg-surface-hover" @onclick="() => SelectResource(lane)">
                                             <span class="flex justify-between gap-2"><strong class="text-xs">@lane.ResourceCode</strong><em class="not-italic text-[10px] @OperatingStateClass(lane.OperatingState)">@lane.OperatingState</em></span>
                                             <span class="block truncate text-[10px] text-muted">@lane.ProcessUnitType · @lane.OccupiedHours.ToString("0.#") h · @lane.Operations.Count ops</span>
                                         </button>
-                                        <div class="aps-time-grid relative min-h-16 overflow-hidden" data-window-start="@state.VisibleStartUtc.ToString("O")" data-window-end="@state.VisibleEndUtc.ToString("O")">
+                                        <div class="aps-time-grid relative h-full overflow-hidden" data-window-start="@state.VisibleStartUtc.ToString("O")" data-window-end="@state.VisibleEndUtc.ToString("O")">
                                             @foreach (var tick in AxisTicks()) { <div class="pointer-events-none absolute inset-y-0 w-px bg-border/50" style="left:@Percent(tick.Time)%"></div> }
                                             @if (FrozenFenceEndUtc > state.VisibleStartUtc && workbench.Plan.ReferenceTimeUtc < state.VisibleEndUtc) { <div class="pointer-events-none absolute inset-y-0 bg-danger-soft/45" style="left:@Percent(workbench.Plan.ReferenceTimeUtc)%;width:@WidthPercent(workbench.Plan.ReferenceTimeUtc, FrozenFenceEndUtc)%" title="Frozen planning fence"></div> }
                                             @if (state.ShowBaseline && workbench.Comparison is not null)
                                             {
-                                                @foreach (var baseline in BaselineBlocks(lane.ResourceCode)) { <div class="pointer-events-none absolute top-2 h-12 rounded border border-dashed border-border-strong bg-surface-inset/40" style="left:@Percent(baseline.Start)%;width:@WidthPercent(baseline.Start, baseline.End)%" title="Baseline position"></div> }
+                                                @foreach (var baseline in BaselineBlocks(lane.ResourceCode)) { <div class="pointer-events-none absolute inset-y-2 rounded border border-dashed border-border-strong bg-surface-inset/40" style="left:@Percent(baseline.Start)%;width:@WidthPercent(baseline.Start, baseline.End)%" title="Baseline position"></div> }
                                             }
                                             @foreach (var operation in VisibleOperations(lane))
                                             {
                                                 var selected = state.SelectedPlanningKey == operation.PlanningKey;
                                                 var execution = FindDetail(operation.PlanningKey)?.ExecutionStatus ?? OperationExecutionStatus.Planned;
-                                                <button class="aps-operation absolute top-2 z-10 h-12 min-w-2 overflow-hidden rounded-control border px-1.5 py-1 text-left text-[10px] leading-tight shadow-soft transition @(ProcessClass(operation.ProcessOperationType)) @(ExecutionClass(execution)) @(selected ? "border-accent ring-2 ring-accent" : "border-transparent hover:border-primary") @(state.StagedMove?.PlanningKey == operation.PlanningKey ? "opacity-55" : "") @(state.ShowCriticalPath && IsTightChain(operation) ? "ring-2 ring-warning" : "")"
+                                                <button class="aps-operation absolute inset-y-2 z-10 min-w-2 overflow-hidden rounded-control border px-1.5 py-1 text-left text-[10px] leading-tight shadow-soft transition @(ProcessClass(operation.ProcessOperationType)) @(ExecutionClass(execution)) @(selected ? "border-accent ring-2 ring-accent" : "border-transparent hover:border-primary") @(state.StagedMove?.PlanningKey == operation.PlanningKey ? "opacity-55" : "") @(state.ShowCriticalPath && IsTightChain(operation) ? "ring-2 ring-warning" : "")"
                                                         style="left:@Percent(operation.StartUtc)%;width:@WidthPercent(operation.StartUtc, operation.EndUtc)%" data-planning-key="@operation.PlanningKey" title="@OperationTitle(operation)" @onclick="() => SelectOperation(operation)">
                                                     <strong class="block truncate text-inverted">@OperationBlockLabel(operation)</strong><span class="block truncate text-inverted/80">@(state.Mode == PlanningWorkbenchMode.Execution ? execution : operation.StartUtc.ToString("HH:mm")) · @operation.QuantityMt.ToString("0.#") MT</span>
                                                 </button>
@@ -185,7 +186,7 @@
                                             @if (state.StagedMove is not null && state.StagedMove.TargetResourceId == lane.ResourceId)
                                             {
                                                 var source = FindOperation(state.StagedMove.PlanningKey);
-                                                @if (source is not null) { <div class="pointer-events-none absolute top-2 z-20 h-12 rounded-control border-2 border-accent bg-accent-soft/70" style="left:@Percent(state.StagedMove.TargetStartUtc)%;width:@WidthPercent(state.StagedMove.TargetStartUtc, state.StagedMove.TargetStartUtc + (source.EndUtc - source.StartUtc))%"><span class="px-1 text-[10px] font-semibold text-accent">Proposed · @state.StagedMove.TargetStartUtc.ToString("HH:mm")</span></div> }
+                                                @if (source is not null) { <div class="pointer-events-none absolute inset-y-2 z-20 rounded-control border-2 border-accent bg-accent-soft/70" style="left:@Percent(state.StagedMove.TargetStartUtc)%;width:@WidthPercent(state.StagedMove.TargetStartUtc, state.StagedMove.TargetStartUtc + (source.EndUtc - source.StartUtc))%"><span class="px-1 text-[10px] font-semibold text-accent">Proposed · @state.StagedMove.TargetStartUtc.ToString("HH:mm")</span></div> }
                                             }
                                         </div>
                                     </div>
@@ -196,10 +197,10 @@
                 </div>
             </main>
 
-            @if (state.InspectorOpen)
+            @if (Cockpit.InspectorOpen)
             {
-                <aside class="flex min-h-0 w-80 flex-col bg-surface shadow-[-1px_0_0_var(--aps-border)]">
-                    <div class="flex justify-between border-b border-border px-3 py-2"><strong class="text-xs uppercase tracking-wide text-muted">Planner inspector</strong><button class="text-xs text-muted" @onclick="state.ToggleInspector">Close</button></div>
+                <aside class="absolute inset-y-0 right-0 z-40 flex min-h-0 w-[22.5rem] flex-col bg-surface shadow-raised">
+                    <div class="flex justify-between border-b border-border px-3 py-2"><strong class="text-xs uppercase tracking-wide text-muted">Planner inspector</strong><button class="text-xs text-muted" @onclick="Cockpit.ToggleInspector">Close</button></div>
                     <div class="min-h-0 flex-1 overflow-y-auto p-3">
                         @if (SelectedOperation is null)
                         {
@@ -252,11 +253,13 @@
             </section>
         }
 
-        <WorkbenchAnalysisDock Expanded="@state.AnalysisDockOpen"
+        <WorkbenchAnalysisDock Expanded="@Cockpit.AnalysisDockOpen"
+                               View="@Cockpit.AnalysisView"
                                CriticalCount="@workbench.Queue.CriticalExceptions"
                                WarningCount="@workbench.Queue.WarningExceptions"
                                LateDemand="@workbench.Queue.LateDemand"
-                               Toggle="state.ToggleAnalysisDock" />
+                               ViewChanged="Cockpit.OpenAnalysis"
+                               Toggle="Cockpit.ToggleAnalysis" />
     }
 </div>
 
@@ -296,7 +299,7 @@
     private string ScenarioStateClass => workbench!.Plan.Status == PlanVersionStatus.Feasible ? "bg-success-soft text-success" : workbench.Plan.IsReleased ? "bg-info-soft text-info" : "bg-warning-soft text-warning";
     private DateTime FrozenFenceEndUtc => workbench?.Plan.ReferenceTimeUtc.AddMinutes(frozenMinutes) ?? DateTime.MinValue;
 
-    protected override async Task OnInitializedAsync() { WorkspaceState.Changed += OnWorkspaceChanged; state.Changed += OnStateChanged; await LoadAsync(); }
+    protected override async Task OnInitializedAsync() { WorkspaceState.Changed += OnWorkspaceChanged; state.Changed += OnStateChanged; Cockpit.Changed += OnStateChanged; Cockpit.CommandRequested += OnCockpitCommandRequested; await LoadAsync(); }
     protected override async Task OnAfterRenderAsync(bool firstRender) { if (workbench is null || dragInitialized) return; selfReference ??= DotNetObjectReference.Create(this); await JS.InvokeVoidAsync("apsPlanningWorkbench.initialize", workbenchRoot, selfReference); dragInitialized = true; }
 
     private async Task LoadAsync(Guid? planId = null, Guid? baselineId = null)
@@ -309,6 +312,17 @@
 
     private void OnWorkspaceChanged() { if (workbench is not null && WorkspaceState.CurrentPlanVersionId != workbench.Plan.PlanVersionId) _ = InvokeAsync(() => LoadAsync(WorkspaceState.CurrentPlanVersionId, WorkspaceState.BaselinePlanVersionId)); }
     private void OnStateChanged() => _ = InvokeAsync(StateHasChanged);
+    private void OnCockpitCommandRequested(PlannerCockpitCommand command) => _ = InvokeAsync(async () =>
+    {
+        switch (command)
+        {
+            case PlannerCockpitCommand.Optimize: await ReplanAsync(); break;
+            case PlannerCockpitCommand.Validate: ValidateScenario(); break;
+            case PlannerCockpitCommand.Release: await ReleaseAsync(); break;
+            case PlannerCockpitCommand.CreateRecoveryScenario: StartRecovery(); break;
+            case PlannerCockpitCommand.CreateScenario: StartPlanningScenario(); break;
+        }
+    });
     private void SetMode(PlanningWorkbenchMode mode)
     {
         if (mode == PlanningWorkbenchMode.Recovery && state.CanStartRecovery) { StartRecovery(); return; }
@@ -327,6 +341,12 @@
     }
     private void SearchChanged(ChangeEventArgs args) => state.SetSearch(args.Value?.ToString());
     private void ClearFocus() { state.ClearFocus(); WorkspaceState.ClearSelection(); }
+    private void HandleWorkbenchKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key != "Escape") return;
+        if (Cockpit.OpenDrawer != PlannerCockpitDrawer.None) Cockpit.CloseTransientPanels();
+        else ClearFocus();
+    }
     private void TargetStartChanged(ChangeEventArgs args) => targetStartText = args.Value?.ToString() ?? string.Empty;
 
     private void SelectOperation(ScheduledProcessOperationView operation) { state.SelectOperation(operation.PlanningKey); WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Operation, operation.OperationSnapshotId, FriendlyOperationName(operation.PlanningKey))); targetResourceText = operation.ResourceId.ToString(); targetStartText = operation.StartUtc.ToString("yyyy-MM-ddTHH:mm"); moveComment = null; allowFrozenOverride = false; }
@@ -393,7 +413,8 @@
         var focused = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { state.SelectedPlanningKey };
         var pending = new Queue<string>(); pending.Enqueue(state.SelectedPlanningKey);
         while (pending.TryDequeue(out var key)) foreach (var link in links.Where(x => x.From.Equals(key, StringComparison.OrdinalIgnoreCase) || x.To.Equals(key, StringComparison.OrdinalIgnoreCase))) { var next = link.From.Equals(key, StringComparison.OrdinalIgnoreCase) ? link.To : link.From; if (focused.Add(next)) pending.Enqueue(next); }
-        return links.Where(x => focused.Contains(x.From) && focused.Contains(x.To)).Select(link => { var from = placements[link.From]; var to = placements[link.To]; return new DependencyLine((double)Percent(from.Operation.EndUtc), from.Lane * 64 + 32, (double)Percent(to.Operation.StartUtc), to.Lane * 64 + 32); }).ToArray();
+        var laneCount = Math.Max(1, VisibleLanes.Count);
+        return links.Where(x => focused.Contains(x.From) && focused.Contains(x.To)).Select(link => { var from = placements[link.From]; var to = placements[link.To]; return new DependencyLine((double)Percent(from.Operation.EndUtc), (from.Lane + .5d) / laneCount * 100d, (double)Percent(to.Operation.StartUtc), (to.Lane + .5d) / laneCount * 100d); }).ToArray();
     }
     private bool IsTightChain(ScheduledProcessOperationView op) => FindDetail(op.PlanningKey)?.PredecessorPlanningKeys.Select(FindOperation).Any(x => x is not null && Math.Abs((op.StartUtc - x.EndUtc).TotalMinutes) <= 1d) == true;
     private IReadOnlyList<AxisTick> AxisTicks() { var hours = (state.VisibleEndUtc - state.VisibleStartUtc).TotalHours; var step = hours <= 12 ? TimeSpan.FromHours(1) : hours <= 36 ? TimeSpan.FromHours(4) : hours <= 96 ? TimeSpan.FromHours(12) : TimeSpan.FromDays(1); var result = new List<AxisTick>(); for (var t = state.VisibleStartUtc; t <= state.VisibleEndUtc; t += step) result.Add(new AxisTick(t, hours <= 36 ? "HH:mm" : "dd MMM")); return result; }
@@ -401,7 +422,6 @@
     private decimal Percent(DateTime value) { var total = Math.Max(1d, (state.VisibleEndUtc - state.VisibleStartUtc).TotalMinutes); return (decimal)Math.Clamp((value - state.VisibleStartUtc).TotalMinutes / total * 100d, 0d, 100d); }
     private decimal WidthPercent(DateTime start, DateTime end) { var total = Math.Max(1d, (state.VisibleEndUtc - state.VisibleStartUtc).TotalMinutes); var s = start < state.VisibleStartUtc ? state.VisibleStartUtc : start; var e = end > state.VisibleEndUtc ? state.VisibleEndUtc : end; return (decimal)Math.Clamp((e - s).TotalMinutes / total * 100d, .25d, 100d); }
 
-    private string BodyGridClass() => state.QueueOpen && state.InspectorOpen ? "grid-cols-[16rem_minmax(0,1fr)_20rem]" : state.QueueOpen ? "grid-cols-[16rem_minmax(0,1fr)]" : state.InspectorOpen ? "grid-cols-[minmax(0,1fr)_20rem]" : "grid-cols-1";
     private bool HasFocus => !string.IsNullOrWhiteSpace(state.SearchText) || state.SelectedPlanningKey is not null;
     private string QueueTitle => state.Mode switch { PlanningWorkbenchMode.Campaigns => "Campaigns", PlanningWorkbenchMode.Execution => "Execution exceptions", PlanningWorkbenchMode.Recovery => "Recovery queue", _ => "Demand queue" };
     private string QueueDescription => state.Mode switch { PlanningWorkbenchMode.Campaigns => "Compose heats and casts", PlanningWorkbenchMode.Execution => "Released work needing attention", PlanningWorkbenchMode.Recovery => "Disruptions and affected work", _ => "Orders waiting to be scheduled" };
@@ -432,6 +452,8 @@
     {
         WorkspaceState.Changed -= OnWorkspaceChanged;
         state.Changed -= OnStateChanged;
+        Cockpit.Changed -= OnStateChanged;
+        Cockpit.CommandRequested -= OnCockpitCommandRequested;
         try { await JS.InvokeVoidAsync("apsPlanningWorkbench.dispose", workbenchRoot); }
         catch (JSDisconnectedException) { }
         catch (InvalidOperationException) { }
