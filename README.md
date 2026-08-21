@@ -4,7 +4,7 @@ Advanced Planning & Scheduling for integrated steel manufacturing.
 
 ## Current product direction
 
-The canonical production architecture is the .NET solution under `src/`, and `main` is the integration branch for the current product code:
+The canonical production architecture is the .NET solution under `src/`, and **`main` is the integration branch and canonical code snapshot**:
 
 ```text
 APS.Domain
@@ -18,7 +18,7 @@ APS.UI
 
 The planning kernel is .NET/ASP.NET Core with OR-Tools CP-SAT for finite scheduling, SQL Server persistence/integration infrastructure, Plan Version audit/replanning, and Blazor for the application host/reference UI.
 
-The older Python/workbook/Flask implementation remains in this repository because it contains valuable proven behavior and migration/parity material, including recursive BOM, CTP, capacity and workbook-era planning flows. It is **legacy/reference implementation**, not the canonical production architecture.
+The older Python/workbook/Flask implementation remains in this repository because it contains useful proven behavior and migration/parity material, including recursive BOM, CTP, capacity and workbook-era planning flows. It is **legacy/reference implementation**, not the canonical production architecture.
 
 ## Start here
 
@@ -43,7 +43,7 @@ docs/reference/           useful non-authoritative legacy/reference material
 docs/archive/             superseded historical material
 ```
 
-See [`docs/APS_Repository_Cleanup_Manifest_2026-08-18.md`](docs/APS_Repository_Cleanup_Manifest_2026-08-18.md) for the exact classification/move manifest.
+See [`docs/APS_Repository_Cleanup_Manifest_2026-08-18.md`](docs/APS_Repository_Cleanup_Manifest_2026-08-18.md) for the document classification/move manifest.
 
 ## Product boundary
 
@@ -107,7 +107,7 @@ Demand/material requirement is causality. Campaign is manufacturing aggregation/
 
 Campaign composition is not production-authoritative sort-and-fill.
 
-For each hard-compatible requirement group, the planner now evaluates candidate campaign partitions against explicit service and manufacturing economics, including:
+For each hard-compatible requirement group, the planner evaluates candidate campaign partitions against explicit service and manufacturing economics, including:
 
 - allocation-level due-date/priority obligations;
 - early-production cost and campaign setup/utilization;
@@ -121,6 +121,58 @@ For each hard-compatible requirement group, the planner now evaluates candidate 
 The baseline Plan Version contributes a **soft** campaign-stability objective during replan. Hard technical feasibility and customer-service dominance can still change the grouping. New or removed demand is excluded from the stability movement metric.
 
 Candidate/objective evidence is retained in `CampaignCompositionDecision` and carried into Plan Version planning assumptions for later explanation and comparison.
+
+## Manufacturing routes and operational flexibility
+
+The configured `ManufacturingRoute` is the authoritative process sequence. APS does **not** assume one fixed integrated-steel topology such as `EAF → LRF → VD → CCM → RHF → RM`.
+
+### Steelmaking and VD
+
+Pre-CCM operations are driven by the configured route plus grade/order requirements. VD is therefore simple and explicit:
+
+- a grade/order that **requires VD** includes it;
+- a grade/order for which VD is **optional** can skip it;
+- a grade/order that **forbids VD** cannot be routed through it.
+
+The same principle applies to other configured steelmaking/refining operations: their presence comes from route/master-data semantics, not a hard-coded whitelist.
+
+### Rolling and reheating
+
+There is no special architectural split at the first HotRoll operation. A rolling requirement is a quantity/allocation anchor from cast-intermediate input to the required final section; the physical downstream chain is projected directly from the ordered configured route.
+
+Examples of valid configured paths include:
+
+```text
+CCM → HotRoll
+CCM → Reheat → HotRoll
+CCM → HotRoll → ColdRoll → Finish
+CCM → HotRoll → Reheat → HotRoll
+billet inventory → Reheat → HotRoll
+```
+
+Operations may also exist before the first HotRoll if the route requires them.
+
+**Hot charge is preferred, not forced.** Fresh or explicitly known-hot billet can go directly to an eligible mill when grade/order policy allows it and a physical hot-transfer path is available. This saves reheating energy, time and capacity.
+
+**Reheating is conditional, not universal.** Yard/cold billet, a route/order that explicitly requires reheating, a prohibition on direct hot charge, or a loss of guaranteed hot continuity selects the configured Reheat operation. If reheating is required but no eligible reheating resource exists, the plan reports a named infeasibility rather than inventing a furnace or silently bypassing the requirement.
+
+An inventory/decoupling point deliberately breaks guaranteed hot continuity. The billet remains valid material supply, but a later HotRoll must re-establish thermal readiness through the configured route.
+
+### Planning versus execution
+
+APS deliberately separates the upstream need to make billets from the later operational choice of which billet reaches a mill. A downstream mill outage should not conceptually erase the upstream manufacturing requirement when the plant must continue producing cast intermediate material.
+
+The route model now supports that decoupled architecture, while the remaining execution-time behavior is completed in the follow-up layers:
+
+- **#56** — time/temperature-aware billet state, hot/cold aging and reheating decision fidelity;
+- **#16** — late-binding resource assignment, commitment and operational redispatch;
+- **#18** — execution/material genealogy and actual-state closure.
+
+This distinction is intentional: planning describes valid manufacturing alternatives and constraints; execution/replanning selects among still-valid alternatives using the actual plant/material state.
+
+### Persisted/readback behavior
+
+Every included downstream route step—including the first HotRoll—is represented as a `RouteOperationPlan`, scheduled against eligible physical resources, persisted in the Plan Version, released as the corresponding Work Order/process operation, and exposed through the rolling/finishing read model. Skipped optional/forbidden route decisions retain reason codes so the UI does not reconstruct a fixed plant diagram.
 
 ## Canonical production lifecycle
 
@@ -142,11 +194,11 @@ Component-level calculation APIs and the direct-kernel Blazor sandbox are demo-o
 
 ## Backend implementation order
 
-Backend work proceeds one primary issue at a time. GitHub Issue #47 is the authoritative live execution order; [`docs/APS_Backend_Work_Program.md`](docs/APS_Backend_Work_Program.md) is the repository work-program document and should be kept aligned when repository documentation changes are authorized.
+Backend work proceeds one primary issue at a time. GitHub Issue #47 is the authoritative live execution order; [`docs/APS_Backend_Work_Program.md`](docs/APS_Backend_Work_Program.md) is the repository work-program document.
 
-Completed foundations include canonical repository/path cleanup, MTO demand orchestration, recursive BOM, time-phased material coverage, known-incoming material handling, route-driven pre-CCM topology, liquid-steel thermal constraints, resource scheduling modes, operating-state scenarios, and candidate Campaign/grade-sequence/heat optimization (#15).
+Completed foundations include canonical repository/path cleanup, MTO demand orchestration, recursive BOM, time-phased material coverage, known-incoming material handling, route-driven pre-CCM topology, downstream route projection without a first-HotRoll pivot, liquid-steel thermal constraints, resource scheduling modes, operating-state scenarios, and candidate Campaign/grade-sequence/heat optimization.
 
-The next primary backend issue after #15 is **#58 — remove the first-HotRoll architectural pivot from downstream route projection**, followed by billet thermal planning (#56), late-binding/redispatch (#16), execution/genealogy (#18), diagnostics (#19), scenario/material comparison (#57), decision/read services and remaining configuration/reference acceptance work per #47.
+After #58, the primary sequence continues with **#56 billet thermal planning**, then **#16 late-binding/redispatch**, **#18 execution/genealogy**, **#19 diagnostics**, **#57 scenario/material comparison**, and the remaining decision/read/configuration/reference acceptance work per #47.
 
 UI implementation remains dependent on backend truth/read-model readiness rather than filling missing planning behavior client-side.
 
@@ -157,8 +209,8 @@ UI implementation remains dependent on backend truth/read-model readiness rather
 - `APS.slnx` — .NET solution
 - `src/APS.Domain` — manufacturing/planning domain model
 - `src/APS.Application` — application contracts/orchestration
-- `src/APS.Planning` — Campaign/material/production-structure/finite-scheduling logic
-- `src/APS.Infrastructure` — persistence/providers
+- `src/APS.Planning` — Campaign/material/route/finite-scheduling logic
+- `src/APS.Infrastructure` — persistence/providers/read models
 - `src/APS.Integrations` — MES/integration adapters
 - `src/APS.Service` — ASP.NET Core/Blazor host and service API
 - `src/APS.UI` — Blazor feature pages/components
@@ -176,7 +228,7 @@ Examples include:
 - `APS_BF_SMS_RM.xlsx`
 - earlier static/React UI assets
 
-Do not infer production authority from the fact that a legacy file remains executable.
+Do not infer production authority from the fact that a legacy file remains executable or that an old divergent Git branch is still retained for history. **`main` is the integrated product truth.** Feature branches should be short-lived and merged back to `main`; genuinely divergent historical lineages are archival/reference material until deliberately reconciled.
 
 ## Verification rule
 
