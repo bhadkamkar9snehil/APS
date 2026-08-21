@@ -68,7 +68,8 @@ public sealed class PlanningEngine(
                 request.RoutePlanning,
                 request.CommittedMaterialSupplies,
                 request.FlowLinks,
-                request.PrecomputedCampaignMaterialDemand));
+                request.PrecomputedCampaignMaterialDemand,
+                effectiveTransitionRules));
 
         var heatAllocations = CampaignHeatAllocationBuilder.Build(campaignPlan.Campaigns);
         campaignPlan = campaignPlan with { HeatAllocations = heatAllocations };
