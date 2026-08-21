@@ -67,6 +67,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<IPlanningMasterDataProvider, SqlPlanningMasterDataProvider>();
             services.AddScoped<IProductionDemandOrchestrationService, ProductionDemandOrchestrationService>();
             services.AddScoped<IPlanningLifecycleService, PlanningLifecycleService>();
+            services.AddScoped<IPlanningWorkbenchCommandService, PlanningWorkbenchCommandService>();
             services.AddScoped<IMasterDataAdminService, MasterDataAdminService>();
         }
         else
@@ -90,6 +91,7 @@ public static class ServiceCollectionExtensions
             services.AddScoped<IPlanningMasterDataProvider, UnavailablePlanningMasterDataProvider>();
             services.AddScoped<IProductionDemandOrchestrationService, UnavailableProductionDemandOrchestrationService>();
             services.AddScoped<IPlanningLifecycleService, UnavailablePlanningLifecycleService>();
+            services.AddScoped<IPlanningWorkbenchCommandService, UnavailablePlanningWorkbenchCommandService>();
             services.AddScoped<IMasterDataAdminService, UnavailableMasterDataAdminService>();
         }
 

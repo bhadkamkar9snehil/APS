@@ -95,6 +95,108 @@ public sealed class ReplanningTests
     }
 
     [Fact]
+    public void Planner_schedule_override_places_the_operation_at_the_requested_resource_and_time()
+    {
+        var fixture = NewFixture();
+        var baseline = fixture.Engine.Run(fixture.Request);
+        Assert.True(baseline.IsFeasible);
+
+        var identityByTask = baseline.TaskIdentities!.ToDictionary(x => x.TaskId);
+        var baselineOperations = baseline.Schedule.Assignments.Select(assignment =>
+        {
+            var identity = identityByTask[assignment.TaskId];
+            return new BaselinePlanOperation(
+                identity.PlanningKey,
+                assignment.ResourceId,
+                assignment.StartUtc,
+                assignment.EndUtc,
+                identity.TaskType);
+        }).ToArray();
+        var selected = baselineOperations.OrderBy(x => x.StartUtc).Last();
+        var requestedStart = selected.StartUtc.AddMinutes(30);
+
+        var replanned = fixture.Engine.Run(fixture.Request with
+        {
+            ReplanContext = new PlanningReplanContext(
+                baseline.PlanVersionId,
+                fixture.Request.HorizonStartUtc,
+                new PlanningTimeFencePolicy(FrozenMinutes: 0, SlushyMinutes: 0),
+                baselineOperations,
+                ScheduleOverrides: new[]
+                {
+                    new OperationScheduleOverride(
+                        selected.PlanningKey,
+                        selected.ResourceId,
+                        requestedStart,
+                        "PLANNER_SEQUENCE")
+                })
+        });
+
+        Assert.True(replanned.IsFeasible, string.Join("; ", replanned.Schedule.Issues.Select(x => x.Message)));
+        var replanIdentityByTask = replanned.TaskIdentities!.ToDictionary(x => x.TaskId);
+        var moved = Assert.Single(replanned.Schedule.Assignments, x =>
+            replanIdentityByTask[x.TaskId].PlanningKey == selected.PlanningKey);
+        Assert.Equal(selected.ResourceId, moved.ResourceId);
+        Assert.Equal(requestedStart, moved.StartUtc);
+    }
+
+    [Fact]
+    public async Task Planner_schedule_override_is_persisted_with_its_reason_and_revised_time()
+    {
+        var fixture = NewFixture();
+        var baseline = fixture.Engine.Run(fixture.Request);
+        Assert.True(baseline.IsFeasible);
+        var identities = baseline.TaskIdentities!.ToDictionary(x => x.TaskId);
+        var baselineOperations = baseline.Schedule.Assignments.Select(assignment =>
+        {
+            var identity = identities[assignment.TaskId];
+            return new BaselinePlanOperation(
+                identity.PlanningKey,
+                assignment.ResourceId,
+                assignment.StartUtc,
+                assignment.EndUtc,
+                identity.TaskType);
+        }).ToArray();
+        var selected = baselineOperations.OrderBy(x => x.StartUtc).Last();
+        var requestedStart = selected.StartUtc.AddMinutes(30);
+        var overrideItem = new OperationScheduleOverride(
+            selected.PlanningKey,
+            selected.ResourceId,
+            requestedStart,
+            "PLANNER_SEQUENCE",
+            "Keep the campaign continuous");
+        var request = fixture.Request with
+        {
+            ReplanContext = new PlanningReplanContext(
+                baseline.PlanVersionId,
+                fixture.Request.HorizonStartUtc,
+                new PlanningTimeFencePolicy(FrozenMinutes: 0, SlushyMinutes: 0),
+                baselineOperations,
+                ScheduleOverrides: new[] { overrideItem })
+        };
+        var replanned = fixture.Engine.Run(request);
+        Assert.True(replanned.IsFeasible);
+
+        var options = new DbContextOptionsBuilder<ApsDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+        await using var db = new ApsDbContext(options);
+        var saved = await new PlanVersionRepository(db).SaveAsync(new PersistPlanningRunRequest(
+            request,
+            replanned,
+            PlanTriggerType.OperationalRedispatch,
+            fixture.Request.HorizonStartUtc,
+            "Planner schedule move"));
+
+        var persisted = await db.PlanOperationSnapshots.SingleAsync(x =>
+            x.PlanVersionId == saved.PlanVersionId && x.PlanningKey == selected.PlanningKey);
+        Assert.Equal(requestedStart, persisted.StartUtc);
+        Assert.Equal("PLANNER_SEQUENCE", persisted.RedispatchReasonCode);
+        Assert.Equal("Keep the campaign continuous", persisted.RedispatchComment);
+        Assert.NotNull(persisted.RedispatchedOnUtc);
+    }
+
+    [Fact]
     public async Task Persisted_plan_can_supply_baseline_operations_for_next_replan()
     {
         var fixture = NewFixture();

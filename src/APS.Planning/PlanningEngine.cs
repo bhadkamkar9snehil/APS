@@ -160,7 +160,16 @@ public sealed class PlanningEngine(
 
         var identities = PlanningTaskIdentityService.Build(structure);
         var originalTasks = structure.SchedulingTasks.ToArray();
-        var overrideResult = ApplyResourceOverrides(structure.SchedulingTasks, identities, request.ReplanContext?.ResourceOverrides);
+        var effectiveResourceOverrides = (request.ReplanContext?.ResourceOverrides ?? Array.Empty<OperationResourceOverride>())
+            .Concat((request.ReplanContext?.ScheduleOverrides ?? Array.Empty<OperationScheduleOverride>())
+                .Select(x => new OperationResourceOverride(
+                    x.PlanningKey,
+                    x.ResourceId,
+                    x.CommitmentState,
+                    x.ReasonCode,
+                    x.Comment)))
+            .ToArray();
+        var overrideResult = ApplyResourceOverrides(structure.SchedulingTasks, identities, effectiveResourceOverrides);
         if (overrideResult.Issues.Count > 0)
         {
             structure = structure with { Issues = structure.Issues.Concat(overrideResult.Issues).ToArray() };
@@ -466,8 +475,12 @@ public sealed class PlanningEngine(
         var context = request.ReplanContext;
         if (context is null || context.BaselineOperations.Count == 0) return Array.Empty<FiniteScheduleStabilityConstraint>();
 
+        var scheduleOverrides = (context.ScheduleOverrides ?? Array.Empty<OperationScheduleOverride>())
+            .GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.Last(), StringComparer.OrdinalIgnoreCase);
         var overrideKeys = (context.ResourceOverrides ?? Array.Empty<OperationResourceOverride>())
             .Select(x => x.PlanningKey)
+            .Concat(scheduleOverrides.Keys)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var taskIds = tasks.Select(x => x.TaskId).ToHashSet();
         var baselineByKey = context.BaselineOperations
@@ -478,6 +491,18 @@ public sealed class PlanningEngine(
         var repairTaskIds = overrideKeys.Count == 0
             ? null
             : BuildRepairScopeTaskIds(tasks, identities, context, overrideKeys, baselineByKey);
+
+        foreach (var identity in identities.Where(x => taskIds.Contains(x.TaskId)))
+        {
+            if (!scheduleOverrides.TryGetValue(identity.PlanningKey, out var scheduleOverride)) continue;
+            constraints.Add(new FiniteScheduleStabilityConstraint(
+                identity.TaskId,
+                TimeFenceZone.Frozen,
+                scheduleOverride.ResourceId,
+                scheduleOverride.StartUtc,
+                0,
+                0));
+        }
 
         foreach (var identity in identities.Where(x => taskIds.Contains(x.TaskId)))
         {

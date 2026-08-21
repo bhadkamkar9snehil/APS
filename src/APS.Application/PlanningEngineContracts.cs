@@ -54,6 +54,14 @@ public sealed record OperationResourceOverride(
     string ReasonCode = "OPERATIONAL_REDISPATCH",
     string? Comment = null);
 
+public sealed record OperationScheduleOverride(
+    string PlanningKey,
+    Guid ResourceId,
+    DateTime StartUtc,
+    string ReasonCode = "PLANNER_SCHEDULE_MOVE",
+    string? Comment = null,
+    OperationAssignmentCommitmentState CommitmentState = OperationAssignmentCommitmentState.Committed);
+
 public sealed record RepairScopePolicy(
     int SuccessorDepth = 4,
     int RepairHorizonMinutes = 720,
@@ -67,7 +75,8 @@ public sealed record PlanningReplanContext(
     IReadOnlyCollection<BaselinePlanOperation> BaselineOperations,
     IReadOnlyCollection<OperationResourceOverride>? ResourceOverrides = null,
     RepairScopePolicy? RepairScope = null,
-    IReadOnlyCollection<BaselineCampaignAllocation>? BaselineCampaignAllocations = null);
+    IReadOnlyCollection<BaselineCampaignAllocation>? BaselineCampaignAllocations = null,
+    IReadOnlyCollection<OperationScheduleOverride>? ScheduleOverrides = null);
 
 public sealed record PlanningTaskIdentity(
     Guid TaskId,

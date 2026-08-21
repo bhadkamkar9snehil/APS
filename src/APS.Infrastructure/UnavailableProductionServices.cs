@@ -143,3 +143,16 @@ public sealed class UnavailablePlanningLifecycleService : IPlanningLifecycleServ
         Guid baselinePlanVersionId, PlanningRecalculationRequest request, CancellationToken cancellationToken = default) =>
         throw ProductionUnavailable.Exception();
 }
+
+public sealed class UnavailablePlanningWorkbenchCommandService : IPlanningWorkbenchCommandService
+{
+    public Task<PlanningProposalImpact> ValidateMoveAsync(
+        PlanningMoveProposal proposal,
+        CancellationToken cancellationToken = default) =>
+        throw ProductionUnavailable.Exception();
+
+    public Task<PlanningMoveApplyResult> ApplyMoveAsync(
+        PlanningMoveApplyRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw ProductionUnavailable.Exception();
+}

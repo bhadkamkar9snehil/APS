@@ -1,3 +1,5 @@
+using APS.Domain;
+
 namespace APS.Application;
 
 public enum PlanningWorkbenchExceptionSeverity
@@ -34,6 +36,27 @@ public sealed record PlanningQueueView(
     int CriticalExceptions,
     int WarningExceptions);
 
+public sealed record PlanningOperationResourceOptionView(
+    Guid ResourceId,
+    string ResourceCode,
+    string ResourceName,
+    int DurationMinutes,
+    int AssignmentPenalty,
+    bool WasSelected,
+    string? EligibilityBasisCode);
+
+public sealed record PlanningOperationWorkbenchDetail(
+    Guid OperationSnapshotId,
+    string PlanningKey,
+    Guid SourceEntityId,
+    OperationAssignmentCommitmentState CommitmentState,
+    OperationExecutionStatus ExecutionStatus,
+    IReadOnlyCollection<string> PredecessorPlanningKeys,
+    IReadOnlyCollection<PlanningOperationResourceOptionView> ResourceOptions,
+    string? CampaignNumber,
+    int? HeatSequenceNumber,
+    IReadOnlyCollection<string> ProductionOrderNumbers);
+
 public sealed record PlanningWorkbenchView(
     PlanContextView Plan,
     PlanContextView? Baseline,
@@ -43,4 +66,5 @@ public sealed record PlanningWorkbenchView(
     MaterialFlowWorkspaceView Material,
     PlanComparisonWorkspaceView? Comparison,
     PlanningQueueView Queue,
-    IReadOnlyCollection<PlanningWorkbenchException> Exceptions);
+    IReadOnlyCollection<PlanningWorkbenchException> Exceptions,
+    IReadOnlyCollection<PlanningOperationWorkbenchDetail> OperationDetails);

@@ -112,6 +112,17 @@ public sealed class PlanningWorkbenchQueryTests
             GradeCode = "SAE1008",
             CrossSectionCode = "BLT-150SQ"
         });
+        db.PlanOperationResourceOptionSnapshots.Add(new PlanOperationResourceOptionSnapshot
+        {
+            PlanVersionId = planId,
+            PlanningKey = "HEAT:CMP-00001:H01:EAF",
+            SourceEntityId = heatId,
+            ProcessOperationType = ProcessOperationType.Eaf,
+            ResourceId = resourceId,
+            DurationMinutes = 60,
+            WasSelected = true,
+            EligibilityBasisCode = "ROUTE_GRADE_CAPABILITY"
+        });
         await db.SaveChangesAsync();
 
         var service = new PlannerWorkspaceQueryService(db, new PlanVersionRepository(db));
@@ -122,6 +133,8 @@ public sealed class PlanningWorkbenchQueryTests
         Assert.Single(result.Schedule.ResourceLanes);
         Assert.Single(result.Demand.Rows);
         Assert.Single(result.Campaigns.Campaigns);
+        Assert.Single(result.OperationDetails);
+        Assert.Single(result.OperationDetails.Single().ResourceOptions);
         Assert.Empty(result.Material.Pools);
         Assert.Equal(1, result.Queue.TotalDemand);
         Assert.Equal(0, result.Queue.UnscheduledDemand);

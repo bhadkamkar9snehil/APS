@@ -1,5 +1,7 @@
 using APS.Application;
 using APS.Domain;
+using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 
 namespace APS.Infrastructure;
 
@@ -37,6 +39,7 @@ public sealed partial class PlannerWorkspaceQueryService
         }
 
         var exceptions = BuildExceptions(plan, demand, schedule, material);
+        var operationDetails = await BuildOperationDetailsAsync(plan.PlanVersionId, campaigns, cancellationToken);
         var lateDemand = demand.Rows.Count(row => row.RequiredDate < schedule.ScheduleEndUtc);
         var queue = new PlanningQueueView(
             demand.Rows.Count,
@@ -58,7 +61,85 @@ public sealed partial class PlannerWorkspaceQueryService
             material,
             comparison,
             queue,
-            exceptions);
+            exceptions,
+            operationDetails);
+    }
+
+    private async Task<IReadOnlyCollection<PlanningOperationWorkbenchDetail>> BuildOperationDetailsAsync(
+        Guid planVersionId,
+        CampaignStudioView campaigns,
+        CancellationToken cancellationToken)
+    {
+        var operations = await db.PlanOperationSnapshots.AsNoTracking()
+            .Where(x => x.PlanVersionId == planVersionId)
+            .OrderBy(x => x.StartUtc)
+            .ToArrayAsync(cancellationToken);
+        var options = await db.PlanOperationResourceOptionSnapshots.AsNoTracking()
+            .Where(x => x.PlanVersionId == planVersionId)
+            .OrderBy(x => x.AssignmentPenalty)
+            .ThenBy(x => x.ResourceId)
+            .ToArrayAsync(cancellationToken);
+        var resourceIds = options.Select(x => x.ResourceId)
+            .Concat(operations.Select(x => x.ResourceId))
+            .Distinct()
+            .ToArray();
+        var resources = await db.Resources.AsNoTracking()
+            .Where(x => resourceIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, cancellationToken);
+        var optionsByKey = options
+            .GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                x => x.Key,
+                x => (IReadOnlyCollection<PlanningOperationResourceOptionView>)x.Select(option =>
+                {
+                    resources.TryGetValue(option.ResourceId, out var resource);
+                    return new PlanningOperationResourceOptionView(
+                        option.ResourceId,
+                        resource?.Code ?? "Unavailable resource",
+                        resource?.Name ?? "Unavailable resource",
+                        option.DurationMinutes,
+                        option.AssignmentPenalty,
+                        option.WasSelected,
+                        option.EligibilityBasisCode);
+                }).ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+        var heatLookup = campaigns.Campaigns
+            .SelectMany(campaign => campaign.Heats.Select(heat => new { Campaign = campaign, Heat = heat }))
+            .ToDictionary(x => x.Heat.CampaignHeatId);
+
+        return operations.Select(operation =>
+        {
+            optionsByKey.TryGetValue(operation.PlanningKey, out var resourceOptions);
+            heatLookup.TryGetValue(operation.SourceEntityId, out var heat);
+            return new PlanningOperationWorkbenchDetail(
+                operation.Id,
+                operation.PlanningKey,
+                operation.SourceEntityId,
+                operation.AssignmentCommitmentState,
+                operation.ExecutionStatus,
+                DeserializeKeys(operation.PredecessorPlanningKeysJson),
+                resourceOptions ?? Array.Empty<PlanningOperationResourceOptionView>(),
+                heat?.Campaign.CampaignNumber,
+                heat?.Heat.SequenceNumber,
+                heat?.Campaign.Allocations
+                    .Select(x => x.ProductionOrderNumber)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                    .ToArray() ?? Array.Empty<string>());
+        }).ToArray();
+    }
+
+    private static IReadOnlyCollection<string> DeserializeKeys(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return Array.Empty<string>();
+        try
+        {
+            return JsonSerializer.Deserialize<string[]>(json) ?? Array.Empty<string>();
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<string>();
+        }
     }
 
     private static IReadOnlyCollection<PlanningWorkbenchException> BuildExceptions(

@@ -118,7 +118,9 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
             request.TimeFencePolicy,
             actualState.BaselineOperations,
             ResourceOverrides: request.ResourceOverrides,
-            BaselineCampaignAllocations: baselineCampaignAllocations);
+            RepairScope: request.RepairScope,
+            BaselineCampaignAllocations: baselineCampaignAllocations,
+            ScheduleOverrides: request.ScheduleOverrides);
 
         var planningRequest = BuildPlanningRequest(
             request.Planning,
@@ -129,7 +131,7 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
             replanContext);
 
         var result = _planningEngine.Run(planningRequest);
-        var trigger = request.ResourceOverrides is { Count: > 0 }
+        var trigger = request.ResourceOverrides is { Count: > 0 } || request.ScheduleOverrides is { Count: > 0 }
             ? PlanTriggerType.OperationalRedispatch
             : request.Trigger;
         var reason = request.Reason ?? (trigger == PlanTriggerType.OperationalRedispatch

@@ -81,6 +81,13 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             .GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.OrderBy(y => y.AssignmentPenalty).ThenBy(y => y.ResourceId).ToArray(), StringComparer.OrdinalIgnoreCase);
         var overridesByKey = (request.PlanningRequest.ReplanContext?.ResourceOverrides ?? Array.Empty<OperationResourceOverride>())
+            .Concat((request.PlanningRequest.ReplanContext?.ScheduleOverrides ?? Array.Empty<OperationScheduleOverride>())
+                .Select(x => new OperationResourceOverride(
+                    x.PlanningKey,
+                    x.ResourceId,
+                    x.CommitmentState,
+                    x.ReasonCode,
+                    x.Comment)))
             .GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.Last(), StringComparer.OrdinalIgnoreCase);
         var baselineByKey = (request.PlanningRequest.ReplanContext?.BaselineOperations ?? Array.Empty<BaselinePlanOperation>())

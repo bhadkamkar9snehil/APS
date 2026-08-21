@@ -12,7 +12,9 @@ public sealed record PlanningRecalculationRequest(
     DateTime? ReferenceTimeUtc = null,
     PlanTriggerType Trigger = PlanTriggerType.ExecutionFeedback,
     string? Reason = null,
-    IReadOnlyCollection<OperationResourceOverride>? ResourceOverrides = null);
+    IReadOnlyCollection<OperationResourceOverride>? ResourceOverrides = null,
+    IReadOnlyCollection<OperationScheduleOverride>? ScheduleOverrides = null,
+    RepairScopePolicy? RepairScope = null);
 
 public sealed record PersistedPlanningRunResult(
     PlanningRunResult Plan,
