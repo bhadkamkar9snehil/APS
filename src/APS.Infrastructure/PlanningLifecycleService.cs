@@ -82,6 +82,9 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
     {
         var baseline = await _plans.GetAsync(baselinePlanVersionId, cancellationToken)
             ?? throw new KeyNotFoundException($"Plan Version {baselinePlanVersionId} was not found.");
+        var baselineCampaignAllocations = await _plans.GetBaselineCampaignAllocationsAsync(
+            baselinePlanVersionId,
+            cancellationToken);
 
         var masterData = await _masters.GetAsync(cancellationToken);
         ValidateProductionConfiguration(request.Planning, masterData);
@@ -114,7 +117,8 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
             referenceTime,
             request.TimeFencePolicy,
             actualState.BaselineOperations,
-            request.ResourceOverrides);
+            ResourceOverrides: request.ResourceOverrides,
+            BaselineCampaignAllocations: baselineCampaignAllocations);
 
         var planningRequest = BuildPlanningRequest(
             request.Planning,
@@ -158,9 +162,6 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
         IReadOnlyCollection<CommittedMaterialSupply>? committedSupplies = null,
         PlanningReplanContext? replanContext = null)
     {
-        // MTO/MTS POs entering the production kernel are already net manufacturing requirements.
-        // Finished-goods coverage is owned by demand orchestration and snapshotted separately; passing FG
-        // positions downstream would allow CampaignPlanningService compatibility logic to net the same stock twice.
         var productionInventory = inventory
             .Where(x => x.Stage != InventoryStage.FinishedGoods)
             .ToArray();
@@ -197,10 +198,6 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
             Scenario: ResolveScenario(request.ScenarioCode, masterData));
     }
 
-    /// <summary>
-    /// A blank scenario code plans the plant as configured. A baseline scenario is equally the plant
-    /// as configured, so it is not applied as an override set either (#17).
-    /// </summary>
     private static PlanningScenario? ResolveScenario(string? scenarioCode, PlanningMasterDataSnapshot masterData)
     {
         if (string.IsNullOrWhiteSpace(scenarioCode)) return null;
