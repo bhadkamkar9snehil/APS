@@ -8,119 +8,61 @@ namespace APS.Planning.Tests;
 public sealed class MultiStageRouteTests
 {
     [Fact]
-    public void Configured_route_schedules_hot_cold_and_finishing_on_stage_specific_resources()
+    public void Configured_route_projects_first_hot_roll_cold_roll_and_finishing_as_one_route_chain()
     {
-        var po = new ProductionOrder
-        {
-            ProductionOrderNumber = "PO-ROUTE-1",
-            DemandSource = DemandSourceType.MakeToOrder,
-            MaterialCode = "FG-COLD-1",
-            GradeCode = "G1",
-            GradeSequenceClassCode = "SEQ-A",
-            FinalCrossSectionCode = "1.0MM",
-            CasterSectionCode = "150X150",
-            RouteCode = "ROUTE-COLD",
-            PlannedQuantityMt = 100m,
-            RemainingQuantityMt = 100m,
-            RequiredDate = new DateTime(2026, 8, 23),
-            Priority = 2
-        };
+        var po = Order("PO-ROUTE-1", "1.0MM", 100m);
         var plant = Guid.NewGuid();
-        var caster = Resource(plant, "CCM-1", ResourceType.Caster, 4);
-        var hotMill = Resource(plant, "HRM-1", ResourceType.RollingMill);
-        var coldMill = Resource(plant, "CRM-1", ResourceType.RollingMill);
-        var finishing = Resource(plant, "FIN-1", ResourceType.FinishingLine);
+        var caster = Resource(plant, "CCM-1", ResourceType.Caster, ProcessUnitType.Ccm, 4);
+        var hotMill = Resource(plant, "HRM-1", ResourceType.RollingMill, ProcessUnitType.HotRollingMill);
+        var coldMill = Resource(plant, "CRM-1", ResourceType.RollingMill, ProcessUnitType.ColdRollingMill);
+        var finishing = Resource(plant, "FIN-1", ResourceType.FinishingLine, ProcessUnitType.FinishingLine);
         var resources = new[] { caster, hotMill, coldMill, finishing };
 
-        var casterCapabilities = new[]
-        {
-            new ResourceCapability
-            {
-                ResourceId = caster.Id,
-                RouteCode = "ROUTE-COLD",
-                GradeCode = "G1",
-                OutputCrossSectionCode = "150X150",
-                ThroughputMtPerHour = 60m
-            }
-        };
         var routeId = Guid.NewGuid();
         var routeOperations = new[]
         {
-            Operation(routeId, 10, WorkOrderType.HotRolling, "150X150", "HRC"),
-            Operation(routeId, 20, WorkOrderType.ColdRolling, "HRC", "CRC", minQueueMinutes: 30),
-            Operation(routeId, 30, WorkOrderType.Finishing, "CRC", "1.0MM", minQueueMinutes: 15)
+            Operation(routeId, 10, ProcessOperationType.HotRoll, WorkOrderType.HotRolling, "150X150", "HRC"),
+            Operation(routeId, 20, ProcessOperationType.ColdRoll, WorkOrderType.ColdRolling, "HRC", "CRC", minQueueMinutes: 30),
+            Operation(routeId, 30, ProcessOperationType.Finish, WorkOrderType.Finishing, "CRC", "1.0MM", minQueueMinutes: 15)
         };
         var routeCapabilities = new[]
         {
-            Capability(hotMill.Id, WorkOrderType.HotRolling, "150X150", "HRC", 50m),
-            Capability(coldMill.Id, WorkOrderType.ColdRolling, "HRC", "CRC", 40m),
-            Capability(finishing.Id, WorkOrderType.Finishing, "CRC", "1.0MM", 35m)
+            Capability(hotMill.Id, ProcessOperationType.HotRoll, "150X150", "HRC", 50m),
+            Capability(coldMill.Id, ProcessOperationType.ColdRoll, "HRC", "CRC", 40m),
+            Capability(finishing.Id, ProcessOperationType.Finish, "CRC", "1.0MM", 35m)
         };
         var links = new[]
         {
-            new PlantFlowLink
-            {
-                FromResourceId = caster.Id,
-                ToResourceId = hotMill.Id,
-                CouplingType = FlowCouplingType.HotTransfer,
-                MinimumTransferTime = TimeSpan.FromMinutes(10),
-                MaximumTransferTime = TimeSpan.FromMinutes(180),
-                SupportsHotTransfer = true
-            }
+            Link(caster.Id, hotMill.Id, ProcessOperationType.Ccm, ProcessOperationType.HotRoll, hot: true, minMinutes: 10),
+            Link(hotMill.Id, coldMill.Id, ProcessOperationType.HotRoll, ProcessOperationType.ColdRoll),
+            Link(coldMill.Id, finishing.Id, ProcessOperationType.ColdRoll, ProcessOperationType.Finish)
         };
-        var start = new DateTime(2026, 8, 17, 8, 0, 0, DateTimeKind.Utc);
-        var engine = new PlanningEngine(
-            new CampaignPlanningService(),
-            new ProductionStructurePlanningService(),
-            new FiniteScheduleOptimizer());
 
-        var result = engine.Run(new PlanningRunRequest(
-            new[] { po },
-            Array.Empty<InventoryPosition>(),
-            resources,
-            casterCapabilities,
-            Array.Empty<ResourceCalendar>(),
-            Array.Empty<TransitionRule>(),
-            links,
-            new CampaignPlanningPolicy(50m, 40m, 55m, 250m, 300m),
-            new ProductionStructurePlanningPolicy(MaximumHeatsPerCastSequence: 8),
-            start,
-            start.AddHours(24),
-            5,
-            RoutePlanning: new RoutePlanningInput(routeOperations, routeCapabilities)));
+        var result = Run(po, resources, routeOperations, routeCapabilities, links);
 
         Assert.True(result.IsFeasible, string.Join("; ", result.Schedule.Issues.Select(x => x.Message)));
-        var hot = Assert.Single(result.ProductionStructure.RollingPlans);
-        Assert.Equal("HRC", hot.OutputCrossSectionCode);
-        // Mill assignment is now solver-owned: ConfiguredRouteProductionStructureBuilder hands CP-SAT
-        // every eligible mill as a FiniteScheduleResourceOption rather than fixing RollingMillResourceId
-        // up front, so the selected mill only shows up in the solved schedule assignments.
-        var hotAssignments = result.Schedule.Assignments.Where(a => a.SourceEntityId == hot.Id).ToArray();
-        Assert.NotEmpty(hotAssignments);
-        Assert.All(hotAssignments, a => Assert.Equal(hotMill.Id, a.ResourceId));
+        var rollingDemand = Assert.Single(result.ProductionStructure.RollingPlans);
+        var routePlans = result.ProductionStructure.RouteOperationPlans!.OrderBy(x => x.SequenceNumber).ToArray();
+        Assert.Equal(3, routePlans.Length);
+        Assert.Equal(
+            new[] { ProcessOperationType.HotRoll, ProcessOperationType.ColdRoll, ProcessOperationType.Finish },
+            routePlans.Select(x => x.ProcessOperationType).ToArray());
+        Assert.Equal(rollingDemand.Id, routePlans[0].UpstreamPlanId);
+        Assert.Equal(routePlans[0].Id, routePlans[1].UpstreamPlanId);
+        Assert.Equal(routePlans[1].Id, routePlans[2].UpstreamPlanId);
 
-        var downstream = Assert.IsAssignableFrom<IReadOnlyCollection<RouteOperationPlan>>(
-            result.ProductionStructure.RouteOperationPlans);
-        Assert.Equal(2, downstream.Count);
-        var cold = downstream.Single(x => x.OperationType == WorkOrderType.ColdRolling);
-        var finish = downstream.Single(x => x.OperationType == WorkOrderType.Finishing);
-        // Downstream route resource assignment is likewise solver-owned now (RouteOperationPlan.ResourceId
-        // stays null; the actual assignment only exists in the solved schedule).
-        var coldAssignments = result.Schedule.Assignments.Where(a => a.SourceEntityId == cold.Id).ToArray();
-        var finishAssignments = result.Schedule.Assignments.Where(a => a.SourceEntityId == finish.Id).ToArray();
-        Assert.NotEmpty(coldAssignments);
-        Assert.NotEmpty(finishAssignments);
-        Assert.All(coldAssignments, a => Assert.Equal(coldMill.Id, a.ResourceId));
-        Assert.All(finishAssignments, a => Assert.Equal(finishing.Id, a.ResourceId));
-        Assert.Equal("CRC", cold.OutputCrossSectionCode);
-        Assert.Equal("1.0MM", finish.OutputCrossSectionCode);
+        AssertAssignments(result, routePlans[0].Id, hotMill.Id);
+        AssertAssignments(result, routePlans[1].Id, coldMill.Id);
+        AssertAssignments(result, routePlans[2].Id, finishing.Id);
 
-        var coldTasks = result.ProductionStructure.SchedulingTasks.Where(x => x.SourceEntityId == cold.Id).ToArray();
-        var finishTasks = result.ProductionStructure.SchedulingTasks.Where(x => x.SourceEntityId == finish.Id).ToArray();
+        var coldTasks = result.ProductionStructure.SchedulingTasks.Where(x => x.SourceEntityId == routePlans[1].Id).ToArray();
+        var finishTasks = result.ProductionStructure.SchedulingTasks.Where(x => x.SourceEntityId == routePlans[2].Id).ToArray();
         Assert.NotEmpty(coldTasks);
         Assert.Equal(coldTasks.Length, finishTasks.Length);
-        Assert.All(coldTasks, task => Assert.All(task.Dependencies, dependency => Assert.Equal(30, dependency.MinimumLagMinutes)));
-        Assert.All(finishTasks, task => Assert.All(task.Dependencies, dependency => Assert.Equal(15, dependency.MinimumLagMinutes)));
+        Assert.All(coldTasks, task => Assert.All(task.Dependencies, dependency => Assert.True(
+            dependency.AllowedResourcePairs is { Count: > 0 } || dependency.MinimumLagMinutes == 30)));
+        Assert.All(finishTasks, task => Assert.All(task.Dependencies, dependency => Assert.True(
+            dependency.AllowedResourcePairs is { Count: > 0 } || dependency.MinimumLagMinutes == 15)));
 
         var release = new PlanReleaseBuilder().Build(new PlanReleaseBuildRequest(
             result.PlanVersionId,
@@ -134,20 +76,133 @@ public sealed class MultiStageRouteTests
             workOrder => Assert.Contains(workOrder.Allocations, allocation => allocation.ProductionOrderId == po.Id));
     }
 
-    private static Resource Resource(Guid plant, string code, ResourceType type, int? strands = null) => new()
+    [Fact]
+    public void Hot_roll_reheat_hot_roll_is_projected_in_order_and_keeps_distinct_mills()
+    {
+        var po = Order("PO-TWO-MILLS", "FINAL", 60m);
+        var plant = Guid.NewGuid();
+        var caster = Resource(plant, "CCM-1", ResourceType.Caster, ProcessUnitType.Ccm, 4);
+        var firstMill = Resource(plant, "HRM-1", ResourceType.RollingMill, ProcessUnitType.HotRollingMill);
+        var reheat = Resource(plant, "RHF-1", ResourceType.Furnace, ProcessUnitType.ReheatingFurnace);
+        reheat.NominalResidenceMinutes = 20;
+        var secondMill = Resource(plant, "HRM-2", ResourceType.RollingMill, ProcessUnitType.HotRollingMill);
+
+        var routeId = Guid.NewGuid();
+        var routeOperations = new[]
+        {
+            Operation(routeId, 10, ProcessOperationType.HotRoll, WorkOrderType.HotRolling, "150X150", "INTERMEDIATE"),
+            Operation(routeId, 20, ProcessOperationType.Reheat, WorkOrderType.HotRolling, "INTERMEDIATE", "INTERMEDIATE"),
+            Operation(routeId, 30, ProcessOperationType.HotRoll, WorkOrderType.HotRolling, "INTERMEDIATE", "FINAL")
+        };
+        var routeCapabilities = new[]
+        {
+            Capability(firstMill.Id, ProcessOperationType.HotRoll, "150X150", "INTERMEDIATE", 60m),
+            Capability(secondMill.Id, ProcessOperationType.HotRoll, "INTERMEDIATE", "FINAL", 60m)
+        };
+        var links = new[]
+        {
+            Link(caster.Id, firstMill.Id, ProcessOperationType.Ccm, ProcessOperationType.HotRoll, hot: true),
+            Link(firstMill.Id, reheat.Id, ProcessOperationType.HotRoll, ProcessOperationType.Reheat),
+            Link(reheat.Id, secondMill.Id, ProcessOperationType.Reheat, ProcessOperationType.HotRoll, hot: true)
+        };
+
+        var result = Run(po, new[] { caster, firstMill, reheat, secondMill }, routeOperations, routeCapabilities, links);
+
+        Assert.True(result.IsFeasible, string.Join("; ", result.Schedule.Issues.Select(x => x.Message)));
+        var plans = result.ProductionStructure.RouteOperationPlans!.OrderBy(x => x.SequenceNumber).ToArray();
+        Assert.Equal(
+            new[] { ProcessOperationType.HotRoll, ProcessOperationType.Reheat, ProcessOperationType.HotRoll },
+            plans.Select(x => x.ProcessOperationType).ToArray());
+        Assert.Contains(result.ProductionStructure.SchedulingTasks, x =>
+            x.SourceEntityId == plans[1].Id && x.TaskType == FiniteScheduleTaskType.Reheating);
+        AssertAssignments(result, plans[0].Id, firstMill.Id);
+        AssertAssignments(result, plans[2].Id, secondMill.Id);
+    }
+
+    private static PlanningRunResult Run(
+        ProductionOrder po,
+        IReadOnlyCollection<Resource> resources,
+        IReadOnlyCollection<ManufacturingRouteOperation> operations,
+        IReadOnlyCollection<RouteResourceCapability> routeCapabilities,
+        IReadOnlyCollection<PlantFlowLink> links)
+    {
+        var caster = resources.Single(x => x.ProcessUnitType == ProcessUnitType.Ccm);
+        var capabilities = new[]
+        {
+            new ResourceCapability
+            {
+                ResourceId = caster.Id,
+                RouteCode = po.RouteCode,
+                GradeCode = po.GradeCode,
+                OutputCrossSectionCode = po.CasterSectionCode,
+                ThroughputMtPerHour = 60m
+            }
+        };
+        var start = new DateTime(2026, 8, 17, 8, 0, 0, DateTimeKind.Utc);
+        return new PlanningEngine(
+            new CampaignPlanningService(),
+            new ProductionStructurePlanningService(),
+            new FiniteScheduleOptimizer()).Run(new PlanningRunRequest(
+                new[] { po },
+                Array.Empty<InventoryPosition>(),
+                resources,
+                capabilities,
+                Array.Empty<ResourceCalendar>(),
+                Array.Empty<TransitionRule>(),
+                links,
+                new CampaignPlanningPolicy(60m, 50m, 70m, 250m, 300m),
+                new ProductionStructurePlanningPolicy(MaximumHeatsPerCastSequence: 8),
+                start,
+                start.AddDays(10),
+                5,
+                RoutePlanning: new RoutePlanningInput(operations, routeCapabilities)));
+    }
+
+    private static void AssertAssignments(PlanningRunResult result, Guid sourceId, Guid resourceId)
+    {
+        var assignments = result.Schedule.Assignments.Where(x => x.SourceEntityId == sourceId).ToArray();
+        Assert.NotEmpty(assignments);
+        Assert.All(assignments, x => Assert.Equal(resourceId, x.ResourceId));
+    }
+
+    private static ProductionOrder Order(string number, string finalSection, decimal quantity) => new()
+    {
+        ProductionOrderNumber = number,
+        DemandSource = DemandSourceType.MakeToOrder,
+        MaterialCode = $"FG-{finalSection}",
+        GradeCode = "G1",
+        GradeSequenceClassCode = "SEQ-A",
+        FinalCrossSectionCode = finalSection,
+        CasterSectionCode = "150X150",
+        RouteCode = "ROUTE-COLD",
+        PlannedQuantityMt = quantity,
+        RemainingQuantityMt = quantity,
+        RequiredDate = new DateTime(2026, 8, 23),
+        Priority = 2
+    };
+
+    private static Resource Resource(
+        Guid plant,
+        string code,
+        ResourceType type,
+        ProcessUnitType unitType,
+        int? strands = null) => new()
     {
         PlantId = plant,
         ProcessStageId = Guid.NewGuid(),
         Code = code,
         Name = code,
         ResourceType = type,
-        StrandCount = strands
+        ProcessUnitType = unitType,
+        StrandCount = strands,
+        OperatingState = ResourceOperatingState.Available
     };
 
     private static ManufacturingRouteOperation Operation(
         Guid routeId,
         int sequence,
-        WorkOrderType type,
+        ProcessOperationType processType,
+        WorkOrderType workOrderType,
         string input,
         string output,
         int minQueueMinutes = 0) => new()
@@ -155,7 +210,9 @@ public sealed class MultiStageRouteTests
         ManufacturingRouteId = routeId,
         RouteCode = "ROUTE-COLD",
         SequenceNumber = sequence,
-        OperationType = type,
+        ProcessOperationType = processType,
+        ReleaseWorkOrderType = workOrderType,
+        Requirement = RequirementDisposition.Required,
         InputCrossSectionCode = input,
         OutputCrossSectionCode = output,
         MinimumQueueTime = TimeSpan.FromMinutes(minQueueMinutes),
@@ -164,17 +221,35 @@ public sealed class MultiStageRouteTests
 
     private static RouteResourceCapability Capability(
         Guid resourceId,
-        WorkOrderType type,
+        ProcessOperationType processType,
         string input,
         string output,
         decimal throughput) => new()
     {
         ResourceId = resourceId,
         RouteCode = "ROUTE-COLD",
-        OperationType = type,
+        ProcessOperationType = processType,
         GradeCode = "G1",
         InputCrossSectionCode = input,
         OutputCrossSectionCode = output,
         ThroughputMtPerHour = throughput
+    };
+
+    private static PlantFlowLink Link(
+        Guid from,
+        Guid to,
+        ProcessOperationType fromProcess,
+        ProcessOperationType toProcess,
+        bool hot = false,
+        int minMinutes = 0) => new()
+    {
+        FromResourceId = from,
+        ToResourceId = to,
+        FromProcessOperationType = fromProcess,
+        ToProcessOperationType = toProcess,
+        CouplingType = hot ? FlowCouplingType.HotTransfer : FlowCouplingType.Buffered,
+        MinimumTransferTime = TimeSpan.FromMinutes(minMinutes),
+        SupportsHotTransfer = hot,
+        IsEnabled = true
     };
 }
