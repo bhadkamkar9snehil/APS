@@ -21,6 +21,9 @@ internal static class TimePhasedMaterialPlanner
             .SelectMany(x => x.Allocations)
             .GroupBy(x => x.ProductionOrderId)
             .ToDictionary(x => x.Key, x => x.Sum(y => y.PlannedQuantityMt));
+        var routePlansByUpstream = (structure.RouteOperationPlans ?? Array.Empty<RouteOperationPlan>())
+            .GroupBy(x => x.UpstreamPlanId)
+            .ToDictionary(x => x.Key, x => x.OrderBy(y => y.SequenceNumber).ToArray());
 
         foreach (var allocation in campaignPlan.InventoryAllocations.Where(x =>
                      x.Use is PlanningInventoryUse.IntermediateFeed or
@@ -169,13 +172,28 @@ internal static class TimePhasedMaterialPlanner
 
         foreach (var rolling in structure.RollingPlans)
         {
-            var sourceTasks = structure.SchedulingTasks.Where(x => x.SourceEntityId == rolling.Id).ToArray();
-            var feedTasks = sourceTasks.Where(x => x.ProcessOperationType == ProcessOperationType.Reheat).ToArray();
-            if (feedTasks.Length == 0)
+            // #58: billet is consumed by the first actual configured downstream operation, not by a
+            // special first-HotRoll task. If Reheat is selected it consumes the billet; if direct hot
+            // charge is selected the first HotRoll consumes it; a required pre-roll conditioning step
+            // can be the first consumer as well. Compatibility mode falls back to direct RollingPlan tasks.
+            FiniteScheduleTask[] feedTasks;
+            if (routePlansByUpstream.TryGetValue(rolling.Id, out var firstRoutePlans))
             {
-                feedTasks = sourceTasks.Where(x =>
-                    x.ProcessOperationType == ProcessOperationType.HotRoll ||
-                    x.TaskType == FiniteScheduleTaskType.HotRolling).ToArray();
+                var firstIds = firstRoutePlans.Select(x => x.Id).ToHashSet();
+                feedTasks = structure.SchedulingTasks
+                    .Where(x => firstIds.Contains(x.SourceEntityId))
+                    .ToArray();
+            }
+            else
+            {
+                var sourceTasks = structure.SchedulingTasks.Where(x => x.SourceEntityId == rolling.Id).ToArray();
+                feedTasks = sourceTasks.Where(x => x.ProcessOperationType == ProcessOperationType.Reheat).ToArray();
+                if (feedTasks.Length == 0)
+                {
+                    feedTasks = sourceTasks.Where(x =>
+                        x.ProcessOperationType == ProcessOperationType.HotRoll ||
+                        x.TaskType == FiniteScheduleTaskType.HotRolling).ToArray();
+                }
             }
             if (feedTasks.Length == 0) continue;
 
@@ -212,8 +230,8 @@ internal static class TimePhasedMaterialPlanner
                         ScheduledMaterialEventTiming.TaskStart,
                         TaskId: task.TaskId,
                         Explanation: canonicalMaterialByPo.ContainsKey(po.Id)
-                            ? $"Canonical BOM-derived steel feed to {task.ProcessOperationType} for rolling plan {rolling.Id}."
-                            : $"Billet feed to {task.ProcessOperationType} for rolling plan {rolling.Id}.",
+                            ? $"Canonical BOM-derived steel feed to {task.ProcessOperationType} for rolling demand {rolling.Id}."
+                            : $"Billet feed to {task.ProcessOperationType} for rolling demand {rolling.Id}.",
                         ProductionOrderId: po.Id,
                         MaterialCode: po.MaterialCode,
                         GradeCode: po.GradeCode,
