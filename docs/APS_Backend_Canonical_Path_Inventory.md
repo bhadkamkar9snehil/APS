@@ -158,16 +158,9 @@ Two older application ports have no current production implementation:
 
 They are explicitly classified **Future-only**, not production authority. Current execution feedback enters through execution event services/endpoints; current release authority stops at persisted APS Work Orders/ScheduledOperations. If these ports are implemented later, they must adapt to the same canonical execution/release lifecycle rather than create parallel state.
 
-## 9. Legacy/reference implementation
+## 9. Retired implementation
 
-The Python/workbook stack is **Legacy/Reference**:
-
-- `xaps_application_api.py`
-- `engine/`
-- workbook-backed BOM/capacity/CTP/campaign/scheduler logic
-- `ui_design/`
-
-It remains valuable for parity/reference (especially recursive BOM, CTP and capacity behavior) but is not invoked by the .NET production service and must not be reintroduced as a fallback planner.
+The Python/workbook stack and earlier UI prototypes were retired from the active tree in v0.2.6. Their final snapshot is available at tag `v0.2.5` for deliberate historical comparison. They were never invoked by the .NET production service and must not be reintroduced as a fallback planner.
 
 ## 10. #38 implementation findings and resolution
 

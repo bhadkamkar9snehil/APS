@@ -36,6 +36,9 @@ public sealed class UnavailableTraceabilityService : ITraceabilityService
 
     public Task<MaterialLotTrace?> GetMaterialLotTraceAsync(Guid materialLotId, CancellationToken cancellationToken = default) =>
         throw ProductionUnavailable.Exception();
+
+    public Task<MaterialLotTrace?> GetMaterialLotTraceByNumberAsync(string lotNumber, CancellationToken cancellationToken = default) =>
+        throw ProductionUnavailable.Exception();
 }
 
 public sealed class UnavailableWorkOrderExecutionService : IWorkOrderExecutionService

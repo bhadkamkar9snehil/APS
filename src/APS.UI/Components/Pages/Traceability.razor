@@ -77,7 +77,7 @@
                     }
                     @foreach (var wo in FilteredWorkOrders)
                     {
-                        <button type="button" class="block w-full border-b border-border px-3 py-2 text-left last:border-0 hover:bg-surface-hover @(workOrderIdInput == wo.WorkOrderId.ToString() ? "bg-accent-soft" : "")" @onclick="() => SelectWorkOrderAsync(wo)">
+                        <button type="button" class="block w-full border-b border-border px-3 py-2 text-left last:border-0 hover:bg-surface-hover @(selectedWorkOrderId == wo.WorkOrderId ? "bg-accent-soft" : "")" @onclick="() => SelectWorkOrderAsync(wo)">
                             <div class="flex items-center justify-between">
                                 <strong class="text-xs">@wo.WorkOrderNumber</strong>
                                 <span class="rounded px-1.5 py-0.5 text-xs @StatusClass(wo.Status)">@wo.Status</span>
@@ -143,8 +143,8 @@ else
 {
     <div class="mb-4 flex items-end gap-2">
         <label class="flex flex-col gap-1 text-sm">
-            <span class="text-xs text-secondary">Material Lot ID</span>
-            <input class="w-96 rounded border border-border-strong px-2 py-1 font-mono text-xs" @bind="lotIdInput" />
+            <span class="text-xs text-secondary">Material lot</span>
+            <input class="w-96 rounded border border-border-strong px-2 py-1 text-xs" placeholder="Lot number" @bind="lotNumberInput" />
         </label>
         <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground" @onclick="LoadLotTraceAsync">Look up</button>
     </div>
@@ -206,8 +206,8 @@ else
 
 @code {
     private string mode = "wo";
-    private string workOrderIdInput = "";
-    private string lotIdInput = "";
+    private Guid? selectedWorkOrderId;
+    private string lotNumberInput = "";
     private WorkOrderTrace? workOrderTrace;
     private MaterialLotTrace? lotTrace;
     private string? workOrderError;
@@ -266,8 +266,8 @@ else
 
     private async Task SelectWorkOrderAsync(WorkOrderView wo)
     {
-        workOrderIdInput = wo.WorkOrderId.ToString();
-        await LoadWorkOrderTraceAsync();
+        selectedWorkOrderId = wo.WorkOrderId;
+        await LoadWorkOrderTraceAsync(wo.WorkOrderId);
     }
 
     protected override async Task OnInitializedAsync()
@@ -277,36 +277,38 @@ else
         loadingWorkOrders = false;
     }
 
-    private async Task LoadWorkOrderTraceAsync()
+    private async Task LoadWorkOrderTraceAsync(Guid workOrderId)
     {
         workOrderError = null;
         workOrderTrace = null;
-        if (!Guid.TryParse(workOrderIdInput, out var id))
-        {
-            workOrderError = "Enter a valid Work Order ID (GUID).";
-            return;
-        }
-        workOrderTrace = await TraceabilityService.GetWorkOrderTraceAsync(id);
-        if (workOrderTrace is null) workOrderError = "No trace found for that Work Order ID.";
+        workOrderTrace = await TraceabilityService.GetWorkOrderTraceAsync(workOrderId);
+        if (workOrderTrace is null) workOrderError = "No trace found for that Work Order.";
     }
 
     private async Task LoadLotTraceAsync()
     {
         lotError = null;
         lotTrace = null;
-        if (!Guid.TryParse(lotIdInput, out var id))
+        if (string.IsNullOrWhiteSpace(lotNumberInput))
         {
-            lotError = "Enter a valid Material Lot ID (GUID).";
+            lotError = "Enter a material lot number.";
             return;
         }
-        lotTrace = await TraceabilityService.GetMaterialLotTraceAsync(id);
-        if (lotTrace is null) lotError = "No trace found for that Material Lot ID.";
+        lotTrace = await TraceabilityService.GetMaterialLotTraceByNumberAsync(lotNumberInput);
+        if (lotTrace is null) lotError = "No trace found for that material lot number.";
     }
 
     private void JumpToLot(Guid materialLotId)
     {
         mode = "lot";
-        lotIdInput = materialLotId.ToString();
-        _ = LoadLotTraceAsync();
+        lotError = null;
+        _ = LoadLotTraceAsync(materialLotId);
+    }
+
+    private async Task LoadLotTraceAsync(Guid materialLotId)
+    {
+        lotTrace = await TraceabilityService.GetMaterialLotTraceAsync(materialLotId);
+        if (lotTrace is null) lotError = "No trace found for that material lot.";
+        else lotNumberInput = lotTrace.LotNumber;
     }
 }

@@ -18,7 +18,7 @@ APS.UI
 
 The planning kernel is .NET/ASP.NET Core with OR-Tools CP-SAT for finite scheduling, SQL Server persistence/integration infrastructure, Plan Version audit/replanning, and Blazor for the application host/reference UI.
 
-The older Python/workbook/Flask implementation remains in this repository because it contains useful proven behavior and migration/parity material, including recursive BOM, CTP, capacity and workbook-era planning flows. It is **legacy/reference implementation**, not the canonical production architecture.
+The retired Python/workbook/Flask prototype and earlier UI implementations were removed from the active tree after the .NET product path became authoritative. Their final retained snapshot remains available in Git history at tag `v0.2.5`; they are not build, runtime or release dependencies.
 
 ## Start here
 
@@ -216,19 +216,9 @@ UI implementation remains dependent on backend truth/read-model readiness rather
 - `src/APS.UI` — Blazor feature pages/components
 - `tests/APS.Planning.Tests` — .NET planning regression/acceptance tests
 
-### Legacy/reference implementation retained for migration/parity
+### Historical implementation boundary
 
-Examples include:
-
-- `engine/`
-- `xaps_application_api.py`
-- `run_all.py`
-- `aps_functions.py`
-- workbook-oriented tools/scripts
-- `APS_BF_SMS_RM.xlsx`
-- earlier static/React UI assets
-
-Do not infer production authority from the fact that a legacy file remains executable or that an old divergent Git branch is still retained for history. **`main` is the integrated product truth.** Feature branches should be short-lived and merged back to `main`; genuinely divergent historical lineages are archival/reference material until deliberately reconciled.
+The retired Python/workbook application and earlier static/React UIs are not present in the active tree. Use tag `v0.2.5` only when historical comparison is explicitly required. **`main` is the integrated product truth.**
 
 ## Verification rule
 

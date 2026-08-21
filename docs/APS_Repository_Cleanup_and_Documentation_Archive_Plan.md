@@ -51,24 +51,9 @@ Superseded/stale design and implementation notes retained only for historical co
 
 Archive files should not be linked from the canonical docs index except through an Archive section.
 
-## Legacy code/prototype policy
+## Legacy code/prototype retirement
 
-Do not delete the Python/workbook prototype merely because .NET is canonical.
-
-Recommended organization once dependencies are understood:
-
-```text
-legacy/
-  python-workbook-prototype/
-```
-
-or retain current paths with a very explicit `LEGACY_REFERENCE.md` if moving paths would break tooling/history.
-
-Before moving any code:
-- inventory imports/file references;
-- identify any still-used workbook tooling;
-- identify migration/reference tests;
-- verify no production .NET runtime depends on it.
+This earlier policy was completed and superseded in v0.2.6. The .NET solution was verified independent, then the Python/workbook prototype and earlier UI implementations were removed from the active tree. Tag `v0.2.5` is the recovery point for explicit historical comparison; no production .NET runtime depends on it.
 
 ## Root repository cleanup
 

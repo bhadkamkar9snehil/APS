@@ -5,12 +5,12 @@ namespace APS.UI.Tests;
 public sealed class ReleaseMetadataTests
 {
     [Fact]
-    public void Desktop_and_legacy_versions_are_intentionally_distinct()
+    public void Desktop_project_is_the_only_version_authority()
     {
-        Assert.Equal("0.10.0", File.ReadAllText(Repo.File("VERSION")).Trim());
+        Assert.False(File.Exists(Repo.File("VERSION")));
 
         var project = XDocument.Load(Repo.File("src/APS.DesktopHost/APS.DesktopHost.csproj"));
-        Assert.Equal("0.2.5", project.Descendants("Version").Single().Value);
+        Assert.Equal("0.2.6", project.Descendants("Version").Single().Value);
     }
 
     [Fact]

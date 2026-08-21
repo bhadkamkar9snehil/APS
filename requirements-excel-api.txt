@@ -1,5 +1,0 @@
-flask
-flask-cors
-openpyxl
-pandas
-numpy

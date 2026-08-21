@@ -43,7 +43,7 @@ else
                 <div class="space-y-2">
                     @foreach (var resource in view.Resources)
                     {
-                        <button type="button" class="flex w-full items-center gap-3 rounded px-2 py-1.5 text-left hover:bg-surface-hover" @onclick="() => SelectResource(resource)">
+                        <div class="flex w-full items-center gap-3 rounded px-2 py-1.5 text-left">
                             <div class="w-28 shrink-0">
                                 <div class="font-medium">@resource.ResourceCode</div>
                                 <div class="text-xs text-muted">@resource.ProcessUnitType</div>
@@ -63,7 +63,7 @@ else
                                 }
                             </div>
                             <span class="w-24 shrink-0 rounded px-1.5 py-0.5 text-center text-xs @ResourceStateClass(resource.OperatingState)">@resource.OperatingState</span>
-                        </button>
+                        </div>
                     }
                 </div>
                 <p class="mt-2 text-xs text-muted">Bar length is relative wall-clock occupancy inside this Plan Version; it is not a utilization percentage. Cumulative resources show peak concurrent blocks against their configured capacity, because concurrent work on them is not overload.</p>
@@ -175,12 +175,6 @@ else
         if (planVersionId == view?.Plan.PlanVersionId) return;
         WorkspaceState.SetPlan(planVersionId);
     }
-
-    private void SelectResource(ResourcePressureView resource) =>
-        WorkspaceState.Select(new PlannerEntityRef(
-            PlannerEntityType.Resource,
-            resource.ResourceId,
-            resource.ResourceCode));
 
     private double MaxOccupiedHours => view?.Resources.Select(x => x.OccupiedHours).DefaultIfEmpty(0d).Max() ?? 0d;
 

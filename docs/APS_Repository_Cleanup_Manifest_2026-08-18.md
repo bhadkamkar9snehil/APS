@@ -140,18 +140,16 @@ The word `COMPLETE` in these filenames is historical and does not indicate curre
 
 ---
 
-## Executable/source classification — no moves in #46
+## Executable/source classification — superseded by v0.2.6 retirement
 
 | Repository area | Classification after cleanup |
 |---|---|
 | `src/APS.Domain`, `src/APS.Application`, `src/APS.Planning`, `src/APS.Infrastructure`, `src/APS.Integrations`, `src/APS.Service`, `src/APS.UI` | Production-direction .NET architecture |
 | `tests/APS.Planning.Tests` | .NET planning regression/acceptance tests |
-| `engine/`, `xaps_application_api.py`, workbook-oriented root Python scripts/tools | Legacy/reference implementation used for migration/parity; not canonical production architecture |
-| `APS_BF_SMS_RM.xlsx` | Legacy/reference workbook/source data artifact; not the target production persistence architecture |
-| `ui_design/`, `aps-ui/` and other prototype UI assets | Legacy/reference UI work unless explicitly covered by current .NET UI work |
-| root `archive/` | Existing source/artifact archive; retained untouched in #46 |
+| retired Python/workbook application, workbook and Python tests/tools | Removed from the active tree in v0.2.6; final snapshot at tag `v0.2.5` |
+| earlier static/React UI prototypes and root artifact archive | Removed from the active tree in v0.2.6; final snapshot at tag `v0.2.5` |
 
-No executable source is deleted or relocated by this documentation cleanup.
+Issue #46 itself did not relocate executable source. The later v0.2.6 cleanup deliberately retired the now-independent legacy implementation after the .NET solution became authoritative.
 
 ---
 
@@ -168,7 +166,7 @@ README.md
 ## Acceptance evidence
 
 - current product/backend truth can be found from the root README in under one minute;
-- old Python/workbook behavior remains available but is explicitly non-authoritative;
+- old Python/workbook behavior remains recoverable from tag `v0.2.5` but is absent from the active tree;
 - stale `COMPLETE`, phase, optimization, API and UI documents no longer sit beside canonical documents;
 - current GitHub issue links to canonical root documents remain valid because current file paths were preserved;
 - no backend implementation code changed;

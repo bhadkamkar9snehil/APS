@@ -118,4 +118,22 @@ public sealed class TraceabilityService(ApsDbContext db) : ITraceabilityService
             parents,
             children);
     }
+
+    public async Task<MaterialLotTrace?> GetMaterialLotTraceByNumberAsync(
+        string lotNumber,
+        CancellationToken cancellationToken = default)
+    {
+        var normalized = lotNumber.Trim();
+        if (normalized.Length == 0) return null;
+
+        var materialLotId = await db.MaterialLots
+            .AsNoTracking()
+            .Where(x => x.LotNumber == normalized)
+            .Select(x => (Guid?)x.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        return materialLotId.HasValue
+            ? await GetMaterialLotTraceAsync(materialLotId.Value, cancellationToken)
+            : null;
+    }
 }

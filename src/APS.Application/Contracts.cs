@@ -493,6 +493,7 @@ public interface ITraceabilityService
 {
     Task<WorkOrderTrace?> GetWorkOrderTraceAsync(Guid workOrderId, CancellationToken cancellationToken = default);
     Task<MaterialLotTrace?> GetMaterialLotTraceAsync(Guid materialLotId, CancellationToken cancellationToken = default);
+    Task<MaterialLotTrace?> GetMaterialLotTraceByNumberAsync(string lotNumber, CancellationToken cancellationToken = default);
 }
 
 public sealed record WorkOrderTrace(

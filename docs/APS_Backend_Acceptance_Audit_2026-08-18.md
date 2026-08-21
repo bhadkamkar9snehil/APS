@@ -118,7 +118,7 @@ Without a canonical recursive BOM, the new .NET engine cannot yet answer general
 
 > “This 100 MT coil requirement implies X MT billet, Y MT liquid steel, Z MT hot metal, A MT sinter/pellet/ore, B MT coke/coal, C MT flux/alloy, etc., after stock and future supply at each node.”
 
-The legacy Python engine *can* recursively explode configured BOM levels with inventory netting, yield/scrap, byproducts and cycle diagnostics. The new .NET backend must preserve and strengthen that capability rather than infer all upstream material requirements from a steel-route-specific quantity model.
+The historical Python engine snapshot at tag `v0.2.5` could recursively explode configured BOM levels with inventory netting, yield/scrap, byproducts and cycle diagnostics. The .NET backend must preserve and strengthen that capability rather than infer all upstream material requirements from a steel-route-specific quantity model.
 
 ---
 
@@ -686,9 +686,9 @@ Issue: #19.
 
 ## 21. CTP, scenario and capacity consistency audit
 
-### Legacy reference
+### Historical reference
 
-The Python prototype contains richer CTP/capacity/scenario behavior and should remain a migration/reference source, not a second production engine.
+The retired Python prototype snapshot at tag `v0.2.5` contains historical CTP/capacity/scenario behavior for deliberate comparison only; it is not a second production engine.
 
 ### Canonical .NET rule
 

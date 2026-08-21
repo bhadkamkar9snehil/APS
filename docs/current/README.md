@@ -47,6 +47,6 @@ The in-process direct-kernel planning sandbox is explicitly isolated at `/demo/p
 
 If a document under `docs/reference/` or `docs/archive/` conflicts with any document listed above, the current document wins.
 
-The legacy Python/workbook implementation remains in the repository for parity, migration and behavior reference. It is not the canonical production architecture.
+The legacy Python/workbook implementation was retired from the active tree after the .NET product path became authoritative. Its final snapshot is available at tag `v0.2.5` for deliberate historical comparison only.
 
 **Verification rule:** do not use GitHub Actions/CI as APS project verification. Build/test/runtime verification is performed later in the intended developer environment.

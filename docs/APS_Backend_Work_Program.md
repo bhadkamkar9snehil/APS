@@ -167,7 +167,7 @@ Do not run several major domain redesigns in parallel.
 
 ### #46 Repository documentation cleanup/archive — closed
 
-Canonical/current/reference/archive document authority established. Legacy Python/workbook evidence remains reference material, not production authority.
+Canonical/current/reference/archive document authority established. The legacy Python/workbook implementation was subsequently retired from the active tree in v0.2.6 and remains available at tag `v0.2.5` only.
 
 ---
 

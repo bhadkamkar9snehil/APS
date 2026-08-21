@@ -8,7 +8,7 @@ Status: **cleanup acceptance checklist**
 - stale docs moved to archive, not deleted;
 - reference docs receive superseded banner;
 - root-level documentation clutter removed/moved appropriately;
-- legacy Python/workbook prototype clearly labeled reference/migration source;
+- retired Python/workbook prototype absent from the active tree and recoverable from tag `v0.2.5`;
 - no current doc links to obsolete path;
 - cleanup manifest records every move and rationale;
 - no source-code move occurs as part of documentation cleanup unless separately reviewed;

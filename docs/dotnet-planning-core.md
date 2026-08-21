@@ -3,7 +3,7 @@
 **Status:** Current implementation note  
 **Authority:** Subordinate to `APS_Backend_Acceptance_Audit_2026-08-18.md`, `APS_End_to_End_Manufacturing_Planning_Flow.md`, `APS_Backend_Work_Program.md`, and `APS_Backend_Canonical_Path_Inventory.md`.
 
-This branch contains the production .NET architecture for APS while retaining the Python/workbook prototype strictly as migration/reference material.
+The production APS architecture is the .NET solution. The retired Python/workbook prototype is available only through Git history at tag `v0.2.5`.
 
 ## Production ownership boundary
 

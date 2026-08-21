@@ -64,11 +64,9 @@ Domain/master
 
 For production lifecycle ownership specifically, use [`APS_Backend_Canonical_Path_Inventory.md`](APS_Backend_Canonical_Path_Inventory.md). Demo/component algorithms are not production authority merely because they call the same solver.
 
-## Legacy source
+## Historical source
 
-The Python/workbook prototype remains in the repository outside `docs/` as migration/reference implementation. It contains useful behavior that may need parity in the .NET architecture, but it is not the canonical production authority.
-
-Executable legacy code is deliberately not moved by the documentation-cleanup issue.
+The Python/workbook prototype and earlier UI implementations were retired from the active tree. Their final snapshot is preserved by Git tag `v0.2.5`; current implementation and acceptance claims must come from the .NET solution on `main`.
 
 ## UI
 
