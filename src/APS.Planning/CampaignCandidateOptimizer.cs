@@ -583,11 +583,9 @@ internal static class CampaignCandidateOptimizer
                      .ThenBy(x => x.Row)
                      .ThenBy(x => x.Column))
         {
-            if (!usedRows.Add(edge.Row) || !usedColumns.Add(edge.Column))
-            {
-                usedRows.Remove(edge.Row);
-                continue;
-            }
+            if (usedRows.Contains(edge.Row) || usedColumns.Contains(edge.Column)) continue;
+            usedRows.Add(edge.Row);
+            usedColumns.Add(edge.Column);
             total += edge.Quantity;
         }
         return total;
