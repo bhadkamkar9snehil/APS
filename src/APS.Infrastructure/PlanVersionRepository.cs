@@ -24,8 +24,6 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
         }
 
         var routeDecisions = result.ProductionStructure.RouteOperationDecisions ?? Array.Empty<RouteOperationDecision>();
-        // A source entity runs each operation type at most once, so this is unambiguous; DistinctBy
-        // guards a projector that records the same operation twice rather than throwing mid-save.
         var routeDecisionsByOperation = routeDecisions
             .Where(x => x.Outcome == RouteOperationOutcome.Included)
             .DistinctBy(x => (x.SourceEntityId, x.ProcessOperationType))
@@ -267,11 +265,6 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             Deserialize<RouteOperationDecision>(state.RouteOperationDecisionsJson));
     }
 
-    /// <summary>
-    /// Captures the levers this plan was solved under. Resources are recorded as the engine saw them,
-    /// which for a scenario run is the scenario-adjusted plant rather than the configured masters -
-    /// that is the point: it is what produced this plan.
-    /// </summary>
     private static PlanningAssumptions BuildAssumptions(PlanningRunRequest request, PlanningRunResult result) =>
         new(
             request.Scenario?.ScenarioCode,
@@ -307,6 +300,22 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
                 x.RouteCode,
                 x.RouteSequenceNumber))
             .ToArray();
+    }
+
+    public async Task<IReadOnlyCollection<BaselineCampaignAllocation>> GetBaselineCampaignAllocationsAsync(
+        Guid planVersionId,
+        CancellationToken cancellationToken = default)
+    {
+        return await db.PlanCampaignAllocationSnapshots
+            .AsNoTracking()
+            .Where(x => x.PlanVersionId == planVersionId)
+            .OrderBy(x => x.CampaignId)
+            .ThenBy(x => x.ProductionOrderId)
+            .Select(x => new BaselineCampaignAllocation(
+                x.CampaignId,
+                x.ProductionOrderId,
+                x.PlannedQuantityMt))
+            .ToArrayAsync(cancellationToken);
     }
 
     private static OperationAssignmentCommitmentState ResolveCommitmentState(
