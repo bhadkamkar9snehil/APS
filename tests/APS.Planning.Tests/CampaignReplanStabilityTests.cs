@@ -85,7 +85,7 @@ public sealed class CampaignReplanStabilityTests
         Assert.Equal(100m, decision.Selected.CampaignStabilityChangedMt);
         var baseline = Assert.Single(decision.Considered, x => x.StrategyCode == "BASELINE_STABILITY");
         Assert.False(baseline.IsTechnicallyFeasible);
-        Assert.Contains("grade-transition", baseline.TechnicalReason!, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("grade-transition", baseline.TechnicalReason!.ToLowerInvariant());
     }
 
     [Fact]
