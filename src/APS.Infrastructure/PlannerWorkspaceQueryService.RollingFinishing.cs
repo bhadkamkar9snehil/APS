@@ -9,12 +9,6 @@ public sealed partial class PlannerWorkspaceQueryService
 {
     private static readonly JsonSerializerOptions SnapshotJsonOptions = new(JsonSerializerDefaults.Web);
 
-    private static readonly ProcessOperationType[] RollingFeedProcessTypes =
-    {
-        ProcessOperationType.Reheat,
-        ProcessOperationType.HotRoll
-    };
-
     public async Task<RollingFinishingWorkspaceView?> GetRollingFinishingAsync(
         Guid? planVersionId = null,
         CancellationToken cancellationToken = default)
@@ -26,7 +20,6 @@ public sealed partial class PlannerWorkspaceQueryService
             .Where(x => x.PlanVersionId == plan.PlanVersionId)
             .OrderBy(x => x.SequenceNumber)
             .ToListAsync(cancellationToken);
-
         var allocations = await db.PlanRollingPlanAllocationSnapshots.AsNoTracking()
             .Where(x => x.PlanVersionId == plan.PlanVersionId)
             .ToListAsync(cancellationToken);
@@ -44,35 +37,27 @@ public sealed partial class PlannerWorkspaceQueryService
             .OrderBy(x => x.SequenceNumber)
             .ToListAsync(cancellationToken);
 
-        var feedOperationRows = await db.PlanOperationSnapshots.AsNoTracking()
-            .Where(x => x.PlanVersionId == plan.PlanVersionId && RollingFeedProcessTypes.Contains(x.ProcessOperationType))
-            .OrderBy(x => x.StartUtc)
-            .ToListAsync(cancellationToken);
+        // #58: configured downstream operations, including the first HotRoll/Reheat, are all persisted
+        // as RouteOperationPlans. Read the scheduled operations from those sources rather than looking
+        // for a special operation whose SourceEntityId is the RollingPlan itself.
         var routeOperationIds = routeOperations.Select(x => x.RouteOperationPlanId).ToArray();
-        var downstreamOperationRows = routeOperationIds.Length == 0
+        var operationRows = routeOperationIds.Length == 0
             ? new List<PlanOperationSnapshot>()
             : await db.PlanOperationSnapshots.AsNoTracking()
                 .Where(x => x.PlanVersionId == plan.PlanVersionId && routeOperationIds.Contains(x.SourceEntityId))
+                .OrderBy(x => x.StartUtc)
                 .ToListAsync(cancellationToken);
+        var operationViews = await BuildOperationViewsAsync(operationRows, cancellationToken);
+        var operationsBySource = operationViews
+            .GroupBy(x => x.SourceEntityId)
+            .ToDictionary(x => x.Key, x => x.OrderBy(y => y.StartUtc).ToArray());
 
-        var feedOperationViews = await BuildOperationViewsAsync(feedOperationRows, cancellationToken);
-        var downstreamOperationViews = await BuildOperationViewsAsync(downstreamOperationRows, cancellationToken);
-        var downstreamOpBySource = downstreamOperationViews.ToDictionary(x => x.SourceEntityId);
-
-        var millResourceIds = rollingPlans
-            .Where(x => x.RollingMillResourceId.HasValue)
-            .Select(x => x.RollingMillResourceId!.Value)
-            .Distinct()
-            .ToArray();
-        var millResources = millResourceIds.Length == 0
-            ? new Dictionary<Guid, Resource>()
-            : await db.Resources.AsNoTracking()
-                .Where(x => millResourceIds.Contains(x.Id))
-                .ToDictionaryAsync(x => x.Id, cancellationToken);
-
-        var allocationsByPlan = allocations.GroupBy(x => x.RollingPlanId).ToDictionary(x => x.Key, x => x.ToArray());
-        var feedOpsByPlan = feedOperationViews.GroupBy(x => x.SourceEntityId).ToDictionary(x => x.Key, x => x.ToArray());
-        var routeOpsByUpstream = routeOperations.GroupBy(x => x.UpstreamPlanId).ToDictionary(x => x.Key, x => x.ToArray());
+        var allocationsByPlan = allocations
+            .GroupBy(x => x.RollingPlanId)
+            .ToDictionary(x => x.Key, x => x.ToArray());
+        var routeOpsByUpstream = routeOperations
+            .GroupBy(x => x.UpstreamPlanId)
+            .ToDictionary(x => x.Key, x => x.OrderBy(y => y.SequenceNumber).ToArray());
 
         var state = await db.PlanVersionStates.AsNoTracking()
             .Where(x => x.PlanVersionId == plan.PlanVersionId)
@@ -91,9 +76,15 @@ public sealed partial class PlannerWorkspaceQueryService
             allocationsByPlan.TryGetValue(rp.RollingPlanId, out var planAllocations);
             planAllocations ??= Array.Empty<PlanRollingPlanAllocationSnapshot>();
 
-            feedOpsByPlan.TryGetValue(rp.RollingPlanId, out var feedOps);
-            feedOps ??= Array.Empty<ScheduledProcessOperationView>();
-            var requiresReheat = feedOps.Any(x => x.ProcessOperationType == ProcessOperationType.Reheat);
+            var routeChain = WalkDownstreamChain(rp.RollingPlanId, routeOpsByUpstream).ToArray();
+            var feedRoute = FeedPreparationChain(routeChain).ToArray();
+            var feedOps = feedRoute
+                .SelectMany(x => operationsBySource.TryGetValue(x.RouteOperationPlanId, out var values)
+                    ? values
+                    : Array.Empty<ScheduledProcessOperationView>())
+                .OrderBy(x => x.StartUtc)
+                .ToArray();
+            var requiresReheat = feedRoute.Any(x => x.ProcessOperationType == ProcessOperationType.Reheat);
 
             var allocationViews = planAllocations
                 .Select(a =>
@@ -107,11 +98,16 @@ public sealed partial class PlannerWorkspaceQueryService
                         a.PlannedQuantityMt,
                         a.ExistingIntermediateInventoryMt,
                         a.FreshSteelQuantityMt,
-                        BuildSupplyTrace(a.ProductionOrderId, rp.InputCrossSectionCode, requiresReheat, requirementsByPo, reservationsByPo));
+                        BuildSupplyTrace(
+                            a.ProductionOrderId,
+                            rp.InputCrossSectionCode,
+                            requiresReheat,
+                            requirementsByPo,
+                            reservationsByPo));
                 })
                 .ToArray();
 
-            var downstream = WalkDownstreamChain(rp.RollingPlanId, routeOpsByUpstream)
+            var downstream = routeChain
                 .Select(route => new DownstreamRouteOperationView(
                     route.RouteOperationPlanId,
                     route.RouteCode,
@@ -124,7 +120,9 @@ public sealed partial class PlannerWorkspaceQueryService
                     route.MinimumQueueTime,
                     route.MaximumQueueTime,
                     route.IsInventoryDecouplingPoint,
-                    downstreamOpBySource.TryGetValue(route.RouteOperationPlanId, out var scheduledOp) ? scheduledOp : null))
+                    operationsBySource.TryGetValue(route.RouteOperationPlanId, out var scheduled) && scheduled.Length > 0
+                        ? scheduled[0]
+                        : null))
                 .ToArray();
 
             var poIds = allocationViews.Select(a => a.ProductionOrderId).ToHashSet();
@@ -140,8 +138,17 @@ public sealed partial class PlannerWorkspaceQueryService
                     u.PlannedIdentifier))
                 .ToArray();
 
-            var millCode = rp.RollingMillResourceId.HasValue && millResources.TryGetValue(rp.RollingMillResourceId.Value, out var mill)
-                ? mill.Code
+            // A RollingPlan is a demand/allocation anchor, not a committed mill assignment. Surface the
+            // actual selected first-HotRoll resource only when every feed block landed on the same mill.
+            var firstHotRoll = feedRoute.FirstOrDefault(x => x.ProcessOperationType == ProcessOperationType.HotRoll);
+            var firstHotRollOps = firstHotRoll is not null &&
+                                  operationsBySource.TryGetValue(firstHotRoll.RouteOperationPlanId, out var hotOps)
+                ? hotOps
+                : Array.Empty<ScheduledProcessOperationView>();
+            var selectedMillIds = firstHotRollOps.Select(x => x.ResourceId).Distinct().ToArray();
+            var selectedMillId = selectedMillIds.Length == 1 ? selectedMillIds[0] : (Guid?)null;
+            var selectedMillCode = selectedMillId.HasValue
+                ? firstHotRollOps.First(x => x.ResourceId == selectedMillId.Value).ResourceCode
                 : null;
 
             return new RollingPlanView(
@@ -154,8 +161,8 @@ public sealed partial class PlannerWorkspaceQueryService
                 rp.PlannedQuantityMt,
                 rp.ExistingIntermediateInventoryMt,
                 rp.FreshSteelQuantityMt,
-                rp.RollingMillResourceId,
-                millCode,
+                selectedMillId,
+                selectedMillCode,
                 feedOps,
                 downstream,
                 allocationViews,
@@ -182,7 +189,8 @@ public sealed partial class PlannerWorkspaceQueryService
     {
         requirementsByPo.TryGetValue(productionOrderId, out var requirements);
         reservationsByPo.TryGetValue(productionOrderId, out var reservations);
-        if ((requirements is null || requirements.Length == 0) && (reservations is null || reservations.Length == 0))
+        if ((requirements is null || requirements.Length == 0) &&
+            (reservations is null || reservations.Length == 0))
             return null;
 
         var requirement = requirements?
@@ -219,10 +227,25 @@ public sealed partial class PlannerWorkspaceQueryService
     }
 
     /// <summary>
-    /// Downstream route operations chain off each other (cold rolling -> TMT -> cooling -> cutting
-    /// -> bundling/coiling), each step's UpstreamPlanId pointing at the previous step's
-    /// RouteOperationPlanId rather than always back at the originating rolling plan. Walk the chain
-    /// rather than assuming a single level.
+    /// Feed preparation is the configured route from RollingPlan to the first HotRoll, inclusive.
+    /// Reheat may or may not exist in that chain; arbitrary required pre-roll operations remain visible
+    /// in DownstreamOperations but do not get mislabeled as rolling-feed heating.
+    /// </summary>
+    private static IEnumerable<PlanRouteOperationSnapshot> FeedPreparationChain(
+        IEnumerable<PlanRouteOperationSnapshot> routeChain)
+    {
+        foreach (var step in routeChain)
+        {
+            if (step.ProcessOperationType is ProcessOperationType.Reheat or ProcessOperationType.HotRoll)
+                yield return step;
+            if (step.ProcessOperationType == ProcessOperationType.HotRoll)
+                yield break;
+        }
+    }
+
+    /// <summary>
+    /// Route operations chain off each other. Walk from the RollingPlan anchor through the persisted
+    /// RouteOperationPlan links instead of assuming a one-level or first-HotRoll split.
     /// </summary>
     private static IEnumerable<PlanRouteOperationSnapshot> WalkDownstreamChain(
         Guid rollingPlanId,
@@ -237,7 +260,7 @@ public sealed partial class PlannerWorkspaceQueryService
             var upstreamId = frontier.Dequeue();
             if (!routeOpsByUpstream.TryGetValue(upstreamId, out var steps)) continue;
 
-            foreach (var step in steps)
+            foreach (var step in steps.OrderBy(x => x.SequenceNumber))
             {
                 if (!visited.Add(step.RouteOperationPlanId)) continue;
                 yield return step;
