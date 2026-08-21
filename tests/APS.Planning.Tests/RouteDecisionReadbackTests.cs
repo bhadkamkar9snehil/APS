@@ -7,11 +7,9 @@ using Xunit;
 namespace APS.Planning.Tests;
 
 /// <summary>
-/// GitHub #34 acceptance 9: Plan Version readback must reproduce the effective route and operation
-/// decisions. PlanOperationSnapshot recorded the operations that ran and nothing about the chain they
-/// came from, so a heat whose VD was skipped because the grade did not require it was
-/// indistinguishable from a heat on a route that never had a VD - and a read model could only redraw
-/// the operations that survived, which is the fixed EAF/LRF/VD diagram problem in another form.
+/// Configured-route decisions must survive Plan Version persistence for both steelmaking and downstream
+/// operations. Optional VD remains a grade/order decision; downstream Reheat/HotRoll are read back from
+/// the same configured route rather than reconstructed from a fixed plant diagram.
 /// </summary>
 public sealed class RouteDecisionReadbackTests
 {
@@ -19,7 +17,7 @@ public sealed class RouteDecisionReadbackTests
     private static readonly DateTime Due = new(2026, 9, 20, 0, 0, 0, DateTimeKind.Utc);
 
     [Fact]
-    public async Task Plan_version_reproduces_the_effective_route_including_the_step_it_skipped()
+    public async Task Plan_version_reproduces_effective_route_including_skipped_vd_and_downstream_operations()
     {
         var result = RunPlan();
         Assert.True(result.IsFeasible, string.Join("; ", result.Schedule.Issues.Select(x => x.Message)));
@@ -36,8 +34,6 @@ public sealed class RouteDecisionReadbackTests
         var decisions = reloaded!.RouteOperationDecisions;
         Assert.NotNull(decisions);
 
-        // The optional VD the route offers is not required by this grade, so it is not planned - and
-        // that fact is now on the record with its reason rather than being an absence.
         var vd = Assert.Single(decisions!, x => x.ProcessOperationType == ProcessOperationType.Vd);
         Assert.Equal(RouteOperationOutcome.SkippedOptional, vd.Outcome);
         Assert.Equal(RequirementDisposition.Optional, vd.RouteDisposition);
@@ -45,20 +41,25 @@ public sealed class RouteDecisionReadbackTests
         Assert.Equal(RouteCode, vd.RouteCode);
         Assert.Equal(30, vd.RouteSequenceNumber);
 
-        // The steps that did run are on the same record, in route order, so the whole configured chain
-        // is reconstructable - not just its surviving half.
         var included = decisions!
             .Where(x => x.Outcome == RouteOperationOutcome.Included)
             .OrderBy(x => x.RouteSequenceNumber)
             .Select(x => x.ProcessOperationType)
             .ToArray();
         Assert.Equal(
-            new[] { ProcessOperationType.Eaf, ProcessOperationType.Lrf, ProcessOperationType.Ccm },
+            new[]
+            {
+                ProcessOperationType.Eaf,
+                ProcessOperationType.Lrf,
+                ProcessOperationType.Ccm,
+                ProcessOperationType.Reheat,
+                ProcessOperationType.HotRoll
+            },
             included);
     }
 
     [Fact]
-    public async Task Persisted_operations_carry_their_route_position()
+    public async Task Persisted_operations_carry_configured_route_position_before_and_after_ccm()
     {
         var result = RunPlan();
         await using var db = CreateDb();
@@ -70,16 +71,17 @@ public sealed class RouteDecisionReadbackTests
             Due.AddDays(-5)));
 
         var reloaded = await repository.GetAsync(saved.PlanVersionId);
-
-        // An operation that knows only its own type cannot say where in the chain it sat; one that
-        // carries its route position can be placed on the configured route without re-deriving it.
-        var meltshop = reloaded!.Operations
+        var routeOperations = reloaded!.Operations
             .Where(x => x.RouteCode is not null)
             .OrderBy(x => x.RouteSequenceNumber)
             .ToArray();
-        Assert.NotEmpty(meltshop);
-        Assert.All(meltshop, x => Assert.Equal(RouteCode, x.RouteCode));
-        Assert.Equal(new[] { 10, 20, 40 }, meltshop.Select(x => x.RouteSequenceNumber!.Value).ToArray());
+
+        Assert.NotEmpty(routeOperations);
+        Assert.All(routeOperations, x => Assert.Equal(RouteCode, x.RouteCode));
+        Assert.Equal(new[] { 10, 20, 40, 50, 60 }, routeOperations
+            .Select(x => x.RouteSequenceNumber!.Value)
+            .Distinct()
+            .ToArray());
     }
 
     private static PlanningRunResult RunPlan()
@@ -120,8 +122,6 @@ public sealed class RouteDecisionReadbackTests
             {
                 RouteOperation(10, ProcessOperationType.Eaf, RequirementDisposition.Required),
                 RouteOperation(20, ProcessOperationType.Lrf, RequirementDisposition.Required),
-                // Offered by the route, not required by this grade: the step whose absence used to be
-                // unexplainable after the fact.
                 RouteOperation(30, ProcessOperationType.Vd, RequirementDisposition.Optional),
                 RouteOperation(40, ProcessOperationType.Ccm, RequirementDisposition.Required),
                 RouteOperation(50, ProcessOperationType.Reheat, RequirementDisposition.Required),
@@ -139,8 +139,8 @@ public sealed class RouteDecisionReadbackTests
         Link(Lrf.Id, Ccm.Id, hot: true),
         Link(Vd.Id, Ccm.Id, hot: true),
         Link(Ccm.Id, Rhf.Id, hot: false),
-        Link(Rhf.Id, Mill.Id, hot: false),
-        Link(Ccm.Id, Mill.Id, hot: false)
+        Link(Rhf.Id, Mill.Id, hot: true),
+        Link(Ccm.Id, Mill.Id, hot: true)
     ];
 
     private static PlantFlowLink Link(Guid from, Guid to, bool hot) => new()
@@ -162,7 +162,12 @@ public sealed class RouteDecisionReadbackTests
         RouteCode = RouteCode,
         SequenceNumber = sequence,
         ProcessOperationType = operation,
-        ReleaseWorkOrderType = operation == ProcessOperationType.Ccm ? WorkOrderType.Casting : WorkOrderType.Steelmaking,
+        ReleaseWorkOrderType = operation switch
+        {
+            ProcessOperationType.Ccm => WorkOrderType.Casting,
+            ProcessOperationType.HotRoll or ProcessOperationType.Reheat => WorkOrderType.HotRolling,
+            _ => WorkOrderType.Steelmaking
+        },
         Requirement = requirement
     };
 
