@@ -8,7 +8,8 @@ internal sealed record CampaignTechnicalEvaluation(
     decimal GradeTransitionCost,
     decimal HeatTargetDeviationMt,
     IReadOnlyList<string> GradeSequence,
-    string? Reason = null)
+    string? Reason = null,
+    bool HasFurnaceEvaluation = false)
 {
     public static CampaignTechnicalEvaluation Neutral { get; } = new(true, 0m, 0m, Array.Empty<string>());
 }
@@ -72,8 +73,10 @@ internal static class CampaignTechnicalEvaluator
         var route = ValidateRequiredDownstreamResources(candidate, ordersById, request);
         if (!route.IsFeasible) return route;
 
+        var furnaceEvaluated = false;
         if (campaign.FreshSteelRequirementMt > 0m && request.Resources is { Count: > 0 })
         {
+            furnaceEvaluated = true;
             try
             {
                 CanonicalCampaignHeatBuilder.Rebuild(campaign, request);
@@ -107,7 +110,9 @@ internal static class CampaignTechnicalEvaluator
             true,
             sequence.Cost,
             decimal.Round(heatTargetDeviation, 4, MidpointRounding.AwayFromZero),
-            sequence.Grades);
+            sequence.Grades,
+            null,
+            furnaceEvaluated);
     }
 
     /// <summary>
@@ -164,12 +169,41 @@ internal static class CampaignTechnicalEvaluator
             var ccmSequence = route.FirstOrDefault(x => x.ProcessOperationType == ProcessOperationType.Ccm)?.SequenceNumber;
             if (!ccmSequence.HasValue) continue;
 
+            var currentSection = po.CasterSectionCode;
             foreach (var operation in route.Where(x => x.SequenceNumber > ccmSequence.Value))
             {
-                if (ResolveRequirement(operation, po) != RequirementDisposition.Required) continue;
-                if (HasEligibleResource(operation, po, request)) continue;
+                var disposition = ResolveRequirement(operation, po);
+                if (disposition == RequirementDisposition.Forbidden) continue;
+
+                var changesTowardFinal = disposition == RequirementDisposition.Optional &&
+                                         !string.IsNullOrWhiteSpace(operation.OutputCrossSectionCode) &&
+                                         string.Equals(operation.OutputCrossSectionCode, po.FinalCrossSectionCode, StringComparison.OrdinalIgnoreCase) &&
+                                         !string.Equals(currentSection, po.FinalCrossSectionCode, StringComparison.OrdinalIgnoreCase);
+                if (disposition != RequirementDisposition.Required && !changesTowardFinal) continue;
+
+                var inputSection = operation.InputCrossSectionCode ?? currentSection;
+                var outputSection = operation.OutputCrossSectionCode ?? currentSection;
+                if (!string.Equals(inputSection, currentSection, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Reject(
+                        $"Route {po.RouteCode} operation {operation.SequenceNumber} expects {inputSection} but the candidate produces {currentSection}.");
+                }
+
+                if (!HasEligibleResource(operation, po, inputSection, outputSection, request))
+                {
+                    return Reject(
+                        $"No active eligible {operation.ProcessOperationType} resource exists for {po.ProductionOrderNumber} " +
+                        $"({inputSection}->{outputSection}) on route {po.RouteCode}.");
+                }
+
+                currentSection = outputSection;
+            }
+
+            if (!string.Equals(currentSection, po.FinalCrossSectionCode, StringComparison.OrdinalIgnoreCase) &&
+                route.Any(x => x.SequenceNumber > ccmSequence.Value))
+            {
                 return Reject(
-                    $"No active eligible {operation.ProcessOperationType} resource exists for {po.ProductionOrderNumber} on route {po.RouteCode}.");
+                    $"Configured route {po.RouteCode} ends candidate projection at {currentSection} but {po.ProductionOrderNumber} requires {po.FinalCrossSectionCode}.");
             }
         }
 
@@ -178,21 +212,34 @@ internal static class CampaignTechnicalEvaluator
 
     private static RequirementDisposition ResolveRequirement(ManufacturingRouteOperation operation, ProductionOrder po)
     {
-        var value = operation.Requirement;
-        var grade = po.SteelGrade?.ProcessRequirements.FirstOrDefault(x => x.ProcessOperationType == operation.ProcessOperationType);
-        if (grade is not null) value = grade.Requirement;
-        var order = po.Requirement?.ProcessOverrides.FirstOrDefault(x => x.ProcessOperationType == operation.ProcessOperationType);
-        if (order is not null) value = order.Requirement;
+        var values = new List<RequirementDisposition> { operation.Requirement };
+        var grade = po.SteelGrade?.ProcessRequirements.FirstOrDefault(x => x.ProcessOperationType == operation.ProcessOperationType)?.Requirement;
+        if (grade.HasValue) values.Add(grade.Value);
+        var orderValues = po.Requirement?.ProcessOverrides
+            .Where(x => x.ProcessOperationType == operation.ProcessOperationType)
+            .Select(x => x.Requirement)
+            .ToArray() ?? Array.Empty<RequirementDisposition>();
+        values.AddRange(orderValues);
         if (operation.ProcessOperationType == ProcessOperationType.Reheat && po.Requirement?.RequireReheating == true)
-            value = RequirementDisposition.Required;
+            values.Add(RequirementDisposition.Required);
         if (operation.ProcessOperationType == ProcessOperationType.Tmt && po.Requirement?.RequireTmt == true)
-            value = RequirementDisposition.Required;
-        return value;
+            values.Add(RequirementDisposition.Required);
+
+        // Required and Forbidden is a conflict; treat it as technically impossible here rather than
+        // quietly choosing one side. Returning Required guarantees the resource/path is not skipped;
+        // the canonical structure validator still emits the detailed conflict diagnostic later.
+        if (values.Contains(RequirementDisposition.Required) && values.Contains(RequirementDisposition.Forbidden))
+            return RequirementDisposition.Required;
+        if (values.Contains(RequirementDisposition.Forbidden)) return RequirementDisposition.Forbidden;
+        if (values.Contains(RequirementDisposition.Required)) return RequirementDisposition.Required;
+        return RequirementDisposition.Optional;
     }
 
     private static bool HasEligibleResource(
         ManufacturingRouteOperation operation,
         ProductionOrder po,
+        string inputSection,
+        string outputSection,
         CampaignPlanningRequest request)
     {
         var routeCapabilities = request.RoutePlanning?.ResourceCapabilities
@@ -200,17 +247,19 @@ internal static class CampaignTechnicalEvaluator
                         Matches(x.RouteCode, po.RouteCode) &&
                         Matches(x.GradeCode, po.GradeCode) &&
                         Matches(x.GradeFamilyCode, po.GradeFamilyCode) &&
+                        Matches(x.CastingClassCode, po.SteelGrade?.CastingClassCode) &&
                         Matches(x.ProductFamilyCode, po.ProductFamilyCode))
             .ToArray() ?? Array.Empty<RouteResourceCapability>();
         var genericCapabilities = request.ResourceCapabilities ?? Array.Empty<ResourceCapability>();
-        var inputSection = operation.InputCrossSectionCode ?? po.CasterSectionCode;
-        var outputSection = operation.OutputCrossSectionCode ?? po.FinalCrossSectionCode;
+        var requiredResourceIds = RequiredResourceIds(po, operation.ProcessOperationType);
+        var requiredCapabilityClass = RequiredCapabilityClass(po, operation);
 
         foreach (var resource in request.Resources ?? Array.Empty<Resource>())
         {
             if (!resource.IsActive ||
-                resource.OperatingState is ResourceOperatingState.Breakdown or ResourceOperatingState.Disabled or ResourceOperatingState.PlannedMaintenance)
+                resource.OperatingState is not (ResourceOperatingState.Available or ResourceOperatingState.CapacityDerated or ResourceOperatingState.QualityRestricted))
                 continue;
+            if (requiredResourceIds.Count > 0 && !requiredResourceIds.Contains(resource.Id)) continue;
             if (resource.ProcessUnitType != ProcessUnitType.Unknown &&
                 resource.ProcessUnitType != SteelmakingRouteProjector.UnitTypeFor(operation.ProcessOperationType))
                 continue;
@@ -218,22 +267,60 @@ internal static class CampaignTechnicalEvaluator
             var routeForResource = routeCapabilities.Where(x => x.ResourceId == resource.Id).ToArray();
             if (routeCapabilities.Length > 0 && routeForResource.Length == 0) continue;
             if (routeForResource.Length > 0 &&
-                !routeForResource.Any(x => CrossSectionCapabilityMatcher.Matches(
-                    x, inputSection, outputSection, request.RoutePlanning?.CrossSections)))
+                !routeForResource.Any(x =>
+                    CrossSectionCapabilityMatcher.Matches(x, inputSection, outputSection, request.RoutePlanning?.CrossSections) &&
+                    (string.IsNullOrWhiteSpace(requiredCapabilityClass) || Matches(x.CapabilityClassCode, requiredCapabilityClass))))
                 continue;
 
             var genericForResource = genericCapabilities.Where(x => x.ResourceId == resource.Id).ToArray();
-            if (genericForResource.Length > 0 && !genericForResource.Any(x =>
-                    (!x.ProcessOperationType.HasValue || x.ProcessOperationType == operation.ProcessOperationType) &&
-                    Matches(x.RouteCode, po.RouteCode) &&
-                    Matches(x.GradeCode, po.GradeCode) &&
-                    Matches(x.GradeFamilyCode, po.GradeFamilyCode) &&
-                    Matches(x.ProductFamilyCode, po.ProductFamilyCode)))
+            if (genericForResource.Length > 0)
+            {
+                var matchingGeneric = genericForResource.Where(x =>
+                        (!x.ProcessOperationType.HasValue || x.ProcessOperationType == operation.ProcessOperationType) &&
+                        Matches(x.RouteCode, po.RouteCode) &&
+                        Matches(x.GradeCode, po.GradeCode) &&
+                        Matches(x.GradeFamilyCode, po.GradeFamilyCode) &&
+                        Matches(x.CastingClassCode, po.SteelGrade?.CastingClassCode) &&
+                        Matches(x.InputCrossSectionCode, inputSection) &&
+                        Matches(x.OutputCrossSectionCode, outputSection) &&
+                        Matches(x.ProductFamilyCode, po.ProductFamilyCode) &&
+                        (string.IsNullOrWhiteSpace(requiredCapabilityClass) || Matches(x.CapabilityClassCode, requiredCapabilityClass)))
+                    .ToArray();
+                if (matchingGeneric.Length == 0) continue;
+            }
+            else if (!string.IsNullOrWhiteSpace(requiredCapabilityClass) && routeForResource.Length == 0)
+            {
                 continue;
+            }
 
             return true;
         }
         return false;
+    }
+
+    private static HashSet<Guid> RequiredResourceIds(ProductionOrder po, ProcessOperationType operation)
+    {
+        var result = new HashSet<Guid>();
+        if (po.Requirement?.RequiredResourceId is { } general) result.Add(general);
+        foreach (var resourceId in po.Requirement?.ProcessOverrides
+                     .Where(x => x.ProcessOperationType == operation && x.RequiredResourceId.HasValue)
+                     .Select(x => x.RequiredResourceId!.Value)
+                 ?? Enumerable.Empty<Guid>())
+            result.Add(resourceId);
+        return result;
+    }
+
+    private static string? RequiredCapabilityClass(ProductionOrder po, ManufacturingRouteOperation operation)
+    {
+        var orderClass = po.Requirement?.ProcessOverrides
+            .Where(x => x.ProcessOperationType == operation.ProcessOperationType && !string.IsNullOrWhiteSpace(x.CapabilityClassCode))
+            .Select(x => x.CapabilityClassCode)
+            .FirstOrDefault();
+        var gradeClass = po.SteelGrade?.ProcessRequirements
+            .Where(x => x.ProcessOperationType == operation.ProcessOperationType && !string.IsNullOrWhiteSpace(x.CapabilityClassCode))
+            .Select(x => x.CapabilityClassCode)
+            .FirstOrDefault();
+        return orderClass ?? gradeClass ?? operation.CapabilityClassCode;
     }
 
     private static SequenceResult OptimizeGradeSequence(
@@ -272,15 +359,16 @@ internal static class CampaignTechnicalEvaluator
             }
         }
 
-        var terminal = Enumerable.Range(0, count)
+        var terminals = Enumerable.Range(0, count)
             .Where(last => states.ContainsKey((fullMask, last)))
             .Select(last => (Last: last, Node: states[(fullMask, last)]))
             .OrderBy(x => x.Node.Cost)
             .ThenBy(x => grades[x.Last], StringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault();
-        if (terminal.Node is null)
+            .ToArray();
+        if (terminals.Length == 0)
             return new SequenceResult(false, Array.Empty<string>(), 0m, "No allowed grade-transition path covers all grades in the campaign.");
 
+        var terminal = terminals[0];
         var path = new int[count];
         var currentMask = fullMask;
         var current = terminal.Last;
@@ -309,17 +397,19 @@ internal static class CampaignTechnicalEvaluator
 
             while (remaining.Count > 0)
             {
-                var next = remaining
+                var candidates = remaining
                     .Select(index => (Index: index, Edge: Transition(grades[current], grades[index], rules)))
                     .Where(x => x.Edge.IsAllowed)
                     .OrderBy(x => x.Edge.Cost)
                     .ThenBy(x => grades[x.Index], StringComparer.OrdinalIgnoreCase)
-                    .FirstOrDefault();
-                if (next.Edge is null)
+                    .ToArray();
+                if (candidates.Length == 0)
                 {
                     feasible = false;
                     break;
                 }
+
+                var next = candidates[0];
                 cost += next.Edge.Cost;
                 current = next.Index;
                 remaining.Remove(current);
