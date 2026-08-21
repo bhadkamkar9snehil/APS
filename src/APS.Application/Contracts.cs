@@ -55,6 +55,18 @@ public sealed record CampaignObjectiveWeights(
     decimal BelowMinimumCampaignPerMt = 8m)
 {
     public static CampaignObjectiveWeights Default { get; } = new();
+
+    /// <summary>
+    /// Weight applied to the effective grade-transition penalty/time selected from the canonical
+    /// transition-rule snapshot. Kept outside the positional constructor for source compatibility.
+    /// </summary>
+    public decimal GradeTransitionCostWeight { get; init; } = 1m;
+
+    /// <summary>
+    /// Cost of deviating from physically preferred furnace heat quantities. This lets heat structure
+    /// influence campaign composition before the campaign is committed rather than failing later.
+    /// </summary>
+    public decimal HeatTargetDeviationPerMt { get; init; } = 1m;
 }
 
 /// <summary>
@@ -76,6 +88,21 @@ public sealed record CampaignObjectiveBreakdown(
     /// offset a service loss however the weights are set.
     /// </summary>
     public (decimal Service, decimal Cost) DominanceKey => (ServiceRiskMtDays, TotalCost);
+
+    /// <summary>Effective grade-transition penalty/time contribution for the candidate composition.</summary>
+    public decimal GradeTransitionCost { get; init; }
+
+    /// <summary>Total deviation from preferred physical heat quantities after furnace-envelope fitting.</summary>
+    public decimal HeatTargetDeviationMt { get; init; }
+
+    /// <summary>False when furnace, route/resource or transition feasibility rejects the composition.</summary>
+    public bool IsTechnicallyFeasible { get; init; } = true;
+
+    /// <summary>Stable diagnostic text for a technically rejected candidate; null for feasible candidates.</summary>
+    public string? TechnicalReason { get; init; }
+
+    /// <summary>Selected grade order used when scoring technical transitions.</summary>
+    public IReadOnlyCollection<string> GradeSequence { get; init; } = Array.Empty<string>();
 }
 
 /// <summary>
@@ -101,7 +128,13 @@ public sealed record CampaignPlanningRequest(
     RoutePlanningInput? RoutePlanning = null,
     IReadOnlyCollection<CommittedMaterialSupply>? CommittedMaterialSupplies = null,
     IReadOnlyCollection<PlantFlowLink>? FlowLinks = null,
-    IReadOnlyCollection<PrecomputedCampaignMaterialDemand>? PrecomputedMaterialDemand = null);
+    IReadOnlyCollection<PrecomputedCampaignMaterialDemand>? PrecomputedMaterialDemand = null,
+    /// <summary>
+    /// Effective transition rules for this planning run. Production callers should pass the
+    /// materialized snapshot from TransitionRuleMaterializer so campaign sequence scoring uses the
+    /// same precedence/resolution as structure and CP-SAT rather than rematching master rows.
+    /// </summary>
+    IReadOnlyCollection<TransitionRule>? TransitionRules = null);
 
 public enum PlanningInventoryUse
 {
