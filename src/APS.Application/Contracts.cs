@@ -35,7 +35,15 @@ public sealed record CampaignPlanningPolicy(
     /// Relative weights the campaign optimizer trades efficiency against service with (#15). Null
     /// uses <see cref="CampaignObjectiveWeights.Default"/>.
     /// </summary>
-    CampaignObjectiveWeights? ObjectiveWeights = null);
+    CampaignObjectiveWeights? ObjectiveWeights = null)
+{
+    /// <summary>
+    /// Historical PO-to-Campaign quantity membership from the baseline Plan Version. This is a soft
+    /// replan-stability signal only: hard feasibility and customer service may override it, and new
+    /// Campaign entities never reuse historical primary keys.
+    /// </summary>
+    public IReadOnlyCollection<BaselineCampaignAllocation>? BaselineCampaignAllocations { get; init; }
+}
 
 /// <summary>
 /// Weights for the campaign objective (#15). Service risk sits in its own lexicographic tier, so no
@@ -67,6 +75,12 @@ public sealed record CampaignObjectiveWeights(
     /// influence campaign composition before the campaign is committed rather than failing later.
     /// </summary>
     public decimal HeatTargetDeviationPerMt { get; init; } = 1m;
+
+    /// <summary>
+    /// Soft replan penalty per comparable tonne whose Campaign membership changes from the baseline
+    /// Plan Version. Service risk and hard technical feasibility remain dominant.
+    /// </summary>
+    public decimal CampaignStabilityChangePerMt { get; init; } = 1m;
 }
 
 /// <summary>
@@ -94,6 +108,12 @@ public sealed record CampaignObjectiveBreakdown(
 
     /// <summary>Total deviation from preferred physical heat quantities after furnace-envelope fitting.</summary>
     public decimal HeatTargetDeviationMt { get; init; }
+
+    /// <summary>
+    /// Comparable PO quantity whose Campaign grouping differs from the baseline Plan Version. New or
+    /// removed demand is excluded so demand change itself is not mislabeled as planner instability.
+    /// </summary>
+    public decimal CampaignStabilityChangedMt { get; init; }
 
     /// <summary>False when furnace, route/resource or transition feasibility rejects the composition.</summary>
     public bool IsTechnicallyFeasible { get; init; } = true;
