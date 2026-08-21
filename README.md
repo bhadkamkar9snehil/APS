@@ -4,7 +4,7 @@ Advanced Planning & Scheduling for integrated steel manufacturing.
 
 ## Current product direction
 
-The canonical production architecture is the .NET solution under `src/`:
+The canonical production architecture is the .NET solution under `src/`, and `main` is the integration branch for the current product code:
 
 ```text
 APS.Domain
@@ -103,6 +103,25 @@ local repair / replan through the same lifecycle
 
 Demand/material requirement is causality. Campaign is manufacturing aggregation/optimization. Resource is an assignment, not the identity of the production requirement. Work Orders are downstream of the solved production graph.
 
+## Campaign optimization
+
+Campaign composition is not production-authoritative sort-and-fill.
+
+For each hard-compatible requirement group, the planner now evaluates candidate campaign partitions against explicit service and manufacturing economics, including:
+
+- allocation-level due-date/priority obligations;
+- early-production cost and campaign setup/utilization;
+- furnace-feasible heat envelopes and heat-target deviation;
+- effective grade-transition prohibitions, transition time and penalties;
+- required downstream route/resource feasibility;
+- deterministic grade-sequence selection;
+- MTO/MTS residual-heat economics;
+- replan stability against persisted PO-to-Campaign quantity membership.
+
+The baseline Plan Version contributes a **soft** campaign-stability objective during replan. Hard technical feasibility and customer-service dominance can still change the grouping. New or removed demand is excluded from the stability movement metric.
+
+Candidate/objective evidence is retained in `CampaignCompositionDecision` and carried into Plan Version planning assumptions for later explanation and comparison.
+
 ## Canonical production lifecycle
 
 Production APIs do not independently run campaign, structure, scheduling and release logic. The production path is:
@@ -123,17 +142,11 @@ Component-level calculation APIs and the direct-kernel Blazor sandbox are demo-o
 
 ## Backend implementation order
 
-Backend work proceeds one primary issue at a time. The canonical sequence is defined in [`docs/APS_Backend_Work_Program.md`](docs/APS_Backend_Work_Program.md) and GitHub Issue #47.
+Backend work proceeds one primary issue at a time. GitHub Issue #47 is the authoritative live execution order; [`docs/APS_Backend_Work_Program.md`](docs/APS_Backend_Work_Program.md) is the repository work-program document and should be kept aligned when repository documentation changes are authorized.
 
-Current phase order:
+Completed foundations include canonical repository/path cleanup, MTO demand orchestration, recursive BOM, time-phased material coverage, known-incoming material handling, route-driven pre-CCM topology, liquid-steel thermal constraints, resource scheduling modes, operating-state scenarios, and candidate Campaign/grade-sequence/heat optimization (#15).
 
-1. repository/document authority;
-2. canonical backend path + MTO demand orchestration;
-3. recursive BOM + one time-phased material ledger;
-4. Campaign/route/thermal/capacity/resource-flexibility planning;
-5. execution/material genealogy + diagnostics;
-6. CTP/scenario/capacity convergence + complete backend visibility;
-7. final end-to-end acceptance.
+The next primary backend issue after #15 is **#58 — remove the first-HotRoll architectural pivot from downstream route projection**, followed by billet thermal planning (#56), late-binding/redispatch (#16), execution/genealogy (#18), diagnostics (#19), scenario/material comparison (#57), decision/read services and remaining configuration/reference acceptance work per #47.
 
 UI implementation remains dependent on backend truth/read-model readiness rather than filling missing planning behavior client-side.
 
