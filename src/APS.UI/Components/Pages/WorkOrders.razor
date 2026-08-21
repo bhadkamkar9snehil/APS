@@ -8,15 +8,15 @@
 <PageTitle>Work Orders - APS</PageTitle>
 
 <h1 class="mb-1 text-lg font-semibold">Work Orders</h1>
-<p class="mb-6 text-sm text-slate-500">Execution envelopes released from the plan, with the process operations and demand lineage retained inside them.</p>
+<p class="mb-6 text-sm text-secondary">Execution envelopes released from the plan, with the process operations and demand lineage retained inside them.</p>
 
 @if (loading)
 {
-    <p class="text-sm text-slate-400">Loading released work…</p>
+    <p class="text-sm text-muted">Loading released work…</p>
 }
 else if (view is null)
 {
-    <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center text-slate-700">No persisted Work Order view.</div>
+    <div class="rounded border border-dashed border-border-strong bg-surface-raised p-8 text-center text-primary">No persisted Work Order view.</div>
 }
 else
 {
@@ -29,18 +29,18 @@ else
     </div>
 
     <div class="grid grid-cols-[280px_1fr] gap-4">
-        <aside class="rounded border border-slate-200 bg-white">
-            <div class="border-b border-slate-200 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Work Order register</div>
+        <aside class="rounded border border-border bg-surface-raised">
+            <div class="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted">Work Order register</div>
             <div class="max-h-[70vh] overflow-y-auto">
                 @foreach (var wo in view.WorkOrders.OrderBy(x => x.FirstPlannedStartUtc))
                 {
-                    <button type="button" class="block w-full border-b border-slate-100 px-3 py-2 text-left last:border-0 hover:bg-slate-50 @(selectedWorkOrder?.WorkOrderId == wo.WorkOrderId ? "bg-accent-soft" : "")" @onclick="() => SelectWorkOrder(wo)">
+                    <button type="button" class="block w-full border-b border-border px-3 py-2 text-left last:border-0 hover:bg-surface-hover @(selectedWorkOrder?.WorkOrderId == wo.WorkOrderId ? "bg-accent-soft" : "")" @onclick="() => SelectWorkOrder(wo)">
                         <div class="flex items-center justify-between">
                             <strong>@wo.WorkOrderNumber</strong>
                             <span class="rounded px-1.5 py-0.5 text-xs @StatusClass(wo.Status)">@wo.Status</span>
                         </div>
-                        <div class="text-xs text-slate-400">@wo.WorkOrderType &middot; @TimeRange(wo)</div>
-                        <div class="text-xs text-slate-400">@wo.PlannedQuantityMt.ToString("0.##") MT</div>
+                        <div class="text-xs text-muted">@wo.WorkOrderType &middot; @TimeRange(wo)</div>
+                        <div class="text-xs text-muted">@wo.PlannedQuantityMt.ToString("0.##") MT</div>
                     </button>
                 }
             </div>
@@ -49,66 +49,66 @@ else
         <section>
             @if (selectedWorkOrder is null)
             {
-                <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center text-slate-400">Select a Work Order</div>
+                <div class="rounded border border-dashed border-border-strong bg-surface-raised p-8 text-center text-muted">Select a Work Order</div>
             }
             else
             {
-                <div class="mb-4 rounded border border-slate-200 bg-white p-4">
+                <div class="mb-4 rounded border border-border bg-surface-raised p-4">
                     <div class="flex items-start justify-between">
                         <div>
                             <h2 class="text-base font-semibold">@selectedWorkOrder.WorkOrderNumber</h2>
-                            <p class="text-sm text-slate-500">@selectedWorkOrder.WorkOrderType &middot; @TimeRange(selectedWorkOrder)</p>
+                            <p class="text-sm text-secondary">@selectedWorkOrder.WorkOrderType &middot; @TimeRange(selectedWorkOrder)</p>
                         </div>
                         <div class="flex gap-4 text-right text-sm">
-                            <div><div class="text-xs text-slate-400">Status</div><strong>@selectedWorkOrder.Status</strong></div>
-                            <div><div class="text-xs text-slate-400">Quantity</div><strong>@selectedWorkOrder.PlannedQuantityMt.ToString("0.##") MT</strong></div>
-                            <div><div class="text-xs text-slate-400">External ref</div><strong>@Display(selectedWorkOrder.ExternalExecutionId)</strong></div>
+                            <div><div class="text-xs text-muted">Status</div><strong>@selectedWorkOrder.Status</strong></div>
+                            <div><div class="text-xs text-muted">Quantity</div><strong>@selectedWorkOrder.PlannedQuantityMt.ToString("0.##") MT</strong></div>
+                            <div><div class="text-xs text-muted">External ref</div><strong>@Display(selectedWorkOrder.ExternalExecutionId)</strong></div>
                         </div>
                     </div>
                 </div>
 
-                <section class="mb-4 rounded border border-slate-200 bg-white p-4">
+                <section class="mb-4 rounded border border-border bg-surface-raised p-4">
                     <div class="mb-3 flex items-center justify-between">
                         <h3 class="text-sm font-semibold">Record actual</h3>
                         @if (!string.IsNullOrWhiteSpace(actualError))
                         {
-                            <span class="text-xs text-rose-600">@actualError</span>
+                            <span class="text-xs text-danger">@actualError</span>
                         }
                     </div>
                     <div class="grid grid-cols-5 gap-3 text-sm">
                         <label class="flex flex-col gap-1">
-                            <span class="text-xs text-slate-500">Status</span>
-                            <select class="rounded border border-slate-300 px-2 py-1" @bind="actualStatus">
+                            <span class="text-xs text-secondary">Status</span>
+                            <select class="rounded border border-border-strong px-2 py-1" @bind="actualStatus">
                                 @foreach (var status in Enum.GetValues<WorkOrderStatus>())
                                 {
                                     <option value="@status">@status</option>
                                 }
                             </select>
                         </label>
-                        <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Actual start</span><input type="datetime-local" class="rounded border border-slate-300 px-2 py-1" @bind="actualStart" /></label>
-                        <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Actual end</span><input type="datetime-local" class="rounded border border-slate-300 px-2 py-1" @bind="actualEnd" /></label>
-                        <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Actual qty (MT)</span><input type="number" class="rounded border border-slate-300 px-2 py-1" @bind="actualQuantity" /></label>
-                        <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Comment</span><input class="rounded border border-slate-300 px-2 py-1" @bind="actualComment" /></label>
+                        <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Actual start</span><input type="datetime-local" class="rounded border border-border-strong px-2 py-1" @bind="actualStart" /></label>
+                        <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Actual end</span><input type="datetime-local" class="rounded border border-border-strong px-2 py-1" @bind="actualEnd" /></label>
+                        <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Actual qty (MT)</span><input type="number" class="rounded border border-border-strong px-2 py-1" @bind="actualQuantity" /></label>
+                        <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Comment</span><input class="rounded border border-border-strong px-2 py-1" @bind="actualComment" /></label>
                     </div>
-                    <button type="button" class="mt-3 rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50" disabled="@savingActual" @onclick="SaveActualAsync">
+                    <button type="button" class="mt-3 rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground disabled:opacity-50" disabled="@savingActual" @onclick="SaveActualAsync">
                         @(savingActual ? "Saving…" : "Save actual")
                     </button>
                 </section>
 
-                <section class="mb-4 rounded border border-slate-200 bg-white p-4">
+                <section class="mb-4 rounded border border-border bg-surface-raised p-4">
                     <div class="mb-3 flex items-center justify-between">
                         <h3 class="text-sm font-semibold">Process operations</h3>
-                        <span class="text-xs text-slate-400">@selectedWorkOrder.Operations.Count ops</span>
+                        <span class="text-xs text-muted">@selectedWorkOrder.Operations.Count ops</span>
                     </div>
                     @if (selectedWorkOrder.Operations.Count == 0)
                     {
-                        <p class="text-sm text-slate-400">No persisted operation rows are linked to this Work Order.</p>
+                        <p class="text-sm text-muted">No persisted operation rows are linked to this Work Order.</p>
                     }
                     else
                     {
                         <table class="w-full text-sm">
                             <thead>
-                                <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+                                <tr class="border-b border-border text-left text-xs text-muted">
                                     <th class="py-1 font-medium">Operation</th>
                                     <th class="py-1 font-medium">Resource</th>
                                     <th class="py-1 font-medium">Grade / Section</th>
@@ -119,11 +119,11 @@ else
                             <tbody>
                                 @foreach (var op in selectedWorkOrder.Operations.OrderBy(x => x.PlannedStartUtc))
                                 {
-                                    <tr class="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50 @(selectedOperation?.OperationSnapshotId == op.OperationSnapshotId ? "bg-accent-soft" : "")" @onclick="() => SelectOperation(op)">
+                                    <tr class="cursor-pointer border-b border-border last:border-0 hover:bg-surface-hover @(selectedOperation?.OperationSnapshotId == op.OperationSnapshotId ? "bg-accent-soft" : "")" @onclick="() => SelectOperation(op)">
                                         <td class="py-1.5">@op.ProcessOperationType</td>
                                         <td class="py-1.5">@op.ResourceCode</td>
                                         <td class="py-1.5">@op.GradeCode / @op.CrossSectionCode</td>
-                                        <td class="py-1.5 text-xs text-slate-500">@op.PlannedStartUtc.ToString("dd MMM HH:mm") &rarr; @op.PlannedEndUtc.ToString("HH:mm")</td>
+                                        <td class="py-1.5 text-xs text-secondary">@op.PlannedStartUtc.ToString("dd MMM HH:mm") &rarr; @op.PlannedEndUtc.ToString("HH:mm")</td>
                                         <td class="py-1.5 text-right">@op.QuantityMt.ToString("0.##") MT</td>
                                     </tr>
                                 }
@@ -132,30 +132,30 @@ else
 
                         @if (selectedOperation is not null)
                         {
-                            <div class="mt-3 rounded border border-slate-200 bg-slate-50 p-3">
+                            <div class="mt-3 rounded border border-border bg-surface p-3">
                                 <div class="mb-2 flex items-center justify-between">
-                                    <h4 class="text-xs font-semibold uppercase tracking-wide text-slate-500">Record actual &mdash; @selectedOperation.ProcessOperationType @@ @selectedOperation.ResourceCode</h4>
+                                    <h4 class="text-xs font-semibold uppercase tracking-wide text-secondary">Record actual &mdash; @selectedOperation.ProcessOperationType @@ @selectedOperation.ResourceCode</h4>
                                     @if (!string.IsNullOrWhiteSpace(operationActualError))
                                     {
-                                        <span class="text-xs text-rose-600">@operationActualError</span>
+                                        <span class="text-xs text-danger">@operationActualError</span>
                                     }
                                 </div>
                                 <div class="grid grid-cols-5 gap-3 text-sm">
                                     <label class="flex flex-col gap-1">
-                                        <span class="text-xs text-slate-500">Status</span>
-                                        <select class="rounded border border-slate-300 px-2 py-1" @bind="operationActualStatus">
+                                        <span class="text-xs text-secondary">Status</span>
+                                        <select class="rounded border border-border-strong px-2 py-1" @bind="operationActualStatus">
                                             @foreach (var status in Enum.GetValues<OperationExecutionStatus>())
                                             {
                                                 <option value="@status">@status</option>
                                             }
                                         </select>
                                     </label>
-                                    <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Actual start</span><input type="datetime-local" class="rounded border border-slate-300 px-2 py-1" @bind="operationActualStart" /></label>
-                                    <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Actual end</span><input type="datetime-local" class="rounded border border-slate-300 px-2 py-1" @bind="operationActualEnd" /></label>
-                                    <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Actual qty (MT)</span><input type="number" class="rounded border border-slate-300 px-2 py-1" @bind="operationActualQuantity" /></label>
-                                    <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Comment</span><input class="rounded border border-slate-300 px-2 py-1" @bind="operationActualComment" /></label>
+                                    <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Actual start</span><input type="datetime-local" class="rounded border border-border-strong px-2 py-1" @bind="operationActualStart" /></label>
+                                    <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Actual end</span><input type="datetime-local" class="rounded border border-border-strong px-2 py-1" @bind="operationActualEnd" /></label>
+                                    <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Actual qty (MT)</span><input type="number" class="rounded border border-border-strong px-2 py-1" @bind="operationActualQuantity" /></label>
+                                    <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Comment</span><input class="rounded border border-border-strong px-2 py-1" @bind="operationActualComment" /></label>
                                 </div>
-                                <button type="button" class="mt-3 rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50" disabled="@savingOperationActual" @onclick="SaveOperationActualAsync">
+                                <button type="button" class="mt-3 rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground disabled:opacity-50" disabled="@savingOperationActual" @onclick="SaveOperationActualAsync">
                                     @(savingOperationActual ? "Saving…" : "Save operation actual")
                                 </button>
                             </div>
@@ -163,24 +163,24 @@ else
                     }
                 </section>
 
-                <section class="rounded border border-slate-200 bg-white p-4">
+                <section class="rounded border border-border bg-surface-raised p-4">
                     <div class="mb-3 flex items-center justify-between">
                         <h3 class="text-sm font-semibold">Commercial lineage</h3>
-                        <span class="text-xs text-slate-400">@selectedWorkOrder.DemandReferences.Count PO</span>
+                        <span class="text-xs text-muted">@selectedWorkOrder.DemandReferences.Count PO</span>
                     </div>
                     @if (selectedWorkOrder.DemandReferences.Count == 0)
                     {
-                        <p class="text-sm text-slate-400">No PO allocation is linked to this Work Order.</p>
+                        <p class="text-sm text-muted">No PO allocation is linked to this Work Order.</p>
                     }
                     else
                     {
                         <div class="grid grid-cols-3 gap-2">
                             @foreach (var demand in selectedWorkOrder.DemandReferences)
                             {
-                                <button type="button" class="rounded border border-slate-200 px-2 py-1.5 text-left text-xs hover:bg-slate-50" @onclick="() => SelectProductionOrder(demand)">
-                                    <span class="rounded px-1 @(demand.DemandSource == DemandSourceType.MakeToOrder ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600")">@(demand.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</span>
+                                <button type="button" class="rounded border border-border px-2 py-1.5 text-left text-xs hover:bg-surface-hover" @onclick="() => SelectProductionOrder(demand)">
+                                    <span class="rounded px-1 @(demand.DemandSource == DemandSourceType.MakeToOrder ? "bg-info-soft text-info" : "bg-surface-inset text-secondary")">@(demand.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</span>
                                     <strong class="ml-1">@demand.ProductionOrderNumber</strong>
-                                    <div class="text-slate-400">@(demand.SalesOrderNumber is null ? "Stock replenishment" : $"SO {demand.SalesOrderNumber} / {demand.SalesOrderItemNumber}")</div>
+                                    <div class="text-muted">@(demand.SalesOrderNumber is null ? "Stock replenishment" : $"SO {demand.SalesOrderNumber} / {demand.SalesOrderItemNumber}")</div>
                                 </button>
                             }
                         </div>
@@ -318,10 +318,10 @@ else
 
     private static string StatusClass(WorkOrderStatus status) => status switch
     {
-        WorkOrderStatus.Completed => "bg-emerald-100 text-emerald-700",
-        WorkOrderStatus.Running => "bg-sky-100 text-sky-700",
-        WorkOrderStatus.Held or WorkOrderStatus.Cancelled => "bg-rose-100 text-rose-700",
-        _ => "bg-slate-100 text-slate-600"
+        WorkOrderStatus.Completed => "bg-success-soft text-success",
+        WorkOrderStatus.Running => "bg-info-soft text-info",
+        WorkOrderStatus.Held or WorkOrderStatus.Cancelled => "bg-danger-soft text-danger",
+        _ => "bg-surface-inset text-secondary"
     };
 
     private static string TimeRange(WorkOrderView wo) =>

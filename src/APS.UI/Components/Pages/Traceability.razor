@@ -5,42 +5,42 @@
 <PageTitle>Traceability - APS</PageTitle>
 
 <h1 class="mb-1 text-lg font-semibold">Traceability</h1>
-<p class="mb-6 text-sm text-slate-500">Commercial lineage for a Work Order, or physical genealogy for a material lot.</p>
+<p class="mb-6 text-sm text-secondary">Commercial lineage for a Work Order, or physical genealogy for a material lot.</p>
 
-<div class="mb-6 flex gap-1 border-b border-slate-200">
-    <button type="button" class="border-b-2 px-3 py-2 text-sm @(mode == "wo" ? "border-accent font-medium text-accent" : "border-transparent text-slate-500")" @onclick='() => mode = "wo"'>Work Order</button>
-    <button type="button" class="border-b-2 px-3 py-2 text-sm @(mode == "lot" ? "border-accent font-medium text-accent" : "border-transparent text-slate-500")" @onclick='() => mode = "lot"'>Material Lot</button>
+<div class="mb-6 flex gap-1 border-b border-border">
+    <button type="button" class="border-b-2 px-3 py-2 text-sm @(mode == "wo" ? "border-accent font-medium text-accent" : "border-transparent text-secondary")" @onclick='() => mode = "wo"'>Work Order</button>
+    <button type="button" class="border-b-2 px-3 py-2 text-sm @(mode == "lot" ? "border-accent font-medium text-accent" : "border-transparent text-secondary")" @onclick='() => mode = "lot"'>Material Lot</button>
 </div>
 
 @if (mode == "wo")
 {
     @if (workOrders.Count == 0 && !loadingWorkOrders)
     {
-        <p class="mb-4 text-xs text-slate-400">No released Work Orders on the current plan yet &mdash; release a Plan Version from Plan Versions first.</p>
+        <p class="mb-4 text-xs text-muted">No released Work Orders on the current plan yet &mdash; release a Plan Version from Plan Versions first.</p>
     }
     else
     {
-        <div class="mb-4 rounded border border-slate-200 bg-white p-3">
+        <div class="mb-4 rounded border border-border bg-surface-raised p-3">
             <div class="mb-2 flex flex-wrap items-center gap-1">
-                <span class="mr-1 text-xs font-medium text-slate-400">Type</span>
-                <button type="button" class="rounded px-2 py-1 text-xs @(typeFilter is null ? "bg-accent text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")" @onclick="() => typeFilter = null">All</button>
+                <span class="mr-1 text-xs font-medium text-muted">Type</span>
+                <button type="button" class="rounded px-2 py-1 text-xs @(typeFilter is null ? "bg-accent text-accent-foreground" : "bg-surface-inset text-secondary hover:bg-surface-hover")" @onclick="() => typeFilter = null">All</button>
                 @foreach (var t in workOrderTypes)
                 {
-                    <button type="button" class="rounded px-2 py-1 text-xs @(typeFilter == t ? "bg-accent text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")" @onclick="() => typeFilter = t">@t</button>
+                    <button type="button" class="rounded px-2 py-1 text-xs @(typeFilter == t ? "bg-accent text-accent-foreground" : "bg-surface-inset text-secondary hover:bg-surface-hover")" @onclick="() => typeFilter = t">@t</button>
                 }
             </div>
             <div class="mb-2 flex flex-wrap items-center gap-1">
-                <span class="mr-1 text-xs font-medium text-slate-400">Status</span>
-                <button type="button" class="rounded px-2 py-1 text-xs @(statusFilter is null ? "bg-accent text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")" @onclick="() => statusFilter = null">All</button>
+                <span class="mr-1 text-xs font-medium text-muted">Status</span>
+                <button type="button" class="rounded px-2 py-1 text-xs @(statusFilter is null ? "bg-accent text-accent-foreground" : "bg-surface-inset text-secondary hover:bg-surface-hover")" @onclick="() => statusFilter = null">All</button>
                 @foreach (var s in workOrderStatuses)
                 {
-                    <button type="button" class="rounded px-2 py-1 text-xs @(statusFilter == s ? "bg-accent text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200")" @onclick="() => statusFilter = s">@s</button>
+                    <button type="button" class="rounded px-2 py-1 text-xs @(statusFilter == s ? "bg-accent text-accent-foreground" : "bg-surface-inset text-secondary hover:bg-surface-hover")" @onclick="() => statusFilter = s">@s</button>
                 }
             </div>
             <div class="flex flex-wrap items-end gap-3">
                 <label class="flex flex-col gap-1 text-sm">
-                    <span class="text-xs text-slate-500">Grade</span>
-                    <select class="w-40 rounded border border-slate-300 px-2 py-1 text-xs" @bind="gradeFilter">
+                    <span class="text-xs text-secondary">Grade</span>
+                    <select class="w-40 rounded border border-border-strong px-2 py-1 text-xs" @bind="gradeFilter">
                         <option value="">All grades</option>
                         @foreach (var g in availableGrades)
                         {
@@ -49,41 +49,41 @@
                     </select>
                 </label>
                 <label class="flex flex-col gap-1 text-sm">
-                    <span class="text-xs text-slate-500">Planned from</span>
-                    <input type="date" class="rounded border border-slate-300 px-2 py-1 text-xs" @bind="dateFromFilter" />
+                    <span class="text-xs text-secondary">Planned from</span>
+                    <input type="date" class="rounded border border-border-strong px-2 py-1 text-xs" @bind="dateFromFilter" />
                 </label>
                 <label class="flex flex-col gap-1 text-sm">
-                    <span class="text-xs text-slate-500">Planned to</span>
-                    <input type="date" class="rounded border border-slate-300 px-2 py-1 text-xs" @bind="dateToFilter" />
+                    <span class="text-xs text-secondary">Planned to</span>
+                    <input type="date" class="rounded border border-border-strong px-2 py-1 text-xs" @bind="dateToFilter" />
                 </label>
                 <label class="flex flex-col gap-1 text-sm">
-                    <span class="text-xs text-slate-500">Search</span>
-                    <input class="w-40 rounded border border-slate-300 px-2 py-1 text-xs" placeholder="WO number" @bind="workOrderFilter" @bind:event="oninput" />
+                    <span class="text-xs text-secondary">Search</span>
+                    <input class="w-40 rounded border border-border-strong px-2 py-1 text-xs" placeholder="WO number" @bind="workOrderFilter" @bind:event="oninput" />
                 </label>
                 @if (typeFilter is not null || statusFilter is not null || !string.IsNullOrWhiteSpace(gradeFilter) || dateFromFilter is not null || dateToFilter is not null || !string.IsNullOrWhiteSpace(workOrderFilter))
                 {
-                    <button type="button" class="rounded border border-slate-300 px-2 py-1.5 text-xs text-slate-500 hover:bg-slate-50" @onclick="ClearFilters">Clear filters</button>
+                    <button type="button" class="rounded border border-border-strong px-2 py-1.5 text-xs text-secondary hover:bg-surface-hover" @onclick="ClearFilters">Clear filters</button>
                 }
-                <span class="text-xs text-slate-400">@FilteredWorkOrders.Count of @workOrders.Count</span>
+                <span class="text-xs text-muted">@FilteredWorkOrders.Count of @workOrders.Count</span>
             </div>
         </div>
 
         <div class="grid grid-cols-[340px_1fr] gap-4">
-            <aside class="rounded border border-slate-200 bg-white">
+            <aside class="rounded border border-border bg-surface-raised">
                 <div class="max-h-[60vh] overflow-y-auto">
                     @if (FilteredWorkOrders.Count == 0)
                     {
-                        <p class="p-3 text-sm text-slate-400">No Work Orders match these filters.</p>
+                        <p class="p-3 text-sm text-muted">No Work Orders match these filters.</p>
                     }
                     @foreach (var wo in FilteredWorkOrders)
                     {
-                        <button type="button" class="block w-full border-b border-slate-100 px-3 py-2 text-left last:border-0 hover:bg-slate-50 @(workOrderIdInput == wo.WorkOrderId.ToString() ? "bg-accent-soft" : "")" @onclick="() => SelectWorkOrderAsync(wo)">
+                        <button type="button" class="block w-full border-b border-border px-3 py-2 text-left last:border-0 hover:bg-surface-hover @(workOrderIdInput == wo.WorkOrderId.ToString() ? "bg-accent-soft" : "")" @onclick="() => SelectWorkOrderAsync(wo)">
                             <div class="flex items-center justify-between">
                                 <strong class="text-xs">@wo.WorkOrderNumber</strong>
                                 <span class="rounded px-1.5 py-0.5 text-xs @StatusClass(wo.Status)">@wo.Status</span>
                             </div>
-                            <div class="text-xs text-slate-400">@wo.WorkOrderType &middot; @WorkOrderGrade(wo) &middot; @wo.PlannedQuantityMt.ToString("0.#") MT</div>
-                            <div class="text-xs text-slate-400">@(wo.FirstPlannedStartUtc?.ToString("dd MMM HH:mm") ?? "unscheduled")</div>
+                            <div class="text-xs text-muted">@wo.WorkOrderType &middot; @WorkOrderGrade(wo) &middot; @wo.PlannedQuantityMt.ToString("0.#") MT</div>
+                            <div class="text-xs text-muted">@(wo.FirstPlannedStartUtc?.ToString("dd MMM HH:mm") ?? "unscheduled")</div>
                         </button>
                     }
                 </div>
@@ -92,21 +92,21 @@
             <section>
     @if (workOrderError is not null)
     {
-        <p class="text-sm text-rose-600">@workOrderError</p>
+        <p class="text-sm text-danger">@workOrderError</p>
     }
     else if (workOrderTrace is { } wo)
     {
-        <div class="mb-4 rounded border border-slate-200 bg-white p-4">
+        <div class="mb-4 rounded border border-border bg-surface-raised p-4">
             <h2 class="text-base font-semibold">@wo.WorkOrderNumber</h2>
-            <p class="text-sm text-slate-500">@wo.WorkOrderType &middot; planned @wo.PlannedQuantityMt.ToString("0.##") MT &middot; actual @wo.ActualQuantityMt.ToString("0.##") MT</p>
+            <p class="text-sm text-secondary">@wo.WorkOrderType &middot; planned @wo.PlannedQuantityMt.ToString("0.##") MT &middot; actual @wo.ActualQuantityMt.ToString("0.##") MT</p>
         </div>
 
-        <section class="mb-4 rounded border border-slate-200 bg-white">
-            <div class="border-b border-slate-200 px-3 py-2 text-sm font-semibold">Production Orders (@wo.ProductionOrders.Count)</div>
+        <section class="mb-4 rounded border border-border bg-surface-raised">
+            <div class="border-b border-border px-3 py-2 text-sm font-semibold">Production Orders (@wo.ProductionOrders.Count)</div>
             <Table Headers="@(new[] {"PO", "Source", "SO / Item", "Allocated qty"})">
                 @foreach (var po in wo.ProductionOrders)
                 {
-                    <tr class="border-b border-slate-100 last:border-0">
+                    <tr class="border-b border-border last:border-0">
                         <td class="px-3 py-1.5">@po.ProductionOrderNumber</td>
                         <td class="px-3 py-1.5">@po.DemandSource</td>
                         <td class="px-3 py-1.5">@(po.SalesOrderNumber is null ? "—" : $"{po.SalesOrderNumber}/{po.SalesOrderItem}")</td>
@@ -116,12 +116,12 @@
             </Table>
         </section>
 
-        <section class="rounded border border-slate-200 bg-white">
-            <div class="border-b border-slate-200 px-3 py-2 text-sm font-semibold">Produced lots (@wo.ProducedLots.Count)</div>
+        <section class="rounded border border-border bg-surface-raised">
+            <div class="border-b border-border px-3 py-2 text-sm font-semibold">Produced lots (@wo.ProducedLots.Count)</div>
             <Table Headers="@(new[] {"Lot", "Grade", "Section", "Qty"})">
                 @foreach (var lot in wo.ProducedLots)
                 {
-                    <tr class="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50" @onclick="() => JumpToLot(lot.MaterialLotId)">
+                    <tr class="cursor-pointer border-b border-border last:border-0 hover:bg-surface-hover" @onclick="() => JumpToLot(lot.MaterialLotId)">
                         <td class="px-3 py-1.5 font-mono text-xs">@lot.LotNumber</td>
                         <td class="px-3 py-1.5">@lot.GradeCode</td>
                         <td class="px-3 py-1.5">@lot.CrossSectionCode</td>
@@ -133,7 +133,7 @@
     }
     else
     {
-        <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center text-slate-400">Select a Work Order</div>
+        <div class="rounded border border-dashed border-border-strong bg-surface-raised p-8 text-center text-muted">Select a Work Order</div>
     }
             </section>
         </div>
@@ -143,42 +143,42 @@ else
 {
     <div class="mb-4 flex items-end gap-2">
         <label class="flex flex-col gap-1 text-sm">
-            <span class="text-xs text-slate-500">Material Lot ID</span>
-            <input class="w-96 rounded border border-slate-300 px-2 py-1 font-mono text-xs" @bind="lotIdInput" />
+            <span class="text-xs text-secondary">Material Lot ID</span>
+            <input class="w-96 rounded border border-border-strong px-2 py-1 font-mono text-xs" @bind="lotIdInput" />
         </label>
-        <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white" @onclick="LoadLotTraceAsync">Look up</button>
+        <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground" @onclick="LoadLotTraceAsync">Look up</button>
     </div>
 
     @if (lotError is not null)
     {
-        <p class="text-sm text-rose-600">@lotError</p>
+        <p class="text-sm text-danger">@lotError</p>
     }
     else if (lotTrace is { } lot)
     {
-        <div class="mb-4 rounded border border-slate-200 bg-white p-4">
+        <div class="mb-4 rounded border border-border bg-surface-raised p-4">
             <h2 class="text-base font-semibold">@lot.LotNumber</h2>
-            <p class="text-sm text-slate-500">@lot.MaterialCode &middot; @lot.GradeCode / @lot.CrossSectionCode &middot; @lot.QuantityMt.ToString("0.##") MT</p>
+            <p class="text-sm text-secondary">@lot.MaterialCode &middot; @lot.GradeCode / @lot.CrossSectionCode &middot; @lot.QuantityMt.ToString("0.##") MT</p>
         </div>
 
         <div class="grid grid-cols-2 gap-4">
-            <section class="rounded border border-slate-200 bg-white">
-                <div class="border-b border-slate-200 px-3 py-2 text-sm font-semibold">Parent lots (@lot.ParentLots.Count)</div>
+            <section class="rounded border border-border bg-surface-raised">
+                <div class="border-b border-border px-3 py-2 text-sm font-semibold">Parent lots (@lot.ParentLots.Count)</div>
                 <Table Headers="@(new[] {"Lot", "Qty"})">
                     @foreach (var parent in lot.ParentLots)
                     {
-                        <tr class="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50" @onclick="() => JumpToLot(parent.MaterialLotId)">
+                        <tr class="cursor-pointer border-b border-border last:border-0 hover:bg-surface-hover" @onclick="() => JumpToLot(parent.MaterialLotId)">
                             <td class="px-3 py-1.5 font-mono text-xs">@parent.LotNumber</td>
                             <td class="px-3 py-1.5 text-right">@parent.QuantityMt.ToString("0.##")</td>
                         </tr>
                     }
                 </Table>
             </section>
-            <section class="rounded border border-slate-200 bg-white">
-                <div class="border-b border-slate-200 px-3 py-2 text-sm font-semibold">Child lots (@lot.ChildLots.Count)</div>
+            <section class="rounded border border-border bg-surface-raised">
+                <div class="border-b border-border px-3 py-2 text-sm font-semibold">Child lots (@lot.ChildLots.Count)</div>
                 <Table Headers="@(new[] {"Lot", "Qty"})">
                     @foreach (var child in lot.ChildLots)
                     {
-                        <tr class="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50" @onclick="() => JumpToLot(child.MaterialLotId)">
+                        <tr class="cursor-pointer border-b border-border last:border-0 hover:bg-surface-hover" @onclick="() => JumpToLot(child.MaterialLotId)">
                             <td class="px-3 py-1.5 font-mono text-xs">@child.LotNumber</td>
                             <td class="px-3 py-1.5 text-right">@child.QuantityMt.ToString("0.##")</td>
                         </tr>
@@ -187,12 +187,12 @@ else
             </section>
         </div>
 
-        <section class="mt-4 rounded border border-slate-200 bg-white">
-            <div class="border-b border-slate-200 px-3 py-2 text-sm font-semibold">Allocated Production Orders (@lot.AllocatedProductionOrders.Count)</div>
+        <section class="mt-4 rounded border border-border bg-surface-raised">
+            <div class="border-b border-border px-3 py-2 text-sm font-semibold">Allocated Production Orders (@lot.AllocatedProductionOrders.Count)</div>
             <Table Headers="@(new[] {"PO", "Source", "SO / Item", "Allocated qty"})">
                 @foreach (var po in lot.AllocatedProductionOrders)
                 {
-                    <tr class="border-b border-slate-100 last:border-0">
+                    <tr class="border-b border-border last:border-0">
                         <td class="px-3 py-1.5">@po.ProductionOrderNumber</td>
                         <td class="px-3 py-1.5">@po.DemandSource</td>
                         <td class="px-3 py-1.5">@(po.SalesOrderNumber is null ? "—" : $"{po.SalesOrderNumber}/{po.SalesOrderItem}")</td>
@@ -258,10 +258,10 @@ else
 
     private static string StatusClass(WorkOrderStatus status) => status switch
     {
-        WorkOrderStatus.Completed => "bg-emerald-100 text-emerald-700",
-        WorkOrderStatus.Running => "bg-sky-100 text-sky-700",
-        WorkOrderStatus.Held or WorkOrderStatus.Cancelled => "bg-rose-100 text-rose-700",
-        _ => "bg-slate-100 text-slate-600"
+        WorkOrderStatus.Completed => "bg-success-soft text-success",
+        WorkOrderStatus.Running => "bg-info-soft text-info",
+        WorkOrderStatus.Held or WorkOrderStatus.Cancelled => "bg-danger-soft text-danger",
+        _ => "bg-surface-inset text-secondary"
     };
 
     private async Task SelectWorkOrderAsync(WorkOrderView wo)

@@ -9,49 +9,49 @@
 <div class="mb-4 flex items-start justify-between">
     <div>
         <h1 class="text-lg font-semibold">Demand &amp; Supply</h1>
-        <p class="text-sm text-slate-500">How each Production Order is covered before fresh steel is created.</p>
+        <p class="text-sm text-secondary">How each Production Order is covered before fresh steel is created.</p>
     </div>
-    <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50" disabled="@reconciling" @onclick="ToggleReconcileForm">
+    <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground hover:bg-accent-hover disabled:opacity-50" disabled="@reconciling" @onclick="ToggleReconcileForm">
         Reconcile Sales Orders
     </button>
 </div>
 
 @if (showReconcileForm)
 {
-    <section class="mb-6 rounded border border-slate-200 bg-white p-4">
+    <section class="mb-6 rounded border border-border bg-surface-raised p-4">
         <h2 class="mb-3 text-sm font-semibold">Add Sales Order line and reconcile</h2>
         <div class="grid grid-cols-4 gap-3 text-sm">
-            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">SO number</span><input class="rounded border border-slate-300 px-2 py-1" @bind="soNumber" /></label>
-            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Item</span><input class="rounded border border-slate-300 px-2 py-1" @bind="soItem" /></label>
-            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Material code</span><input class="rounded border border-slate-300 px-2 py-1" @bind="materialCode" /></label>
-            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Grade</span><input class="rounded border border-slate-300 px-2 py-1" @bind="gradeCode" /></label>
-            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Final section</span><input class="rounded border border-slate-300 px-2 py-1" @bind="crossSectionCode" /></label>
-            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Order qty (MT)</span><input type="number" class="rounded border border-slate-300 px-2 py-1" @bind="orderQuantityMt" /></label>
-            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Open qty (MT)</span><input type="number" class="rounded border border-slate-300 px-2 py-1" @bind="openQuantityMt" /></label>
-            <label class="flex flex-col gap-1"><span class="text-xs text-slate-500">Required date</span><input type="date" class="rounded border border-slate-300 px-2 py-1" @bind="requiredDate" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-secondary">SO number</span><input class="rounded border border-border-strong px-2 py-1" @bind="soNumber" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Item</span><input class="rounded border border-border-strong px-2 py-1" @bind="soItem" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Material code</span><input class="rounded border border-border-strong px-2 py-1" @bind="materialCode" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Grade</span><input class="rounded border border-border-strong px-2 py-1" @bind="gradeCode" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Final section</span><input class="rounded border border-border-strong px-2 py-1" @bind="crossSectionCode" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Order qty (MT)</span><input type="number" class="rounded border border-border-strong px-2 py-1" @bind="orderQuantityMt" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Open qty (MT)</span><input type="number" class="rounded border border-border-strong px-2 py-1" @bind="openQuantityMt" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Required date</span><input type="date" class="rounded border border-border-strong px-2 py-1" @bind="requiredDate" /></label>
         </div>
         @if (!string.IsNullOrWhiteSpace(reconcileError))
         {
-            <p class="mt-2 text-sm text-rose-600">@reconcileError</p>
+            <p class="mt-2 text-sm text-danger">@reconcileError</p>
         }
         <div class="mt-3 flex gap-2">
-            <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50" disabled="@reconciling" @onclick="SubmitReconcileAsync">
+            <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground disabled:opacity-50" disabled="@reconciling" @onclick="SubmitReconcileAsync">
                 @(reconciling ? "Reconciling…" : "Submit and reconcile")
             </button>
-            <button type="button" class="rounded border border-slate-300 px-3 py-1.5 text-sm" @onclick="ToggleReconcileForm">Cancel</button>
+            <button type="button" class="rounded border border-border-strong px-3 py-1.5 text-sm" @onclick="ToggleReconcileForm">Cancel</button>
         </div>
     </section>
 }
 
 @if (loading)
 {
-    <p class="text-sm text-slate-400">Loading demand coverage…</p>
+    <p class="text-sm text-muted">Loading demand coverage…</p>
 }
 else if (view is null)
 {
-    <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center">
-        <strong class="text-slate-700">No persisted demand snapshot</strong>
-        <p class="mt-1 text-sm text-slate-500">Run and persist a Plan Version before using the production Demand &amp; Supply workspace.</p>
+    <div class="rounded border border-dashed border-border-strong bg-surface-raised p-8 text-center">
+        <strong class="text-primary">No persisted demand snapshot</strong>
+        <p class="mt-1 text-sm text-secondary">Run and persist a Plan Version before using the production Demand &amp; Supply workspace.</p>
     </div>
 }
 else
@@ -65,10 +65,10 @@ else
         <StatTile Label="Uncovered" Value="@($"{view.UncoveredQuantityMt:0.##} MT")" />
     </div>
 
-    <section class="rounded border border-slate-200 bg-white">
+    <section class="rounded border border-border bg-surface-raised">
         <table class="w-full text-sm">
             <thead>
-                <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+                <tr class="border-b border-border text-left text-xs text-muted">
                     <th class="px-3 py-2 font-medium">Production Order</th>
                     <th class="px-3 py-2 font-medium">Requirement</th>
                     <th class="px-3 py-2 font-medium">Coverage</th>
@@ -79,11 +79,11 @@ else
             <tbody>
                 @foreach (var row in view.Rows)
                 {
-                    <tr class="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50" @onclick="() => SelectProductionOrder(row)">
+                    <tr class="cursor-pointer border-b border-border last:border-0 hover:bg-surface-hover" @onclick="() => SelectProductionOrder(row)">
                         <td class="px-3 py-2">
-                            <span class="mr-1 rounded px-1.5 py-0.5 text-xs font-medium @(row.DemandSource == DemandSourceType.MakeToOrder ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600")">@(row.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</span>
+                            <span class="mr-1 rounded px-1.5 py-0.5 text-xs font-medium @(row.DemandSource == DemandSourceType.MakeToOrder ? "bg-info-soft text-info" : "bg-surface-inset text-secondary")">@(row.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</span>
                             <strong>@row.ProductionOrderNumber</strong>
-                            <div class="text-xs text-slate-400">
+                            <div class="text-xs text-muted">
                                 @if (!string.IsNullOrWhiteSpace(row.SalesOrderNumber))
                                 {
                                     @($"SO {row.SalesOrderNumber}/{row.SalesOrderItemNumber} · {Display(row.CustomerCode)}")
@@ -96,32 +96,32 @@ else
                         </td>
                         <td class="px-3 py-2">
                             <strong>@row.GradeCode &middot; @row.FinalCrossSectionCode</strong>
-                            <div class="text-xs text-slate-400">@row.MaterialCode &middot; route @row.RouteCode</div>
+                            <div class="text-xs text-muted">@row.MaterialCode &middot; route @row.RouteCode</div>
                             <div class="mt-0.5 flex flex-wrap gap-1 text-xs">
-                                @if (row.VdRequirement != RequirementDisposition.Optional) { <span class="rounded bg-slate-100 px-1">VD @row.VdRequirement</span> }
-                                @if (row.ReheatRequirement != RequirementDisposition.Optional) { <span class="rounded bg-slate-100 px-1">RHF @row.ReheatRequirement</span> }
-                                @if (row.TmtRequirement != RequirementDisposition.Optional) { <span class="rounded bg-slate-100 px-1">TMT @row.TmtRequirement</span> }
-                                @if (row.SegregationPolicy != SegregationPolicy.None) { <span class="rounded bg-slate-100 px-1">@row.SegregationPolicy</span> }
-                                @if (!row.HotChargeAllowed) { <span class="rounded bg-amber-100 px-1 text-amber-700">NO HOT CHARGE</span> }
+                                @if (row.VdRequirement != RequirementDisposition.Optional) { <span class="rounded bg-surface-inset px-1">VD @row.VdRequirement</span> }
+                                @if (row.ReheatRequirement != RequirementDisposition.Optional) { <span class="rounded bg-surface-inset px-1">RHF @row.ReheatRequirement</span> }
+                                @if (row.TmtRequirement != RequirementDisposition.Optional) { <span class="rounded bg-surface-inset px-1">TMT @row.TmtRequirement</span> }
+                                @if (row.SegregationPolicy != SegregationPolicy.None) { <span class="rounded bg-surface-inset px-1">@row.SegregationPolicy</span> }
+                                @if (!row.HotChargeAllowed) { <span class="rounded bg-warning-soft px-1 text-warning">NO HOT CHARGE</span> }
                             </div>
                         </td>
                         <td class="w-56 px-3 py-2">
-                            <div class="flex h-2 overflow-hidden rounded bg-slate-100">
-                                @CoverageSegment(row.FinishedGoodsAllocatedMt, row.RemainingQuantityMt, "bg-emerald-500")
-                                @CoverageSegment(row.ExistingIntermediateAllocatedMt, row.RemainingQuantityMt, "bg-sky-500")
-                                @CoverageSegment(row.ExternalIntermediateAllocatedMt, row.RemainingQuantityMt, "bg-violet-500")
-                                @CoverageSegment(row.FreshSteelRequirementMt, row.RemainingQuantityMt, "bg-orange-500")
-                                @CoverageSegment(row.UncoveredQuantityMt, row.RemainingQuantityMt, "bg-rose-500")
+                            <div class="flex h-2 overflow-hidden rounded bg-surface-inset">
+                                @CoverageSegment(row.FinishedGoodsAllocatedMt, row.RemainingQuantityMt, "bg-process-casting")
+                                @CoverageSegment(row.ExistingIntermediateAllocatedMt, row.RemainingQuantityMt, "bg-process-hot-roll")
+                                @CoverageSegment(row.ExternalIntermediateAllocatedMt, row.RemainingQuantityMt, "bg-process-lrf")
+                                @CoverageSegment(row.FreshSteelRequirementMt, row.RemainingQuantityMt, "bg-process-eaf")
+                                @CoverageSegment(row.UncoveredQuantityMt, row.RemainingQuantityMt, "bg-danger-soft0")
                             </div>
-                            <div class="mt-1 text-xs text-slate-400">@row.RemainingQuantityMt.ToString("0.##") MT total</div>
+                            <div class="mt-1 text-xs text-muted">@row.RemainingQuantityMt.ToString("0.##") MT total</div>
                         </td>
                         <td class="px-3 py-2">
                             <strong>@row.RequiredDate.ToString("dd MMM")</strong>
-                            <div class="text-xs text-slate-400">Priority @row.Priority</div>
+                            <div class="text-xs text-muted">Priority @row.Priority</div>
                         </td>
                         <td class="px-3 py-2">
-                            <span class="rounded px-1.5 py-0.5 text-xs font-medium @(row.UncoveredQuantityMt > 0m ? "bg-rose-100 text-rose-700" : "bg-emerald-100 text-emerald-700")">@(row.UncoveredQuantityMt > 0m ? "UNCOVERED" : "COVERED")</span>
-                            <div class="text-xs text-slate-400">@row.Status</div>
+                            <span class="rounded px-1.5 py-0.5 text-xs font-medium @(row.UncoveredQuantityMt > 0m ? "bg-danger-soft text-danger" : "bg-success-soft text-success")">@(row.UncoveredQuantityMt > 0m ? "UNCOVERED" : "COVERED")</span>
+                            <div class="text-xs text-muted">@row.Status</div>
                         </td>
                     </tr>
                 }
@@ -131,11 +131,11 @@ else
 
     @if (view.SalesOrders is { Count: > 0 } salesOrders)
     {
-        <section class="mt-6 rounded border border-slate-200 bg-white">
-            <div class="border-b border-slate-200 px-3 py-2 text-sm font-semibold">Sales Order coverage (@salesOrders.Count)</div>
+        <section class="mt-6 rounded border border-border bg-surface-raised">
+            <div class="border-b border-border px-3 py-2 text-sm font-semibold">Sales Order coverage (@salesOrders.Count)</div>
             <table class="w-full text-sm">
                 <thead>
-                    <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+                    <tr class="border-b border-border text-left text-xs text-muted">
                         <th class="px-3 py-2 font-medium">SO / Item</th>
                         <th class="px-3 py-2 font-medium">Open demand</th>
                         <th class="px-3 py-2 font-medium">FG covered</th>
@@ -146,13 +146,13 @@ else
                 <tbody>
                     @foreach (var so in salesOrders)
                     {
-                        <tr class="border-b border-slate-100 last:border-0">
-                            <td class="px-3 py-2"><strong>@so.SalesOrderNumber</strong> / @so.SalesOrderItemNumber<div class="text-xs text-slate-400">@Display(so.CustomerCode)</div></td>
+                        <tr class="border-b border-border last:border-0">
+                            <td class="px-3 py-2"><strong>@so.SalesOrderNumber</strong> / @so.SalesOrderItemNumber<div class="text-xs text-muted">@Display(so.CustomerCode)</div></td>
                             <td class="px-3 py-2">@so.OpenDemandQuantityMt.ToString("0.##") MT</td>
                             <td class="px-3 py-2">@so.FinishedGoodsCoveredQuantityMt.ToString("0.##") MT</td>
                             <td class="px-3 py-2">@so.ManufacturingRequirementQuantityMt.ToString("0.##") MT</td>
                             <td class="px-3 py-2">
-                                <span class="rounded px-1.5 py-0.5 text-xs @(so.PlannerAttentionRequired ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600")">@so.Disposition</span>
+                                <span class="rounded px-1.5 py-0.5 text-xs @(so.PlannerAttentionRequired ? "bg-warning-soft text-warning" : "bg-surface-inset text-secondary")">@so.Disposition</span>
                             </td>
                         </tr>
                     }

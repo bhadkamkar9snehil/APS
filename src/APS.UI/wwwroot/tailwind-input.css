@@ -23,6 +23,14 @@
   --aps-danger-soft: #f8e4e1;
   --aps-info: #526274;
   --aps-info-soft: #e5eaf0;
+  --aps-process-eaf: #b84b1c;
+  --aps-process-lrf: #7252a5;
+  --aps-process-vd: #26786f;
+  --aps-process-casting: #2f7d58;
+  --aps-process-reheat: #95620f;
+  --aps-process-hot-roll: #506a7d;
+  --aps-process-cold-roll: #67518f;
+  --aps-process-finishing: #27777a;
   --aps-shadow-soft: 0 1px 2px rgba(39, 35, 31, .07), 0 9px 24px rgba(39, 35, 31, .05);
   --aps-shadow-raised: 0 1px 2px rgba(39, 35, 31, .10), 0 16px 38px rgba(39, 35, 31, .10);
   --aps-radius-control: .5rem;
@@ -50,6 +58,14 @@
   --aps-danger-soft: #452321;
   --aps-info: #aab7c7;
   --aps-info-soft: #29313a;
+  --aps-process-eaf: #e9763f;
+  --aps-process-lrf: #a98bdd;
+  --aps-process-vd: #59b9ae;
+  --aps-process-casting: #65c694;
+  --aps-process-reheat: #deb05a;
+  --aps-process-hot-roll: #8fa9bd;
+  --aps-process-cold-roll: #ad96d2;
+  --aps-process-finishing: #69bdc0;
   --aps-shadow-soft: 0 1px 2px rgba(0, 0, 0, .32), 0 10px 28px rgba(0, 0, 0, .20);
   --aps-shadow-raised: 0 2px 4px rgba(0, 0, 0, .38), 0 18px 44px rgba(0, 0, 0, .30);
 }
@@ -198,6 +214,14 @@
   --color-danger-soft: var(--aps-danger-soft);
   --color-info: var(--aps-info);
   --color-info-soft: var(--aps-info-soft);
+  --color-process-eaf: var(--aps-process-eaf);
+  --color-process-lrf: var(--aps-process-lrf);
+  --color-process-vd: var(--aps-process-vd);
+  --color-process-casting: var(--aps-process-casting);
+  --color-process-reheat: var(--aps-process-reheat);
+  --color-process-hot-roll: var(--aps-process-hot-roll);
+  --color-process-cold-roll: var(--aps-process-cold-roll);
+  --color-process-finishing: var(--aps-process-finishing);
   --radius-control: var(--aps-radius-control);
   --radius-surface: var(--aps-radius-surface);
   --shadow-soft: var(--aps-shadow-soft);
@@ -213,7 +237,13 @@ body {
 }
 
 button, input, select, textarea { font: inherit; }
-input, select, textarea { color-scheme: inherit; }
+input, select, textarea {
+  color-scheme: inherit;
+  color: var(--aps-text-primary);
+  background: var(--aps-surface-raised);
+}
+
+input::placeholder, textarea::placeholder { color: var(--aps-text-muted); }
 
 ::selection {
   color: var(--aps-text-primary);

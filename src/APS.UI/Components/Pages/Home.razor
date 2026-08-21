@@ -6,17 +6,17 @@
 <PageTitle>Control Tower - APS</PageTitle>
 
 <h1 class="mb-1 text-lg font-semibold">Control Tower</h1>
-<p class="mb-6 text-sm text-slate-500">Authoritative plan footprint, physical-resource pressure and persisted material commitments.</p>
+<p class="mb-6 text-sm text-secondary">Authoritative plan footprint, physical-resource pressure and persisted material commitments.</p>
 
 @if (loading)
 {
-    <p class="text-sm text-slate-400">Loading plan context…</p>
+    <p class="text-sm text-muted">Loading plan context…</p>
 }
 else if (view is null)
 {
-    <div class="rounded border border-dashed border-slate-300 bg-white p-8 text-center">
-        <strong class="block text-slate-700">No active persisted Plan Version</strong>
-        <p class="mt-1 text-sm text-slate-500">The production workspace only shows authoritative persisted planning state.</p>
+    <div class="rounded border border-dashed border-border-strong bg-surface-raised p-8 text-center">
+        <strong class="block text-primary">No active persisted Plan Version</strong>
+        <p class="mt-1 text-sm text-secondary">The production workspace only shows authoritative persisted planning state.</p>
         <a class="mt-3 inline-block text-sm text-accent hover:underline" href="/plan/versions">Go to Plan Versions &rarr;</a>
     </div>
 }
@@ -32,55 +32,55 @@ else
     </div>
 
     <div class="grid grid-cols-2 gap-4">
-        <section class="rounded border border-slate-200 bg-white p-4">
+        <section class="rounded border border-border bg-surface-raised p-4">
             <h2 class="mb-3 text-sm font-semibold">Physical resource pressure</h2>
             @if (view.Resources.Count == 0)
             {
-                <p class="text-sm text-slate-400">No persisted scheduled operations for this Plan Version.</p>
+                <p class="text-sm text-muted">No persisted scheduled operations for this Plan Version.</p>
             }
             else
             {
                 <div class="space-y-2">
                     @foreach (var resource in view.Resources)
                     {
-                        <button type="button" class="flex w-full items-center gap-3 rounded px-2 py-1.5 text-left hover:bg-slate-50" @onclick="() => SelectResource(resource)">
+                        <button type="button" class="flex w-full items-center gap-3 rounded px-2 py-1.5 text-left hover:bg-surface-hover" @onclick="() => SelectResource(resource)">
                             <div class="w-28 shrink-0">
                                 <div class="font-medium">@resource.ResourceCode</div>
-                                <div class="text-xs text-slate-400">@resource.ProcessUnitType</div>
+                                <div class="text-xs text-muted">@resource.ProcessUnitType</div>
                             </div>
-                            <div class="h-2 flex-1 rounded bg-slate-100">
+                            <div class="h-2 flex-1 rounded bg-surface-inset">
                                 <div class="h-2 rounded bg-accent" style="width:@(PressureWidth(resource.OccupiedHours))%"></div>
                             </div>
                             <div class="w-20 shrink-0 text-right text-xs">
                                 <div class="font-medium">@resource.OccupiedHours.ToString("0.##") h</div>
                                 @if (resource.SchedulingMode == ResourceSchedulingMode.Cumulative)
                                 {
-                                    <div class="text-slate-400">peak @resource.PeakConcurrentOperations/@(resource.NominalConcurrentCapacity?.ToString("0.##") ?? "?")</div>
+                                    <div class="text-muted">peak @resource.PeakConcurrentOperations/@(resource.NominalConcurrentCapacity?.ToString("0.##") ?? "?")</div>
                                 }
                                 else
                                 {
-                                    <div class="text-slate-400">@resource.ScheduledOperationCount ops</div>
+                                    <div class="text-muted">@resource.ScheduledOperationCount ops</div>
                                 }
                             </div>
                             <span class="w-24 shrink-0 rounded px-1.5 py-0.5 text-center text-xs @ResourceStateClass(resource.OperatingState)">@resource.OperatingState</span>
                         </button>
                     }
                 </div>
-                <p class="mt-2 text-xs text-slate-400">Bar length is relative wall-clock occupancy inside this Plan Version; it is not a utilization percentage. Cumulative resources show peak concurrent blocks against their configured capacity, because concurrent work on them is not overload.</p>
+                <p class="mt-2 text-xs text-muted">Bar length is relative wall-clock occupancy inside this Plan Version; it is not a utilization percentage. Cumulative resources show peak concurrent blocks against their configured capacity, because concurrent work on them is not overload.</p>
             }
         </section>
 
-        <section class="rounded border border-slate-200 bg-white p-4">
+        <section class="rounded border border-border bg-surface-raised p-4">
             <h2 class="mb-3 text-sm font-semibold">Material commitment</h2>
             @if (view.MaterialAllocations.Count == 0)
             {
-                <p class="text-sm text-slate-400">No persisted inventory allocations.</p>
+                <p class="text-sm text-muted">No persisted inventory allocations.</p>
             }
             else
             {
                 <table class="w-full text-sm">
                     <thead>
-                        <tr class="border-b border-slate-200 text-left text-xs text-slate-400">
+                        <tr class="border-b border-border text-left text-xs text-muted">
                             <th class="pb-1 font-medium">Stage</th>
                             <th class="pb-1 font-medium">Quantity</th>
                             <th class="pb-1 font-medium">Allocations</th>
@@ -89,10 +89,10 @@ else
                     <tbody>
                         @foreach (var material in view.MaterialAllocations)
                         {
-                            <tr class="border-b border-slate-100 last:border-0">
+                            <tr class="border-b border-border last:border-0">
                                 <td class="py-1">@material.Stage</td>
                                 <td class="py-1 font-medium">@material.AllocatedQuantityMt.ToString("0.##") MT</td>
-                                <td class="py-1 text-slate-500">@material.AllocationCount</td>
+                                <td class="py-1 text-secondary">@material.AllocationCount</td>
                             </tr>
                         }
                     </tbody>
@@ -100,31 +100,31 @@ else
             }
         </section>
 
-        <section class="rounded border border-slate-200 bg-white p-4">
+        <section class="rounded border border-border bg-surface-raised p-4">
             <h2 class="mb-3 text-sm font-semibold">Execution state</h2>
             <div class="grid grid-cols-4 gap-2 text-center">
-                <div><div class="text-xs text-slate-400">Released</div><strong>@view.Footprint.ReleasedWorkOrderCount</strong></div>
-                <div><div class="text-xs text-slate-400">Running</div><strong>@view.Footprint.RunningWorkOrderCount</strong></div>
-                <div><div class="text-xs text-slate-400">Held</div><strong>@view.Footprint.HeldWorkOrderCount</strong></div>
-                <div><div class="text-xs text-slate-400">Completed</div><strong>@view.Footprint.CompletedWorkOrderCount</strong></div>
+                <div><div class="text-xs text-muted">Released</div><strong>@view.Footprint.ReleasedWorkOrderCount</strong></div>
+                <div><div class="text-xs text-muted">Running</div><strong>@view.Footprint.RunningWorkOrderCount</strong></div>
+                <div><div class="text-xs text-muted">Held</div><strong>@view.Footprint.HeldWorkOrderCount</strong></div>
+                <div><div class="text-xs text-muted">Completed</div><strong>@view.Footprint.CompletedWorkOrderCount</strong></div>
             </div>
         </section>
 
-        <section class="rounded border border-slate-200 bg-white p-4">
+        <section class="rounded border border-border bg-surface-raised p-4">
             <h2 class="mb-3 text-sm font-semibold">Recent Plan Versions</h2>
             @if (recentPlans.Count == 0)
             {
-                <p class="text-sm text-slate-400">No Plan Version history.</p>
+                <p class="text-sm text-muted">No Plan Version history.</p>
             }
             else
             {
                 <div class="space-y-1">
                     @foreach (var plan in recentPlans)
                     {
-                        <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left hover:bg-slate-50 @(plan.PlanVersionId == view.Plan.PlanVersionId ? "bg-accent-soft" : "")" @onclick="() => SelectPlan(plan.PlanVersionId)">
+                        <button type="button" class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left hover:bg-surface-hover @(plan.PlanVersionId == view.Plan.PlanVersionId ? "bg-accent-soft" : "")" @onclick="() => SelectPlan(plan.PlanVersionId)">
                             <div>
                                 <strong>@plan.VersionNumber</strong>
-                                <span class="ml-2 text-xs text-slate-400">@plan.CreatedOnUtc.ToString("dd MMM HH:mm") &middot; @plan.Trigger</span>
+                                <span class="ml-2 text-xs text-muted">@plan.CreatedOnUtc.ToString("dd MMM HH:mm") &middot; @plan.Trigger</span>
                             </div>
                             <span class="rounded px-1.5 py-0.5 text-xs @PlanStatusClass(plan.Status)">@plan.Status</span>
                         </button>
@@ -205,18 +205,18 @@ else
 
     private static string ResourceStateClass(ResourceOperatingState state) => state switch
     {
-        ResourceOperatingState.Available => "bg-emerald-100 text-emerald-700",
-        ResourceOperatingState.CapacityDerated or ResourceOperatingState.QualityRestricted => "bg-amber-100 text-amber-700",
-        ResourceOperatingState.PlannedMaintenance or ResourceOperatingState.Breakdown or ResourceOperatingState.Disabled => "bg-rose-100 text-rose-700",
-        _ => "bg-slate-100 text-slate-600"
+        ResourceOperatingState.Available => "bg-success-soft text-success",
+        ResourceOperatingState.CapacityDerated or ResourceOperatingState.QualityRestricted => "bg-warning-soft text-warning",
+        ResourceOperatingState.PlannedMaintenance or ResourceOperatingState.Breakdown or ResourceOperatingState.Disabled => "bg-danger-soft text-danger",
+        _ => "bg-surface-inset text-secondary"
     };
 
     private static string PlanStatusClass(PlanVersionStatus status) => status switch
     {
-        PlanVersionStatus.Feasible or PlanVersionStatus.Released => "bg-emerald-100 text-emerald-700",
-        PlanVersionStatus.Failed => "bg-rose-100 text-rose-700",
-        PlanVersionStatus.Superseded => "bg-slate-100 text-slate-400",
-        _ => "bg-slate-100 text-slate-600"
+        PlanVersionStatus.Feasible or PlanVersionStatus.Released => "bg-success-soft text-success",
+        PlanVersionStatus.Failed => "bg-danger-soft text-danger",
+        PlanVersionStatus.Superseded => "bg-surface-inset text-muted",
+        _ => "bg-surface-inset text-secondary"
     };
 
     public void Dispose() => WorkspaceState.Changed -= OnWorkspaceChanged;

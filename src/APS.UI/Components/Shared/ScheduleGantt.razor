@@ -1,6 +1,6 @@
 @using APS.Application
 
-<div class="grid grid-cols-[160px_1fr] border-b border-slate-100 pb-1 text-xs text-slate-400">
+<div class="grid grid-cols-[160px_1fr] border-b border-border pb-1 text-xs text-muted">
     <div></div>
     <div class="relative h-4">
         @foreach (var tick in AxisTicks())
@@ -9,15 +9,15 @@
         }
     </div>
 </div>
-<div class="divide-y divide-slate-100">
+<div class="divide-y divide-border">
     @foreach (var row in Rows)
     {
         <div class="grid grid-cols-[160px_1fr] items-center py-1.5">
             <div class="truncate pr-2 text-xs font-medium" title="@row.ResourceName">@row.ResourceName</div>
-            <div class="relative h-6 rounded bg-slate-50">
+            <div class="relative h-6 rounded bg-surface">
                 @foreach (var block in row.Downtime)
                 {
-                    <div class="absolute top-0.5 h-5 rounded bg-slate-300" style="@BlockStyle(block.Start, block.End)" title="Downtime @block.Reason"></div>
+                    <div class="absolute top-0.5 h-5 rounded bg-border-strong" style="@BlockStyle(block.Start, block.End)" title="Downtime @block.Reason"></div>
                 }
                 @foreach (var block in row.Blocks)
                 {
@@ -65,10 +65,10 @@
 
     private static string CssClass(FiniteScheduleTaskType type) => type switch
     {
-        FiniteScheduleTaskType.Casting => "bg-emerald-600",
-        FiniteScheduleTaskType.HotRolling => "bg-sky-600",
-        FiniteScheduleTaskType.ColdRolling => "bg-sky-700",
-        FiniteScheduleTaskType.Finishing => "bg-cyan-600",
-        _ => "bg-slate-500"
+        FiniteScheduleTaskType.Casting => "bg-process-casting",
+        FiniteScheduleTaskType.HotRolling => "bg-process-hot-roll",
+        FiniteScheduleTaskType.ColdRolling => "bg-process-cold-roll",
+        FiniteScheduleTaskType.Finishing => "bg-process-finishing",
+        _ => "bg-surface0"
     };
 }
