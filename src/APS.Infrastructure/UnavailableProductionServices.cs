@@ -84,6 +84,11 @@ public sealed class UnavailablePlanVersionRepository : IPlanVersionRepository
 
     public Task<IReadOnlyCollection<BaselinePlanOperation>> GetBaselineOperationsAsync(Guid planVersionId, CancellationToken cancellationToken = default) =>
         throw ProductionUnavailable.Exception();
+
+    public Task<IReadOnlyCollection<BaselineCampaignAllocation>> GetBaselineCampaignAllocationsAsync(
+        Guid planVersionId,
+        CancellationToken cancellationToken = default) =>
+        throw ProductionUnavailable.Exception();
 }
 
 public sealed class UnavailablePlanReleaseRepository : IPlanReleaseRepository

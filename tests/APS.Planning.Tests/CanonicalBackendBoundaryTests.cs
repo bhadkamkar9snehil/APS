@@ -470,6 +470,11 @@ public sealed class CanonicalBackendBoundaryTests
 
         public Task<IReadOnlyCollection<BaselinePlanOperation>> GetBaselineOperationsAsync(Guid planVersionId, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyCollection<BaselinePlanOperation>>(Array.Empty<BaselinePlanOperation>());
+
+        public Task<IReadOnlyCollection<BaselineCampaignAllocation>> GetBaselineCampaignAllocationsAsync(
+            Guid planVersionId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyCollection<BaselineCampaignAllocation>>(Array.Empty<BaselineCampaignAllocation>());
     }
 
     private sealed class EmptyActualStateProvider : IReplanningActualStateProvider
