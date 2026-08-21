@@ -14,7 +14,7 @@ public sealed record DownstreamRouteOperationView(
     TimeSpan MinimumQueueTime,
     TimeSpan? MaximumQueueTime,
     bool IsInventoryDecouplingPoint,
-    ScheduledProcessOperationView? ScheduledOperation);
+    IReadOnlyCollection<ScheduledProcessOperationView> ScheduledOperations);
 
 public sealed record RollingAllocationView(
     Guid ProductionOrderId,
