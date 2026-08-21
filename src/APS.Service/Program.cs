@@ -3,11 +3,18 @@ using APS.Application;
 using APS.Domain;
 using APS.Infrastructure;
 using APS.Planning;
+using APS.UI.State;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Maps APS.UI's assets (_content/APS.UI/...) to their source locations. ASP.NET Core does this
+// automatically only in Development, on the assumption that other environments run from `publish`,
+// which copies them into wwwroot. Running the service directly outside Development is a normal thing
+// to do here, and without this every stylesheet 404s and the planner renders unstyled.
+builder.WebHost.UseStaticWebAssets();
 
 builder.Host.UseSerilog((context, services, logger) => logger
     .ReadFrom.Configuration(context.Configuration)
@@ -26,6 +33,19 @@ var apsRegistration = builder.Services.AddApsInfrastructure(builder.Configuratio
 var hasApsDatabase = apsRegistration.HasApsDatabase;
 var demoModeEnabled = apsRegistration.DemoModeEnabled;
 
+// Serve the same planner UI the desktop app renders, over Blazor Server. Additive: APS.DesktopHost
+// is unchanged and remains the product, and every API endpoint below is untouched.
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
+
+// Scoped, not singleton. APS.DesktopHost registers this as a singleton, which is right for one user
+// in one window; a browser host serves many concurrent circuits, and a singleton would leak one
+// planner's selected plan version and workspace state into everyone else's session.
+builder.Services.AddScoped<PlannerWorkspaceState>();
+
+// MainLayout injects IUpdateService for the desktop app's self-update banner. A server-hosted UI has
+// no self-updater, so this reports Unsupported and the banner does not render.
+builder.Services.AddSingleton<IUpdateService, APS.Service.UnsupportedUpdateService>();
+
 var app = builder.Build();
 
 if (hasApsDatabase)
@@ -36,6 +56,19 @@ if (hasApsDatabase)
 app.UseSerilogRequestLogging();
 app.UseExceptionHandler();
 app.UseHttpsRedirection();
+// Serves APS.UI's static web assets, including _content/APS.UI/tailwind.css. UseStaticFiles rather
+// than MapStaticAssets: the latter serves from the build-time fingerprinted manifest, which does not
+// resolve a referenced class library's assets from their source location, so every _content/ request
+// returned 200 with an empty body.
+app.UseStaticFiles();
+app.UseAntiforgery();
+
+app.MapRazorComponents<APS.Service.Components.App>()
+    .AddInteractiveServerRenderMode()
+    // Routable components live in APS.UI, not here. Endpoint discovery only scans the App
+    // component's own assembly, so without this every page 404s server-side even though the
+    // client-side Router in Routes.razor resolves them correctly.
+    .AddAdditionalAssemblies(typeof(APS.UI.Components.Routes).Assembly);
 
 app.MapGet("/api/health", () => Results.Ok(new
 {

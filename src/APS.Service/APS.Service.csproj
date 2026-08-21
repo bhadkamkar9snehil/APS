@@ -7,6 +7,13 @@
     <ProjectReference Include="..\APS.Planning\APS.Planning.csproj" />
     <ProjectReference Include="..\APS.Infrastructure\APS.Infrastructure.csproj" />
     <ProjectReference Include="..\APS.Integrations\APS.Integrations.csproj" />
+    <!--
+      APS.UI is a host-agnostic Razor class library rooted at Routes.razor. APS.DesktopHost renders
+      it through a WPF BlazorWebView and remains the product; serving the same components over
+      Blazor Server here is additive, so the planner UI can also be opened in a browser for review
+      and on machines that cannot run the desktop app.
+    -->
+    <ProjectReference Include="..\APS.UI\APS.UI.csproj" />
     <!-- Required by the startup project for `dotnet ef migrations` tooling; not used at runtime. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
       <PrivateAssets>all</PrivateAssets>

@@ -1,0 +1,5 @@
+Placeholder so the web root exists.
+
+APS.Service serves the planner UI from APS.UI, whose assets arrive under _content/APS.UI/. Without a
+web root directory ASP.NET Core creates no web-root file provider, the static web assets manifest is
+never consulted, and every _content/ request answers 200 with an empty body.
