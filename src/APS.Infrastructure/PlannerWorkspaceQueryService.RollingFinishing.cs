@@ -37,9 +37,9 @@ public sealed partial class PlannerWorkspaceQueryService
             .OrderBy(x => x.SequenceNumber)
             .ToListAsync(cancellationToken);
 
-        // #58: configured downstream operations, including the first HotRoll/Reheat, are all persisted
-        // as RouteOperationPlans. Read the scheduled operations from those sources rather than looking
-        // for a special operation whose SourceEntityId is the RollingPlan itself.
+        // Configured downstream operations, including first HotRoll/Reheat, are persisted as
+        // RouteOperationPlans. One route operation can have several scheduled blocks (for example one
+        // per supplying heat), so preserve that one-to-many relationship in the read model.
         var routeOperationIds = routeOperations.Select(x => x.RouteOperationPlanId).ToArray();
         var operationRows = routeOperationIds.Length == 0
             ? new List<PlanOperationSnapshot>()
@@ -120,9 +120,9 @@ public sealed partial class PlannerWorkspaceQueryService
                     route.MinimumQueueTime,
                     route.MaximumQueueTime,
                     route.IsInventoryDecouplingPoint,
-                    operationsBySource.TryGetValue(route.RouteOperationPlanId, out var scheduled) && scheduled.Length > 0
-                        ? scheduled[0]
-                        : null))
+                    operationsBySource.TryGetValue(route.RouteOperationPlanId, out var scheduled)
+                        ? scheduled
+                        : Array.Empty<ScheduledProcessOperationView>()))
                 .ToArray();
 
             var poIds = allocationViews.Select(a => a.ProductionOrderId).ToHashSet();
@@ -214,7 +214,7 @@ public sealed partial class PlannerWorkspaceQueryService
         return new BilletSupplyTraceView(
             requirement?.Status,
             requirement?.ShortfallQuantityMt ?? 0m,
-            requirement?.LateSupplyQuantity ?? 0m,
+            requirement?.LateSupplyQuantityMt ?? 0m,
             requirement?.Explanation,
             requiresReheat,
             sources);
