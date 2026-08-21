@@ -31,4 +31,16 @@ public sealed class LayoutThemeContractTests
         Assert.Contains("outline", razor);
         Assert.DoesNotContain("border-l", razor);
     }
+
+    [Fact]
+    public void Desktop_window_chrome_uses_neutral_caption_colors()
+    {
+        var chrome = File.ReadAllText(Repo.File("src/APS.DesktopHost/NativeWindowTheme.cs"));
+        var window = File.ReadAllText(Repo.File("src/APS.DesktopHost/MainWindow.xaml.cs"));
+
+        Assert.Contains("DwmwaCaptionColor", chrome);
+        Assert.Contains("DwmwaTextColor", chrome);
+        Assert.Contains("GraphiteCaption", chrome);
+        Assert.Contains("NativeWindowTheme.Apply", window);
+    }
 }

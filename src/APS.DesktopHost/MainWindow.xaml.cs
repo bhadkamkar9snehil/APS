@@ -9,6 +9,7 @@ public partial class MainWindow : Window
         Services = services;
         InitializeComponent();
         DataContext = this;
+        SourceInitialized += (_, _) => NativeWindowTheme.Apply(this);
     }
 
     public IServiceProvider Services { get; }
