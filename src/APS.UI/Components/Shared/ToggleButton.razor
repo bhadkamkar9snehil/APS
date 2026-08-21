@@ -1,0 +1,7 @@
+<button type="button" class="rounded-control border px-2 py-1 text-xs @(Active ? "border-accent bg-accent-soft text-accent" : "border-border hover:bg-surface-hover")" @onclick="OnClick">@Label</button>
+
+@code {
+    [Parameter] public bool Active { get; set; }
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public EventCallback OnClick { get; set; }
+}

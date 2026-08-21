@@ -20,6 +20,18 @@ The workbench owns planning from a persisted baseline through scenario calculati
 - Status is never communicated by color alone.
 - The installed local database and historical Plan Versions remain compatible and are not reset or reseeded.
 
+## Industry benchmark
+
+The workbench deliberately follows the common operating model of leading APS products while keeping APS's steel-specific campaign, heat, cast, billet, and rolling lineage visible:
+
+| Leader | Proven interaction model | APS workbench decision |
+| --- | --- | --- |
+| SAP S/4HANA PP/DS | The Detailed Scheduling Planning Board combines resource/time charts, pegging, alerts, heuristics, manual drag-and-drop rescheduling, alternative-resource moves, and undo. | One central resource Gantt with dependency cues, exception queue, drag-to-propose, resource alternatives, impact validation, and Plan-Version undo/redo. |
+| Siemens Opcenter APS | An interactive planning board combines multi-constraint scheduling, what-if simulation, impact analysis, order priority, material constraints, and capable-to-promise. | Immutable baseline plus persisted child scenarios, before/after overlay, demand/campaign/material lenses, explicit solver-repair impact, and release only from a feasible plan. |
+| DELMIA Ortems | Finite-capacity planning synchronizes demand, inventory, materials, work orders, resources, and disruption response rather than treating the Gantt as a standalone drawing. | The Gantt is backed by the aggregate workbench read model and canonical lifecycle; visual moves never bypass material, capacity, route, thermal, or sequence validation. |
+
+Primary references: [SAP Detailed Scheduling Planning Board](https://help.sap.com/docs/SAP_S4HANA_ON-PREMISE/f899ce30af9044299d573ea30b533f1c/644dc95360267614e10000000a174cb4.html), [SAP manual scheduling with drag-and-drop](https://help.sap.com/docs/SAP_S4HANA_ON-PREMISE/f899ce30af9044299d573ea30b533f1c/b74dc95360267614e10000000a174cb4.html), [Siemens Opcenter Scheduling Standard](https://www.siemens.com/en-us/products/opcenter/scheduling-standard/), and [DELMIA Ortems](https://www.3ds.com/products/delmia/ortems).
+
 ## Screen anatomy
 
 The screen contains six synchronized regions:

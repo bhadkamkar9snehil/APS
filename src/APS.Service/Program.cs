@@ -203,6 +203,21 @@ if (hasApsDatabase)
             return view is null ? Results.NotFound() : Results.Ok(view);
         });
 
+    plannerApi.MapGet("/workbench",
+        async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var view = await planner.GetPlanningWorkbenchAsync(null, null, cancellationToken);
+            return view is null ? Results.NotFound() : Results.Ok(view);
+        });
+
+    plannerApi.MapGet("/workbench/{planVersionId:guid}",
+        async (Guid planVersionId, Guid? baselinePlanVersionId,
+            IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+        {
+            var view = await planner.GetPlanningWorkbenchAsync(planVersionId, baselinePlanVersionId, cancellationToken);
+            return view is null ? Results.NotFound() : Results.Ok(view);
+        });
+
     plannerApi.MapGet("/work-orders",
         async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
         {
