@@ -15,6 +15,8 @@ internal static class PlanningTaskIdentityService
             .DistinctBy(x => x.Id)
             .ToDictionary(x => x.Id);
         var rollingPlans = structure.RollingPlans.ToDictionary(x => x.Id);
+        var routePlans = (structure.RouteOperationPlans ?? Array.Empty<RouteOperationPlan>())
+            .ToDictionary(x => x.Id);
         var ordinalByTask = structure.SchedulingTasks
             .GroupBy(x => x.SourceEntityId)
             .SelectMany(group => group.Select((task, index) => new { task.TaskId, Ordinal = index + 1 }))
@@ -24,7 +26,7 @@ internal static class PlanningTaskIdentityService
             .Select(task => new PlanningTaskIdentity(
                 task.TaskId,
                 task.SourceEntityId,
-                StableKey(task, ordinalByTask[task.TaskId], heats, rollingPlans),
+                StableKey(task, ordinalByTask[task.TaskId], heats, rollingPlans, routePlans),
                 task.TaskType))
             .ToArray();
     }
@@ -33,7 +35,8 @@ internal static class PlanningTaskIdentityService
         FiniteScheduleTask task,
         int sourceOrdinal,
         IReadOnlyDictionary<Guid, CampaignHeat> heats,
-        IReadOnlyDictionary<Guid, RollingPlan> rollingPlans)
+        IReadOnlyDictionary<Guid, RollingPlan> rollingPlans,
+        IReadOnlyDictionary<Guid, RouteOperationPlan> routePlans)
     {
         if (task.TaskType == FiniteScheduleTaskType.Casting && heats.TryGetValue(task.SourceEntityId, out var heat))
         {
@@ -60,6 +63,30 @@ internal static class PlanningTaskIdentityService
                 string.Join(",", productionOrders)));
         }
 
+        // #58: configured downstream tasks are route-operation tasks, including the first HotRoll.
+        // Their identity follows route position + PO allocation membership rather than a special
+        // RollingPlan-first-mill identity, so replan stability survives route-driven projection.
+        if (routePlans.TryGetValue(task.SourceEntityId, out var routePlan))
+        {
+            var allocations = routePlan.Allocations
+                .Where(x => x.ProductionOrder is not null)
+                .Select(x => $"{x.ProductionOrder!.ProductionOrderNumber}:{x.PlannedQuantityMt:0.####}")
+                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            return Key("ROUTE", string.Join("|",
+                routePlan.RouteCode,
+                routePlan.SequenceNumber,
+                routePlan.ProcessOperationType,
+                routePlan.GradeCode,
+                routePlan.InputCrossSectionCode,
+                routePlan.OutputCrossSectionCode,
+                sourceOrdinal,
+                task.QuantityMt.ToString("0.####"),
+                string.Join(",", allocations)));
+        }
+
+        // Compatibility/demo mode still has direct RollingPlan tasks; keep their established identity.
         if (task.TaskType is FiniteScheduleTaskType.HotRolling or FiniteScheduleTaskType.ColdRolling &&
             rollingPlans.TryGetValue(task.SourceEntityId, out var plan))
         {
