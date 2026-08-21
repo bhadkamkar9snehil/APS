@@ -119,7 +119,10 @@ public sealed class PlanningEngine(
             if (HasErrors(structure))
                 return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
 
-            structure = RollingFeedProjector.Apply(
+            // #58: one configured-route projector owns every operation after CCM, including the first
+            // HotRoll. Feed thermal state only selects/skips optional route operations such as Reheat;
+            // it no longer creates a separate first-mill topology beside the route model.
+            structure = MultiStageRouteProjector.Apply(
                 structure,
                 campaignPlan,
                 request.RoutePlanning,
@@ -128,15 +131,6 @@ public sealed class PlanningEngine(
                 request.FlowLinks,
                 request.ExternalMaterialSupplies,
                 request.CommittedMaterialSupplies);
-            if (HasErrors(structure))
-                return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
-
-            structure = MultiStageRouteProjector.Apply(
-                structure,
-                request.RoutePlanning,
-                request.Resources,
-                effectiveTransitionRules,
-                request.FlowLinks);
             if (HasErrors(structure))
                 return InvalidStructureResult(planVersionId, createdOnUtc, campaignPlan, structure, request.ReplanContext?.BaselinePlanVersionId, requirementSnapshots);
         }
