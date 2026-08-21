@@ -91,9 +91,9 @@ the active desktop release lineage.
 
 ## Current state
 
-- v0.3.0 is the current desktop release, built in `build/Releases/0.3.0/`, installed locally, and
-  published through the manual GitHub release workflow.
-- The active desktop release lineage is v0.1.0 through v0.3.0. Earlier prototype milestones are
+- v0.3.1 is the current desktop release. It corrects the workbench-first navigation, Gantt viewport,
+  inspector docking, and Tailwind source-tracking defects found in v0.3.0.
+- The active desktop release lineage is v0.1.0 through v0.3.1. Earlier prototype milestones are
   retained only under `archive/*` tags.
 - `src/APS.DesktopHost/Assets/app-icon.ico` exists (7-size multi-res PNG-in-ICO, generated
   programmatically) and is wired into the `.exe`, the WPF window/taskbar icon, and

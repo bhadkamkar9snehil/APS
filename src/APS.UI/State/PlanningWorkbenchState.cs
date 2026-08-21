@@ -38,6 +38,8 @@ public sealed class PlanningWorkbenchState
     public PlanningWorkbenchQueueTab QueueTab { get; private set; } = PlanningWorkbenchQueueTab.Demand;
     public DateTime PlanStartUtc { get; private set; }
     public DateTime PlanEndUtc { get; private set; }
+    public DateTime ContentStartUtc { get; private set; }
+    public DateTime ContentEndUtc { get; private set; }
     public DateTime VisibleStartUtc { get; private set; }
     public DateTime VisibleEndUtc { get; private set; }
     public string SearchText { get; private set; } = string.Empty;
@@ -48,21 +50,32 @@ public sealed class PlanningWorkbenchState
     public bool ShowDependencies { get; private set; } = true;
     public bool ShowCriticalPath { get; private set; }
     public bool QueueOpen { get; private set; } = true;
-    public bool InspectorOpen { get; private set; } = true;
+    public bool InspectorOpen { get; private set; }
 
     public event Action? Changed;
 
-    public void SetPlanWindow(DateTime startUtc, DateTime endUtc)
+    public void SetPlanWindow(
+        DateTime startUtc,
+        DateTime endUtc,
+        DateTime? contentStartUtc = null,
+        DateTime? contentEndUtc = null)
     {
         PlanStartUtc = startUtc;
         PlanEndUtc = endUtc > startUtc ? endUtc : startUtc.AddHours(1);
+        ContentStartUtc = Clamp(contentStartUtc ?? PlanStartUtc, PlanStartUtc, PlanEndUtc);
+        ContentEndUtc = Clamp(contentEndUtc ?? PlanEndUtc, PlanStartUtc, PlanEndUtc);
+        if (ContentEndUtc <= ContentStartUtc)
+        {
+            ContentStartUtc = PlanStartUtc;
+            ContentEndUtc = PlanEndUtc;
+        }
         ApplyZoom();
     }
 
     public void SetLens(PlanningWorkbenchLens lens) { Lens = lens; Notify(); }
     public void SetQueueTab(PlanningWorkbenchQueueTab tab) { QueueTab = tab; Notify(); }
     public void SetSearch(string? value) { SearchText = value?.Trim() ?? string.Empty; Notify(); }
-    public void SelectOperation(string? planningKey) { SelectedPlanningKey = planningKey; ClearMove(false); Notify(); }
+    public void SelectOperation(string? planningKey) { SelectedPlanningKey = planningKey; InspectorOpen = !string.IsNullOrWhiteSpace(planningKey); ClearMove(false); Notify(); }
     public void SetZoom(PlanningWorkbenchZoom zoom) { Zoom = zoom; ApplyZoom(); }
 
     public void Pan(double viewportFraction)
@@ -123,6 +136,13 @@ public sealed class PlanningWorkbenchState
     private void ApplyZoom()
     {
         var full = PlanEndUtc - PlanStartUtc;
+        if (Zoom == PlanningWorkbenchZoom.Fit)
+        {
+            FitToContent();
+            Notify();
+            return;
+        }
+
         var requested = Zoom switch
         {
             PlanningWorkbenchZoom.Shift => TimeSpan.FromHours(8),
@@ -143,6 +163,28 @@ public sealed class PlanningWorkbenchState
         VisibleEndUtc = end;
         Notify();
     }
+
+    private void FitToContent()
+    {
+        var contentDuration = ContentEndUtc - ContentStartUtc;
+        var paddingTicks = Math.Clamp(
+            (long)(contentDuration.Ticks * 0.05d),
+            TimeSpan.FromMinutes(30).Ticks,
+            TimeSpan.FromHours(4).Ticks);
+        var padding = TimeSpan.FromTicks(paddingTicks);
+        var start = ContentStartUtc - padding;
+        var end = ContentEndUtc + padding;
+
+        if (start < PlanStartUtc) start = PlanStartUtc;
+        if (end > PlanEndUtc) end = PlanEndUtc;
+        if (end <= start) end = start.AddHours(1) <= PlanEndUtc ? start.AddHours(1) : PlanEndUtc;
+
+        VisibleStartUtc = start;
+        VisibleEndUtc = end;
+    }
+
+    private static DateTime Clamp(DateTime value, DateTime min, DateTime max) =>
+        value < min ? min : value > max ? max : value;
 
     private void ClearMove(bool notify)
     {

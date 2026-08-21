@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <SupportedPlatform Include="browser" />
+    <TailwindSource Include="$(MSBuildProjectDirectory)\Components\**\*.razor" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\APS.Domain\APS.Domain.csproj" />
@@ -57,7 +58,7 @@
   </Target>
 
   <Target Name="CompileTailwindCss" BeforeTargets="Build;Publish"
-          Inputs="$(TailwindInputCss)" Outputs="$(TailwindOutputCss)">
+          Inputs="$(TailwindInputCss);@(TailwindSource)" Outputs="$(TailwindOutputCss)">
     <Exec Command="&quot;$(TailwindCliPath)&quot; -i &quot;$(TailwindInputCss)&quot; -o &quot;$(TailwindOutputCss)&quot; --minify" />
   </Target>
 </Project>

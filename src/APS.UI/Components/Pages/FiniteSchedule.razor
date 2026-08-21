@@ -1,3 +1,4 @@
+@page "/"
 @page "/plan/schedule"
 @implements IAsyncDisposable
 @inject IPlannerWorkspaceQueryService PlannerQuery
@@ -283,7 +284,7 @@
     private async Task LoadAsync(Guid? planId = null, Guid? baselineId = null)
     {
         loading = true; dragInitialized = false; StateHasChanged();
-        try { workbench = await PlannerQuery.GetPlanningWorkbenchAsync(planId ?? WorkspaceState.CurrentPlanVersionId, baselineId ?? WorkspaceState.BaselinePlanVersionId); if (workbench is not null) { state.SetPlanWindow(workbench.Plan.HorizonStartUtc, workbench.Plan.HorizonEndUtc); WorkspaceState.SetPlan(workbench.Plan.PlanVersionId, workbench.Baseline?.PlanVersionId ?? workbench.Plan.ParentPlanVersionId); WorkspaceState.SetWindow(workbench.Plan.HorizonStartUtc, workbench.Plan.HorizonEndUtc); } }
+        try { workbench = await PlannerQuery.GetPlanningWorkbenchAsync(planId ?? WorkspaceState.CurrentPlanVersionId, baselineId ?? WorkspaceState.BaselinePlanVersionId); if (workbench is not null) { state.SetPlanWindow(workbench.Plan.HorizonStartUtc, workbench.Plan.HorizonEndUtc, workbench.Schedule.ScheduleStartUtc, workbench.Schedule.ScheduleEndUtc); WorkspaceState.SetPlan(workbench.Plan.PlanVersionId, workbench.Baseline?.PlanVersionId ?? workbench.Plan.ParentPlanVersionId); WorkspaceState.SetWindow(workbench.Plan.HorizonStartUtc, workbench.Plan.HorizonEndUtc); } }
         catch (Exception ex) { SetMessage(ex.Message, true); }
         finally { loading = false; }
     }

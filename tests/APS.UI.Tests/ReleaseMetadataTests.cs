@@ -10,7 +10,7 @@ public sealed class ReleaseMetadataTests
         Assert.False(File.Exists(Repo.File("VERSION")));
 
         var project = XDocument.Load(Repo.File("src/APS.DesktopHost/APS.DesktopHost.csproj"));
-        Assert.Equal("0.3.0", project.Descendants("Version").Single().Value);
+        Assert.Equal("0.3.1", project.Descendants("Version").Single().Value);
     }
 
     [Fact]

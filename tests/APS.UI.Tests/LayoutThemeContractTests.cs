@@ -43,4 +43,33 @@ public sealed class LayoutThemeContractTests
         Assert.Contains("GraphiteCaption", chrome);
         Assert.Contains("NativeWindowTheme.Apply", window);
     }
+
+    [Fact]
+    public void Planning_workbench_is_the_default_planner_landing_screen()
+    {
+        var workbench = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+        var controlTower = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/Home.razor"));
+        var layout = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/MainLayout.razor"));
+
+        Assert.Contains("@page \"/\"", workbench);
+        Assert.Contains("@page \"/control-tower\"", controlTower);
+        Assert.Contains("Href=\"/\" Match=\"NavLinkMatch.All\" Label=\"Planning Workbench\"", layout);
+        Assert.Contains("Href=\"/control-tower\" Label=\"Control Tower\"", layout);
+        Assert.True(layout.IndexOf("Label=\"Planning Workbench\"", StringComparison.Ordinal) <
+                    layout.IndexOf("Label=\"Control Tower\"", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Tailwind_rebuild_tracks_Razor_sources_and_contains_workbench_geometry()
+    {
+        var project = File.ReadAllText(Repo.File("src/APS.UI/APS.UI.csproj"));
+        var css = File.ReadAllText(Repo.File("src/APS.UI/wwwroot/tailwind.css"));
+
+        Assert.Contains("TailwindSource", project);
+        Assert.Contains("@(TailwindSource)", project);
+        Assert.Contains(".sticky", css);
+        Assert.Contains(".min-h-0", css);
+        Assert.Contains(".grid-cols-\\[176px_1fr\\]", css);
+        Assert.Contains(".grid-cols-\\[18rem_minmax\\(0\\,1fr\\)_20rem\\]", css);
+    }
 }
