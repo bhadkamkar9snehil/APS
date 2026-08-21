@@ -1,7 +1,7 @@
 # Installer & Auto-Update (Velopack)
 
-Status: **implemented, not yet released**. The mechanism is fully wired but no version has been
-packed/installed/published yet — see "Current state" below.
+Status: **implemented and operational**. APS desktop releases are packaged locally and published to
+GitHub Releases through the verified manual workflow below.
 
 ## What's in place
 
@@ -37,8 +37,11 @@ It runs, in order:
 1. `dotnet test` on `tests/APS.Planning.Tests` — aborts on any failure.
 2. `dotnet publish` of `APS.DesktopHost.csproj` for `win-x64`, self-contained,
    `PublishReadyToRun=true`.
-3. `vpk pack` on the publish output, producing a `Setup.exe` installer plus delta update packages
-   in `build/Releases/`.
+3. `vpk pack` on the publish output, producing a `Setup.exe` installer and update package in the
+   clean version-specific directory `build/Releases/<version>/`.
+
+The version-specific directory is recreated for every build. Packages from an older or mistakenly
+higher version therefore cannot contaminate the current Velopack feed or block a valid package.
 
 If `-Version` is omitted, the script reads `<Version>` from the `APS.DesktopHost.csproj` instead.
 
@@ -55,14 +58,14 @@ dotnet tool install -g vpk
 
 **Publishing is manual and local — no GitHub Actions.** Per explicit repository policy, GitHub
 Actions (a paid feature) is never used for this project, for verification or for releases. After
-`build/release.ps1` produces the packages in `build/Releases/`, publish them by running
+`build/release.ps1` produces the packages in `build/Releases/<version>/`; publish them by running
 `vpk upload github` directly from a Windows machine with the Velopack CLI and a GitHub token with
 `repo` scope:
 
 ```powershell
 vpk upload github `
   --repoUrl "https://github.com/bhadkamkar9snehil/APS" `
-  --outputDir build/Releases `
+  --outputDir build/Releases/1.0.0 `
   --token "<token>" `
   --publish `
   --releaseName "APS Planner v1.0.0" `
@@ -72,17 +75,29 @@ vpk upload github `
 Tag and `APS.DesktopHost.csproj` `<Version>` should match by convention, but nothing enforces this
 automatically since there is no CI step — check it by hand before publishing.
 
+## Versioning policy
+
+`src/APS.DesktopHost/APS.DesktopHost.csproj` is the sole application-version authority. Use
+semantic versioning against the most recent published desktop release:
+
+- patch (`0.3.0` to `0.3.1`) for compatible fixes and small refinements;
+- minor (`0.3.x` to `0.4.0`) for substantial new planner capabilities or workflows;
+- major (`0.x` to `1.0.0`, then `1.x` to `2.0.0`) only for a declared stable milestone or a
+  compatibility-breaking product change.
+
+The tag must be `v<Version>`, point at the exact commit used to build the assets, and match the
+published GitHub release. Historical prototypes use `archive/*` tags so they cannot be mistaken for
+the active desktop release lineage.
+
 ## Current state
 
-- v0.1.0 is packed (`build/Releases/`, gitignored) and installed locally on this machine via the
-  Setup.exe — confirmed the installed copy self-identifies as a real Velopack installation and
-  checks GitHub for updates.
-- Publishing v0.1.0 to GitHub Releases via manual `vpk upload github` is in progress/complete
-  depending on when you're reading this — check `gh release list` for current state.
+- v0.3.0 is the current desktop release, built in `build/Releases/0.3.0/`, installed locally, and
+  published through the manual GitHub release workflow.
+- The active desktop release lineage is v0.1.0 through v0.3.0. Earlier prototype milestones are
+  retained only under `archive/*` tags.
 - `src/APS.DesktopHost/Assets/app-icon.ico` exists (7-size multi-res PNG-in-ICO, generated
   programmatically) and is wired into the `.exe`, the WPF window/taskbar icon, and
-  `build/release.ps1`'s `vpk pack --icon`. Not yet reflected in the installed v0.1.0 copy or the
-  published v0.1.0 release — those were built before the icon existed; a new release will pick it up.
+  `build/release.ps1`'s `vpk pack --icon`.
 
 ## Release verification
 
