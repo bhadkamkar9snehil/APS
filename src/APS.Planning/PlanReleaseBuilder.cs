@@ -58,12 +58,6 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
                     .OrderBy(x => x.StartUtc)
                     .ToArray();
 
-                // A heat is liquid steel and the caster is where it stops being liquid, so within a heat
-                // the split is casting versus everything upstream of it. Listing Eaf/Lrf/Vd instead
-                // dropped every other configured pre-caster operation - BOF, AOD/VOD, RH, induction, a
-                // second refining pass - out of the released plan while the schedule still contained it
-                // (#34). SteelmakingRouteProjector builds heat tasks as route.Take(ccmIndex) plus
-                // casting, so "on the heat and not casting" is exactly the route-derived upstream set.
                 var castingAssignments = allAssignments
                     .Where(a => taskById.TryGetValue(a.TaskId, out var task) && IsCasting(task))
                     .ToArray();
@@ -123,6 +117,9 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
         List<WorkOrder> workOrders,
         List<ScheduledOperation> scheduledOperations)
     {
+        // Compatibility/demo-only RollingPlan tasks can still release through this path. Configured
+        // production routes no longer source tasks from RollingPlan, so they naturally fall through to
+        // BuildConfiguredRouteWorkOrders below without producing a duplicate first-mill Work Order.
         foreach (var rollingPlan in request.ProductionStructure.RollingPlans.OrderBy(p => p.SequenceNumber))
         {
             var materialCodes = rollingPlan.Allocations
@@ -189,8 +186,11 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
             var campaignIds = plan.Allocations.Select(x => x.CampaignId).Distinct().ToArray();
             var prefix = plan.ReleaseWorkOrderType switch
             {
+                WorkOrderType.HotRolling => "RM",
                 WorkOrderType.ColdRolling => "CRM",
                 WorkOrderType.Finishing => "FIN",
+                WorkOrderType.Casting => "CCM",
+                WorkOrderType.Steelmaking => "SMS",
                 _ => "PROC"
             };
 
@@ -212,10 +212,6 @@ public sealed class PlanReleaseBuilder : IPlanReleaseBuilder
         }
     }
 
-    /// <summary>
-    /// Casting is identified by operation type, with the task type accepted as well because legacy
-    /// projections set it without a process operation type.
-    /// </summary>
     private static bool IsCasting(FiniteScheduleTask task) =>
         task.ProcessOperationType == ProcessOperationType.Ccm || task.TaskType == FiniteScheduleTaskType.Casting;
 
