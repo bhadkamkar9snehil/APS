@@ -137,7 +137,13 @@
                 <div class="flex h-full min-h-0 flex-col">
                     <div class="flex shrink-0 items-center justify-between border-b border-border bg-surface-raised px-3 py-2 text-xs">
                         <div class="flex gap-4"><span><span class="text-muted">Visible </span><strong>@state.VisibleStartUtc.ToString("dd MMM HH:mm") → @state.VisibleEndUtc.ToString("dd MMM HH:mm")</strong></span><span><span class="text-muted">Mode </span><strong>@ModeLabel(state.Mode)</strong></span><span><strong>@VisibleOperationCount</strong> shown</span></div>
-                        <div class="flex gap-3 text-[10px] text-muted"><span>EAF</span><span>LRF</span><span>Cast</span><span>Roll</span></div>
+                        @* A legend has to show the colour it's naming, not just repeat the abbreviation next to it (#UI-depth). *@
+                        <div class="flex flex-wrap items-center gap-3 text-[10px] text-muted">
+                            @foreach (var entry in ProcessLegend)
+                            {
+                                <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full @entry.ColorClass"></span>@entry.Label</span>
+                            }
+                        </div>
                     </div>
                     <div class="min-h-0 flex-1 overflow-auto" data-gantt-scroll>
                         <div class="h-full min-w-[900px]">
@@ -149,7 +155,13 @@
                                         <div class="absolute top-0 h-full w-px bg-border" style="left:@Percent(tick.Time)%"><span class="ml-1 whitespace-nowrap text-[10px] text-muted">@tick.Time.ToString(tick.Format)</span></div>
                                     }
                                     @foreach (var due in DueMarkers()) { <div class="absolute bottom-0 top-5 w-px bg-warning" style="left:@Percent(due.Time)%" title="@due.Label"></div> }
-                                    @if (FrozenFenceEndUtc > state.VisibleStartUtc && workbench.Plan.ReferenceTimeUtc < state.VisibleEndUtc) { <div class="absolute bottom-0 top-5 w-px bg-danger" style="left:@Percent(FrozenFenceEndUtc)%" title="Frozen fence ends @FrozenFenceEndUtc.ToString("dd MMM HH:mm")"></div> }
+                                    @if (FrozenFenceEndUtc > state.VisibleStartUtc && workbench.Plan.ReferenceTimeUtc < state.VisibleEndUtc)
+                                    {
+                                        <div class="absolute bottom-0 top-5 w-px bg-danger" style="left:@Percent(FrozenFenceEndUtc)%" title="Frozen fence ends @FrozenFenceEndUtc.ToString("dd MMM HH:mm")"></div>
+                                        @* The tinted band below reads as an unexplained smear without this - "frozen" is a real
+                                           planning concept (work inside it needs an authorized override to move), not decoration. *@
+                                        <span class="absolute bottom-0.5 whitespace-nowrap rounded bg-danger px-1 text-[9px] font-semibold text-inverted" style="left:@Percent(workbench.Plan.ReferenceTimeUtc)%">Frozen</span>
+                                    }
                                 </div>
                             </div>
                             <div class="aps-gantt-lanes relative" style="@($"--aps-visible-lanes: {Math.Max(1, VisibleLanes.Count)}")">
@@ -179,8 +191,12 @@
                                                 var selected = state.SelectedPlanningKey == operation.PlanningKey;
                                                 var execution = FindDetail(operation.PlanningKey)?.ExecutionStatus ?? OperationExecutionStatus.Planned;
                                                 <button class="aps-operation absolute inset-y-2 z-10 min-w-2 overflow-hidden rounded-control border px-1.5 py-1 text-left text-[10px] leading-tight shadow-soft transition @(ProcessClass(operation.ProcessOperationType)) @(ExecutionClass(execution)) @(selected ? "border-accent ring-2 ring-accent" : "border-transparent hover:border-primary") @(state.StagedMove?.PlanningKey == operation.PlanningKey ? "opacity-55" : "") @(state.ShowCriticalPath && IsTightChain(operation) ? "ring-2 ring-warning" : "")"
-                                                        style="left:@Percent(operation.StartUtc)%;width:@WidthPercent(operation.StartUtc, operation.EndUtc)%" data-planning-key="@operation.PlanningKey" title="@OperationTitle(operation)" @onclick="() => SelectOperation(operation)">
-                                                    <strong class="block truncate text-inverted">@OperationBlockLabel(operation)</strong><span class="block truncate text-inverted/80">@(state.Mode == PlanningWorkbenchMode.Execution ? execution : operation.StartUtc.ToString("HH:mm")) · @operation.QuantityMt.ToString("0.#") MT</span>
+                                                        style="left:calc(@Percent(operation.StartUtc)% + 1px);width:calc(@WidthPercent(operation.StartUtc, operation.EndUtc)% - 2px)" data-planning-key="@operation.PlanningKey" title="@OperationTitle(operation)" @onclick="() => SelectOperation(operation)">
+                                                    <strong class="block truncate text-inverted">@OperationBlockLabel(operation)</strong>
+                                                    <span class="flex items-baseline gap-1 text-inverted/80">
+                                                        <span class="min-w-0 truncate">@(state.Mode == PlanningWorkbenchMode.Execution ? execution.ToString() : operation.StartUtc.ToString("HH:mm"))</span>
+                                                        <span class="shrink-0">@operation.QuantityMt.ToString("0.#") MT</span>
+                                                    </span>
                                                 </button>
                                             }
                                             @if (state.StagedMove is not null && state.StagedMove.TargetResourceId == lane.ResourceId)
@@ -432,6 +448,13 @@
     private string OperationBlockLabel(ScheduledProcessOperationView op) => state.Mode switch { PlanningWorkbenchMode.Campaigns => $"{FindDetail(op.PlanningKey)?.CampaignNumber ?? "Campaign"} · H{FindDetail(op.PlanningKey)?.HeatSequenceNumber:00}", PlanningWorkbenchMode.Plan => FindDetail(op.PlanningKey)?.ProductionOrderNumbers.FirstOrDefault() ?? $"{op.ProcessOperationType} · {op.GradeCode}", _ => $"{op.ProcessOperationType} · {op.GradeCode}" };
     private static string OperationTitle(ScheduledProcessOperationView op) => $"{op.ProcessOperationType} · {op.ResourceCode} · {op.StartUtc:dd MMM HH:mm} → {op.EndUtc:dd MMM HH:mm} · {op.QuantityMt:0.##} MT · {op.GradeCode}/{op.CrossSectionCode}";
     private static string ProcessClass(ProcessOperationType type) => type switch { ProcessOperationType.Eaf => "bg-process-eaf", ProcessOperationType.Lrf => "bg-process-lrf", ProcessOperationType.Vd => "bg-process-vd", ProcessOperationType.Ccm => "bg-process-casting", ProcessOperationType.Reheat => "bg-process-reheat", ProcessOperationType.HotRoll => "bg-process-hot-roll", ProcessOperationType.ColdRoll => "bg-process-cold-roll", _ => "bg-process-finishing" };
+
+    private static readonly (string Label, string ColorClass)[] ProcessLegend =
+    [
+        ("EAF", "bg-process-eaf"), ("LRF", "bg-process-lrf"), ("VD", "bg-process-vd"),
+        ("Cast", "bg-process-casting"), ("Reheat", "bg-process-reheat"), ("Hot roll", "bg-process-hot-roll"),
+        ("Cold roll", "bg-process-cold-roll"), ("Finish", "bg-process-finishing")
+    ];
     private static string OperatingStateClass(ResourceOperatingState value) => value == ResourceOperatingState.Available ? "text-success" : "text-danger";
     private static string ExecutionClass(OperationExecutionStatus value) => value switch { OperationExecutionStatus.Running => "outline outline-2 outline-warning", OperationExecutionStatus.Held => "outline outline-2 outline-danger", OperationExecutionStatus.Completed => "opacity-65", OperationExecutionStatus.Ready => "outline outline-1 outline-success", _ => "" };
     private static string FindingClass(PlanningConstraintSeverity value) => value switch { PlanningConstraintSeverity.Blocker => "bg-danger-soft text-danger", PlanningConstraintSeverity.Warning => "bg-warning-soft text-warning", _ => "bg-info-soft text-info" };

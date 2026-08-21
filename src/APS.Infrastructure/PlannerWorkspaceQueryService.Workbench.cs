@@ -124,7 +124,11 @@ public sealed partial class PlannerWorkspaceQueryService
                 resourceOptions ?? Array.Empty<PlanningOperationResourceOptionView>(),
                 heat?.Campaign.CampaignNumber,
                 heat?.Heat.SequenceNumber,
-                heat?.Campaign.Allocations
+                // Heat-scoped, not campaign-scoped (#UI-depth): a campaign pools every order sharing its
+                // grade/section/route across all its heats, so attributing every heat's operations to the
+                // whole campaign's order list makes distinct heats indistinguishable in the workbench -
+                // every block picks the same alphabetically-first order regardless of which heat it is.
+                heat?.Heat.Allocations
                     .Select(x => x.ProductionOrderNumber)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
