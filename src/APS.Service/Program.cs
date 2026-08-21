@@ -4,6 +4,7 @@ using APS.Domain;
 using APS.Infrastructure;
 using APS.Planning;
 using APS.UI.State;
+using APS.UI.Theme;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -41,6 +42,7 @@ builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 // in one window; a browser host serves many concurrent circuits, and a singleton would leak one
 // planner's selected plan version and workspace state into everyone else's session.
 builder.Services.AddScoped<PlannerWorkspaceState>();
+builder.Services.AddScoped<ThemeService>();
 
 // MainLayout injects IUpdateService for the desktop app's self-update banner. A server-hosted UI has
 // no self-updater, so this reports Unsupported and the banner does not render.

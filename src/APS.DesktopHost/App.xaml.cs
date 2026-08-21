@@ -3,6 +3,7 @@ using APS.Application;
 using APS.DesktopHost.Updates;
 using APS.Infrastructure;
 using APS.UI.State;
+using APS.UI.Theme;
 using Microsoft.AspNetCore.Components.WebView.Wpf;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,6 +37,7 @@ public partial class App : System.Windows.Application
                 services.AddSingleton<IUpdateService>(sp => sp.GetRequiredService<VelopackUpdateService>());
                 services.AddHostedService<UpdateCheckWorker>();
                 services.AddSingleton<PlannerWorkspaceState>();
+                services.AddScoped<ThemeService>();
                 services.AddSingleton<MainWindow>();
             })
             .Build();
