@@ -165,6 +165,9 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
         var productionInventory = inventory
             .Where(x => x.Stage != InventoryStage.FinishedGoods)
             .ToArray();
+        var campaignPolicy = replanContext?.BaselineCampaignAllocations is { Count: > 0 } baselineCampaignAllocations
+            ? request.CampaignPolicy with { BaselineCampaignAllocations = baselineCampaignAllocations }
+            : request.CampaignPolicy;
 
         return new PlanningRunRequest(
             ProductionOrders: productionOrders,
@@ -174,7 +177,7 @@ public sealed class PlanningLifecycleService : IPlanningLifecycleService
             ResourceCalendars: masterData.ResourceCalendars,
             TransitionRules: masterData.TransitionRules,
             FlowLinks: masterData.FlowLinks,
-            CampaignPolicy: request.CampaignPolicy,
+            CampaignPolicy: campaignPolicy,
             StructurePolicy: request.StructurePolicy,
             HorizonStartUtc: request.HorizonStartUtc,
             HorizonEndUtc: request.HorizonEndUtc,
