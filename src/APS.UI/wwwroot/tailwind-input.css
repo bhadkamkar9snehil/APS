@@ -1,16 +1,252 @@
 @import "tailwindcss";
 
-/*
-  Single design-token source for APS Planner. Deliberately minimal: default Tailwind neutral
-  (slate/gray) palette, one accent color, no dark mode, no custom shadows/gradients. The product
-  direction is a plain, utilitarian planning instrument, not a themed dashboard.
-*/
-@theme {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --color-accent: var(--color-blue-600);
-  --color-accent-soft: var(--color-blue-50);
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  color-scheme: light;
+  --aps-canvas: #f3f1ec;
+  --aps-surface: #fbfaf7;
+  --aps-surface-raised: #ffffff;
+  --aps-surface-inset: #ebe8e1;
+  --aps-surface-hover: #eeeae2;
+  --aps-border: #d5d0c7;
+  --aps-border-strong: #aaa399;
+  --aps-text-primary: #27231f;
+  --aps-text-secondary: #5f5a53;
+  --aps-text-muted: #817b72;
+  --aps-text-inverted: #fffdf8;
+  --aps-success: #237455;
+  --aps-success-soft: #e1f1e9;
+  --aps-warning: #9a5a08;
+  --aps-warning-soft: #f7ead0;
+  --aps-danger: #b63b34;
+  --aps-danger-soft: #f8e4e1;
+  --aps-info: #526274;
+  --aps-info-soft: #e5eaf0;
+  --aps-shadow-soft: 0 1px 2px rgba(39, 35, 31, .07), 0 9px 24px rgba(39, 35, 31, .05);
+  --aps-shadow-raised: 0 1px 2px rgba(39, 35, 31, .10), 0 16px 38px rgba(39, 35, 31, .10);
+  --aps-radius-control: .5rem;
+  --aps-radius-surface: .75rem;
 }
 
+[data-theme="dark"] {
+  color-scheme: dark;
+  --aps-canvas: #171614;
+  --aps-surface: #211f1c;
+  --aps-surface-raised: #292622;
+  --aps-surface-inset: #181715;
+  --aps-surface-hover: #302d28;
+  --aps-border: #3d3933;
+  --aps-border-strong: #625c53;
+  --aps-text-primary: #f5f1e9;
+  --aps-text-secondary: #c2bcb2;
+  --aps-text-muted: #908a80;
+  --aps-text-inverted: #1b1814;
+  --aps-success: #55c994;
+  --aps-success-soft: #18392c;
+  --aps-warning: #efb54d;
+  --aps-warning-soft: #3d2d13;
+  --aps-danger: #f07b72;
+  --aps-danger-soft: #452321;
+  --aps-info: #aab7c7;
+  --aps-info-soft: #29313a;
+  --aps-shadow-soft: 0 1px 2px rgba(0, 0, 0, .32), 0 10px 28px rgba(0, 0, 0, .20);
+  --aps-shadow-raised: 0 2px 4px rgba(0, 0, 0, .38), 0 18px 44px rgba(0, 0, 0, .30);
+}
+
+[data-accent="amber"] {
+  --aps-accent: #a74708;
+  --aps-accent-hover: #883806;
+  --aps-accent-soft: #f5e3cc;
+  --aps-accent-border: #d49a58;
+  --aps-accent-foreground: #ffffff;
+  --aps-focus: #c8660b;
+}
+[data-theme="dark"][data-accent="amber"] {
+  --aps-accent: #f2a93b;
+  --aps-accent-hover: #ffc263;
+  --aps-accent-soft: #443016;
+  --aps-accent-border: #8d6427;
+  --aps-accent-foreground: #21170a;
+  --aps-focus: #f2a93b;
+}
+
+[data-accent="violet"] {
+  --aps-accent: #6d35b5;
+  --aps-accent-hover: #59299a;
+  --aps-accent-soft: #ece3f7;
+  --aps-accent-border: #bba2dc;
+  --aps-accent-foreground: #ffffff;
+  --aps-focus: #7c46c2;
+}
+[data-theme="dark"][data-accent="violet"] {
+  --aps-accent: #ae8ae0;
+  --aps-accent-hover: #c7a8ed;
+  --aps-accent-soft: #342644;
+  --aps-accent-border: #71588f;
+  --aps-accent-foreground: #1c1327;
+  --aps-focus: #ae8ae0;
+}
+
+[data-accent="forest"] {
+  --aps-accent: #1c7251;
+  --aps-accent-hover: #155b40;
+  --aps-accent-soft: #dceee6;
+  --aps-accent-border: #8dbda9;
+  --aps-accent-foreground: #ffffff;
+  --aps-focus: #298564;
+}
+[data-theme="dark"][data-accent="forest"] {
+  --aps-accent: #65c99a;
+  --aps-accent-hover: #83dab0;
+  --aps-accent-soft: #1d382d;
+  --aps-accent-border: #477c65;
+  --aps-accent-foreground: #11231b;
+  --aps-focus: #65c99a;
+}
+
+[data-accent="brick"] {
+  --aps-accent: #ad3f36;
+  --aps-accent-hover: #8f312b;
+  --aps-accent-soft: #f4dfdc;
+  --aps-accent-border: #d99b95;
+  --aps-accent-foreground: #ffffff;
+  --aps-focus: #c34f45;
+}
+[data-theme="dark"][data-accent="brick"] {
+  --aps-accent: #ed8279;
+  --aps-accent-hover: #f3a098;
+  --aps-accent-soft: #422521;
+  --aps-accent-border: #8f514b;
+  --aps-accent-foreground: #291210;
+  --aps-focus: #ed8279;
+}
+
+[data-accent="plum"] {
+  --aps-accent: #963664;
+  --aps-accent-hover: #79294f;
+  --aps-accent-soft: #f2e0e9;
+  --aps-accent-border: #d29bb6;
+  --aps-accent-foreground: #ffffff;
+  --aps-focus: #ab4677;
+}
+[data-theme="dark"][data-accent="plum"] {
+  --aps-accent: #e284b1;
+  --aps-accent-hover: #eba3c5;
+  --aps-accent-soft: #402536;
+  --aps-accent-border: #87536c;
+  --aps-accent-foreground: #28121e;
+  --aps-focus: #e284b1;
+}
+
+[data-accent="olive"] {
+  --aps-accent: #60702f;
+  --aps-accent-hover: #4c5925;
+  --aps-accent-soft: #e8ecd9;
+  --aps-accent-border: #adb989;
+  --aps-accent-foreground: #ffffff;
+  --aps-focus: #74853d;
+}
+[data-theme="dark"][data-accent="olive"] {
+  --aps-accent: #b1c66d;
+  --aps-accent-hover: #c4d68b;
+  --aps-accent-soft: #33391f;
+  --aps-accent-border: #6c7745;
+  --aps-accent-foreground: #1c210d;
+  --aps-focus: #b1c66d;
+}
+
+[data-accent="custom"] {
+  --aps-accent: var(--aps-accent-custom, #a74708);
+  --aps-accent-hover: color-mix(in oklab, var(--aps-accent) 82%, #171411);
+  --aps-accent-soft: color-mix(in oklab, var(--aps-accent) 14%, var(--aps-surface));
+  --aps-accent-border: color-mix(in oklab, var(--aps-accent) 48%, var(--aps-border));
+  --aps-accent-foreground: var(--aps-accent-custom-foreground, #ffffff);
+  --aps-focus: var(--aps-accent);
+}
+[data-theme="dark"][data-accent="custom"] {
+  --aps-accent-hover: color-mix(in oklab, var(--aps-accent) 82%, #ffffff);
+  --aps-accent-soft: color-mix(in oklab, var(--aps-accent) 18%, var(--aps-surface));
+}
+
+@theme inline {
+  --font-sans: Inter, "Segoe UI Variable", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "SFMono-Regular", Consolas, ui-monospace, monospace;
+  --color-canvas: var(--aps-canvas);
+  --color-surface: var(--aps-surface);
+  --color-surface-raised: var(--aps-surface-raised);
+  --color-surface-inset: var(--aps-surface-inset);
+  --color-surface-hover: var(--aps-surface-hover);
+  --color-border: var(--aps-border);
+  --color-border-strong: var(--aps-border-strong);
+  --color-primary: var(--aps-text-primary);
+  --color-text-primary: var(--aps-text-primary);
+  --color-secondary: var(--aps-text-secondary);
+  --color-muted: var(--aps-text-muted);
+  --color-inverted: var(--aps-text-inverted);
+  --color-accent: var(--aps-accent);
+  --color-accent-hover: var(--aps-accent-hover);
+  --color-accent-soft: var(--aps-accent-soft);
+  --color-accent-border: var(--aps-accent-border);
+  --color-accent-foreground: var(--aps-accent-foreground);
+  --color-focus: var(--aps-focus);
+  --color-success: var(--aps-success);
+  --color-success-soft: var(--aps-success-soft);
+  --color-warning: var(--aps-warning);
+  --color-warning-soft: var(--aps-warning-soft);
+  --color-danger: var(--aps-danger);
+  --color-danger-soft: var(--aps-danger-soft);
+  --color-info: var(--aps-info);
+  --color-info-soft: var(--aps-info-soft);
+  --radius-control: var(--aps-radius-control);
+  --radius-surface: var(--aps-radius-surface);
+  --shadow-soft: var(--aps-shadow-soft);
+  --shadow-raised: var(--aps-shadow-raised);
+}
+
+html, body, #app { min-height: 100%; }
+
 body {
-  @apply bg-white text-slate-900 antialiased;
+  @apply m-0 bg-canvas font-sans text-primary antialiased;
+  font-variant-numeric: tabular-nums;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+button, input, select, textarea { font: inherit; }
+input, select, textarea { color-scheme: inherit; }
+
+::selection {
+  color: var(--aps-text-primary);
+  background: var(--aps-accent-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--aps-focus);
+  outline-offset: 2px;
+}
+
+* {
+  scrollbar-color: var(--aps-border-strong) var(--aps-surface-inset);
+  scrollbar-width: thin;
+}
+
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: var(--aps-surface-inset); }
+*::-webkit-scrollbar-thumb {
+  border: 2px solid var(--aps-surface-inset);
+  border-radius: 999px;
+  background: var(--aps-border-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+@media (forced-colors: active) {
+  :focus-visible { outline: 2px solid Highlight; }
 }
