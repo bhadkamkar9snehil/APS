@@ -4,13 +4,14 @@ using APS.Domain;
 namespace APS.Planning;
 
 /// <summary>
-/// Projects the configured route after CCM without treating the first HotRoll as an architectural
-/// boundary. RollingPlan is only the allocation/material-demand anchor. Every actual downstream process,
-/// including the first HotRoll, is represented as a RouteOperationPlan in configured sequence order.
+/// Projects the configured manufacturing route after CCM. There is no special "first HotRoll" path:
+/// RollingPlan is only the quantity/allocation anchor, while every physical downstream step (including
+/// the first HotRoll) becomes a RouteOperationPlan in configured sequence order.
 ///
-/// Reheat remains a conditional route operation: known-hot feed takes the direct path when the route,
-/// grade/order policy and physical hot-transfer links allow it; cold/yard feed selects the configured
-/// Reheat operation. More detailed time/temperature decay remains owned by #56.
+/// Reheat is a route decision, not a fixed topology stage. Fresh/hot feed prefers direct hot charge when
+/// the route, order/grade policy and physical hot-transfer links allow it. Yard/cold feed selects a
+/// configured Reheat step before HotRoll. Detailed temperature decay and execution-time thermal choice
+/// remain #56; resource commitment/redispatch remains #16.
 /// </summary>
 internal static class MultiStageRouteProjector
 {
@@ -44,8 +45,11 @@ internal static class MultiStageRouteProjector
             .ToDictionary(x => x.Key, x => x.ToArray());
         var operationsByRoute = routePlanning.Operations
             .GroupBy(x => x.RouteCode, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(x => x.Key, x => x.OrderBy(y => y.SequenceNumber).ToArray(), StringComparer.OrdinalIgnoreCase);
-        var explicitSteelTopology = resources.Any(x => x.ProcessUnitType != ProcessUnitType.Unknown);
+            .ToDictionary(
+                x => x.Key,
+                x => x.OrderBy(y => y.SequenceNumber).ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+        var explicitTopology = resources.Any(x => x.ProcessUnitType != ProcessUnitType.Unknown);
 
         var inventoryByPo = campaignPlan.InventoryAllocations
             .Where(x => x.Use is
@@ -81,11 +85,11 @@ internal static class MultiStageRouteProjector
                     ? output
                     : structure.PlannedBilletSupplies.Where(x => x.CampaignHeatId == heatId).Sum(x => x.QuantityMt));
 
-        foreach (var rollingPlan in structure.RollingPlans.OrderBy(x => x.SequenceNumber))
+        foreach (var rolling in structure.RollingPlans.OrderBy(x => x.SequenceNumber))
         {
-            if (!operationsByRoute.TryGetValue(rollingPlan.RouteCode, out var fullRoute))
+            if (!operationsByRoute.TryGetValue(rolling.RouteCode, out var fullRoute))
             {
-                issues.Add(Error("ROUTE_NOT_FOUND", $"No route master exists for {rollingPlan.RouteCode}.", rollingPlan.Id));
+                issues.Add(Error("ROUTE_NOT_FOUND", $"No route master exists for {rolling.RouteCode}.", rolling.Id));
                 continue;
             }
 
@@ -93,14 +97,14 @@ internal static class MultiStageRouteProjector
             var operations = (ccmIndex >= 0 ? fullRoute.Skip(ccmIndex + 1) : fullRoute).ToArray();
             if (operations.Length == 0) continue;
 
-            var orders = rollingPlan.Allocations
+            var orders = rolling.Allocations
                 .Where(x => x.ProductionOrder is not null)
                 .Select(x => x.ProductionOrder!)
                 .DistinctBy(x => x.Id)
                 .ToArray();
             if (orders.Length == 0)
             {
-                issues.Add(Error("ROUTE_DEMAND_MISSING", $"Rolling demand {rollingPlan.Id} has no Production Order allocations.", rollingPlan.Id));
+                issues.Add(Error("ROUTE_DEMAND_MISSING", $"Rolling demand {rolling.Id} has no Production Order allocations.", rolling.Id));
                 continue;
             }
 
@@ -110,41 +114,38 @@ internal static class MultiStageRouteProjector
             {
                 issues.Add(Error(
                     "ROUTE_SECTION_AMBIGUOUS",
-                    $"Rolling demand {rollingPlan.Id} contains multiple caster/final cross-sections and cannot be projected as one route chain.",
-                    rollingPlan.Id));
+                    $"Rolling demand {rolling.Id} contains multiple caster/final cross-sections and cannot be projected as one route chain.",
+                    rolling.Id));
                 continue;
             }
 
             var cursors = BuildFeedCursors(
-                rollingPlan,
+                rolling,
                 structure,
-                campaignPlan,
-                tasks,
                 castTaskByHeat,
                 remainingSupplyByHeat,
                 inventoryByPo,
                 externalByReference,
                 committedByReference,
                 issues);
-            if (cursors.Count == 0 || issues.Any(x => x.Severity == PlanningIssueSeverity.Error && x.SourceId == rollingPlan.Id))
-                continue;
+            if (cursors.Count == 0 || HasSourceError(issues, rolling.Id)) continue;
 
             var currentSection = casterSections[0];
             var finalSection = finalSections[0];
-            var upstreamPlanId = rollingPlan.Id;
+            var upstreamPlanId = rolling.Id;
             var seenHotRoll = false;
 
             for (var operationIndex = 0; operationIndex < operations.Length; operationIndex++)
             {
                 var operation = operations[operationIndex];
-                var effective = ResolveRequirement(operation, orders, issues, rollingPlan.Id);
+                var effective = ResolveRequirement(operation, orders, issues, rolling.Id);
                 if (effective == EffectiveRequirement.Conflict) break;
 
                 if (effective == EffectiveRequirement.Forbidden)
                 {
                     decisions.Add(Decision(
-                        rollingPlan.Id,
-                        rollingPlan.RouteCode,
+                        rolling.Id,
+                        rolling.RouteCode,
                         operation,
                         RouteOperationOutcome.SkippedForbidden,
                         "GRADE_OR_ORDER_FORBIDS"));
@@ -156,13 +157,14 @@ internal static class MultiStageRouteProjector
                 {
                     if (operation.ProcessOperationType == ProcessOperationType.Reheat)
                     {
-                        optionalReheatSelected = ShouldUseOptionalReheat(
+                        optionalReheatSelected = NeedsOptionalReheat(
                             operationIndex,
                             operations,
                             currentSection,
-                            rollingPlan,
+                            rolling,
                             orders,
                             cursors,
+                            seenHotRoll,
                             activeResources,
                             routeCapabilities,
                             capabilities,
@@ -170,8 +172,8 @@ internal static class MultiStageRouteProjector
                         if (!optionalReheatSelected)
                         {
                             decisions.Add(Decision(
-                                rollingPlan.Id,
-                                rollingPlan.RouteCode,
+                                rolling.Id,
+                                rolling.RouteCode,
                                 operation,
                                 RouteOperationOutcome.SkippedOptional,
                                 "HOT_CHARGE_PREFERRED"));
@@ -181,8 +183,8 @@ internal static class MultiStageRouteProjector
                     else if (!ChangesTowardDownstreamNeed(operationIndex, operations, operation, currentSection, finalSection))
                     {
                         decisions.Add(Decision(
-                            rollingPlan.Id,
-                            rollingPlan.RouteCode,
+                            rolling.Id,
+                            rolling.RouteCode,
                             operation,
                             RouteOperationOutcome.SkippedOptional,
                             "OPTIONAL_AND_NOT_REQUIRED"));
@@ -192,18 +194,49 @@ internal static class MultiStageRouteProjector
 
                 var inputSection = operation.InputCrossSectionCode ?? currentSection;
                 var outputSection = operation.OutputCrossSectionCode ?? currentSection;
-                if (!string.Equals(inputSection, currentSection, StringComparison.OrdinalIgnoreCase))
+                if (!Same(inputSection, currentSection))
                 {
                     issues.Add(Error(
                         "ROUTE_SECTION_DISCONTINUITY",
-                        $"Route {rollingPlan.RouteCode} operation {operation.SequenceNumber} expects {inputSection} but upstream produces {currentSection}.",
+                        $"Route {rolling.RouteCode} operation {operation.SequenceNumber} expects {inputSection} but upstream produces {currentSection}.",
                         operation.Id));
                     break;
+                }
+
+                if (operation.ProcessOperationType == ProcessOperationType.HotRoll)
+                {
+                    if (cursors.Any(x => !x.IsKnownHot))
+                    {
+                        issues.Add(Error(
+                            "REHEAT_ROUTE_MISSING",
+                            $"Cold/buffered billet feed reaches HotRoll on route {rolling.RouteCode} without an included Reheat operation.",
+                            rolling.Id));
+                        break;
+                    }
+                    if (!seenHotRoll &&
+                        DirectHotChargeForbidden(orders) &&
+                        cursors.Any(x => !x.PassedReheat))
+                    {
+                        issues.Add(Error(
+                            "DIRECT_HOT_CHARGE_FORBIDDEN_REHEAT_REQUIRED",
+                            $"Grade/order policy forbids direct hot charge on route {rolling.RouteCode}; a Reheat operation must be configured and included before the first HotRoll.",
+                            rolling.Id));
+                        break;
+                    }
+                    if (operation.RequiredChargeMode == ChargeMode.ColdCharge && cursors.Any(x => !x.PassedReheat))
+                    {
+                        issues.Add(Error(
+                            "COLD_CHARGE_REHEAT_REQUIRED",
+                            $"HotRoll operation {operation.SequenceNumber} requires cold-charge/reheat preparation but no Reheat operation was included.",
+                            operation.Id));
+                        break;
+                    }
                 }
 
                 var eligible = BuildEligibleResources(
                     operation,
                     orders,
+                    rolling.PlannedQuantityMt,
                     inputSection,
                     outputSection,
                     activeResources,
@@ -211,51 +244,21 @@ internal static class MultiStageRouteProjector
                     capabilities);
                 if (eligible.Count == 0)
                 {
-                    var code = operation.ProcessOperationType == ProcessOperationType.Reheat
-                        ? "REHEAT_RESOURCE_MISSING"
-                        : "ROUTE_RESOURCE_NOT_ELIGIBLE";
                     issues.Add(Error(
-                        code,
-                        $"No available physical resource can perform {operation.ProcessOperationType} for {rollingPlan.GradeCode} {inputSection}->{outputSection} on route {rollingPlan.RouteCode}.",
+                        operation.ProcessOperationType == ProcessOperationType.Reheat
+                            ? "REHEAT_RESOURCE_MISSING"
+                            : "ROUTE_RESOURCE_NOT_ELIGIBLE",
+                        $"No available physical resource can perform {operation.ProcessOperationType} for {rolling.GradeCode} {inputSection}->{outputSection} on route {rolling.RouteCode}.",
                         operation.Id));
                     break;
                 }
 
-                var routePlan = new RouteOperationPlan
-                {
-                    RouteCode = rollingPlan.RouteCode,
-                    UpstreamPlanId = upstreamPlanId,
-                    ProcessOperationType = operation.ProcessOperationType,
-                    ReleaseWorkOrderType = operation.ReleaseWorkOrderType,
-                    SequenceNumber = operation.SequenceNumber,
-                    ResourceId = null,
-                    GradeCode = rollingPlan.GradeCode,
-                    InputMaterialSpecificationCode = operation.InputMaterialSpecificationCode,
-                    OutputMaterialSpecificationCode = operation.OutputMaterialSpecificationCode,
-                    InputCrossSectionCode = inputSection,
-                    OutputCrossSectionCode = outputSection,
-                    PlannedQuantityMt = rollingPlan.PlannedQuantityMt,
-                    MinimumQueueTime = operation.MinimumQueueTime,
-                    MaximumQueueTime = operation.MaximumQueueTime,
-                    IsInventoryDecouplingPoint = operation.IsInventoryDecouplingPoint
-                };
-                foreach (var allocation in rollingPlan.Allocations)
-                {
-                    routePlan.Allocations.Add(new RouteOperationPlanAllocation
-                    {
-                        RouteOperationPlanId = routePlan.Id,
-                        RouteOperationPlan = routePlan,
-                        CampaignId = allocation.CampaignId,
-                        ProductionOrderId = allocation.ProductionOrderId,
-                        ProductionOrder = allocation.ProductionOrder,
-                        PlannedQuantityMt = allocation.PlannedQuantityMt
-                    });
-                }
+                var routePlan = NewRoutePlan(rolling, upstreamPlanId, operation, inputSection, outputSection);
                 routePlans.Add(routePlan);
 
                 var due = orders.Min(x => x.RequiredDate);
                 var priority = orders.Max(x => x.Priority);
-                var newTasks = new List<FiniteScheduleTask>();
+                var newTasks = new List<FiniteScheduleTask>(cursors.Count);
                 foreach (var cursor in cursors)
                 {
                     var options = eligible.Select(x => new FiniteScheduleResourceOption(
@@ -268,27 +271,29 @@ internal static class MultiStageRouteProjector
                     IReadOnlyCollection<FiniteScheduleDependency> dependencies = Array.Empty<FiniteScheduleDependency>();
                     if (cursor.Predecessor is not null)
                     {
-                        var requireHotTransfer = operation.ProcessOperationType == ProcessOperationType.HotRoll &&
-                                                 cursor.IsKnownHot &&
-                                                 cursor.Predecessor.ProcessOperationType is ProcessOperationType.Ccm or ProcessOperationType.HotRoll;
-                        var dependency = BuildDependency(
-                            cursor.Predecessor,
-                            options,
-                            operation,
-                            links,
-                            explicitSteelTopology,
-                            requireHotTransfer,
-                            issues,
-                            rollingPlan.Id);
-                        dependencies = new[] { dependency };
+                        var directHotTransfer = operation.ProcessOperationType == ProcessOperationType.HotRoll &&
+                                                cursor.IsKnownHot &&
+                                                !cursor.PassedReheat;
+                        dependencies = new[]
+                        {
+                            BuildDependency(
+                                cursor.Predecessor,
+                                options,
+                                operation,
+                                links,
+                                explicitTopology,
+                                directHotTransfer,
+                                issues,
+                                rolling.Id)
+                        };
                     }
 
-                    var task = new FiniteScheduleTask(
+                    newTasks.Add(new FiniteScheduleTask(
                         Guid.NewGuid(),
                         routePlan.Id,
                         MapTaskType(operation.ProcessOperationType),
-                        $"{operation.ProcessOperationType} {operation.SequenceNumber} - {rollingPlan.GradeCode}/{outputSection}",
-                        rollingPlan.GradeCode,
+                        $"{operation.ProcessOperationType} {operation.SequenceNumber} - {rolling.GradeCode}/{outputSection}",
+                        rolling.GradeCode,
                         outputSection,
                         cursor.QuantityMt,
                         cursor.Predecessor is null ? cursor.AvailableFromUtc : null,
@@ -296,30 +301,41 @@ internal static class MultiStageRouteProjector
                         priority,
                         options,
                         dependencies,
-                        operation.ProcessOperationType);
-                    newTasks.Add(task);
+                        operation.ProcessOperationType));
                 }
-
                 tasks.AddRange(newTasks);
+
                 decisions.Add(Decision(
                     routePlan.Id,
-                    rollingPlan.RouteCode,
+                    rolling.RouteCode,
                     operation,
                     RouteOperationOutcome.Included,
                     effective == EffectiveRequirement.Required
                         ? "REQUIRED"
                         : optionalReheatSelected
-                            ? "COLD_FEED_REQUIRES_REHEAT"
+                            ? "FEED_REQUIRES_REHEAT"
                             : "ROUTE_TRANSFORMATION_REQUIRED"));
 
-                for (var index = 0; index < cursors.Count; index++)
+                for (var i = 0; i < cursors.Count; i++)
                 {
-                    cursors[index].Predecessor = newTasks[index];
-                    cursors[index].AvailableFromUtc = null;
-                    if (operation.ProcessOperationType is ProcessOperationType.Reheat or ProcessOperationType.HotRoll)
-                        cursors[index].IsKnownHot = true;
+                    cursors[i].Predecessor = newTasks[i];
+                    cursors[i].AvailableFromUtc = null;
+                    if (operation.ProcessOperationType == ProcessOperationType.Reheat)
+                    {
+                        cursors[i].IsKnownHot = true;
+                        cursors[i].PassedReheat = true;
+                    }
+                    else if (operation.ProcessOperationType == ProcessOperationType.HotRoll)
+                    {
+                        cursors[i].IsKnownHot = true;
+                    }
                     if (operation.IsInventoryDecouplingPoint)
-                        cursors[index].IsKnownHot = false;
+                    {
+                        // A decoupling point deliberately breaks guaranteed hot continuity. The material
+                        // still exists; a later HotRoll must re-establish thermal readiness via Reheat.
+                        cursors[i].IsKnownHot = false;
+                        cursors[i].PassedReheat = false;
+                    }
                 }
 
                 upstreamPlanId = routePlan.Id;
@@ -327,19 +343,20 @@ internal static class MultiStageRouteProjector
                 seenHotRoll |= operation.ProcessOperationType == ProcessOperationType.HotRoll;
             }
 
+            if (HasSourceError(issues, rolling.Id)) continue;
             if (!seenHotRoll)
             {
                 issues.Add(Error(
                     "ROUTE_HOT_ROLL_NOT_PROJECTED",
-                    $"Route {rollingPlan.RouteCode} created rolling demand but no HotRoll operation was projected.",
-                    rollingPlan.Id));
+                    $"Route {rolling.RouteCode} created rolling demand but no HotRoll operation was projected.",
+                    rolling.Id));
             }
-            else if (!string.Equals(currentSection, finalSection, StringComparison.OrdinalIgnoreCase))
+            else if (!Same(currentSection, finalSection))
             {
                 issues.Add(Error(
                     "ROUTE_FINAL_SECTION_NOT_REACHED",
-                    $"Route {rollingPlan.RouteCode} ends at {currentSection} but Production Orders require {finalSection}.",
-                    rollingPlan.Id));
+                    $"Route {rolling.RouteCode} ends at {currentSection} but Production Orders require {finalSection}.",
+                    rolling.Id));
             }
         }
 
@@ -352,11 +369,49 @@ internal static class MultiStageRouteProjector
         };
     }
 
+    private static RouteOperationPlan NewRoutePlan(
+        RollingPlan rolling,
+        Guid upstreamPlanId,
+        ManufacturingRouteOperation operation,
+        string inputSection,
+        string outputSection)
+    {
+        var plan = new RouteOperationPlan
+        {
+            RouteCode = rolling.RouteCode,
+            UpstreamPlanId = upstreamPlanId,
+            ProcessOperationType = operation.ProcessOperationType,
+            ReleaseWorkOrderType = operation.ReleaseWorkOrderType,
+            SequenceNumber = operation.SequenceNumber,
+            ResourceId = null,
+            GradeCode = rolling.GradeCode,
+            InputMaterialSpecificationCode = operation.InputMaterialSpecificationCode,
+            OutputMaterialSpecificationCode = operation.OutputMaterialSpecificationCode,
+            InputCrossSectionCode = inputSection,
+            OutputCrossSectionCode = outputSection,
+            PlannedQuantityMt = rolling.PlannedQuantityMt,
+            MinimumQueueTime = operation.MinimumQueueTime,
+            MaximumQueueTime = operation.MaximumQueueTime,
+            IsInventoryDecouplingPoint = operation.IsInventoryDecouplingPoint
+        };
+        foreach (var allocation in rolling.Allocations)
+        {
+            plan.Allocations.Add(new RouteOperationPlanAllocation
+            {
+                RouteOperationPlanId = plan.Id,
+                RouteOperationPlan = plan,
+                CampaignId = allocation.CampaignId,
+                ProductionOrderId = allocation.ProductionOrderId,
+                ProductionOrder = allocation.ProductionOrder,
+                PlannedQuantityMt = allocation.PlannedQuantityMt
+            });
+        }
+        return plan;
+    }
+
     private static List<FeedCursor> BuildFeedCursors(
-        RollingPlan plan,
+        RollingPlan rolling,
         ProductionStructurePlanningResult structure,
-        CampaignPlanningResult campaignPlan,
-        IReadOnlyCollection<FiniteScheduleTask> tasks,
         IReadOnlyDictionary<Guid, FiniteScheduleTask> castTaskByHeat,
         IDictionary<Guid, decimal> remainingSupplyByHeat,
         IReadOnlyDictionary<Guid, PlanningInventoryAllocation[]> inventoryByPo,
@@ -365,47 +420,46 @@ internal static class MultiStageRouteProjector
         ICollection<PlanningIssue> issues)
     {
         var result = new List<FeedCursor>();
-
-        if (plan.FreshSteelQuantityMt > 0m)
+        if (rolling.FreshSteelQuantityMt > 0m)
         {
-            var eligibleCampaigns = plan.Allocations
+            var campaignIds = rolling.Allocations
                 .Where(x => x.FreshSteelQuantityMt > 0m)
                 .Select(x => x.CampaignId)
                 .ToHashSet();
-            var candidateHeats = structure.CastSequences
+            var heatIds = structure.CastSequences
                 .OrderBy(x => x.SequenceNumber)
-                .SelectMany(sequence => sequence.Heats.OrderBy(x => x.Position))
-                .Where(x => eligibleCampaigns.Contains(x.CampaignHeat.CampaignId) &&
-                            string.Equals(x.CampaignHeat.GradeCode, plan.GradeCode, StringComparison.OrdinalIgnoreCase) &&
+                .SelectMany(x => x.Heats.OrderBy(y => y.Position))
+                .Where(x => campaignIds.Contains(x.CampaignHeat.CampaignId) &&
+                            Same(x.CampaignHeat.GradeCode, rolling.GradeCode) &&
                             castTaskByHeat.ContainsKey(x.CampaignHeatId))
                 .Select(x => x.CampaignHeatId)
                 .Distinct()
                 .ToArray();
 
-            var remaining = plan.FreshSteelQuantityMt;
-            foreach (var heatId in candidateHeats)
+            var remaining = rolling.FreshSteelQuantityMt;
+            foreach (var heatId in heatIds)
             {
                 if (remaining <= 0m) break;
                 if (!remainingSupplyByHeat.TryGetValue(heatId, out var available) || available <= 0m) continue;
                 var quantity = Math.Min(remaining, available);
                 remaining -= quantity;
                 remainingSupplyByHeat[heatId] = available - quantity;
-                result.Add(new FeedCursor(quantity, castTaskByHeat[heatId], null, true));
+                result.Add(new FeedCursor(quantity, castTaskByHeat[heatId], null, isKnownHot: true));
             }
 
             if (remaining > 0.0001m)
             {
                 issues.Add(Error(
                     "INSUFFICIENT_PLANNED_CAST_OUTPUT",
-                    $"Rolling demand {plan.Id} requires {plan.FreshSteelQuantityMt:0.####} MT fresh feed but only {plan.FreshSteelQuantityMt - remaining:0.####} MT planned cast output is available.",
-                    plan.Id));
+                    $"Rolling demand {rolling.Id} requires {rolling.FreshSteelQuantityMt:0.####} MT fresh feed but only {rolling.FreshSteelQuantityMt - remaining:0.####} MT planned cast output is available.",
+                    rolling.Id));
             }
             return result;
         }
 
-        var poIds = plan.Allocations.Select(x => x.ProductionOrderId).ToHashSet();
+        var poIds = rolling.Allocations.Select(x => x.ProductionOrderId).ToHashSet();
         var sourceAllocations = poIds
-            .SelectMany(poId => inventoryByPo.TryGetValue(poId, out var values)
+            .SelectMany(id => inventoryByPo.TryGetValue(id, out var values)
                 ? values
                 : Array.Empty<PlanningInventoryAllocation>())
             .ToArray();
@@ -413,8 +467,8 @@ internal static class MultiStageRouteProjector
         {
             issues.Add(Error(
                 "ROLLING_FEED_SOURCE_MISSING",
-                $"Rolling demand {plan.Id} has no qualified billet source allocation.",
-                plan.Id));
+                $"Rolling demand {rolling.Id} has no qualified billet source allocation.",
+                rolling.Id));
             return result;
         }
 
@@ -424,33 +478,39 @@ internal static class MultiStageRouteProjector
             .ToArray();
         var availableFrom = availability.Length == 0 ? (DateTime?)null : availability.Max();
         var allKnownHot = sourceAllocations.All(x => IsKnownHotFeed(x, externalByReference, committedByReference));
-        result.Add(new FeedCursor(plan.PlannedQuantityMt, null, availableFrom, allKnownHot));
+        result.Add(new FeedCursor(rolling.PlannedQuantityMt, null, availableFrom, allKnownHot));
         return result;
     }
 
-    private static bool ShouldUseOptionalReheat(
+    private static bool NeedsOptionalReheat(
         int operationIndex,
         IReadOnlyList<ManufacturingRouteOperation> operations,
         string currentSection,
-        RollingPlan plan,
+        RollingPlan rolling,
         IReadOnlyCollection<ProductionOrder> orders,
         IReadOnlyCollection<FeedCursor> cursors,
+        bool seenHotRoll,
         IReadOnlyDictionary<Guid, Resource> activeResources,
         IReadOnlyDictionary<Guid, RouteResourceCapability[]> routeCapabilities,
         IReadOnlyDictionary<Guid, ResourceCapability[]> genericCapabilities,
         IReadOnlyCollection<PlantFlowLink> links)
     {
+        if (RequiresReheat(orders)) return true;
+        if (!seenHotRoll && DirectHotChargeForbidden(orders)) return true;
         if (cursors.Any(x => !x.IsKnownHot)) return true;
-        if (orders.Any(x => x.Requirement?.RequireReheating == true)) return true;
 
-        var next = operationIndex + 1 < operations.Count ? operations[operationIndex + 1] : null;
-        if (next is null || next.ProcessOperationType != ProcessOperationType.HotRoll) return false;
+        var nextHotRoll = operations
+            .Skip(operationIndex + 1)
+            .FirstOrDefault(x => x.ProcessOperationType == ProcessOperationType.HotRoll);
+        if (nextHotRoll is null) return false;
+        if (nextHotRoll.RequiredChargeMode == ChargeMode.ColdCharge) return true;
 
-        var input = next.InputCrossSectionCode ?? currentSection;
-        var output = next.OutputCrossSectionCode ?? plan.OutputCrossSectionCode;
+        var input = nextHotRoll.InputCrossSectionCode ?? currentSection;
+        var output = nextHotRoll.OutputCrossSectionCode ?? rolling.OutputCrossSectionCode;
         var eligibleHotRoll = BuildEligibleResources(
-            next,
+            nextHotRoll,
             orders,
+            rolling.PlannedQuantityMt,
             input,
             output,
             activeResources,
@@ -458,9 +518,12 @@ internal static class MultiStageRouteProjector
             genericCapabilities);
         if (eligibleHotRoll.Count == 0) return false;
 
+        // Inventory/committed hot supply has no producing resource in this run. Its thermal state is the
+        // authoritative evidence. Fresh/internal feed has a predecessor and must also have a physical
+        // hot-transfer path to at least one eligible mill to bypass reheating.
         foreach (var cursor in cursors.Where(x => x.Predecessor is not null))
         {
-            var hasDirectHotPath = cursor.Predecessor!.ResourceOptions.Any(from =>
+            var direct = cursor.Predecessor!.ResourceOptions.Any(from =>
                 eligibleHotRoll.Any(to => links.Any(link =>
                     link.IsEnabled &&
                     link.SupportsHotTransfer &&
@@ -468,7 +531,7 @@ internal static class MultiStageRouteProjector
                     link.ToResourceId == to.Resource.Id &&
                     (!link.FromProcessOperationType.HasValue || link.FromProcessOperationType == cursor.Predecessor.ProcessOperationType) &&
                     (!link.ToProcessOperationType.HasValue || link.ToProcessOperationType == ProcessOperationType.HotRoll))));
-            if (!hasDirectHotPath) return true;
+            if (!direct) return true;
         }
         return false;
     }
@@ -476,6 +539,7 @@ internal static class MultiStageRouteProjector
     private static IReadOnlyList<EligibleResource> BuildEligibleResources(
         ManufacturingRouteOperation operation,
         IReadOnlyCollection<ProductionOrder> orders,
+        decimal plannedQuantityMt,
         string inputSection,
         string outputSection,
         IReadOnlyDictionary<Guid, Resource> resources,
@@ -483,7 +547,10 @@ internal static class MultiStageRouteProjector
         IReadOnlyDictionary<Guid, ResourceCapability[]> genericCapabilities)
     {
         var result = new List<EligibleResource>();
-        var requiredResourceIds = orders.SelectMany(x => RequiredResourcesFor(x, operation.ProcessOperationType)).Distinct().ToArray();
+        var requiredResourceIds = orders
+            .SelectMany(x => RequiredResourcesFor(x, operation.ProcessOperationType))
+            .Distinct()
+            .ToArray();
         if (requiredResourceIds.Length > 1) return result;
 
         var unitType = SteelmakingRouteProjector.UnitTypeFor(operation.ProcessOperationType);
@@ -502,7 +569,7 @@ internal static class MultiStageRouteProjector
                         Matches(x.ProductFamilyCode, order.ProductFamilyCode)) &&
                     Matches(x.InputCrossSectionCode, inputSection) &&
                     Matches(x.OutputCrossSectionCode, outputSection) &&
-                    Fits(x.MinimumQuantityMt, x.MaximumQuantityMt, orders.Sum(o => o.RemainingQuantityMt)))
+                    Fits(x.MinimumQuantityMt, x.MaximumQuantityMt, plannedQuantityMt))
                     .ToArray()
                 : Array.Empty<RouteResourceCapability>();
             if (routeCapabilities.ContainsKey(resource.Id) && routeValues.Length == 0) continue;
@@ -517,7 +584,8 @@ internal static class MultiStageRouteProjector
                         Matches(x.CastingClassCode, order.SteelGrade?.CastingClassCode) &&
                         Matches(x.ProductFamilyCode, order.ProductFamilyCode)) &&
                     Matches(x.InputCrossSectionCode, inputSection) &&
-                    Matches(x.OutputCrossSectionCode, outputSection))
+                    Matches(x.OutputCrossSectionCode, outputSection) &&
+                    Fits(x.MinimumQuantityMt, x.MaximumQuantityMt, plannedQuantityMt))
                     .ToArray()
                 : Array.Empty<ResourceCapability>();
             if (genericCapabilities.ContainsKey(resource.Id) && genericValues.Length == 0) continue;
@@ -539,7 +607,7 @@ internal static class MultiStageRouteProjector
         FiniteScheduleTask predecessor,
         IReadOnlyCollection<FiniteScheduleResourceOption> successorOptions,
         ManufacturingRouteOperation operation,
-        IReadOnlyCollection<PlantFlowLink> flowLinks,
+        IReadOnlyCollection<PlantFlowLink> links,
         bool requirePhysicalPath,
         bool requireHotTransfer,
         ICollection<PlanningIssue> issues,
@@ -549,7 +617,7 @@ internal static class MultiStageRouteProjector
         foreach (var from in predecessor.ResourceOptions)
         foreach (var to in successorOptions)
         {
-            var link = flowLinks.FirstOrDefault(x =>
+            var link = links.FirstOrDefault(x =>
                 x.IsEnabled &&
                 x.FromResourceId == from.ResourceId &&
                 x.ToResourceId == to.ResourceId &&
@@ -573,11 +641,10 @@ internal static class MultiStageRouteProjector
         {
             issues.Add(Error(
                 "DIRECT_HOT_TRANSFER_UNAVAILABLE",
-                $"No enabled hot-transfer path exists from {predecessor.ProcessOperationType} into {operation.ProcessOperationType}; the route must use a configured reheating/buffer path instead.",
+                $"No enabled hot-transfer path exists from {predecessor.ProcessOperationType} into {operation.ProcessOperationType}; use a configured Reheat/buffer path instead.",
                 sourceId));
             return new FiniteScheduleDependency(predecessor.TaskId);
         }
-
         if (requirePhysicalPath)
         {
             issues.Add(Error(
@@ -629,6 +696,19 @@ internal static class MultiStageRouteProjector
         return EffectiveRequirement.Optional;
     }
 
+    private static bool RequiresReheat(IEnumerable<ProductionOrder> orders) => orders.Any(order =>
+        order.Requirement?.RequireReheating == true ||
+        order.SteelGrade?.ProcessRequirements.Any(x =>
+            x.ProcessOperationType == ProcessOperationType.Reheat &&
+            x.Requirement == RequirementDisposition.Required) == true ||
+        order.Requirement?.ProcessOverrides.Any(x =>
+            x.ProcessOperationType == ProcessOperationType.Reheat &&
+            x.Requirement == RequirementDisposition.Required) == true);
+
+    private static bool DirectHotChargeForbidden(IEnumerable<ProductionOrder> orders) => orders.Any(order =>
+        order.SteelGrade?.HotChargeEligible == false ||
+        order.Requirement?.ForbidHotCharge == true);
+
     private static bool ChangesTowardDownstreamNeed(
         int operationIndex,
         IReadOnlyList<ManufacturingRouteOperation> operations,
@@ -637,12 +717,11 @@ internal static class MultiStageRouteProjector
         string finalSection)
     {
         if (string.IsNullOrWhiteSpace(operation.OutputCrossSectionCode)) return false;
-        if (string.Equals(operation.OutputCrossSectionCode, currentSection, StringComparison.OrdinalIgnoreCase)) return false;
-        if (string.Equals(operation.OutputCrossSectionCode, finalSection, StringComparison.OrdinalIgnoreCase)) return true;
-
+        if (Same(operation.OutputCrossSectionCode, currentSection)) return false;
+        if (Same(operation.OutputCrossSectionCode, finalSection)) return true;
         return operations
             .Skip(operationIndex + 1)
-            .Any(next => string.Equals(next.InputCrossSectionCode, operation.OutputCrossSectionCode, StringComparison.OrdinalIgnoreCase));
+            .Any(next => Same(next.InputCrossSectionCode, operation.OutputCrossSectionCode));
     }
 
     private static bool IsKnownHotFeed(
@@ -705,13 +784,17 @@ internal static class MultiStageRouteProjector
         IReadOnlyCollection<ResourceCapability> genericCapabilities,
         Resource resource)
     {
-        var fixedDuration = routeCapabilities.Where(x => x.FixedDurationMinutes.HasValue).Select(x => x.FixedDurationMinutes!.Value)
+        var fixedDuration = routeCapabilities
+            .Where(x => x.FixedDurationMinutes.HasValue)
+            .Select(x => x.FixedDurationMinutes!.Value)
             .Concat(genericCapabilities.Where(x => x.FixedDurationMinutes.HasValue).Select(x => x.FixedDurationMinutes!.Value))
             .DefaultIfEmpty(resource.NominalResidenceMinutes ?? 0)
             .Max();
         if (fixedDuration > 0) return fixedDuration;
 
-        var throughput = routeCapabilities.Where(x => x.ThroughputMtPerHour.HasValue && x.ThroughputMtPerHour.Value > 0m).Select(x => x.ThroughputMtPerHour!.Value)
+        var throughput = routeCapabilities
+            .Where(x => x.ThroughputMtPerHour.HasValue && x.ThroughputMtPerHour.Value > 0m)
+            .Select(x => x.ThroughputMtPerHour!.Value)
             .Concat(genericCapabilities.Where(x => x.ThroughputMtPerHour.HasValue && x.ThroughputMtPerHour.Value > 0m).Select(x => x.ThroughputMtPerHour!.Value))
             .Append(resource.NominalThroughputMtPerHour ?? 0m)
             .DefaultIfEmpty(0m)
@@ -722,12 +805,16 @@ internal static class MultiStageRouteProjector
     }
 
     private static bool Matches(string? configured, string? actual) =>
-        string.IsNullOrWhiteSpace(configured) || string.Equals(configured, actual, StringComparison.OrdinalIgnoreCase);
+        string.IsNullOrWhiteSpace(configured) || Same(configured, actual);
+    private static bool Same(string? left, string? right) =>
+        string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
     private static bool Fits(decimal? minimum, decimal? maximum, decimal quantity) =>
         (!minimum.HasValue || quantity >= minimum.Value) && (!maximum.HasValue || quantity <= maximum.Value);
     private static int Minutes(TimeSpan value) => Math.Max(0, (int)Math.Ceiling(value.TotalMinutes));
     private static int? MinNullable(int? first, int? second) =>
         !first.HasValue ? second : !second.HasValue ? first : Math.Min(first.Value, second.Value);
+    private static bool HasSourceError(IEnumerable<PlanningIssue> issues, Guid sourceId) =>
+        issues.Any(x => x.Severity == PlanningIssueSeverity.Error && x.SourceId == sourceId);
     private static PlanningIssue Error(string code, string message, Guid sourceId) =>
         new(PlanningIssueSeverity.Error, code, message, sourceId);
 
@@ -747,6 +834,7 @@ internal static class MultiStageRouteProjector
         public FiniteScheduleTask? Predecessor { get; set; } = predecessor;
         public DateTime? AvailableFromUtc { get; set; } = availableFromUtc;
         public bool IsKnownHot { get; set; } = isKnownHot;
+        public bool PassedReheat { get; set; }
     }
 
     private enum EffectiveRequirement
