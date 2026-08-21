@@ -104,12 +104,8 @@ internal static class CampaignCandidateOptimizer
         CampaignObjectiveWeights weights,
         Func<CampaignCandidate, CampaignTechnicalEvaluation>? technicalEvaluator)
     {
-        // Dynamic partition is authoritative: unlike fixed day buckets it evaluates every legal
-        // boundary over the canonical service order and can react to technical feasibility/cost.
         yield return BuildDynamicPartition(requirements, policy, weights, technicalEvaluator);
 
-        // Retain the old cohort families as explainability/reference candidates. They are useful to
-        // show how much the selected partition gained over familiar service-window/fill behavior.
         foreach (var windowDays in ReferenceCohortWindowDays)
         {
             yield return Evaluate(
@@ -163,8 +159,6 @@ internal static class CampaignCandidateOptimizer
 
         if (states[^1] is null)
         {
-            // Return an inspectable rejected alternative; Choose() will report the technical reasons
-            // from the reference candidates if every dynamic segment is infeasible too.
             return new CampaignCompositionOption(
                 Array.Empty<CampaignCandidate>(),
                 new CampaignObjectiveBreakdown("DYNAMIC_PARTITION", 0, 0m, 0m, 0m, 0m, decimal.MaxValue / 1000m)
@@ -291,7 +285,8 @@ internal static class CampaignCandidateOptimizer
             }
 
             transitionCost += technical.GradeTransitionCost;
-            heatTargetDeviation += technical.HeatTargetDeviationMt;
+            if (technical.HasFurnaceEvaluation)
+                heatTargetDeviation += technical.HeatTargetDeviationMt;
             gradeSequence.AddRange(technical.GradeSequence);
 
             var campaignDate = campaign.RequiredDate;
@@ -302,16 +297,13 @@ internal static class CampaignCandidateOptimizer
                     earlyProductionMtDays += slice.QuantityMt * days * PriorityFactor(slice.Requirement);
             }
 
-            if (technicalEvaluator is null)
+            if (!technical.HasFurnaceEvaluation)
             {
+                // Compatibility/demo callers without physical furnace masters retain the historical
+                // nominal-heat residual objective. A non-null technical evaluator by itself must not
+                // erase this economic signal.
                 var heats = Math.Ceiling(campaign.QuantityMt / heatSize);
                 residualHeatMt += Math.Max(0m, heats * heatSize - campaign.QuantityMt);
-            }
-            else
-            {
-                // Physical heat fitting supersedes the nominal-heat residual approximation when the
-                // technical evaluator has actual furnace envelopes.
-                residualHeatMt += technical.HeatTargetDeviationMt;
             }
 
             if (campaign.QuantityMt < minimumCampaign)
