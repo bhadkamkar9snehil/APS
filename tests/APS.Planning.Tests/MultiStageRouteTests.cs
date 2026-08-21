@@ -12,11 +12,12 @@ public sealed class MultiStageRouteTests
     {
         var po = Order("PO-ROUTE-1", "1.0MM", 100m);
         var plant = Guid.NewGuid();
+        var eaf = PrimaryFurnace(plant, "EAF-1");
         var caster = Resource(plant, "CCM-1", ResourceType.Caster, ProcessUnitType.Ccm, 4);
         var hotMill = Resource(plant, "HRM-1", ResourceType.RollingMill, ProcessUnitType.HotRollingMill);
         var coldMill = Resource(plant, "CRM-1", ResourceType.RollingMill, ProcessUnitType.ColdRollingMill);
         var finishing = Resource(plant, "FIN-1", ResourceType.FinishingLine, ProcessUnitType.FinishingLine);
-        var resources = new[] { caster, hotMill, coldMill, finishing };
+        var resources = new[] { eaf, caster, hotMill, coldMill, finishing };
 
         var routeId = Guid.NewGuid();
         var routeOperations = new[]
@@ -81,6 +82,7 @@ public sealed class MultiStageRouteTests
     {
         var po = Order("PO-TWO-MILLS", "FINAL", 60m);
         var plant = Guid.NewGuid();
+        var eaf = PrimaryFurnace(plant, "EAF-1");
         var caster = Resource(plant, "CCM-1", ResourceType.Caster, ProcessUnitType.Ccm, 4);
         var firstMill = Resource(plant, "HRM-1", ResourceType.RollingMill, ProcessUnitType.HotRollingMill);
         var reheat = Resource(plant, "RHF-1", ResourceType.Furnace, ProcessUnitType.ReheatingFurnace);
@@ -106,7 +108,7 @@ public sealed class MultiStageRouteTests
             Link(reheat.Id, secondMill.Id, ProcessOperationType.Reheat, ProcessOperationType.HotRoll, hot: true)
         };
 
-        var result = Run(po, new[] { caster, firstMill, reheat, secondMill }, routeOperations, routeCapabilities, links);
+        var result = Run(po, new[] { eaf, caster, firstMill, reheat, secondMill }, routeOperations, routeCapabilities, links);
 
         Assert.True(result.IsFeasible, string.Join("; ", result.Schedule.Issues.Select(x => x.Message)));
         var plans = result.ProductionStructure.RouteOperationPlans!.OrderBy(x => x.SequenceNumber).ToArray();
@@ -180,6 +182,15 @@ public sealed class MultiStageRouteTests
         RequiredDate = new DateTime(2026, 8, 23),
         Priority = 2
     };
+
+    private static Resource PrimaryFurnace(Guid plant, string code)
+    {
+        var resource = Resource(plant, code, ResourceType.Furnace, ProcessUnitType.Eaf);
+        resource.MinimumHeatWeightMt = 50m;
+        resource.NominalHeatWeightMt = 60m;
+        resource.MaximumHeatWeightMt = 70m;
+        return resource;
+    }
 
     private static Resource Resource(
         Guid plant,
