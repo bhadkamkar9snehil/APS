@@ -14,7 +14,13 @@
 <div @ref="workbenchRoot" class="flex h-full min-h-0 flex-col overflow-hidden bg-canvas" data-aps-workbench tabindex="-1" @onkeydown="HandleWorkbenchKeyDown">
     @if (loading)
     {
-        <div class="grid flex-1 place-items-center text-sm text-muted">Loading the planning workbench…</div>
+        <div class="flex flex-1 flex-col gap-px overflow-hidden bg-border p-px">
+            <div class="aps-shimmer h-12 bg-surface"></div>
+            @for (var i = 0; i < 6; i++)
+            {
+                <div class="aps-shimmer h-16 bg-surface" style="animation-delay:@(i * 90)ms"></div>
+            }
+        </div>
     }
     else if (workbench is null)
     {
@@ -33,6 +39,7 @@
                                  StateClass="@ScenarioStateClass"
                                  IsReleased="@workbench.Plan.IsReleased"
                                  CanEdit="@(state.CanEditSchedule && !acting)"
+                                 IsBusy="@acting"
                                  CanUndo="@CanUndo"
                                  CanRedo="@CanRedo"
                                  CanRelease="@CanRelease"
@@ -263,7 +270,13 @@
                         <div class="min-w-0 flex-1">@foreach (var finding in state.Impact.Findings) { <span class="mr-1 inline-flex rounded px-2 py-1 text-[10px] @(FindingClass(finding.Severity))">@finding.Message</span> }</div>
                         <button class="rounded-control bg-accent px-4 py-2 text-xs font-semibold text-accent-foreground disabled:opacity-40" @onclick="ApplyMoveAsync" disabled="@(acting || !state.Impact.CanApply)">Apply and repair plan</button>
                     }
-                    else { <span class="flex-1 text-xs text-muted">Previewing constraint and downstream schedule impact…</span> }
+                    else
+                    {
+                        <div class="flex flex-1 items-center gap-3">
+                            <span class="text-xs text-muted">Previewing constraint and downstream schedule impact…</span>
+                            <span class="aps-shimmer h-2 w-24 rounded-full"></span>
+                        </div>
+                    }
                     <button class="rounded-control border border-border px-3 py-2 text-xs" @onclick="state.ClearMove">Cancel</button>
                 </div>
             </section>

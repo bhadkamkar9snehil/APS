@@ -18,11 +18,22 @@
         <div class="flex items-center gap-1.5" aria-label="Scenario actions">
             <button class="rounded-control border border-border-strong px-2.5 py-1 text-xs disabled:opacity-40" disabled="@(!CanUndo)" @onclick="Undo">Undo</button>
             <button class="rounded-control border border-border-strong px-2.5 py-1 text-xs disabled:opacity-40" disabled="@(!CanRedo)" @onclick="Redo">Redo</button>
-            <button class="rounded-control border border-accent-border bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent disabled:opacity-40" disabled="@(!CanEdit)" @onclick="Optimize">Optimize</button>
-            <button class="rounded-control border border-border-strong px-2.5 py-1 text-xs disabled:opacity-40" disabled="@(!CanEdit)" @onclick="Validate">Validate</button>
-            <button class="rounded-control bg-accent px-2.5 py-1 text-xs font-semibold text-accent-foreground disabled:opacity-40" disabled="@(!CanRelease)" @onclick="Release">Release</button>
+            <button class="rounded-control border border-accent-border bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent disabled:opacity-40" disabled="@(!CanEdit || IsBusy)" @onclick="Optimize">
+                @if (IsBusy) { <span class="aps-pulse-dot mr-1 inline-block h-1.5 w-1.5 rounded-full bg-accent"></span> }
+                Optimize
+            </button>
+            <button class="rounded-control border border-border-strong px-2.5 py-1 text-xs disabled:opacity-40" disabled="@(!CanEdit || IsBusy)" @onclick="Validate">Validate</button>
+            <button class="rounded-control bg-accent px-2.5 py-1 text-xs font-semibold text-accent-foreground disabled:opacity-40" disabled="@(!CanRelease || IsBusy)" @onclick="Release">Release</button>
         </div>
     </div>
+    @* A CP-SAT solver runs behind Optimize/Validate/Release and can take real time - disabling the
+       buttons is not itself feedback that something is happening (#UI-depth). This rail is the one
+       place in the workbench that always says "the engine is working" regardless of which action
+       triggered it. *@
+    @if (IsBusy)
+    {
+        <div class="aps-activity-rail"></div>
+    }
 </header>
 
 @code {
@@ -34,6 +45,7 @@
     [Parameter] public bool CanUndo { get; set; }
     [Parameter] public bool CanRedo { get; set; }
     [Parameter] public bool CanRelease { get; set; }
+    [Parameter] public bool IsBusy { get; set; }
     [Parameter] public int OperationCount { get; set; }
     [Parameter] public int ResourceCount { get; set; }
     [Parameter] public DateTime ScheduleStartUtc { get; set; }
