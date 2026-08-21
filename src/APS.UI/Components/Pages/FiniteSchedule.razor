@@ -222,36 +222,73 @@
 
             @if (Cockpit.InspectorOpen)
             {
-                <aside class="absolute inset-y-0 right-0 z-40 flex min-h-0 w-[22.5rem] flex-col bg-surface shadow-raised">
-                    <div class="flex justify-between border-b border-border px-3 py-2"><strong class="text-xs uppercase tracking-wide text-muted">Planner inspector</strong><button class="text-xs text-muted" @onclick="Cockpit.ToggleInspector">Close</button></div>
+                <aside class="absolute inset-y-0 right-0 z-40 flex min-h-0 w-[22.5rem] flex-col bg-surface shadow-popover">
+                    <div class="flex justify-between border-b border-border bg-surface-raised px-3 py-2 shadow-soft"><strong class="aps-text-label">Planner inspector</strong><button class="aps-text-caption hover:text-primary" @onclick="Cockpit.ToggleInspector">Close</button></div>
                     <div class="min-h-0 flex-1 overflow-y-auto p-3">
                         @if (SelectedOperation is null)
                         {
-                            <div class="rounded-control border border-dashed border-border p-5 text-center text-xs text-muted">Select or drag an operation to inspect, move, or reassign it.</div>
+                            <div class="aps-page flex flex-col items-center gap-2 border border-dashed border-border-strong p-6 text-center">
+                                <span class="text-2xl text-muted" aria-hidden="true">&#8963;</span>
+                                <p class="aps-text-body text-secondary">Select or drag an operation to inspect, move, or reassign it.</p>
+                            </div>
                             <PlanningControls NominalHeatMt="nominalHeatMt" NominalHeatMtChanged="v => nominalHeatMt = v" MaximumCampaignMt="maximumCampaignMt" MaximumCampaignMtChanged="v => maximumCampaignMt = v" FrozenMinutes="frozenMinutes" FrozenMinutesChanged="v => frozenMinutes = v" SolverSeconds="solverSeconds" SolverSecondsChanged="v => solverSeconds = v" OnRecalculate="ReplanAsync" Disabled="acting" />
                         }
                         else
                         {
                             var operation = SelectedOperation;
                             var detail = SelectedDetail;
-                            <section>
-                                <div class="flex justify-between gap-3"><div><h2 class="text-sm font-semibold">@operation.ProcessOperationType · @operation.GradeCode</h2><p class="text-xs text-muted">@operation.CrossSectionCode · @operation.QuantityMt.ToString("0.#") MT</p></div><span class="h-fit rounded bg-info-soft px-2 py-0.5 text-[10px] text-info">@(detail?.CommitmentState.ToString() ?? "Planned")</span></div>
-                                <dl class="mt-3 grid grid-cols-[88px_1fr] gap-x-2 gap-y-1 text-xs">
-                                    <dt class="text-muted">Resource</dt><dd class="font-medium">@operation.ResourceCode</dd><dt class="text-muted">Planned start</dt><dd>@operation.StartUtc.ToString("dd MMM yyyy HH:mm")</dd><dt class="text-muted">Planned end</dt><dd>@operation.EndUtc.ToString("dd MMM yyyy HH:mm")</dd><dt class="text-muted">Execution</dt><dd class="font-medium">@(detail?.ExecutionStatus.ToString() ?? "Planned")</dd><dt class="text-muted">Actual start</dt><dd>@FormatActual(detail?.ActualStartUtc)</dd><dt class="text-muted">Actual end</dt><dd>@FormatActual(detail?.ActualEndUtc)</dd><dt class="text-muted">Actual output</dt><dd>@((detail?.ActualQuantityMt ?? 0m).ToString("0.#")) MT</dd><dt class="text-muted">Campaign</dt><dd>@CampaignLabel(detail)</dd><dt class="text-muted">Orders</dt><dd>@OrderLabel(detail)</dd><dt class="text-muted">Predecessors</dt><dd>@(detail?.PredecessorPlanningKeys.Count ?? 0)</dd>
-                                </dl>
+                            <section class="aps-page p-3">
+                                <div class="flex justify-between gap-3">
+                                    <div><h2 class="aps-text-heading">@operation.ProcessOperationType · @operation.GradeCode</h2><p class="aps-text-caption">@operation.CrossSectionCode · @operation.QuantityMt.ToString("0.#") MT</p></div>
+                                    <span class="h-fit rounded px-2 py-0.5 aps-text-caption @CommitmentStateClass(detail?.CommitmentState)">@(detail?.CommitmentState.ToString() ?? "Planned")</span>
+                                </div>
+
+                                @* Grouped instead of one flat 11-row list (#UI-depth): plan vs actuals vs lineage answer
+                                   different questions, and running them together made "hasn't happened yet" read the
+                                   same as "this is the plan." *@
+                                <div class="mt-3 rounded-control bg-surface-inset p-2">
+                                    <div class="aps-text-label mb-1.5">Plan</div>
+                                    <dl class="grid grid-cols-[80px_1fr] gap-y-1">
+                                        <dt class="aps-text-caption">Resource</dt><dd class="aps-text-figure text-xs">@operation.ResourceCode</dd>
+                                        <dt class="aps-text-caption">Start</dt><dd class="aps-text-body">@operation.StartUtc.ToString("dd MMM yyyy HH:mm")</dd>
+                                        <dt class="aps-text-caption">End</dt><dd class="aps-text-body">@operation.EndUtc.ToString("dd MMM yyyy HH:mm")</dd>
+                                    </dl>
+                                </div>
+
+                                <div class="mt-2 rounded-control bg-surface-inset p-2">
+                                    <div class="aps-text-label mb-1.5">Actuals</div>
+                                    <dl class="grid grid-cols-[80px_1fr] gap-y-1">
+                                        <dt class="aps-text-caption">Execution</dt><dd class="aps-text-body font-medium">@(detail?.ExecutionStatus.ToString() ?? "Planned")</dd>
+                                        <dt class="aps-text-caption">Actual start</dt><dd class="@ActualValueClass(detail?.ActualStartUtc)">@FormatActual(detail?.ActualStartUtc)</dd>
+                                        <dt class="aps-text-caption">Actual end</dt><dd class="@ActualValueClass(detail?.ActualEndUtc)">@FormatActual(detail?.ActualEndUtc)</dd>
+                                        <dt class="aps-text-caption">Output</dt><dd class="aps-text-figure text-xs">@((detail?.ActualQuantityMt ?? 0m).ToString("0.#")) MT</dd>
+                                    </dl>
+                                </div>
+
+                                <div class="mt-2 rounded-control bg-surface-inset p-2">
+                                    <div class="aps-text-label mb-1.5">Lineage</div>
+                                    <dl class="grid grid-cols-[80px_1fr] gap-y-1">
+                                        <dt class="aps-text-caption">Campaign</dt><dd class="aps-text-body">@CampaignLabel(detail)</dd>
+                                        <dt class="aps-text-caption">Orders</dt><dd class="aps-text-body">@OrderLabel(detail)</dd>
+                                        <dt class="aps-text-caption">Predecessors</dt><dd class="aps-text-body">@(detail?.PredecessorPlanningKeys.Count ?? 0)</dd>
+                                    </dl>
+                                </div>
                             </section>
-                            <section class="mt-4 border-t border-border pt-4">
-                                <h3 class="text-xs font-semibold">Move or reassign</h3>
+
+                            @* Its own elevated card, not a continuation of the read-only details above - this is
+                               where the planner acts, and it should look like a distinct zone (#UI-depth). *@
+                            <section class="aps-page mt-3 p-3">
+                                <h3 class="aps-text-heading">Move or reassign</h3>
                                 @if (!CanMoveSelectedOperation)
                                 {
-                                    <div class="mt-3 rounded-control border border-border bg-surface-inset p-3 text-xs text-secondary">@MoveRestrictionMessage</div>
+                                    <div class="mt-3 rounded-control bg-surface-inset p-3 aps-text-body text-secondary">@MoveRestrictionMessage</div>
                                 }
-                                <label class="mt-3 block text-[10px] text-muted">Eligible resource<select @bind="targetResourceText" disabled="@(!CanMoveSelectedOperation)" class="mt-1 w-full rounded-control border border-border px-2 py-2 text-xs disabled:opacity-50">@foreach (var option in EligibleResources(operation, detail)) { <option value="@option.ResourceId">@option.ResourceCode · @option.ResourceName</option> }</select></label>
-                                <label class="mt-2 block text-[10px] text-muted">Target start (UTC)<input type="datetime-local" value="@targetStartText" @onchange="TargetStartChanged" disabled="@(!CanMoveSelectedOperation)" class="mt-1 w-full rounded-control border border-border px-2 py-2 text-xs disabled:opacity-50" /></label>
-                                <label class="mt-2 block text-[10px] text-muted">Reason<select @bind="moveReason" disabled="@(!CanMoveSelectedOperation)" class="mt-1 w-full rounded-control border border-border px-2 py-2 text-xs disabled:opacity-50"><option value="PLANNER_SEQUENCE">Sequence optimization</option><option value="RESOURCE_BALANCE">Resource balancing</option><option value="CUSTOMER_PRIORITY">Customer priority</option><option value="BREAKDOWN_RECOVERY">Breakdown recovery</option><option value="MATERIAL_AVAILABILITY">Material availability</option></select></label>
-                                <label class="mt-2 block text-[10px] text-muted">Planner note<textarea @bind="moveComment" rows="2" disabled="@(!CanMoveSelectedOperation)" class="mt-1 w-full resize-none rounded-control border border-border px-2 py-2 text-xs disabled:opacity-50" placeholder="Why this change is needed"></textarea></label>
-                                <label class="mt-2 flex gap-2 text-xs"><input type="checkbox" @bind="allowFrozenOverride" disabled="@(!CanMoveSelectedOperation)" /><span><strong>Authorized disruption override</strong><small class="block text-[10px] text-muted">Required inside the frozen fence.</small></span></label>
-                                <div class="mt-3 grid grid-cols-2 gap-2"><button class="rounded-control border border-border-strong px-3 py-2 text-xs disabled:opacity-40" @onclick="PreviewMoveAsync" disabled="@(acting || !CanMoveSelectedOperation)">Preview impact</button><button class="rounded-control bg-accent px-3 py-2 text-xs font-semibold text-accent-foreground disabled:opacity-40" @onclick="ApplyMoveAsync" disabled="@(acting || !CanMoveSelectedOperation || state.Impact?.CanApply != true)">Apply move</button></div>
+                                <label class="mt-3 block aps-text-label">Eligible resource<select @bind="targetResourceText" disabled="@(!CanMoveSelectedOperation)" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-2 aps-text-body disabled:opacity-50">@foreach (var option in EligibleResources(operation, detail)) { <option value="@option.ResourceId">@option.ResourceCode · @option.ResourceName</option> }</select></label>
+                                <label class="mt-2 block aps-text-label">Target start (UTC)<input type="datetime-local" value="@targetStartText" @onchange="TargetStartChanged" disabled="@(!CanMoveSelectedOperation)" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-2 aps-text-body disabled:opacity-50" /></label>
+                                <label class="mt-2 block aps-text-label">Reason<select @bind="moveReason" disabled="@(!CanMoveSelectedOperation)" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-2 aps-text-body disabled:opacity-50"><option value="PLANNER_SEQUENCE">Sequence optimization</option><option value="RESOURCE_BALANCE">Resource balancing</option><option value="CUSTOMER_PRIORITY">Customer priority</option><option value="BREAKDOWN_RECOVERY">Breakdown recovery</option><option value="MATERIAL_AVAILABILITY">Material availability</option></select></label>
+                                <label class="mt-2 block aps-text-label">Planner note<textarea @bind="moveComment" rows="2" disabled="@(!CanMoveSelectedOperation)" class="mt-1 w-full resize-none rounded-control border border-border bg-surface-raised px-2 py-2 aps-text-body disabled:opacity-50" placeholder="Why this change is needed"></textarea></label>
+                                <label class="mt-2 flex gap-2 aps-text-body"><input type="checkbox" @bind="allowFrozenOverride" disabled="@(!CanMoveSelectedOperation)" /><span><strong>Authorized disruption override</strong><small class="block aps-text-caption">Required inside the frozen fence.</small></span></label>
+                                <div class="mt-3 grid grid-cols-2 gap-2"><button class="rounded-control border border-border-strong px-3 py-2 aps-text-heading disabled:opacity-40" @onclick="PreviewMoveAsync" disabled="@(acting || !CanMoveSelectedOperation)">Preview impact</button><button class="rounded-control bg-accent px-3 py-2 aps-text-heading text-accent-foreground shadow-soft disabled:opacity-40 disabled:shadow-none" @onclick="ApplyMoveAsync" disabled="@(acting || !CanMoveSelectedOperation || state.Impact?.CanApply != true)">Apply move</button></div>
                             </section>
                         }
                     </div>
@@ -469,6 +506,19 @@
         ("Cold roll", "bg-process-cold-roll"), ("Finish", "bg-process-finishing")
     ];
     private static string OperatingStateClass(ResourceOperatingState value) => value == ResourceOperatingState.Available ? "text-success" : "text-danger";
+    // The commitment badge previously rendered bg-info-soft/text-info unconditionally, so a Flexible
+    // operation and a Running one carried the identical pill - colour said nothing a planner could act
+    // on. Escalating tone tracks how costly it is to disturb: flexible is still open, running is not.
+    private static string CommitmentStateClass(OperationAssignmentCommitmentState? value) => value switch
+    {
+        OperationAssignmentCommitmentState.Running => "bg-danger-soft text-danger",
+        OperationAssignmentCommitmentState.Committed or OperationAssignmentCommitmentState.Firm => "bg-warning-soft text-warning",
+        OperationAssignmentCommitmentState.Completed => "bg-success-soft text-success",
+        _ => "bg-info-soft text-info"
+    };
+    // "Not recorded" is an absence, not a fact - it should read differently from an actual timestamp
+    // rather than blending into the same grey figures as everything that already happened.
+    private static string ActualValueClass(DateTime? value) => value.HasValue ? "aps-text-body" : "aps-text-caption italic";
     private static string ExecutionClass(OperationExecutionStatus value) => value switch { OperationExecutionStatus.Running => "outline outline-2 outline-warning", OperationExecutionStatus.Held => "outline outline-2 outline-danger", OperationExecutionStatus.Completed => "opacity-65", OperationExecutionStatus.Ready => "outline outline-1 outline-success", _ => "" };
     private static string FindingClass(PlanningConstraintSeverity value) => value switch { PlanningConstraintSeverity.Blocker => "bg-danger-soft text-danger", PlanningConstraintSeverity.Warning => "bg-warning-soft text-warning", _ => "bg-info-soft text-info" };
     private static string FormatMovement(int minutes) => minutes == 0 ? "No time change" : $"{(minutes > 0 ? "+" : "")}{minutes / 60d:0.##} h";
