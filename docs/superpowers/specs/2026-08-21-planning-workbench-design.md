@@ -1,12 +1,12 @@
-# APS Unified Planner Lifecycle Workbench Design
+# APS Unified Planner Cockpit Design
 
 ## Purpose
 
-Replace the module-led finite-schedule experience with one state-aware PPC workbench. The planner must spend the majority of working time here: create or clone a scenario, form campaigns, optimize, manually adjust, inspect impact, validate, release, monitor manufacturing, and start a recovery scenario without losing lineage or context.
+Replace the module-led finite-schedule experience with one state-aware PPC cockpit. The planner must spend the majority of working time here: create or clone a scenario, form campaigns, optimize, manually adjust, inspect impact, compare alternatives, validate, release, monitor manufacturing, trace material and demand, and start a recovery scenario without losing schedule context.
 
 ## Product boundary
 
-The workbench owns planning from current demand and actual production state through scenario calculation, campaign formation, interactive adjustment, comparison, approval, release, execution monitoring, and recovery planning. Master configuration and integration administration remain outside it. Manufacturing actuals are authoritative execution feedback, not editable planning decoration.
+The cockpit owns planning from current demand and actual production state through scenario calculation, campaign formation, interactive adjustment, comparison, approval, release, execution monitoring, traceability, and recovery planning. Master configuration and integration administration are opened from the cockpit menu as administrative workspaces. Manufacturing actuals are authoritative execution feedback, not editable planning decoration.
 
 ## Domain objects and lifecycle
 
@@ -23,6 +23,7 @@ Scenario states are `Draft -> Solving -> NeedsAttention|Feasible -> Approved -> 
 
 - A released plan is immutable. Editing starts a scenario/replan derived from it.
 - The default launch route is the Planning Workbench. Supporting registers never displace it as the primary planning surface.
+- The application has no persistent page-navigation sidebar. A compact desktop menu bar owns global commands and administrative navigation.
 - The workbench exposes four state-aware modes: Plan, Campaigns, Execution, and Recovery. They share one selection, timeline, scenario context, and comparison baseline.
 - Resource lanes are the default hierarchy. Demand, campaign, material, and exception lenses reuse the same selection and timeline.
 - Manual moves are staged proposals. The planner sees feasibility and impact before applying them.
@@ -34,6 +35,8 @@ Scenario states are `Draft -> Solving -> NeedsAttention|Feasible -> Approved -> 
 - The installed local database and historical Plan Versions remain compatible and are not reset or reseeded.
 - Dependency lines are hidden by default. Only the selected operation chain or an explicitly requested focused chain is rendered.
 - Released-plan execution views are read-only. A planner must create a recovery scenario before changing future work.
+- Opening analysis, traceability, execution, or setup never destroys the active scenario, timeline window, selection, or comparison baseline.
+- The resource Gantt is the visual centre of gravity. Supporting surfaces overlay it temporarily or occupy collapsible, resizable docks.
 
 ## Industry benchmark
 
@@ -47,18 +50,55 @@ The workbench deliberately follows the common operating model of leading APS pro
 
 Primary references: [SAP Detailed Scheduling Planning Board](https://help.sap.com/docs/SAP_S4HANA_ON-PREMISE/f899ce30af9044299d573ea30b533f1c/644dc95360267614e10000000a174cb4.html), [SAP manual scheduling with drag-and-drop](https://help.sap.com/docs/SAP_S4HANA_ON-PREMISE/f899ce30af9044299d573ea30b533f1c/b74dc95360267614e10000000a174cb4.html), [Siemens Opcenter Scheduling Standard](https://www.siemens.com/en-us/products/opcenter/scheduling-standard/), and [DELMIA Ortems](https://www.3ds.com/products/delmia/ortems).
 
+## Desktop shell and menu bar
+
+The persistent application chrome is a single compact desktop menu bar. It contains the APS icon and these menus:
+
+- **File**: New scenario, Clone scenario, Open scenario, Save checkpoint, Import, Export, Exit.
+- **Plan**: Refresh inputs, Optimize, Repair selection, Validate, Approve, Release plan.
+- **View**: Demand queue, Inspector, Analysis dock, Baseline, Dependencies, Tight chain, Fit horizon, Fit selection, Full screen, Appearance.
+- **Analyze**: Control overview, Exceptions, Capacity, Delivery, Material, Campaign KPIs, Scenario comparison, Traceability.
+- **Execute**: Execution monitor, Record actual, Work orders, Create recovery scenario.
+- **Configure**: Demand and supply, Inventory, Plants, Resources, Process stages, Grades, Routes, Materials, Cross sections, External supply.
+- **Help**: Planner guide, Keyboard shortcuts, Diagnostics, About.
+
+Menus use accessible native button/menu semantics, arrow-key navigation, Escape dismissal, click-outside dismissal, and disabled commands with a concise reason. The menu bar does not display a global Plan Context strip, horizon, solver, trigger, or internal plan identifier.
+
+Administrative commands may replace the Gantt with an administrative workspace, but the menu bar remains fixed and `Back to schedule` restores the previous scenario, time window, and selection.
+
 ## Screen anatomy
 
-The screen contains six synchronized regions:
+The cockpit contains these synchronized regions:
 
-1. Scenario header: human scenario name, parent/released baseline, state, horizon, actuals timestamp, feasibility, save state, Compare, Save checkpoint, Optimize, Validate, Approve, and Release.
-2. Lifecycle rail: Plan, Campaigns, Execution, and Recovery. Each mode states the current job and exposes only actions legal in the scenario state.
-3. Planning queue: orders, campaigns, materials, events, and exceptions, including unscheduled and attention-required items.
-4. Toolbar: undo/redo, validation, repair scope, optimization, zoom, fit, grouping, layers, search, and focused-chain controls.
-5. Gantt canvas: sticky resource hierarchy and time axis, operations, campaign spans, downtime, frozen/stable zones, baseline ghosts, actual overlays, current-time marker, and selected dependency chain.
-6. Inspector: business identity, demand/campaign/material lineage, planned and actual timing, resource alternatives, commitment, explanation, and contextual actions.
-7. Impact dock: proposed change, hard conflicts, warnings, changed operations, delivery/material/capacity impact, KPI deltas, and Apply locally / Apply and repair / Discard.
-8. Analysis dock: Exceptions, Capacity, Delivery, Material, Campaign KPIs, and Scenario Comparison.
+1. **Scenario command strip**: business scenario name, lifecycle state, baseline, dirty/checkpoint state, Plan/Campaigns/Execution/Recovery modes, Create scenario, Undo, Redo, Optimize, Validate, Approve, and Release. Dates, counts, and objective details move into a compact scenario popover instead of consuming a permanent header row.
+2. **Gantt toolbar**: time scale, pan, Fit, grouping, search, focused-selection chip, baseline, dependencies, tight chain, queue, inspector, and analysis controls.
+3. **Resource Gantt**: sticky resource hierarchy and time axis, operations, campaign spans, downtime, frozen/stable zones, baseline ghosts, actual overlays, current-time marker, and selected dependency chain.
+4. **Overlay queue**: demand, campaigns, materials, events, and exceptions. It slides over the left side of the Gantt, has its own scroll, and never permanently consumes timeline width.
+5. **Overlay inspector**: business identity, lineage, planned and actual timing, resource alternatives, commitment, explanation, and contextual actions. It slides over the right side and closes with Escape.
+6. **Bottom analysis dock**: Control overview, Exceptions, Capacity, Delivery, Material, Campaign KPIs, Scenario Comparison, Execution Monitor, and Traceability. It is collapsed by default, resizable when open, and retains the Gantt above it.
+7. **Impact tray**: staged change, hard conflicts, warnings, changed operations, delivery/material/capacity impact, KPI deltas, and Apply locally / Apply and repair / Discard. It replaces the analysis dock only while a proposal is staged.
+
+## Gantt space and sizing rules
+
+- The menu bar is at most 32 px high. The scenario command strip and Gantt toolbar together are at most 104 px high at desktop widths.
+- The footer is removed. Version and update status move to Help > About and a non-blocking update command.
+- The Gantt receives all remaining width and height. It is never wrapped in a page container with padding or a maximum width.
+- The resource-name column defaults to 168 px and can be resized between 136 px and 280 px.
+- With eight or fewer visible resource lanes, lane height expands evenly to fill the available Gantt viewport, with a minimum of 64 px and a maximum of 104 px.
+- With more lanes than fit, each lane retains at least 64 px and the Gantt scrolls vertically.
+- Queue and inspector overlays default to 320 px and 360 px respectively, are independently resizable, and do not change the underlying time scale.
+- The analysis dock opens to 30% of the workbench height, can resize between 160 px and 60% of the workbench, and collapses to a 30 px tab rail.
+- Focused selection is always represented by a removable chip next to search. `Clear` and Escape restore the complete unfiltered schedule.
+
+## Control overview role
+
+Control Tower is renamed **Control overview** and becomes an analysis lens rather than a competing page. It summarizes the active scenario or released baseline at the level appropriate to the current mode:
+
+- Plan and Campaigns: feasibility, uncovered demand, late demand, bottlenecks, material exposure, campaign health, and changes versus baseline.
+- Execution: schedule adherence, delayed/running/held operations, resource downtime, produced quantity, and projected delivery impact.
+- Recovery: deviations that require intervention, frozen work, repair scope, and projected recovery outcome.
+
+Selecting a Control overview item filters or highlights the corresponding Gantt objects. Closing the dock preserves the selection; clearing focus restores the full schedule.
 
 ## Planner operating flow
 
@@ -134,7 +174,13 @@ Selecting demand highlights its full production chain. Selecting a material pool
 
 ## Comparison
 
-The baseline is selectable from Plan Version history. Comparison supports overlay, changed-only, and KPI summaries. Moved or resource-changed operations show their baseline ghost and exact delta. Added and removed operations remain distinguishable without relying only on color.
+The baseline is selectable from Plan Version history. Scenario comparison opens in the bottom dock and supports overlay, changed-only, and KPI summaries without navigating away from the schedule. Moved or resource-changed operations show their baseline ghost and exact delta. Added and removed operations remain distinguishable without relying only on color.
+
+## Execution monitoring and traceability
+
+Execution Monitor is a workbench mode plus a bottom-dock lens. It overlays actual state on the same released schedule and exposes deviations, work-order status, resource events, output, and projected completion. It is not a separate primary page.
+
+Traceability opens from the selected operation, campaign, order, work order, or material. The bottom dock shows upstream and downstream lineage while the related Gantt chain is highlighted. A global trace search is available under Analyze > Traceability when no object is selected.
 
 ## Release readiness
 
@@ -151,7 +197,24 @@ Plan results and applied overrides are persisted through the canonical lifecycle
 - Keep scrolling and zooming responsive for thousands of operations.
 - Support keyboard selection/actions, visible focus, tooltips, text status, and a schedule table alternative.
 - Preserve light/dark/system themes and all configured non-blue, non-cyan accents.
+- Keep dropdown menus, drawers, docks, and administrative workspaces lazy so the initial workbench does not load every supporting page.
+
+## Test and build policy
+
+- Preserve planning-engine, persistence, migration, release-readiness, and database-compatibility tests.
+- Replace brittle tests that merely search Razor or generated CSS text with behavioural state/component tests for menu commands, panel state, focus clearing, lifecycle permissions, and Gantt sizing decisions.
+- During implementation, run the smallest affected test project or named test class. Run the complete solution test suite before each pushed checkpoint.
+- Tailwind rebuilds only when Razor, CSS input, or theme-token sources are newer than the generated stylesheet. Ordinary C# changes reuse the existing stylesheet.
+- Release packaging, self-contained publishing, installer creation, asset hashing, and updater checks run only when the user explicitly requests a release.
+- A normal development checkpoint consists of incremental build, focused tests, full tests before push, database integrity check, and startup-log verification.
 
 ## Acceptance
 
-The workbench is complete when the existing database opens unchanged and a planner can create/clone a named scenario, optimize it, form and edit campaigns, inspect one schedule through every lens, stage and validate a move, see before/after impact, persist a child Plan Version, undo/redo, compare scenarios, validate/approve/release, monitor actual execution, and create a recovery scenario without exposing internal IDs or losing historical data.
+The cockpit is complete when the existing database opens unchanged and:
+
+- no persistent navigation sidebar or Plan Context header is present;
+- the menu bar reaches every supported planning, analysis, execution, traceability, and setup capability;
+- the Gantt fills the available workbench and expands a small resource set vertically;
+- queue, inspector, Control overview, comparison, execution, and traceability can be opened and closed without losing scenario or timeline context;
+- a planner can create/clone a named scenario, optimize it, form and edit campaigns, stage and validate a move, see before/after impact, persist a child Plan Version, undo/redo, compare scenarios, validate/approve/release, monitor actual execution, and create a recovery scenario;
+- no internal IDs are exposed and no historical or seeded data is lost.
