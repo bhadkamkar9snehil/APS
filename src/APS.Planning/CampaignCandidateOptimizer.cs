@@ -43,6 +43,10 @@ internal sealed record CampaignCompositionOption(
 /// every legal boundary in canonical due-date order. Each prospective campaign is technically evaluated
 /// before it can enter the partition: furnace heat envelopes, route/resource availability and effective
 /// grade-transition rules can therefore reject or price a composition before campaign identity is fixed.
+///
+/// Replanning also contributes a baseline-preserving candidate and an explicit quantity movement cost.
+/// That makes campaign stability a real objective rather than assuming downstream time-fence stability
+/// somehow preserves upstream PO grouping. Hard feasibility and service remain dominant.
 /// </summary>
 internal static class CampaignCandidateOptimizer
 {
@@ -106,6 +110,20 @@ internal static class CampaignCandidateOptimizer
     {
         yield return BuildDynamicPartition(requirements, policy, weights, technicalEvaluator);
 
+        if (policy.BaselineCampaignAllocations is { Count: > 0 })
+        {
+            var baseline = BuildBaselineComposition(requirements, policy);
+            if (baseline.Count > 0)
+            {
+                yield return Evaluate(
+                    baseline,
+                    policy,
+                    weights,
+                    "BASELINE_STABILITY",
+                    technicalEvaluator);
+            }
+        }
+
         foreach (var windowDays in ReferenceCohortWindowDays)
         {
             yield return Evaluate(
@@ -138,12 +156,15 @@ internal static class CampaignCandidateOptimizer
                 if (states[start] is null) continue;
 
                 var candidate = new CampaignCandidate(atoms[start..end]);
+                // Baseline matching is a composition-level one-to-one comparison; applying it to an
+                // isolated DP segment would let several segments all claim the same old campaign.
                 var one = Evaluate(
                     new[] { candidate },
                     policy,
                     weights,
                     "DYNAMIC_SEGMENT",
-                    technicalEvaluator);
+                    technicalEvaluator,
+                    includeStability: false);
                 if (!one.Score.IsTechnicallyFeasible) continue;
 
                 var predecessor = states[start]!;
@@ -199,6 +220,98 @@ internal static class CampaignCandidateOptimizer
             }
         }
         return result;
+    }
+
+    private static IReadOnlyList<CampaignCandidate> BuildBaselineComposition(
+        IReadOnlyList<CampaignRequirement> requirements,
+        CampaignPlanningPolicy policy)
+    {
+        var baseline = policy.BaselineCampaignAllocations ?? Array.Empty<BaselineCampaignAllocation>();
+        var requirementById = requirements.ToDictionary(x => x.ProductionOrderId);
+        var remaining = requirements.ToDictionary(x => x.ProductionOrderId, x => x.QuantityMt);
+        var maximum = Math.Max(policy.MaximumCampaignQuantityMt, 0.0001m);
+        var result = new List<CampaignCandidate>();
+
+        var baselineGroups = baseline
+            .Where(x => x.PlannedQuantityMt > 0m && requirementById.ContainsKey(x.ProductionOrderId))
+            .GroupBy(x => x.CampaignId)
+            .Select(group => new
+            {
+                CampaignId = group.Key,
+                Allocations = group
+                    .GroupBy(x => x.ProductionOrderId)
+                    .Select(x => new BaselineCampaignAllocation(group.Key, x.Key, x.Sum(y => y.PlannedQuantityMt)))
+                    .ToArray()
+            })
+            .OrderBy(x => x.Allocations
+                .Select(a => requirementById[a.ProductionOrderId].RequiredDate)
+                .DefaultIfEmpty(DateTime.MaxValue)
+                .Min())
+            .ThenBy(x => x.CampaignId)
+            .ToArray();
+
+        foreach (var group in baselineGroups)
+        {
+            var slices = new List<CampaignRequirementSlice>();
+            foreach (var allocation in group.Allocations
+                         .OrderBy(x => requirementById[x.ProductionOrderId].RequiredDate)
+                         .ThenByDescending(x => requirementById[x.ProductionOrderId].Priority)
+                         .ThenBy(x => requirementById[x.ProductionOrderId].ProductionOrderNumber, StringComparer.Ordinal))
+            {
+                var requirement = requirementById[allocation.ProductionOrderId];
+                var quantity = Math.Min(remaining[requirement.ProductionOrderId], allocation.PlannedQuantityMt);
+                if (quantity <= 0m) continue;
+                slices.Add(new CampaignRequirementSlice(requirement, quantity));
+                remaining[requirement.ProductionOrderId] -= quantity;
+            }
+            PackSlices(slices, maximum, result);
+        }
+
+        var residual = new List<CampaignRequirementSlice>();
+        foreach (var requirement in CanonicalOrder(requirements))
+        {
+            var quantity = remaining[requirement.ProductionOrderId];
+            if (quantity > 0m) residual.Add(new CampaignRequirementSlice(requirement, quantity));
+        }
+        PackSlices(residual, maximum, result);
+        return result;
+    }
+
+    private static void PackSlices(
+        IReadOnlyCollection<CampaignRequirementSlice> slices,
+        decimal maximum,
+        ICollection<CampaignCandidate> result)
+    {
+        var current = new List<CampaignRequirementSlice>();
+        var currentQuantity = 0m;
+
+        void Flush()
+        {
+            if (current.Count == 0) return;
+            result.Add(new CampaignCandidate(current.ToArray()));
+            current = [];
+            currentQuantity = 0m;
+        }
+
+        foreach (var source in slices)
+        {
+            var remaining = source.QuantityMt;
+            while (remaining > 0m)
+            {
+                var capacity = maximum - currentQuantity;
+                if (capacity <= 0m)
+                {
+                    Flush();
+                    capacity = maximum;
+                }
+
+                var quantity = Math.Min(remaining, capacity);
+                current.Add(new CampaignRequirementSlice(source.Requirement, quantity));
+                currentQuantity += quantity;
+                remaining -= quantity;
+            }
+        }
+        Flush();
     }
 
     private static string StrategyCode(int windowDays) =>
@@ -258,7 +371,8 @@ internal static class CampaignCandidateOptimizer
         CampaignPlanningPolicy policy,
         CampaignObjectiveWeights weights,
         string strategyCode,
-        Func<CampaignCandidate, CampaignTechnicalEvaluation>? technicalEvaluator)
+        Func<CampaignCandidate, CampaignTechnicalEvaluation>? technicalEvaluator,
+        bool includeStability = true)
     {
         var earlyProductionMtDays = 0m;
         var serviceRiskMtDays = 0m;
@@ -299,9 +413,6 @@ internal static class CampaignCandidateOptimizer
 
             if (!technical.HasFurnaceEvaluation)
             {
-                // Compatibility/demo callers without physical furnace masters retain the historical
-                // nominal-heat residual objective. A non-null technical evaluator by itself must not
-                // erase this economic signal.
                 var heats = Math.Ceiling(campaign.QuantityMt / heatSize);
                 residualHeatMt += Math.Max(0m, heats * heatSize - campaign.QuantityMt);
             }
@@ -326,6 +437,10 @@ internal static class CampaignCandidateOptimizer
             }
         }
 
+        var stabilityChangedMt = includeStability && technicallyFeasible
+            ? CampaignStabilityChangedQuantity(evaluated, policy.BaselineCampaignAllocations)
+            : 0m;
+
         var totalCost = technicallyFeasible
             ? serviceRiskMtDays * weights.ServiceRiskPerMtDay +
               earlyProductionMtDays * weights.EarlyProductionPerMtDay +
@@ -333,7 +448,8 @@ internal static class CampaignCandidateOptimizer
               residualHeatMt * weights.ResidualHeatPerMt +
               belowMinimumShortfallMt * weights.BelowMinimumCampaignPerMt +
               transitionCost * weights.GradeTransitionCostWeight +
-              heatTargetDeviation * weights.HeatTargetDeviationPerMt
+              heatTargetDeviation * weights.HeatTargetDeviationPerMt +
+              stabilityChangedMt * weights.CampaignStabilityChangePerMt
             : decimal.MaxValue / 1000m;
 
         return new CampaignCompositionOption(
@@ -349,10 +465,132 @@ internal static class CampaignCandidateOptimizer
             {
                 GradeTransitionCost = decimal.Round(transitionCost, 4),
                 HeatTargetDeviationMt = decimal.Round(heatTargetDeviation, 4),
+                CampaignStabilityChangedMt = decimal.Round(stabilityChangedMt, 4),
                 IsTechnicallyFeasible = technicallyFeasible,
                 TechnicalReason = technicalReason,
                 GradeSequence = gradeSequence.ToArray()
             });
+    }
+
+    private static decimal CampaignStabilityChangedQuantity(
+        IReadOnlyList<CampaignCandidate> campaigns,
+        IReadOnlyCollection<BaselineCampaignAllocation>? baselineAllocations)
+    {
+        if (baselineAllocations is not { Count: > 0 } || campaigns.Count == 0) return 0m;
+
+        var currentOrderIds = campaigns
+            .SelectMany(x => x.Slices)
+            .Select(x => x.Requirement.ProductionOrderId)
+            .ToHashSet();
+        var baselineGroups = baselineAllocations
+            .Where(x => x.PlannedQuantityMt > 0m && currentOrderIds.Contains(x.ProductionOrderId))
+            .GroupBy(x => x.CampaignId)
+            .Select(group => group
+                .GroupBy(x => x.ProductionOrderId)
+                .ToDictionary(x => x.Key, x => x.Sum(y => y.PlannedQuantityMt)))
+            .Where(x => x.Count > 0)
+            .ToArray();
+        if (baselineGroups.Length == 0) return 0m;
+
+        var currentGroups = campaigns
+            .Select(campaign => campaign.Slices
+                .GroupBy(x => x.Requirement.ProductionOrderId)
+                .ToDictionary(x => x.Key, x => x.Sum(y => y.QuantityMt)))
+            .ToArray();
+
+        var currentTotals = currentGroups
+            .SelectMany(x => x)
+            .GroupBy(x => x.Key)
+            .ToDictionary(x => x.Key, x => x.Sum(y => y.Value));
+        var baselineTotals = baselineGroups
+            .SelectMany(x => x)
+            .GroupBy(x => x.Key)
+            .ToDictionary(x => x.Key, x => x.Sum(y => y.Value));
+        var comparable = currentTotals.Keys
+            .Where(baselineTotals.ContainsKey)
+            .Sum(id => Math.Min(currentTotals[id], baselineTotals[id]));
+        if (comparable <= 0m) return 0m;
+
+        var overlaps = new decimal[currentGroups.Length, baselineGroups.Length];
+        for (var current = 0; current < currentGroups.Length; current++)
+        for (var baseline = 0; baseline < baselineGroups.Length; baseline++)
+        {
+            overlaps[current, baseline] = currentGroups[current]
+                .Where(x => baselineGroups[baseline].TryGetValue(x.Key, out _))
+                .Sum(x => Math.Min(x.Value, baselineGroups[baseline][x.Key]));
+        }
+
+        var preserved = MaximumOneToOneOverlap(overlaps);
+        return decimal.Round(Math.Max(0m, comparable - preserved), 4, MidpointRounding.AwayFromZero);
+    }
+
+    private static decimal MaximumOneToOneOverlap(decimal[,] source)
+    {
+        var rows = source.GetLength(0);
+        var columns = source.GetLength(1);
+        if (rows == 0 || columns == 0) return 0m;
+
+        decimal[,] matrix;
+        if (columns <= rows)
+        {
+            matrix = source;
+        }
+        else
+        {
+            matrix = new decimal[columns, rows];
+            for (var r = 0; r < rows; r++)
+            for (var c = 0; c < columns; c++)
+                matrix[c, r] = source[r, c];
+            (rows, columns) = (columns, rows);
+        }
+
+        // Exact matching is cheap for normal campaign counts. At very large cardinality use a
+        // deterministic maximum-edge greedy fallback rather than letting a stability term dominate
+        // campaign-planning runtime.
+        if (columns <= 12)
+        {
+            var memo = new Dictionary<(int Row, int UsedMask), decimal>();
+            return Solve(0, 0);
+
+            decimal Solve(int row, int usedMask)
+            {
+                if (row >= rows) return 0m;
+                if (memo.TryGetValue((row, usedMask), out var cached)) return cached;
+
+                var best = Solve(row + 1, usedMask);
+                for (var column = 0; column < columns; column++)
+                {
+                    var bit = 1 << column;
+                    if ((usedMask & bit) != 0) continue;
+                    best = Math.Max(best, matrix[row, column] + Solve(row + 1, usedMask | bit));
+                }
+                memo[(row, usedMask)] = best;
+                return best;
+            }
+        }
+
+        var edges = new List<(decimal Quantity, int Row, int Column)>();
+        for (var row = 0; row < rows; row++)
+        for (var column = 0; column < columns; column++)
+            if (matrix[row, column] > 0m)
+                edges.Add((matrix[row, column], row, column));
+
+        var usedRows = new HashSet<int>();
+        var usedColumns = new HashSet<int>();
+        var total = 0m;
+        foreach (var edge in edges
+                     .OrderByDescending(x => x.Quantity)
+                     .ThenBy(x => x.Row)
+                     .ThenBy(x => x.Column))
+        {
+            if (!usedRows.Add(edge.Row) || !usedColumns.Add(edge.Column))
+            {
+                usedRows.Remove(edge.Row);
+                continue;
+            }
+            total += edge.Quantity;
+        }
+        return total;
     }
 
     private static CampaignRequirement[] CanonicalOrder(IReadOnlyList<CampaignRequirement> requirements) =>
