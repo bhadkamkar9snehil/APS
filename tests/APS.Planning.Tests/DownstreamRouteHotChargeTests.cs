@@ -23,6 +23,22 @@ public sealed class DownstreamRouteHotChargeTests
     }
 
     [Fact]
+    public void Order_can_forbid_direct_hot_charge_and_force_reheat_even_when_feed_is_hot()
+    {
+        var result = Run(
+            PlanningInventoryUse.CommittedInternalProductionFeed,
+            ChargeMode.HotDirect,
+            forbidHotCharge: true);
+
+        Assert.Contains(result.SchedulingTasks, x =>
+            x.ProcessOperationType == ProcessOperationType.Reheat &&
+            x.TaskType == FiniteScheduleTaskType.Reheating);
+        Assert.Contains(result.RouteOperationDecisions!, x =>
+            x.ProcessOperationType == ProcessOperationType.Reheat &&
+            x.Outcome == RouteOperationOutcome.Included);
+    }
+
+    [Fact]
     public void Committed_feed_without_known_hot_state_uses_optional_reheat()
     {
         var result = Run(PlanningInventoryUse.CommittedInternalProductionFeed, thermalState: null);
@@ -44,7 +60,10 @@ public sealed class DownstreamRouteHotChargeTests
         Assert.Contains(result.SchedulingTasks, x => x.SourceEntityId == reheat.Id && x.TaskType == FiniteScheduleTaskType.Reheating);
     }
 
-    private static ProductionStructurePlanningResult Run(PlanningInventoryUse use, ChargeMode? thermalState)
+    private static ProductionStructurePlanningResult Run(
+        PlanningInventoryUse use,
+        ChargeMode? thermalState,
+        bool forbidHotCharge = false)
     {
         var po = new ProductionOrder
         {
@@ -59,6 +78,15 @@ public sealed class DownstreamRouteHotChargeTests
             RemainingQuantityMt = 50m,
             RequiredDate = new DateTime(2026, 8, 20, 0, 0, 0, DateTimeKind.Utc)
         };
+        if (forbidHotCharge)
+        {
+            po.Requirement = new ProductionOrderRequirement
+            {
+                ProductionOrderId = po.Id,
+                ProductionOrder = po,
+                ForbidHotCharge = true
+            };
+        }
 
         var plan = new RollingPlan
         {
