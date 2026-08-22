@@ -6,9 +6,6 @@ public sealed class PlannerWorkspaceState
 {
     public Guid? CurrentPlanVersionId { get; private set; }
     public Guid? BaselinePlanVersionId { get; private set; }
-    public PlannerEntityRef? SelectedEntity { get; private set; }
-    public DateTime? WindowStartUtc { get; private set; }
-    public DateTime? WindowEndUtc { get; private set; }
 
     public event Action? Changed;
 
@@ -17,37 +14,12 @@ public sealed class PlannerWorkspaceState
         if (CurrentPlanVersionId == planVersionId && BaselinePlanVersionId == baselinePlanVersionId) return;
         CurrentPlanVersionId = planVersionId;
         BaselinePlanVersionId = baselinePlanVersionId;
-        NotifyChanged();
+        Changed?.Invoke();
     }
 
-    public void SetBaseline(Guid? baselinePlanVersionId)
-    {
-        if (BaselinePlanVersionId == baselinePlanVersionId) return;
-        BaselinePlanVersionId = baselinePlanVersionId;
-        NotifyChanged();
-    }
-
-    public void Select(PlannerEntityRef entity)
-    {
-        if (SelectedEntity == entity) return;
-        SelectedEntity = entity;
-        NotifyChanged();
-    }
-
-    public void ClearSelection()
-    {
-        if (SelectedEntity is null) return;
-        SelectedEntity = null;
-        NotifyChanged();
-    }
-
-    public void SetWindow(DateTime? startUtc, DateTime? endUtc)
-    {
-        if (WindowStartUtc == startUtc && WindowEndUtc == endUtc) return;
-        WindowStartUtc = startUtc;
-        WindowEndUtc = endUtc;
-        NotifyChanged();
-    }
-
-    private void NotifyChanged() => Changed?.Invoke();
+    // Compatibility shims for the finite-schedule page. They deliberately carry no shared state;
+    // schedule viewport and focused entity are page-local concerns.
+    public void SetWindow(DateTime? _, DateTime? __) { }
+    public void Select(PlannerEntityRef _) { }
+    public void ClearSelection() { }
 }

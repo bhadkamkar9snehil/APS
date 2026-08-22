@@ -177,11 +177,11 @@ else
                         <div class="grid grid-cols-3 gap-2">
                             @foreach (var demand in selectedWorkOrder.DemandReferences)
                             {
-                                <button type="button" class="rounded border border-border px-2 py-1.5 text-left text-xs hover:bg-surface-hover" @onclick="() => SelectProductionOrder(demand)">
+                                <div class="rounded border border-border px-2 py-1.5 text-left text-xs">
                                     <span class="rounded px-1 @(demand.DemandSource == DemandSourceType.MakeToOrder ? "bg-info-soft text-info" : "bg-surface-inset text-secondary")">@(demand.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</span>
                                     <strong class="ml-1">@demand.ProductionOrderNumber</strong>
                                     <div class="text-muted">@(demand.SalesOrderNumber is null ? "Stock replenishment" : $"SO {demand.SalesOrderNumber} / {demand.SalesOrderItemNumber}")</div>
-                                </button>
+                                </div>
                             }
                         </div>
                     }
@@ -244,7 +244,6 @@ else
         actualComment = null;
         actualError = null;
         selectedOperation = null;
-        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.WorkOrder, wo.WorkOrderId, wo.WorkOrderNumber));
     }
 
     private async Task SaveActualAsync()
@@ -281,7 +280,6 @@ else
         operationActualQuantity = null;
         operationActualComment = null;
         operationActualError = null;
-        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Operation, op.OperationSnapshotId, op.PlanningKey));
     }
 
     private async Task SaveOperationActualAsync()
@@ -310,9 +308,6 @@ else
             StateHasChanged();
         }
     }
-
-    private void SelectProductionOrder(WorkOrderDemandRefView demand) =>
-        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.ProductionOrder, demand.ProductionOrderId, demand.ProductionOrderNumber));
 
     private static string Display(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
 
