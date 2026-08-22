@@ -185,6 +185,10 @@
                         {
                             var operation = SelectedOperation;
                             var detail = SelectedDetail;
+                            var baseline = SelectedBaseline;
+                            var bindingEvidence = SelectedBindingEvidence;
+                            var materialPools = SelectedMaterialPools;
+                            var materialReservations = SelectedMaterialReservations;
                             <section class="aps-page p-3">
                                 <div class="flex justify-between gap-3">
                                     <div><h2 class="aps-text-heading">@operation.ProcessOperationType · @operation.GradeCode</h2><p class="aps-text-caption">@operation.CrossSectionCode · @operation.QuantityMt.ToString("0.#") MT</p></div>
@@ -221,6 +225,55 @@
                                         <dt class="aps-text-caption">Predecessors</dt><dd class="aps-text-body">@(detail?.PredecessorPlanningKeys.Count ?? 0)</dd>
                                     </dl>
                                 </div>
+
+                                @if (workbench.Baseline is not null || baseline is not null)
+                                {
+                                    <div class="mt-2 rounded-control bg-surface-inset p-2">
+                                        <div class="aps-text-label mb-1.5">Baseline change</div>
+                                        @if (baseline is null)
+                                        {
+                                            <p class="aps-text-body"><strong>Added</strong> · no placement exists in the persisted baseline.</p>
+                                        }
+                                        else
+                                        {
+                                            <dl class="grid grid-cols-[80px_1fr] gap-y-1">
+                                                <dt class="aps-text-caption">Change</dt><dd class="aps-text-body">@BaselineDeltaLabel(operation, baseline)</dd>
+                                                <dt class="aps-text-caption">Resource</dt><dd class="aps-text-body">@baseline.ResourceCode → @operation.ResourceCode</dd>
+                                                <dt class="aps-text-caption">Start delta</dt><dd class="aps-text-figure text-xs">@FormatMovement((int)Math.Round((operation.StartUtc - baseline.StartUtc).TotalMinutes))</dd>
+                                                <dt class="aps-text-caption">Baseline</dt><dd class="aps-text-body">@baseline.StartUtc.ToString("dd MMM HH:mm")–@baseline.EndUtc.ToString("HH:mm")</dd>
+                                            </dl>
+                                        }
+                                    </div>
+                                }
+
+                                <div class="mt-2 rounded-control bg-surface-inset p-2">
+                                    <div class="aps-text-label mb-1.5">Scheduling basis</div>
+                                    <dl class="grid grid-cols-[90px_1fr] gap-y-1">
+                                        <dt class="aps-text-caption">Resource mode</dt><dd class="aps-text-body">@(SelectedLane?.SchedulingMode.ToString() ?? "Not returned")</dd>
+                                        <dt class="aps-text-caption">Eligibility</dt><dd class="aps-text-body">@EligibleResources(operation, detail).Count authoritative resource option(s)</dd>
+                                        <dt class="aps-text-caption">Commitment</dt><dd class="aps-text-body">@(detail?.CommitmentState.ToString() ?? "Not returned")</dd>
+                                        <dt class="aps-text-caption">Route links</dt><dd class="aps-text-body">@workbench.DependencyLinks.Count(x => x.SuccessorPlanningKey.Equals(operation.PlanningKey, StringComparison.OrdinalIgnoreCase)) predecessor link(s)</dd>
+                                    </dl>
+                                    @if (bindingEvidence.Count > 0)
+                                    {
+                                        <ul class="mt-2 space-y-1 text-[11px]">@foreach (var binding in bindingEvidence) { <li><strong>@binding.Cause:</strong> @binding.Description @(binding.TotalSlackMinutes is { } slack ? $"· {slack} min slack" : string.Empty)</li> }</ul>
+                                    }
+                                </div>
+
+                                @if (materialPools.Count > 0 || materialReservations.Count > 0)
+                                {
+                                    <div class="mt-2 rounded-control bg-surface-inset p-2">
+                                        <div class="aps-text-label mb-1.5">Material context</div>
+                                        @foreach (var pool in materialPools)
+                                        {
+                                            <div class="mb-1 flex justify-between gap-2 text-[11px]"><span>@pool.MaterialPoolKey · @(pool.LocationCode ?? "No location")</span><strong>@pool.ClosingBalanceMt.ToString("0.#") MT closing</strong></div>
+                                        }
+                                        @foreach (var reservation in materialReservations)
+                                        {
+                                            <div class="mb-1 flex justify-between gap-2 text-[11px]"><span>@reservation.ProductionOrderNumber · @reservation.InventoryStage</span><strong>@reservation.QuantityMt.ToString("0.#") MT · @reservation.Status · @reservation.AvailableFromUtc.ToString("dd MMM HH:mm")</strong></div>
+                                        }
+                                    </div>
+                                }
                             </section>
 
                             @* Its own elevated card, not a continuation of the read-only details above - this is
@@ -292,6 +345,17 @@
 
     private ScheduledProcessOperationView? SelectedOperation => FindOperation(state.SelectedPlanningKey);
     private PlanningOperationWorkbenchDetail? SelectedDetail => FindDetail(state.SelectedPlanningKey);
+    private ScheduleResourceLaneView? SelectedLane => SelectedOperation is { } operation ? workbench?.Schedule.ResourceLanes.FirstOrDefault(x => x.ResourceId == operation.ResourceId) : null;
+    private PlanningBaselinePlacementView? SelectedBaseline => state.SelectedPlanningKey is null ? null : workbench?.BaselinePlacements.FirstOrDefault(x => x.PlanningKey.Equals(state.SelectedPlanningKey, StringComparison.OrdinalIgnoreCase));
+    private IReadOnlyList<PlanningBindingEvidenceView> SelectedBindingEvidence => state.SelectedPlanningKey is null
+        ? Array.Empty<PlanningBindingEvidenceView>()
+        : (workbench?.BindingEvidence ?? Array.Empty<PlanningBindingEvidenceView>()).Where(x => x.PlanningKey.Equals(state.SelectedPlanningKey, StringComparison.OrdinalIgnoreCase)).ToArray();
+    private IReadOnlyList<MaterialFlowPoolView> SelectedMaterialPools => SelectedOperation is not { } operation
+        ? Array.Empty<MaterialFlowPoolView>()
+        : workbench?.Material.Pools.Where(x => x.GradeCode.Equals(operation.GradeCode, StringComparison.OrdinalIgnoreCase) && x.CrossSectionCode.Equals(operation.CrossSectionCode, StringComparison.OrdinalIgnoreCase)).ToArray() ?? Array.Empty<MaterialFlowPoolView>();
+    private IReadOnlyList<MaterialFlowReservationView> SelectedMaterialReservations => SelectedDetail is not { } detail
+        ? Array.Empty<MaterialFlowReservationView>()
+        : workbench?.Material.Reservations.Where(x => x.ProductionOrderNumber is not null && detail.ProductionOrderNumbers.Contains(x.ProductionOrderNumber, StringComparer.OrdinalIgnoreCase)).ToArray() ?? Array.Empty<MaterialFlowReservationView>();
     private bool CanUndo => state.CanUndo;
     private bool CanRedo => state.CanRedo;
     private bool CanMoveSelectedOperation => state.CanEditSchedule && SelectedDetail?.ExecutionStatus is not OperationExecutionStatus.Completed and not OperationExecutionStatus.Running;
@@ -560,6 +624,8 @@
     private static string ActualValueClass(DateTime? value) => value.HasValue ? "aps-text-body" : "aps-text-caption italic";
     private static string FindingClass(PlanningConstraintSeverity value) => value switch { PlanningConstraintSeverity.Blocker => "bg-danger-soft text-danger", PlanningConstraintSeverity.Warning => "bg-warning-soft text-warning", _ => "bg-info-soft text-info" };
     private static string FormatMovement(int minutes) => minutes == 0 ? "No time change" : $"{(minutes > 0 ? "+" : "")}{minutes / 60d:0.##} h";
+    private static string BaselineDeltaLabel(ScheduledProcessOperationView operation, PlanningBaselinePlacementView baseline) =>
+        operation.ResourceId != baseline.ResourceId ? "Resource changed" : operation.StartUtc != baseline.StartUtc || operation.EndUtc != baseline.EndUtc ? "Timing changed" : "Unchanged";
     private static string ModeLabel(PlanningWorkbenchMode value) => value switch { PlanningWorkbenchMode.Campaigns => "Campaigns", PlanningWorkbenchMode.Execution => "Execution", PlanningWorkbenchMode.Recovery => "Recovery", _ => "Plan" };
     private static string ZoomLabel(PlanningWorkbenchZoom value) => value switch { PlanningWorkbenchZoom.Detail => "30 m", PlanningWorkbenchZoom.Shift => "8 h", PlanningWorkbenchZoom.Day => "1 d", PlanningWorkbenchZoom.ThreeDays => "3 d", PlanningWorkbenchZoom.Week => "7 d", PlanningWorkbenchZoom.TwoWeeks => "2 w", PlanningWorkbenchZoom.Month => "1 mo", _ => "Fit" };
     private static string SnapLabel(GanttSnapMode value) => value switch { GanttSnapMode.ShiftBoundary => "Shift", GanttSnapMode.Hour => "1 h", GanttSnapMode.ThirtyMinutes => "30 m", GanttSnapMode.FifteenMinutes => "15 m", GanttSnapMode.FiveMinutes => "5 m", _ => "Free" };

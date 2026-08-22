@@ -65,6 +65,21 @@ public sealed class PlanningWorkbenchMarkupTests
     }
 
     [Fact]
+    public void Inspector_exposes_baseline_scheduling_and_material_context_from_workbench_truth()
+    {
+        var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+
+        Assert.Contains("Baseline change", page);
+        Assert.Contains("SelectedBaseline", page);
+        Assert.Contains("Scheduling basis", page);
+        Assert.Contains("SelectedBindingEvidence", page);
+        Assert.Contains("Material context", page);
+        Assert.Contains("SelectedMaterialPools", page);
+        Assert.Contains("SelectedMaterialReservations", page);
+        Assert.DoesNotContain("material available assumed", page, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Released_baseline_offers_a_real_working_scenario_transition()
     {
         var rail = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/WorkbenchLifecycleRail.razor"));
