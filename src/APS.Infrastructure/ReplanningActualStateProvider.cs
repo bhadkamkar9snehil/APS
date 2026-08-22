@@ -174,10 +174,12 @@ public sealed class ReplanningActualStateProvider(
         IReadOnlySet<string> releasedPlanningKeys,
         CancellationToken cancellationToken)
     {
-        var state = await db.PlanVersionStates
+        var ledgerJson = await db.PlanVersionStates
             .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.PlanVersionId == baselinePlanVersionId, cancellationToken);
-        var ledger = DeserializeLedger(state?.MaterialLedgerJson)
+            .Where(x => x.PlanVersionId == baselinePlanVersionId)
+            .Select(x => x.MaterialLedgerJson)
+            .SingleOrDefaultAsync(cancellationToken);
+        var ledger = DeserializeLedger(ledgerJson)
             .Where(x =>
                 x.EventType == MaterialBalanceEventType.PlannedProductionReceipt &&
                 x.QuantityDeltaMt > 0m &&
@@ -187,16 +189,18 @@ public sealed class ReplanningActualStateProvider(
         if (ledger.Length == 0) return Array.Empty<CommittedMaterialSupply>();
 
         var latestHeatByKey = latestHeatEvents.ToDictionary(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase);
+        var ccmByHeatId = operations
+            .Where(x => x.ProcessOperationType == ProcessOperationType.Ccm)
+            .GroupBy(x => x.SourceEntityId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderBy(x => x.StartUtc).First());
         var result = new List<CommittedMaterialSupply>();
 
         foreach (var heatGroup in ledger.GroupBy(x => x.CampaignHeatId!.Value))
         {
             var heatId = heatGroup.Key;
-            var ccm = operations
-                .Where(x => x.SourceEntityId == heatId && x.ProcessOperationType == ProcessOperationType.Ccm)
-                .OrderBy(x => x.StartUtc)
-                .FirstOrDefault();
-            if (ccm is null) continue;
+            if (!ccmByHeatId.TryGetValue(heatId, out var ccm)) continue;
             if (ccm.ExecutionStatus is OperationExecutionStatus.Completed or OperationExecutionStatus.Cancelled) continue;
 
             var isCommitted =
