@@ -79,13 +79,16 @@
 
     function initialize() {
         dispose();
-        const preference = apply(load());
+        apply(load());
         mediaHandler = () => {
             const current = load();
             if (current.mode === 0) apply(current);
         };
         media.addEventListener("change", mediaHandler);
-        return preference;
+    }
+
+    function setMode(mode) {
+        apply({ ...load(), mode });
     }
 
     function dispose() {
@@ -93,5 +96,5 @@
         mediaHandler = null;
     }
 
-    window.apsTheme = { apply, bootstrap, dispose, initialize, load };
+    window.apsTheme = { apply, bootstrap, dispose, initialize, load, setMode };
 })();
