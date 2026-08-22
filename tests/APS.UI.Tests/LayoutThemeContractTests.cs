@@ -14,22 +14,22 @@ public sealed class LayoutThemeContractTests
     }
 
     [Fact]
-    public void Appearance_popover_exposes_all_modes_accents_and_reset()
+    public void Desktop_menu_exposes_supported_appearance_modes()
     {
-        var razor = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/AppearancePopover.razor"));
+        var menu = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/DesktopMenuBar.razor"));
 
-        foreach (var label in new[] { "System", "Light", "Dark", "Amber", "Violet", "Forest", "Brick", "Plum", "Olive", "Custom", "Reset" })
-            Assert.Contains(label, razor);
+        foreach (var label in new[] { "System appearance", "Light appearance", "Dark appearance" })
+            Assert.Contains(label, menu);
+        Assert.DoesNotContain("AppearancePopover", menu);
     }
 
     [Fact]
-    public void Active_navigation_uses_complete_surface_selection()
+    public void Desktop_menu_links_use_framework_navigation()
     {
-        var razor = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/NavItem.razor"));
+        var link = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/MenuLink.razor"));
 
-        Assert.Contains("bg-accent-soft", razor);
-        Assert.Contains("outline", razor);
-        Assert.DoesNotContain("border-l", razor);
+        Assert.Contains("<NavLink", link);
+        Assert.DoesNotContain("border-l", link);
     }
 
     [Fact]
