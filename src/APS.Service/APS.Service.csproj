@@ -6,7 +6,6 @@
     <ProjectReference Include="..\APS.Application\APS.Application.csproj" />
     <ProjectReference Include="..\APS.Planning\APS.Planning.csproj" />
     <ProjectReference Include="..\APS.Infrastructure\APS.Infrastructure.csproj" />
-    <ProjectReference Include="..\APS.Integrations\APS.Integrations.csproj" />
     <!--
       APS.UI is a host-agnostic Razor class library rooted at Routes.razor. APS.DesktopHost renders
       it through a WPF BlazorWebView and remains the product; serving the same components over

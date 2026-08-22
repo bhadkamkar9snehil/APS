@@ -7,14 +7,9 @@
     <ProjectReference Include="..\APS.Application\APS.Application.csproj" />
     <ProjectReference Include="..\APS.Planning\APS.Planning.csproj" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.0" />
-    <!-- SQLite is the active APS provider - a self-contained desktop app should not require a
-         separately-administered SQL Server instance. SqlServer stays referenced only because it is
-         the intended provider for a future MES integration surface, not because anything uses it today. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.10" />
     <!-- Pin past the transitive SQLitePCLRaw.lib.e_sqlite3 2.1.11 pulled in by EF Core Sqlite 10.0.10, which has a known high-severity advisory (GHSA-2m69-gcr7-jv3q). -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.10" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.10">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

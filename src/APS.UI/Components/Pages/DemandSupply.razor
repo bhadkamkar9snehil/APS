@@ -79,7 +79,7 @@ else
             <tbody>
                 @foreach (var row in view.Rows)
                 {
-                    <tr class="cursor-pointer border-b border-border last:border-0 hover:bg-surface-hover" @onclick="() => SelectProductionOrder(row)">
+                    <tr class="border-b border-border last:border-0">
                         <td class="px-3 py-2">
                             <span class="mr-1 rounded px-1.5 py-0.5 text-xs font-medium @(row.DemandSource == DemandSourceType.MakeToOrder ? "bg-info-soft text-info" : "bg-surface-inset text-secondary")">@(row.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</span>
                             <strong>@row.ProductionOrderNumber</strong>
@@ -230,12 +230,6 @@ else
             StateHasChanged();
         }
     }
-
-    private void SelectProductionOrder(DemandSupplyRowView row) =>
-        WorkspaceState.Select(new PlannerEntityRef(
-            PlannerEntityType.ProductionOrder,
-            row.ProductionOrderId,
-            row.ProductionOrderNumber));
 
     private RenderFragment CoverageSegment(decimal quantity, decimal total, string cssClass) => builder =>
     {
