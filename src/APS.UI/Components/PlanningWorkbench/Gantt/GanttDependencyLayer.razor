@@ -8,9 +8,12 @@
         {
             var elbow = Math.Max(edge.StartXPercent + .4d, (edge.StartXPercent + edge.EndXPercent) / 2d);
             <path d="M @(edge.StartXPercent) @(edge.StartYpx) H @elbow V @(edge.EndYpx) H @(edge.EndXPercent)"
-                  fill="none" stroke="var(--aps-border-strong)" stroke-width="1.25" stroke-dasharray="3 3" vector-effect="non-scaling-stroke" />
+                  fill="none" stroke="var(--aps-border-strong)" stroke-width="1.25" stroke-dasharray="3 3" vector-effect="non-scaling-stroke">
+                <title>@edge.Type · @edge.Category · current lag @edge.CurrentLagMinutes min · minimum @(edge.MinimumLagMinutes?.ToString() ?? "not returned") min · headroom @(edge.HeadroomMinutes?.ToString() ?? "not returned") min</title>
+            </path>
         }
     </svg>
+    <span class="sr-only">@string.Join("; ", Scene.DependencyLines.Select(edge => $"{edge.PredecessorPlanningKey} to {edge.SuccessorPlanningKey}, {edge.Type}, {edge.Category}, current lag {edge.CurrentLagMinutes} minutes, headroom {(edge.HeadroomMinutes?.ToString() ?? "not returned")} minutes"))</span>
 }
 
 @code {

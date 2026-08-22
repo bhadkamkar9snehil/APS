@@ -119,6 +119,37 @@ public sealed class GanttSceneTests
         Assert.Equal(1, span.OperationCount);
     }
 
+    [Fact]
+    public void Focused_dependency_geometry_survives_row_virtualization_and_preserves_lag_semantics()
+    {
+        var lanes = new[] { Lane(0, Start.AddHours(1)), Lane(1, Start.AddHours(2)), Lane(2, Start.AddHours(3)) };
+        var link = new PlanningDependencyLinkView(
+            lanes[0].Operations.Single().OperationSnapshotId,
+            lanes[0].Operations.Single().PlanningKey,
+            lanes[2].Operations.Single().OperationSnapshotId,
+            lanes[2].Operations.Single().PlanningKey,
+            PlanningDependencyType.FinishStart,
+            PlanningDependencyCategory.Routing,
+            30,
+            75);
+        var state = State();
+        state.SelectOperation(lanes[0].Operations.Single().PlanningKey);
+        state.ToggleDependencies();
+        state.Viewport.SetVisibleRowRange(1, 1, overscan: 0);
+
+        var scene = GanttModels.BuildScene(Workbench(lanes, dependencies: [link]), state);
+
+        Assert.Single(scene.Rows);
+        var edge = Assert.Single(scene.DependencyLines);
+        Assert.Equal(PlanningDependencyType.FinishStart, edge.Type);
+        Assert.Equal(PlanningDependencyCategory.Routing, edge.Category);
+        Assert.Equal(30, edge.MinimumLagMinutes);
+        Assert.Equal(75, edge.CurrentLagMinutes);
+        Assert.Equal(45, edge.HeadroomMinutes);
+        Assert.Equal(.5d * state.GanttRowHeightPx, edge.StartYpx);
+        Assert.Equal(2.5d * state.GanttRowHeightPx, edge.EndYpx);
+    }
+
     private static GanttOperationModel FindOperation(GanttScene scene, ScheduleResourceLaneView lane) =>
         scene.Rows.SelectMany(x => x.Operations).Single(x => x.Operation.PlanningKey == lane.Operations.Single().PlanningKey);
 
@@ -182,7 +213,8 @@ public sealed class GanttSceneTests
     private static PlanningWorkbenchView Workbench(
         IReadOnlyCollection<ScheduleResourceLaneView> lanes,
         IReadOnlyCollection<PlanningBaselinePlacementView>? baselines = null,
-        IReadOnlyCollection<PlanningOperationWorkbenchDetail>? details = null)
+        IReadOnlyCollection<PlanningOperationWorkbenchDetail>? details = null,
+        IReadOnlyCollection<PlanningDependencyLinkView>? dependencies = null)
     {
         var plan = new PlanContextView(
             Guid.NewGuid(),
@@ -225,7 +257,7 @@ public sealed class GanttSceneTests
             new PlanningQueueView(0, 0, 0, 0, 0, 0, 0),
             Array.Empty<PlanningWorkbenchException>(),
             details ?? Array.Empty<PlanningOperationWorkbenchDetail>(),
-            Array.Empty<PlanningDependencyLinkView>(),
+            dependencies ?? Array.Empty<PlanningDependencyLinkView>(),
             Array.Empty<PlanningResourceCalendarIntervalView>(),
             baselines ?? Array.Empty<PlanningBaselinePlacementView>(),
             Array.Empty<PlanningCapacityBucketView>());

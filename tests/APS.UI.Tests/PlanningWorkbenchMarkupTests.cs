@@ -97,6 +97,10 @@ public sealed class PlanningWorkbenchMarkupTests
         Assert.Contains("GanttDependencyLayer", gantt);
         Assert.Contains("State.SelectedPlanningKey", layer);
         Assert.DoesNotContain("@foreach (var edge in DependencyLines())", gantt);
+        Assert.Contains("edge.Type", layer);
+        Assert.Contains("edge.CurrentLagMinutes", layer);
+        Assert.Contains("edge.HeadroomMinutes", layer);
+        Assert.Contains("<title>", layer);
     }
 
     [Fact]

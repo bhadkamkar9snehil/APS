@@ -79,7 +79,12 @@ public sealed record GanttDependencyLineModel(
     double StartXPercent,
     double StartYpx,
     double EndXPercent,
-    double EndYpx);
+    double EndYpx,
+    PlanningDependencyType Type,
+    PlanningDependencyCategory Category,
+    int? MinimumLagMinutes,
+    int CurrentLagMinutes,
+    int? HeadroomMinutes);
 
 public static class GanttModels
 {
@@ -132,7 +137,7 @@ public static class GanttModels
             .Take(mountedEnd - mountedStart)
             .Select(item => BuildRow(workbench, state, item.lane, item.index, details, allOperations, baselineByKey, baselineByResource, calendarsByResource))
             .ToArray();
-        var dependencyLines = BuildFocusedDependencyLines(workbench.DependencyLinks, rows, state);
+        var dependencyLines = BuildFocusedDependencyLines(workbench.DependencyLinks, orderedLanes, state);
 
         return new GanttScene(
             rows,
@@ -290,15 +295,15 @@ public static class GanttModels
 
     private static IReadOnlyList<GanttDependencyLineModel> BuildFocusedDependencyLines(
         IReadOnlyCollection<PlanningDependencyLinkView> links,
-        IReadOnlyList<GanttRowModel> rows,
+        IReadOnlyList<ScheduleResourceLaneView> orderedLanes,
         PlanningWorkbenchState state)
     {
         if (!state.ShowDependencies || string.IsNullOrWhiteSpace(state.SelectedPlanningKey))
             return Array.Empty<GanttDependencyLineModel>();
 
-        var placements = rows
-            .SelectMany(row => row.Operations.Select(operation => (operation, rowIndex: row.SceneIndex)))
-            .ToDictionary(x => x.operation.Operation.PlanningKey, StringComparer.OrdinalIgnoreCase);
+        var placements = orderedLanes
+            .SelectMany((lane, rowIndex) => lane.Operations.Select(operation => (operation, rowIndex)))
+            .ToDictionary(x => x.operation.PlanningKey, StringComparer.OrdinalIgnoreCase);
         if (!placements.ContainsKey(state.SelectedPlanningKey)) return Array.Empty<GanttDependencyLineModel>();
 
         var focusedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { state.SelectedPlanningKey };
@@ -328,10 +333,15 @@ public static class GanttModels
                 return new GanttDependencyLineModel(
                     x.PredecessorPlanningKey,
                     x.SuccessorPlanningKey,
-                    predecessor.operation.LeftPercent + predecessor.operation.WidthPercent,
+                    Percent(state, predecessor.operation.EndUtc),
                     (predecessor.rowIndex + .5d) * rowHeight,
-                    successor.operation.LeftPercent,
-                    (successor.rowIndex + .5d) * rowHeight);
+                    Percent(state, successor.operation.StartUtc),
+                    (successor.rowIndex + .5d) * rowHeight,
+                    x.Type,
+                    x.Category,
+                    x.MinimumLagMinutes,
+                    x.CurrentLagMinutes,
+                    x.MinimumLagMinutes is { } minimum ? x.CurrentLagMinutes - minimum : null);
             })
             .ToArray();
     }
