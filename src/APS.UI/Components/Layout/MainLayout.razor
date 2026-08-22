@@ -45,7 +45,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        Theme.Changed += OnThemeChanged;
         Navigation.LocationChanged += OnLocationChanged;
         try
         {
@@ -61,16 +60,11 @@
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs args) => _ = InvokeAsync(StateHasChanged);
-    private void OnThemeChanged() => _ = InvokeAsync(StateHasChanged);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender) await Theme.InitializeAsync();
     }
 
-    public void Dispose()
-    {
-        Theme.Changed -= OnThemeChanged;
-        Navigation.LocationChanged -= OnLocationChanged;
-    }
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
 }
