@@ -16,6 +16,7 @@ namespace APS.DesktopHost;
 
 public partial class App : System.Windows.Application
 {
+    private const string UpdateRepositoryUrl = "https://github.com/bhadkamkar9snehil/APS";
     private readonly IHost _host;
     private readonly LocalApplicationPaths _paths;
     private readonly ILogger<App> _log;
@@ -32,7 +33,7 @@ public partial class App : System.Windows.Application
                 services.AddWpfBlazorWebView();
                 services.AddApsInfrastructure(context.Configuration);
                 services.AddSingleton<VelopackUpdateService>(sp => new VelopackUpdateService(
-                    new UpdateManager(new GithubSource(UpdateSettings.RepositoryUrl, accessToken: null, prerelease: false)),
+                    new UpdateManager(new GithubSource(UpdateRepositoryUrl, accessToken: null, prerelease: false)),
                     () => Dispatcher.BeginInvoke(new Action(() => Shutdown())),
                     sp.GetRequiredService<ILogger<VelopackUpdateService>>()));
                 services.AddSingleton<IUpdateService>(sp => sp.GetRequiredService<VelopackUpdateService>());
