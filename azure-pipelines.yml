@@ -1,0 +1,84 @@
+trigger:
+  batch: true
+  branches:
+    include:
+      - '*'
+
+pr:
+  autoCancel: true
+  branches:
+    include:
+      - '*'
+
+variables:
+  buildConfiguration: Release
+  testResultsDirectory: '$(Agent.TempDirectory)\APS\TestResults'
+  publishDirectory: '$(Agent.TempDirectory)\APS\DesktopPublish'
+  diagnosticsDirectory: '$(Agent.TempDirectory)\APS\Diagnostics'
+
+jobs:
+  - job: windows_ci
+    displayName: APS Windows build, tests & desktop publish
+    timeoutInMinutes: 45
+    workspace:
+      clean: all
+    pool:
+      name: Default
+      demands:
+        - Agent.Name -equals EOS
+
+    steps:
+      - checkout: self
+        clean: true
+        fetchDepth: 0
+        persistCredentials: false
+
+      - powershell: |
+          Write-Host "Repository: $(Build.Repository.Name)"
+          Write-Host "Branch:     $(Build.SourceBranch)"
+          Write-Host "Commit:     $(Build.SourceVersion)"
+          Write-Host "Agent:      $(Agent.Name) / $(Agent.MachineName)"
+          git --version
+        displayName: Windows agent / checkout preflight
+
+      - task: UseDotNet@2
+        displayName: Use .NET SDK from global.json
+        inputs:
+          packageType: sdk
+          useGlobalJson: true
+          workingDirectory: $(Build.SourcesDirectory)
+
+      - powershell: |
+          ./build/verify.ps1 `
+            -Configuration "$(buildConfiguration)" `
+            -ResultsDirectory "$(testResultsDirectory)" `
+            -PublishDirectory "$(publishDirectory)" `
+            -DiagnosticsDirectory "$(diagnosticsDirectory)"
+        displayName: Build solution, run tests and publish-smoke desktop
+
+      - task: PublishTestResults@2
+        displayName: Publish APS test results
+        condition: succeededOrFailed()
+        inputs:
+          testResultsFormat: VSTest
+          testResultsFiles: '*.trx'
+          searchFolder: '$(testResultsDirectory)'
+          mergeTestResults: true
+          failTaskOnFailedTests: true
+          testRunTitle: 'APS Windows tests · $(Build.SourceBranchName)'
+
+      - task: PublishPipelineArtifact@1
+        displayName: Publish APS desktop smoke artifact
+        condition: always()
+        inputs:
+          targetPath: '$(publishDirectory)'
+          artifact: aps-desktop-publish
+          publishLocation: pipeline
+
+      - task: PublishPipelineArtifact@1
+        displayName: Publish APS build diagnostics
+        condition: always()
+        inputs:
+          targetPath: '$(diagnosticsDirectory)'
+          artifact: aps-build-diagnostics
+          publishLocation: pipeline

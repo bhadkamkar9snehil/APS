@@ -3,15 +3,17 @@
     Builds, tests, and packages APS Planner (APS.DesktopHost) as a Velopack installer release.
 
 .DESCRIPTION
-    This is the project's release pipeline, run manually instead of a hosted CI service (the
-    repository's explicit policy is not to use GitHub Actions/CI for APS verification). It does,
-    in order:
+    This is the project's explicit release-packaging path. Continuous verification runs on the
+    shared self-hosted Windows Azure DevOps agent, but release packaging remains manual so a normal
+    feature branch or CI run cannot accidentally manufacture a distributable release.
 
-      1. dotnet test    — runs the test suite, stops the script on any failure.
-      2. dotnet publish  — publishes APS.DesktopHost for win-x64, self-contained, with
-                            PublishReadyToRun (already set in the csproj).
-      3. vpk pack        — wraps that publish output into a Velopack release: a Setup.exe installer
-                            plus update metadata, written to build/Releases/<version>/.
+    The release script does, in order:
+
+      1. dotnet test    — runs the planning and UI test suites, stops on any failure.
+      2. dotnet publish — publishes APS.DesktopHost for win-x64, self-contained, with
+                           PublishReadyToRun (already set in the csproj).
+      3. vpk pack       — wraps that publish output into a Velopack release: a Setup.exe installer
+                           plus update metadata, written to build/Releases/<version>/.
 
 .PARAMETER Version
     Release version (e.g. "1.2.0"). If omitted, the script reads <Version> from
@@ -49,7 +51,10 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $desktopHostProject = Join-Path $repoRoot "src/APS.DesktopHost/APS.DesktopHost.csproj"
-$testProject = Join-Path $repoRoot "tests/APS.Planning.Tests/APS.Planning.Tests.csproj"
+$testProjects = @(
+    (Join-Path $repoRoot "tests/APS.Planning.Tests/APS.Planning.Tests.csproj"),
+    (Join-Path $repoRoot "tests/APS.UI.Tests/APS.UI.Tests.csproj")
+)
 $appIcon = Join-Path $repoRoot "src/APS.DesktopHost/Assets/app-icon.ico"
 $publishDir = Join-Path $repoRoot "build/publish/win-x64"
 
@@ -72,10 +77,12 @@ $releasesDir = Join-Path $repoRoot "build/Releases/$Version"
 
 # --- Step 1: tests ---------------------------------------------------------
 if (-not $SkipTests) {
-    Write-Host "==> dotnet test $testProject"
-    dotnet test $testProject --configuration $Configuration
-    if ($LASTEXITCODE -ne 0) {
-        throw "Tests failed (exit code $LASTEXITCODE). Aborting release."
+    foreach ($testProject in $testProjects) {
+        Write-Host "==> dotnet test $testProject"
+        dotnet test $testProject --configuration $Configuration
+        if ($LASTEXITCODE -ne 0) {
+            throw "Tests failed for '$testProject' (exit code $LASTEXITCODE). Aborting release."
+        }
     }
 }
 else {
