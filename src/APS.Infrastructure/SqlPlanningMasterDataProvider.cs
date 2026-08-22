@@ -20,6 +20,7 @@ public sealed class SqlPlanningMasterDataProvider(ApsDbContext db) : IPlanningMa
             .Where(x => x.IsActive)
             .Include(x => x.Chemistry)
             .Include(x => x.ProcessRequirements)
+            .AsSplitQuery()
             .OrderBy(x => x.GradeCode)
             .ToListAsync(cancellationToken);
 
