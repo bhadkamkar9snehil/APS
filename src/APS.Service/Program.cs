@@ -95,9 +95,7 @@ app.MapPost("/api/demand/sales-orders/reconcile",
         }
         catch (ValidationException ex)
         {
-            return Results.ValidationProblem(ex.Errors
-                .GroupBy(x => x.PropertyName)
-                .ToDictionary(x => x.Key, x => x.Select(y => y.ErrorMessage).ToArray()));
+            return ValidationProblem(ex);
         }
     });
 
@@ -125,114 +123,58 @@ plannerApi.MapGet("/versions/{planVersionId:guid}/context",
         return context is null ? Results.NotFound() : Results.Ok(context);
     });
 
-plannerApi.MapGet("/control-tower",
-    async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
-    {
-        var view = await planner.GetControlTowerAsync(null, cancellationToken);
-        return view is null ? Results.NotFound() : Results.Ok(view);
-    });
-
-plannerApi.MapGet("/control-tower/{planVersionId:guid}",
-    async (Guid planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+plannerApi.MapGet("/control-tower/{planVersionId:guid?}",
+    async (Guid? planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
     {
         var view = await planner.GetControlTowerAsync(planVersionId, cancellationToken);
         return view is null ? Results.NotFound() : Results.Ok(view);
     });
 
-plannerApi.MapGet("/demand-supply",
-    async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
-    {
-        var view = await planner.GetDemandSupplyAsync(null, cancellationToken);
-        return view is null ? Results.NotFound() : Results.Ok(view);
-    });
-
-plannerApi.MapGet("/demand-supply/{planVersionId:guid}",
-    async (Guid planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+plannerApi.MapGet("/demand-supply/{planVersionId:guid?}",
+    async (Guid? planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
     {
         var view = await planner.GetDemandSupplyAsync(planVersionId, cancellationToken);
         return view is null ? Results.NotFound() : Results.Ok(view);
     });
 
-plannerApi.MapGet("/campaigns",
-    async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
-    {
-        var view = await planner.GetCampaignStudioAsync(null, cancellationToken);
-        return view is null ? Results.NotFound() : Results.Ok(view);
-    });
-
-plannerApi.MapGet("/campaigns/{planVersionId:guid}",
-    async (Guid planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+plannerApi.MapGet("/campaigns/{planVersionId:guid?}",
+    async (Guid? planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
     {
         var view = await planner.GetCampaignStudioAsync(planVersionId, cancellationToken);
         return view is null ? Results.NotFound() : Results.Ok(view);
     });
 
-plannerApi.MapGet("/steelmaking-casting",
-    async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
-    {
-        var view = await planner.GetSteelmakingCastingAsync(null, cancellationToken);
-        return view is null ? Results.NotFound() : Results.Ok(view);
-    });
-
-plannerApi.MapGet("/steelmaking-casting/{planVersionId:guid}",
-    async (Guid planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+plannerApi.MapGet("/steelmaking-casting/{planVersionId:guid?}",
+    async (Guid? planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
     {
         var view = await planner.GetSteelmakingCastingAsync(planVersionId, cancellationToken);
         return view is null ? Results.NotFound() : Results.Ok(view);
     });
 
-plannerApi.MapGet("/schedule",
-    async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
-    {
-        var view = await planner.GetFiniteScheduleAsync(null, cancellationToken);
-        return view is null ? Results.NotFound() : Results.Ok(view);
-    });
-
-plannerApi.MapGet("/schedule/{planVersionId:guid}",
-    async (Guid planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+plannerApi.MapGet("/schedule/{planVersionId:guid?}",
+    async (Guid? planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
     {
         var view = await planner.GetFiniteScheduleAsync(planVersionId, cancellationToken);
         return view is null ? Results.NotFound() : Results.Ok(view);
     });
 
-plannerApi.MapGet("/workbench",
-    async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
-    {
-        var view = await planner.GetPlanningWorkbenchAsync(null, null, cancellationToken);
-        return view is null ? Results.NotFound() : Results.Ok(view);
-    });
-
-plannerApi.MapGet("/workbench/{planVersionId:guid}",
-    async (Guid planVersionId, Guid? baselinePlanVersionId,
+plannerApi.MapGet("/workbench/{planVersionId:guid?}",
+    async (Guid? planVersionId, Guid? baselinePlanVersionId,
         IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
     {
         var view = await planner.GetPlanningWorkbenchAsync(planVersionId, baselinePlanVersionId, cancellationToken);
         return view is null ? Results.NotFound() : Results.Ok(view);
     });
 
-plannerApi.MapGet("/work-orders",
-    async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
-    {
-        var view = await planner.GetWorkOrdersAsync(null, cancellationToken);
-        return view is null ? Results.NotFound() : Results.Ok(view);
-    });
-
-plannerApi.MapGet("/work-orders/{planVersionId:guid}",
-    async (Guid planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+plannerApi.MapGet("/work-orders/{planVersionId:guid?}",
+    async (Guid? planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
     {
         var view = await planner.GetWorkOrdersAsync(planVersionId, cancellationToken);
         return view is null ? Results.NotFound() : Results.Ok(view);
     });
 
-plannerApi.MapGet("/material-flow",
-    async (IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
-    {
-        var view = await planner.GetMaterialFlowAsync(null, cancellationToken);
-        return view is null ? Results.NotFound() : Results.Ok(view);
-    });
-
-plannerApi.MapGet("/material-flow/{planVersionId:guid}",
-    async (Guid planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
+plannerApi.MapGet("/material-flow/{planVersionId:guid?}",
+    async (Guid? planVersionId, IPlannerWorkspaceQueryService planner, CancellationToken cancellationToken) =>
     {
         var view = await planner.GetMaterialFlowAsync(planVersionId, cancellationToken);
         return view is null ? Results.NotFound() : Results.Ok(view);
@@ -257,16 +199,11 @@ async Task<IResult> CalculateProductionAsync(
     }
     catch (ValidationException ex)
     {
-        return Results.ValidationProblem(ex.Errors
-            .GroupBy(x => x.PropertyName)
-            .ToDictionary(x => x.Key, x => x.Select(y => y.ErrorMessage).ToArray()));
+        return ValidationProblem(ex);
     }
     catch (PlanningConfigurationException ex)
     {
-        return Results.Problem(
-            statusCode: StatusCodes.Status503ServiceUnavailable,
-            title: "APS production planning configuration is incomplete",
-            detail: string.Join(" ", ex.Issues));
+        return PlanningConfigurationProblem(ex);
     }
 }
 
@@ -288,9 +225,7 @@ app.MapPost("/api/planning/replan/{baselinePlanVersionId:guid}",
         }
         catch (ValidationException ex)
         {
-            return Results.ValidationProblem(ex.Errors
-                .GroupBy(x => x.PropertyName)
-                .ToDictionary(x => x.Key, x => x.Select(y => y.ErrorMessage).ToArray()));
+            return ValidationProblem(ex);
         }
         catch (KeyNotFoundException ex)
         {
@@ -298,10 +233,7 @@ app.MapPost("/api/planning/replan/{baselinePlanVersionId:guid}",
         }
         catch (PlanningConfigurationException ex)
         {
-            return Results.Problem(
-                statusCode: StatusCodes.Status503ServiceUnavailable,
-                title: "APS production planning configuration is incomplete",
-                detail: string.Join(" ", ex.Issues));
+            return PlanningConfigurationProblem(ex);
         }
     });
 
@@ -445,6 +377,17 @@ app.MapGet("/api/traceability/material-lots/{materialLotId:guid}",
     });
 
 app.Run();
+
+static IResult ValidationProblem(ValidationException ex) =>
+    Results.ValidationProblem(ex.Errors
+        .GroupBy(x => x.PropertyName)
+        .ToDictionary(x => x.Key, x => x.Select(y => y.ErrorMessage).ToArray()));
+
+static IResult PlanningConfigurationProblem(PlanningConfigurationException ex) =>
+    Results.Problem(
+        statusCode: StatusCodes.Status503ServiceUnavailable,
+        title: "APS production planning configuration is incomplete",
+        detail: string.Join(" ", ex.Issues));
 
 public sealed record MtsProductionOrderRequest(
     StockPolicy Policy,
