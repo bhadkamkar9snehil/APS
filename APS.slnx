@@ -3,7 +3,6 @@
   <Project Path="src/APS.Application/APS.Application.csproj" />
   <Project Path="src/APS.Planning/APS.Planning.csproj" />
   <Project Path="src/APS.Infrastructure/APS.Infrastructure.csproj" />
-  <Project Path="src/APS.Integrations/APS.Integrations.csproj" />
   <Project Path="src/APS.UI/APS.UI.csproj" />
   <Project Path="src/APS.Service/APS.Service.csproj" />
   <Project Path="src/APS.DesktopHost/APS.DesktopHost.csproj" />
