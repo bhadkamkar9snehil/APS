@@ -34,11 +34,7 @@ public sealed class LocalApplicationPaths
     /// </summary>
     public string LogFilePattern { get; }
 
-    public void EnsureDirectories()
-    {
-        Directory.CreateDirectory(DataDirectory);
-        Directory.CreateDirectory(LogDirectory);
-    }
+    public void EnsureDirectories() => Directory.CreateDirectory(LogDirectory);
 
     public static LocalApplicationPaths ForCurrentUser()
     {
