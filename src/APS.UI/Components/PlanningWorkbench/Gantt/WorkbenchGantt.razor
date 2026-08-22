@@ -14,6 +14,12 @@
             }
         </div>
     </div>
+    @if (Scene.HiddenCriticalExceptionCount > 0)
+    {
+        <div class="shrink-0 border-b border-danger bg-danger-soft px-3 py-1 text-[10px] font-semibold text-danger" role="status">
+            @Scene.HiddenCriticalExceptionCount critical exception@(Scene.HiddenCriticalExceptionCount == 1 ? " is" : "s are") outside the filtered resource view.
+        </div>
+    }
     @if (SelectedBindings.Count > 0)
     {
         <div class="shrink-0 border-b border-border bg-warning-soft px-3 py-1.5 text-[11px]" aria-label="Selected operation binding evidence">
@@ -148,7 +154,7 @@
         {
             var duration = operation.EndUtc - operation.StartUtc;
             var padding = duration > TimeSpan.Zero ? duration : TimeSpan.FromHours(1);
-            State.FocusRange(operation.StartUtc - padding, operation.EndUtc + padding);
+            State.FitRange(operation.StartUtc - padding, operation.EndUtc + padding);
         }
         CloseContextMenu();
     }

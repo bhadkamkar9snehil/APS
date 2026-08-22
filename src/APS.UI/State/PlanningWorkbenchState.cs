@@ -338,6 +338,8 @@ public sealed class PlanningWorkbenchState
         Notify();
     }
     public void FocusRange(DateTime startUtc, DateTime endUtc) { Viewport.FocusRange(startUtc, endUtc); Notify(); }
+    public void FitRange(DateTime startUtc, DateTime endUtc) { Viewport.Fit(startUtc, endUtc); Notify(); }
+    public void FitAll() { Viewport.FitContent(); Notify(); }
     public void FocusCapacity(Guid resourceId, DateTime startUtc, DateTime endUtc)
     {
         CapacityFocus = new GanttCapacityFocus(resourceId, startUtc, endUtc);

@@ -3,7 +3,7 @@
     <div class="grid h-full" style="grid-template-columns:var(--aps-gantt-grid-width) minmax(760px, 1fr)">
         <div class="border-r border-border bg-surface-raised">
             <div class="flex h-8 items-center justify-between border-b border-border px-3 text-[11px]">
-                <strong>Resource load</strong><span class="text-muted">@ScaleLabel</span>
+                <strong>Resource load</strong><span class="text-muted">@ScaleLabel · @CapacityBasisLabel</span>
             </div>
             <div class="space-y-1 p-2 text-[10px] text-secondary">
                 <span class="mr-3 inline-flex items-center gap-1"><i class="h-2 w-2 bg-accent"></i>Processing</span>
@@ -46,10 +46,24 @@
 
     private IReadOnlyList<GanttCapacitySegmentModel> Segments => GanttCapacityModels.Build(Workbench.CapacityBuckets, State);
     private string ScaleLabel => GanttCapacityModels.ScaleFor(State).ToString();
+    private string CapacityBasisLabel => Segments.Select(x => x.Basis).Distinct().ToArray() switch
+    {
+        [] => "basis unavailable",
+        [var basis] => BasisLabel(basis),
+        var bases => string.Join(" + ", bases.Select(BasisLabel))
+    };
+    private static string BasisLabel(PlanningCapacityBasis basis) => basis switch
+    {
+        PlanningCapacityBasis.MachineTime => "machine minutes",
+        PlanningCapacityBasis.Slots => "slots",
+        PlanningCapacityBasis.MassEquivalentMt => "mass equivalent",
+        PlanningCapacityBasis.Positions => "positions",
+        _ => basis.ToString()
+    };
     private string SegmentLabel(GanttCapacitySegmentModel segment)
     {
         var resource = Workbench.Schedule.ResourceLanes.FirstOrDefault(x => x.ResourceId == segment.ResourceId)?.ResourceCode ?? segment.ResourceId.ToString();
-        return $"{resource} · {segment.StartUtc:dd MMM HH:mm}–{segment.EndUtc:HH:mm} · {segment.OccupancyPercent:0.#}% occupied" +
+        return $"{resource} · {segment.StartUtc:dd MMM HH:mm}–{segment.EndUtc:HH:mm} · {segment.OccupancyPercent:0.#}% occupied · basis {BasisLabel(segment.Basis)}" +
                (segment.IsOverloaded ? " · Overload" : string.Empty) +
                (segment.UnavailableMinutes > 0 ? $" · {segment.UnavailableMinutes:0.#} downtime min" : string.Empty);
     }

@@ -92,6 +92,26 @@ public sealed class GanttSceneTests
     }
 
     [Fact]
+    public void Filtered_scene_warns_when_a_critical_resource_exception_is_hidden()
+    {
+        var visible = HierarchicalLane(1, "SMS", "MELT", "EAF");
+        var hidden = HierarchicalLane(2, "SMS", "MELT", "EAF");
+        var exception = new PlanningWorkbenchException(
+            "RESOURCE-DOWN",
+            PlanningWorkbenchExceptionKind.ResourceUnavailable,
+            PlanningWorkbenchExceptionSeverity.Critical,
+            "Resource unavailable",
+            "Capacity is lost",
+            new PlannerEntityRef(PlannerEntityType.Resource, hidden.ResourceId, hidden.ResourceCode));
+        var state = State();
+        state.SetSearch(visible.ResourceCode);
+
+        var scene = GanttModels.BuildScene(Workbench([visible, hidden], exceptions: [exception]), state);
+
+        Assert.Equal(1, scene.HiddenCriticalExceptionCount);
+    }
+
+    [Fact]
     public void Resource_changed_baseline_stays_on_its_original_readonly_lane()
     {
         var currentLane = Lane(1, Start.AddHours(2));

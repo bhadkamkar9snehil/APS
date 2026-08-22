@@ -546,4 +546,19 @@ input::placeholder, textarea::placeholder { color: var(--aps-text-muted); }
 
 @media (forced-colors: active) {
   :focus-visible { outline: 2px solid Highlight; }
+  .aps-operation {
+    forced-color-adjust: auto;
+    color: CanvasText;
+    background: Canvas;
+    border: 1px solid CanvasText;
+  }
+  .aps-operation[data-selected="true"] { outline: 3px double Highlight; outline-offset: 2px; }
+  .aps-operation[data-frozen="true"] { border: 2px dashed GrayText; }
+  .aps-operation[data-execution-status="Running"] { outline: 2px solid LinkText; }
+  .aps-operation[data-execution-status="Completed"] { border-block-end: 4px double GrayText; opacity: 1; }
+  .aps-operation[data-execution-status="Held"] { outline: 3px dotted CanvasText; }
+  .aps-operation[data-baseline-change="TimeMoved"] { border-block-end: 3px dashed CanvasText; }
+  .aps-operation[data-baseline-change="ResourceChanged"] { border-block-end: 3px double CanvasText; }
+  .aps-operation[data-baseline-change="Added"] { border-block-end: 3px solid CanvasText; }
+  .aps-baseline { forced-color-adjust: auto; border: 1px dashed GrayText; background: Canvas; }
 }

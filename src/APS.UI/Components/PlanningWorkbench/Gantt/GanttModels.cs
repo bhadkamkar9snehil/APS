@@ -18,6 +18,7 @@ public sealed record GanttScene(
     public IReadOnlyList<GanttResourceGroupModel> ResourceGroups { get; init; } = Array.Empty<GanttResourceGroupModel>();
     public int ResourceCount { get; init; }
     public int TotalResourceCount { get; init; }
+    public int HiddenCriticalExceptionCount { get; init; }
 }
 
 public enum GanttResourceGroupLevel
@@ -186,8 +187,18 @@ public static class GanttModels
             ResourceGroups = resourceGroups,
             ResourceCount = orderedLanes.Length,
             TotalResourceCount = workbench.Schedule.ResourceLanes.Select(x => x.ResourceId)
-                .Concat(workbench.BaselinePlacements.Select(x => x.ResourceId)).Distinct().Count()
+                .Concat(workbench.BaselinePlacements.Select(x => x.ResourceId)).Distinct().Count(),
+            HiddenCriticalExceptionCount = HiddenCriticalExceptionCount(workbench, orderedLanes)
         };
+    }
+
+    private static int HiddenCriticalExceptionCount(PlanningWorkbenchView workbench, IReadOnlyCollection<ScheduleResourceLaneView> visibleLanes)
+    {
+        var visibleResources = visibleLanes.Select(x => x.ResourceId).ToHashSet();
+        var visibleOperations = visibleLanes.SelectMany(x => x.Operations).Select(x => x.OperationSnapshotId).ToHashSet();
+        return workbench.Exceptions.Count(x => x.Severity == PlanningWorkbenchExceptionSeverity.Critical && x.Entity is not null &&
+            ((x.Entity.EntityType == PlannerEntityType.Resource && !visibleResources.Contains(x.Entity.EntityId)) ||
+             (x.Entity.EntityType == PlannerEntityType.Operation && !visibleOperations.Contains(x.Entity.EntityId))));
     }
 
     private static GanttHierarchyLayout BuildHierarchy(
@@ -404,9 +415,7 @@ public static class GanttModels
                     detail?.HeatSequenceNumber is { } heatSequence
                         ? $"H{heatSequence:00}"
                         : operation.ProcessOperationType.ToString().ToUpperInvariant(),
-                    $"{OperationLabel(state.Mode, operation, detail)}, {operation.ProcessOperationType}, " +
-                    $"{operation.ResourceCode}, {operation.StartUtc:dd MMM HH:mm} to {operation.EndUtc:dd MMM HH:mm}, " +
-                    $"{operation.QuantityMt:0.##} metric tonnes, {execution}, {accessibleCommitment}, {accessibleEligibility}",
+                    AccessibleOperationName(workbench, state, operation, detail, execution, accessibleCommitment, accessibleEligibility),
                     eligibleResourceCount == 1,
                     RunningProgress(workbench.Plan.ReferenceTimeUtc, operation),
                     BaselineChange(operation, baselineByKey.GetValueOrDefault(operation.PlanningKey)))
@@ -460,6 +469,45 @@ public static class GanttModels
             utilization,
             lane.Operations.Where(x => x.StartUtc >= workbench.Plan.ReferenceTimeUtc).OrderBy(x => x.StartUtc).FirstOrDefault(),
             ExceptionCount(workbench, lane));
+    }
+
+    private static string AccessibleOperationName(
+        PlanningWorkbenchView workbench,
+        PlanningWorkbenchState state,
+        ScheduledProcessOperationView operation,
+        PlanningOperationWorkbenchDetail? detail,
+        OperationExecutionStatus execution,
+        string commitment,
+        string eligibility)
+    {
+        var parts = new List<string>
+        {
+            OperationLabel(state.Mode, operation, detail),
+            $"ID {operation.PlanningKey}",
+            operation.ProcessOperationType.ToString(),
+            $"resource {operation.ResourceCode}",
+            $"planned {operation.StartUtc:dd MMM HH:mm} to {operation.EndUtc:dd MMM HH:mm} UTC, {(operation.EndUtc - operation.StartUtc).TotalMinutes:0} minutes",
+            $"{operation.QuantityMt:0.##} metric tonnes",
+            $"grade {operation.GradeCode}, section {operation.CrossSectionCode}",
+            $"execution {execution}",
+            $"commitment {commitment}",
+            eligibility
+        };
+        if (!string.IsNullOrWhiteSpace(detail?.CampaignNumber)) parts.Add($"campaign {detail.CampaignNumber}");
+        if (detail?.HeatSequenceNumber is { } heat) parts.Add($"heat {heat}");
+        if (detail?.ProductionOrderNumbers.Count > 0)
+        {
+            parts.Add($"orders {string.Join(" / ", detail.ProductionOrderNumbers)}");
+            var due = workbench.Demand.Rows.Where(x => detail.ProductionOrderNumbers.Contains(x.ProductionOrderNumber, StringComparer.OrdinalIgnoreCase)).Select(x => x.RequiredDate).Distinct().OrderBy(x => x).ToArray();
+            if (due.Length > 0) parts.Add($"due {string.Join(" / ", due.Select(x => x.ToString("dd MMM HH:mm")))} UTC");
+        }
+        var binding = (workbench.BindingEvidence ?? Array.Empty<PlanningBindingEvidenceView>()).Where(x => x.PlanningKey.Equals(operation.PlanningKey, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (binding.Length > 0) parts.Add($"binding {string.Join(" / ", binding.Select(x => $"{x.Cause}, slack {(x.TotalSlackMinutes.HasValue ? $"{x.TotalSlackMinutes} minutes" : "not returned")}: {x.Description}"))}");
+        var warnings = workbench.Exceptions.Where(x => x.Entity is not null &&
+            ((x.Entity.EntityType == PlannerEntityType.Operation && x.Entity.EntityId == operation.OperationSnapshotId) ||
+             (x.Entity.EntityType == PlannerEntityType.Resource && x.Entity.EntityId == operation.ResourceId))).Select(x => $"{x.Severity}: {x.Title}").ToArray();
+        if (warnings.Length > 0) parts.Add($"warnings {string.Join(" / ", warnings)}");
+        return string.Join(", ", parts);
     }
 
     private static IReadOnlyList<GanttDependencyLineModel> BuildFocusedDependencyLines(

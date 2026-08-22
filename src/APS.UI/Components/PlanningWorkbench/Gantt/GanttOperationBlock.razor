@@ -9,6 +9,7 @@
         data-eligible-resources="@EligibleResourceIds"
         data-drag-protected="@((!CanEdit || Model.ExecutionStatus is OperationExecutionStatus.Running or OperationExecutionStatus.Completed).ToString().ToLowerInvariant())"
         data-frozen="@(IsFrozen.ToString().ToLowerInvariant())"
+        data-execution-status="@Model.ExecutionStatus"
         data-snap-mode="@State.Viewport.SnapMode"
         data-baseline-change="@Model.BaselineChange"
         data-selected="@(Selected.ToString().ToLowerInvariant())"

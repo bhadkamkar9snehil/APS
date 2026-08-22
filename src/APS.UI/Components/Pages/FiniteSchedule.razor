@@ -92,7 +92,7 @@
                     <input value="@state.SearchText" @oninput="SearchChanged" class="min-w-0 flex-1 rounded-control border border-border bg-surface-raised px-3 py-1.5 text-xs" placeholder="Find order, campaign, grade or resource" />
                     @if (HasFocus)
                     {
-                        <button type="button" class="rounded-control border border-border px-2 text-xs text-accent" @onclick="ClearFocus">Clear</button>
+                        <button type="button" class="rounded-control border border-border px-2 text-xs text-accent" @onclick="ClearFocus">Reset filters</button>
                     }
                 </div>
                 <select aria-label="Row density" value="@state.Viewport.Density" @onchange="DensityChangedAsync" class="rounded-control border border-border bg-surface-raised px-2 py-1 text-xs">
@@ -275,6 +275,7 @@
                                                 <dt class="aps-text-caption">Change</dt><dd class="aps-text-body">@BaselineDeltaLabel(operation, baseline)</dd>
                                                 <dt class="aps-text-caption">Resource</dt><dd class="aps-text-body">@baseline.ResourceCode → @operation.ResourceCode</dd>
                                                 <dt class="aps-text-caption">Start delta</dt><dd class="aps-text-figure text-xs">@FormatMovement((int)Math.Round((operation.StartUtc - baseline.StartUtc).TotalMinutes))</dd>
+                                                <dt class="aps-text-caption">End delta</dt><dd class="aps-text-figure text-xs">@FormatMovement((int)Math.Round((operation.EndUtc - baseline.EndUtc).TotalMinutes))</dd>
                                                 <dt class="aps-text-caption">Baseline</dt><dd class="aps-text-body">@baseline.StartUtc.ToString("dd MMM HH:mm")–@baseline.EndUtc.ToString("HH:mm")</dd>
                                             </dl>
                                         }
@@ -495,7 +496,7 @@
     }
     private void TargetStartChanged(ChangeEventArgs args) => targetStartText = args.Value?.ToString() ?? string.Empty;
 
-    private void FitAll() => state.SetZoom(PlanningWorkbenchZoom.Fit);
+    private void FitAll() => state.FitAll();
     private void FitVisibleResources() => FitOperations((workbench?.Schedule.ResourceLanes ?? Array.Empty<ScheduleResourceLaneView>())
         .Where(lane => string.IsNullOrWhiteSpace(state.SearchText) || Contains(lane.ResourceCode, state.SearchText) || Contains(lane.ResourceName, state.SearchText) || lane.Operations.Any(MatchesFitSearch))
         .SelectMany(x => x.Operations));
@@ -507,7 +508,7 @@
         if (!DateTime.TryParse(fitStartText, null, System.Globalization.DateTimeStyles.AssumeUniversal, out var start) ||
             !DateTime.TryParse(fitEndText, null, System.Globalization.DateTimeStyles.AssumeUniversal, out var end) || end <= start)
         { SetMessage("Enter a valid explicit UTC range.", true); return; }
-        state.FocusRange(DateTime.SpecifyKind(start, DateTimeKind.Utc), DateTime.SpecifyKind(end, DateTimeKind.Utc));
+        state.FitRange(DateTime.SpecifyKind(start, DateTimeKind.Utc), DateTime.SpecifyKind(end, DateTimeKind.Utc));
     }
     private IEnumerable<ScheduledProcessOperationView> OperationsForDetails(Func<PlanningOperationWorkbenchDetail, bool> predicate)
     {
@@ -520,7 +521,7 @@
         if (items.Length == 0) return;
         var start = items.Min(x => x.StartUtc); var end = items.Max(x => x.EndUtc);
         var padding = TimeSpan.FromMinutes(Math.Max(30, (end - start).TotalMinutes * .05));
-        state.FocusRange(start - padding, end + padding);
+        state.FitRange(start - padding, end + padding);
     }
     private bool MatchesFitSearch(ScheduledProcessOperationView operation)
     {

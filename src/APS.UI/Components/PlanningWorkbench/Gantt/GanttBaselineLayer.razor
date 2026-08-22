@@ -22,7 +22,7 @@
 
     private static string Description(GanttBaselineModel baseline) => baseline.Change switch
     {
-        GanttBaselineChange.TimeMoved => $"Baseline · moved {baseline.StartDeltaMinutes:+#;-#;0} min · {baseline.Placement.StartUtc:dd MMM HH:mm}",
+        GanttBaselineChange.TimeMoved => $"Baseline · start {baseline.StartDeltaMinutes:+#;-#;0} min · end {baseline.EndDeltaMinutes:+#;-#;0} min · {baseline.Placement.StartUtc:dd MMM HH:mm}",
         GanttBaselineChange.ResourceChanged => $"Baseline · resource changed from {baseline.Placement.ResourceCode} · {baseline.Placement.StartUtc:dd MMM HH:mm}",
         GanttBaselineChange.Removed => $"Baseline · removed from current plan · {baseline.Placement.PlanningKey}",
         _ => $"Baseline · {baseline.Placement.PlanningKey} · {baseline.Placement.StartUtc:dd MMM HH:mm}"
