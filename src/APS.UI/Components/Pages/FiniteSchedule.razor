@@ -170,7 +170,8 @@
                                 FrozenFenceEndUtc="FrozenFenceEndUtc"
                                 OperationSelected="SelectOperation"
                                 ResourceSelected="SelectResource"
-                                CapacitySegmentFocused="FocusCapacitySegment" />
+                                CapacitySegmentFocused="FocusCapacitySegment"
+                                CollapsedGroupsChanged="CollapsedGroupsChangedAsync" />
             </main>
 
             @if (Cockpit.InspectorOpen)
@@ -484,6 +485,9 @@
     private ValueTask SaveGanttPreferenceAsync(string key, object value) =>
         JS.InvokeVoidAsync("apsPlanningWorkbench.savePreference", key, value);
 
+    private Task CollapsedGroupsChangedAsync(IReadOnlyList<string> groupKeys) =>
+        SaveGanttPreferenceAsync("collapsedGroups", groupKeys).AsTask();
+
     private ValueTask ToggleFullscreenAsync() => JS.InvokeVoidAsync("apsPlanningWorkbench.toggleFullscreen", workbenchRoot);
 
     [JSInvokable]
@@ -530,13 +534,14 @@
         state.Viewport.SetSnapMode(preferences.SnapMode == GanttSnapMode.ShiftBoundary && !HasShiftBoundaries ? GanttSnapMode.FifteenMinutes : preferences.SnapMode);
         state.SetLayerVisibility(preferences.ShowBaseline, preferences.ShowDependencies);
         state.SetBaselineMode(preferences.BaselineMode);
+        state.SetCollapsedResourceGroups(preferences.CollapsedGroups);
         state.SetCapacityPanel(preferences.CapacityPanelOpen, preferences.CapacityPanelHeightPx);
         if (preferences.Zoom != state.Zoom) state.SetZoom(preferences.Zoom);
         StateHasChanged();
     }
 
-    private void SelectOperation(ScheduledProcessOperationView operation) { state.SelectOperation(operation.PlanningKey); Cockpit.OpenInspector(); WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Operation, operation.OperationSnapshotId, FriendlyOperationName(operation.PlanningKey))); targetResourceText = operation.ResourceId.ToString(); targetStartText = operation.StartUtc.ToString("yyyy-MM-ddTHH:mm"); moveComment = null; allowFrozenOverride = false; }
-    private void SelectResource(ScheduleResourceLaneView lane) => WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Resource, lane.ResourceId, lane.ResourceCode));
+    private void SelectOperation(ScheduledProcessOperationView operation) { state.SelectOperation(operation.PlanningKey, operation.ResourceId); Cockpit.OpenInspector(); WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Operation, operation.OperationSnapshotId, FriendlyOperationName(operation.PlanningKey))); targetResourceText = operation.ResourceId.ToString(); targetStartText = operation.StartUtc.ToString("yyyy-MM-ddTHH:mm"); moveComment = null; allowFrozenOverride = false; }
+    private void SelectResource(ScheduleResourceLaneView lane) { state.SelectResource(lane.ResourceId); WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Resource, lane.ResourceId, lane.ResourceCode)); }
     private void FocusCapacitySegment(GanttCapacitySegmentModel segment)
     {
         var lane = workbench?.Schedule.ResourceLanes.FirstOrDefault(x => x.ResourceId == segment.ResourceId);

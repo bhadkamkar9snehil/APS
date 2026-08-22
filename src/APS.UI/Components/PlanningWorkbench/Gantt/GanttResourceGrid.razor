@@ -4,36 +4,71 @@
         <span class="aps-text-label">Resource</span><span class="text-[9px] text-muted">State</span><span class="text-[9px] text-muted">Busy</span><span class="text-[9px] text-muted">Load</span><span class="text-[9px] text-muted">Ops</span><span class="text-[9px] text-muted">Next</span>
     </div>
     <div>
-        @if (Scene.Rows.Count > 0 && Scene.Rows[0].SceneIndex > 0)
+        @if (FirstMountedSceneIndex > 0)
         {
-            <div aria-hidden="true" style="height:@($"{Scene.Rows[0].SceneIndex * RowHeightPx}px")"></div>
+            <div aria-hidden="true" style="height:@($"{FirstMountedSceneIndex * RowHeightPx}px")"></div>
         }
-        @foreach (var row in Scene.Rows)
+        @foreach (var sceneIndex in MountedSceneIndices)
         {
-            <button type="button"
-                    class="grid min-w-0 items-center border-b border-border px-2 text-left even:bg-surface-raised hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                    style="grid-template-columns:minmax(112px,1fr) 42px 42px 38px 30px 48px;height:var(--aps-gantt-row-height)"
-                    title="@($"{row.Lane.PlantName} / {row.Lane.AreaName} / {row.Lane.ProcessStageName} / {row.Lane.ResourceName}")"
-                    @onclick="() => ResourceSelected.InvokeAsync(row.Lane)">
-                <span class="min-w-0"><strong class="block truncate text-xs">@row.Lane.ResourceCode</strong><span class="block truncate text-[9px] text-muted">@HierarchyLabel(row.Lane)</span></span>
-                <span class="truncate text-[9px] @OperatingStateClass(row.Lane.OperatingState)">@StateLabel(row.Lane.OperatingState)</span>
-                <span class="aps-text-figure text-[10px]">@row.Lane.OccupiedHours.ToString("0.#")h</span>
-                <span class="aps-text-figure text-[10px]">@row.VisibleUtilization.ToString("P0")</span>
-                <span class="aps-text-figure text-[10px]">@row.Lane.Operations.Count</span>
-                <span class="truncate text-[9px] text-secondary">@(row.NextOperation?.StartUtc.ToString("HH:mm") ?? "—")</span>
-            </button>
+            @if (GroupsByIndex.TryGetValue(sceneIndex, out var group))
+            {
+                <button type="button"
+                        class="flex w-full items-center gap-2 border-b border-border bg-surface-inset px-2 text-left hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                        style="height:var(--aps-gantt-row-height);padding-left:@($"{8 + (int)group.Level * 14}px")"
+                        aria-expanded="@(!group.IsCollapsed)"
+                        title="@(group.IsCollapsed ? $"Expand {group.Label}" : $"Collapse {group.Label}")"
+                        @onclick="() => GroupToggled.InvokeAsync(group)">
+                    <span aria-hidden="true" class="w-3 text-center text-xs text-accent">@(group.IsCollapsed ? "▸" : "▾")</span>
+                    <span class="min-w-0 flex-1"><strong class="block truncate text-xs">@group.Code</strong><span class="block truncate text-[9px] text-muted">@group.Label</span></span>
+                    <span class="aps-text-figure text-[10px] text-secondary">@group.ResourceCount</span>
+                </button>
+            }
+            else if (RowsByIndex.TryGetValue(sceneIndex, out var row))
+            {
+                <button type="button"
+                        class="grid min-w-0 items-center border-b px-2 pl-8 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent @(SelectedResourceId == row.Lane.ResourceId ? "border-accent bg-accent-soft shadow-soft" : "border-border even:bg-surface-raised hover:bg-surface-hover")"
+                        style="grid-template-columns:minmax(112px,1fr) 42px 42px 38px 30px 48px;height:var(--aps-gantt-row-height)"
+                        aria-pressed="@(SelectedResourceId == row.Lane.ResourceId)"
+                        title="@($"{row.Lane.PlantName} / {row.Lane.AreaName} / {row.Lane.ProcessStageName} / {row.Lane.ResourceName}")"
+                        @onclick="() => ResourceSelected.InvokeAsync(row.Lane)">
+                    <span class="min-w-0"><strong class="block truncate text-xs">@row.Lane.ResourceCode</strong><span class="block truncate text-[9px] text-muted">@HierarchyLabel(row.Lane)</span></span>
+                    <span class="truncate text-[9px] @OperatingStateClass(row.Lane.OperatingState)">@StateLabel(row.Lane.OperatingState)</span>
+                    <span class="aps-text-figure text-[10px]">@row.Lane.OccupiedHours.ToString("0.#")h</span>
+                    <span class="aps-text-figure text-[10px]">@row.VisibleUtilization.ToString("P0")</span>
+                    <span class="aps-text-figure text-[10px]">@row.Lane.Operations.Count</span>
+                    <span class="truncate text-[9px] text-secondary">@(row.NextOperation?.StartUtc.ToString("HH:mm") ?? "—")</span>
+                </button>
+            }
         }
-        @if (Scene.Rows.Count > 0 && Scene.Rows[^1].SceneIndex < Scene.TotalRowCount - 1)
+        @if (LastMountedSceneIndex >= 0 && LastMountedSceneIndex < Scene.TotalRowCount - 1)
         {
-            <div aria-hidden="true" style="height:@($"{(Scene.TotalRowCount - Scene.Rows[^1].SceneIndex - 1) * RowHeightPx}px")"></div>
+            <div aria-hidden="true" style="height:@($"{(Scene.TotalRowCount - LastMountedSceneIndex - 1) * RowHeightPx}px")"></div>
         }
     </div>
 </div>
 
 @code {
     [Parameter, EditorRequired] public GanttScene Scene { get; set; } = default!;
+    [Parameter] public Guid? SelectedResourceId { get; set; }
     [Parameter] public EventCallback<ScheduleResourceLaneView> ResourceSelected { get; set; }
+    [Parameter] public EventCallback<GanttResourceGroupModel> GroupToggled { get; set; }
     [Parameter] public int RowHeightPx { get; set; } = 60;
+
+    private IReadOnlyDictionary<int, GanttResourceGroupModel> GroupsByIndex { get; set; } = new Dictionary<int, GanttResourceGroupModel>();
+    private IReadOnlyDictionary<int, GanttRowModel> RowsByIndex { get; set; } = new Dictionary<int, GanttRowModel>();
+    private int[] MountedSceneIndices { get; set; } = [];
+    private int FirstMountedSceneIndex => MountedSceneIndices.FirstOrDefault();
+    private int LastMountedSceneIndex => MountedSceneIndices.LastOrDefault(-1);
+
+    protected override void OnParametersSet()
+    {
+        GroupsByIndex = Scene.ResourceGroups.ToDictionary(x => x.SceneIndex);
+        RowsByIndex = Scene.Rows.ToDictionary(x => x.SceneIndex);
+        MountedSceneIndices = Scene.ResourceGroups.Select(x => x.SceneIndex)
+            .Concat(Scene.Rows.Select(x => x.SceneIndex))
+            .OrderBy(x => x)
+            .ToArray();
+    }
 
     private static string HierarchyLabel(ScheduleResourceLaneView lane) =>
         string.Join(" · ", new[] { lane.AreaCode, lane.ProcessStageCode }.Where(x => !string.IsNullOrWhiteSpace(x)));

@@ -28,6 +28,47 @@ public sealed class GanttSceneTests
     }
 
     [Fact]
+    public void Authoritative_resource_hierarchy_adds_shared_group_rows_and_collapses_descendants()
+    {
+        var lanes = new[]
+        {
+            HierarchicalLane(1, "SMS", "MELT", "EAF"),
+            HierarchicalLane(2, "SMS", "MELT", "EAF")
+        };
+        var state = State();
+
+        var expanded = GanttModels.BuildScene(Workbench(lanes), state);
+
+        Assert.Equal(5, expanded.TotalRowCount);
+        Assert.Equal(2, expanded.ResourceCount);
+        Assert.Equal([0, 1, 2], expanded.ResourceGroups.Select(x => x.SceneIndex));
+        Assert.Equal([3, 4], expanded.Rows.Select(x => x.SceneIndex));
+        var processGroup = Assert.Single(expanded.ResourceGroups, x => x.Level == GanttResourceGroupLevel.ProcessStage);
+        Assert.Equal("EAF", processGroup.Code);
+        Assert.Equal(2, processGroup.ResourceCount);
+
+        state.ToggleResourceGroup(processGroup.Key);
+        var collapsed = GanttModels.BuildScene(Workbench(lanes), state);
+
+        Assert.Equal(3, collapsed.TotalRowCount);
+        Assert.Equal(2, collapsed.ResourceCount);
+        Assert.Empty(collapsed.Rows);
+        Assert.True(Assert.Single(collapsed.ResourceGroups, x => x.Key == processGroup.Key).IsCollapsed);
+    }
+
+    [Fact]
+    public void Resource_group_preferences_replace_and_deduplicate_state()
+    {
+        var state = State();
+
+        state.SetCollapsedResourceGroups(["plant:one", "PLANT:ONE", "stage:two"]);
+
+        Assert.Equal(2, state.CollapsedResourceGroups.Count);
+        Assert.Contains("plant:one", state.CollapsedResourceGroups, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("stage:two", state.CollapsedResourceGroups, StringComparer.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Resource_changed_baseline_stays_on_its_original_readonly_lane()
     {
         var currentLane = Lane(1, Start.AddHours(2));
@@ -60,7 +101,8 @@ public sealed class GanttSceneTests
 
         var scene = GanttModels.BuildScene(Workbench([currentLane], [baseline]), State());
 
-        Assert.Equal(2, scene.TotalRowCount);
+        Assert.Equal(2, scene.ResourceCount);
+        Assert.Equal(5, scene.TotalRowCount);
         var originalLane = Assert.Single(scene.Rows, x => x.Lane.ResourceId == originalResourceId);
         Assert.Empty(originalLane.Operations);
         Assert.Single(originalLane.Baselines);
@@ -120,6 +162,37 @@ public sealed class GanttSceneTests
     }
 
     [Fact]
+    public void Operation_model_exposes_authoritative_commitment_and_resource_flexibility()
+    {
+        var lane = Lane(8, Start.AddHours(3));
+        var operation = lane.Operations.Single();
+        var detail = new PlanningOperationWorkbenchDetail(
+            operation.OperationSnapshotId,
+            operation.PlanningKey,
+            operation.SourceEntityId,
+            OperationAssignmentCommitmentState.Firm,
+            OperationExecutionStatus.Planned,
+            null,
+            null,
+            0m,
+            Array.Empty<string>(),
+            [
+                new PlanningOperationResourceOptionView(lane.ResourceId, lane.ResourceCode, lane.ResourceName, 60, 0, true, "ROUTE"),
+                new PlanningOperationResourceOptionView(Guid.NewGuid(), "EAF-ALT", "Alternate furnace", 60, 5, false, "ROUTE")
+            ],
+            null,
+            null,
+            Array.Empty<string>());
+
+        var model = Assert.Single(Assert.Single(GanttModels.BuildScene(Workbench([lane], details: [detail]), State()).Rows).Operations);
+
+        Assert.Equal(OperationAssignmentCommitmentState.Firm, model.CommitmentState);
+        Assert.Equal(2, model.EligibleResourceCount);
+        Assert.Contains("Firm", model.AccessibleName);
+        Assert.Contains("2 eligible resources", model.AccessibleName);
+    }
+
+    [Fact]
     public void Focused_dependency_geometry_survives_row_virtualization_and_preserves_lag_semantics()
     {
         var lanes = new[] { Lane(0, Start.AddHours(1)), Lane(1, Start.AddHours(2)), Lane(2, Start.AddHours(3)) };
@@ -148,6 +221,34 @@ public sealed class GanttSceneTests
         Assert.Equal(45, edge.HeadroomMinutes);
         Assert.Equal(.5d * state.GanttRowHeightPx, edge.StartYpx);
         Assert.Equal(2.5d * state.GanttRowHeightPx, edge.EndYpx);
+    }
+
+    [Fact]
+    public void Focused_dependency_geometry_uses_the_same_hierarchy_adjusted_row_indices()
+    {
+        var lanes = new[]
+        {
+            HierarchicalLane(1, "SMS", "MELT", "EAF"),
+            HierarchicalLane(2, "SMS", "MELT", "EAF")
+        };
+        var link = new PlanningDependencyLinkView(
+            lanes[0].Operations.Single().OperationSnapshotId,
+            lanes[0].Operations.Single().PlanningKey,
+            lanes[1].Operations.Single().OperationSnapshotId,
+            lanes[1].Operations.Single().PlanningKey,
+            PlanningDependencyType.FinishStart,
+            PlanningDependencyCategory.Routing,
+            0,
+            0);
+        var state = State();
+        state.SelectOperation(lanes[0].Operations.Single().PlanningKey, lanes[0].ResourceId);
+        state.ToggleDependencies();
+
+        var scene = GanttModels.BuildScene(Workbench(lanes, dependencies: [link]), state);
+
+        var edge = Assert.Single(scene.DependencyLines);
+        Assert.Equal(3.5d * state.GanttRowHeightPx, edge.StartYpx);
+        Assert.Equal(4.5d * state.GanttRowHeightPx, edge.EndYpx);
     }
 
     private static GanttOperationModel FindOperation(GanttScene scene, ScheduleResourceLaneView lane) =>
@@ -209,6 +310,20 @@ public sealed class GanttSceneTests
             [operation],
             DisplayOrder: index);
     }
+
+    private static ScheduleResourceLaneView HierarchicalLane(int index, string plantCode, string areaCode, string processStageCode) =>
+        Lane(index, Start.AddHours(index)) with
+        {
+            PlantId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            PlantCode = plantCode,
+            PlantName = "Steel plant",
+            AreaId = Guid.Parse("22222222-2222-2222-2222-222222222222"),
+            AreaCode = areaCode,
+            AreaName = "Melt shop",
+            ProcessStageId = Guid.Parse("33333333-3333-3333-3333-333333333333"),
+            ProcessStageCode = processStageCode,
+            ProcessStageName = "Electric arc furnace"
+        };
 
     private static PlanningWorkbenchView Workbench(
         IReadOnlyCollection<ScheduleResourceLaneView> lanes,

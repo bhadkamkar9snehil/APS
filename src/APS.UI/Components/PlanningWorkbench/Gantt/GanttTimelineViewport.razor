@@ -1,17 +1,26 @@
 <div class="relative" style="height:@($"{Scene.TotalRowCount * State.GanttRowHeightPx}px")">
     <GanttDependencyLayer Scene="Scene" State="State" />
     <div>
-        @if (Scene.Rows.Count > 0 && Scene.Rows[0].SceneIndex > 0)
+        @if (FirstMountedSceneIndex > 0)
         {
-            <div aria-hidden="true" style="height:@($"{Scene.Rows[0].SceneIndex * State.GanttRowHeightPx}px")"></div>
+            <div aria-hidden="true" style="height:@($"{FirstMountedSceneIndex * State.GanttRowHeightPx}px")"></div>
         }
-        @foreach (var row in Scene.Rows)
+        @foreach (var sceneIndex in MountedSceneIndices)
         {
-            <div style="height:var(--aps-gantt-row-height)"><GanttResourceLane Row="row" Scene="Scene" State="State" Workbench="Workbench" FrozenFenceEndUtc="FrozenFenceEndUtc" KeyboardAnchorPlanningKey="@KeyboardAnchorPlanningKey" OperationSelected="OperationSelected" KeyboardNavigate="KeyboardNavigate" ContextRequested="ContextRequested" /></div>
+            @if (GroupsByIndex.TryGetValue(sceneIndex, out var group))
+            {
+                <div class="relative flex items-center border-b border-border bg-surface-inset px-2" style="height:var(--aps-gantt-row-height)" aria-hidden="true">
+                    <span class="text-[10px] font-semibold uppercase tracking-wide text-muted">@group.Code · @group.ResourceCount resource(s)</span>
+                </div>
+            }
+            else if (RowsByIndex.TryGetValue(sceneIndex, out var row))
+            {
+                <div style="height:var(--aps-gantt-row-height)"><GanttResourceLane Row="row" Scene="Scene" State="State" Workbench="Workbench" FrozenFenceEndUtc="FrozenFenceEndUtc" KeyboardAnchorPlanningKey="@KeyboardAnchorPlanningKey" OperationSelected="OperationSelected" KeyboardNavigate="KeyboardNavigate" ContextRequested="ContextRequested" /></div>
+            }
         }
-        @if (Scene.Rows.Count > 0 && Scene.Rows[^1].SceneIndex < Scene.TotalRowCount - 1)
+        @if (LastMountedSceneIndex >= 0 && LastMountedSceneIndex < Scene.TotalRowCount - 1)
         {
-            <div aria-hidden="true" style="height:@($"{(Scene.TotalRowCount - Scene.Rows[^1].SceneIndex - 1) * State.GanttRowHeightPx}px")"></div>
+            <div aria-hidden="true" style="height:@($"{(Scene.TotalRowCount - LastMountedSceneIndex - 1) * State.GanttRowHeightPx}px")"></div>
         }
     </div>
 </div>
@@ -25,5 +34,21 @@
     [Parameter] public EventCallback<ScheduledProcessOperationView> OperationSelected { get; set; }
     [Parameter] public EventCallback<GanttKeyboardNavigationRequest> KeyboardNavigate { get; set; }
     [Parameter] public EventCallback<GanttContextMenuRequest> ContextRequested { get; set; }
+
+    private IReadOnlyDictionary<int, GanttResourceGroupModel> GroupsByIndex { get; set; } = new Dictionary<int, GanttResourceGroupModel>();
+    private IReadOnlyDictionary<int, GanttRowModel> RowsByIndex { get; set; } = new Dictionary<int, GanttRowModel>();
+    private int[] MountedSceneIndices { get; set; } = [];
+    private int FirstMountedSceneIndex => MountedSceneIndices.FirstOrDefault();
+    private int LastMountedSceneIndex => MountedSceneIndices.LastOrDefault(-1);
+
+    protected override void OnParametersSet()
+    {
+        GroupsByIndex = Scene.ResourceGroups.ToDictionary(x => x.SceneIndex);
+        RowsByIndex = Scene.Rows.ToDictionary(x => x.SceneIndex);
+        MountedSceneIndices = Scene.ResourceGroups.Select(x => x.SceneIndex)
+            .Concat(Scene.Rows.Select(x => x.SceneIndex))
+            .OrderBy(x => x)
+            .ToArray();
+    }
 
 }

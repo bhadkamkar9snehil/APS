@@ -1,4 +1,4 @@
-<div class="aps-gantt-lane aps-time-grid relative overflow-hidden border-b border-border even:bg-surface-raised"
+<div class="aps-gantt-lane aps-time-grid relative overflow-hidden border-b border-border @(State.SelectedResourceId == Row.Lane.ResourceId ? "bg-accent-soft shadow-soft" : "even:bg-surface-raised")"
      data-resource-id="@Row.Lane.ResourceId"
      data-window-start="@State.VisibleStartUtc.ToString("O")"
      data-window-end="@State.VisibleEndUtc.ToString("O")"

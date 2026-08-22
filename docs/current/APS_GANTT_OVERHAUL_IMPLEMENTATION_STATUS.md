@@ -8,10 +8,11 @@ Branch: `codex/gantt-workbench-overhaul`
 | Area | Status | Evidence |
 |---|---|---|
 | Authoritative viewport | Complete | One UTC tick-precise viewport owns zoom, pan, fit/reset, clipping, snap, row density, grid width and mounted row range. |
-| Resource hierarchy | Complete | Plant, area, process stage and resource metadata are projected into the schedule lanes. |
+| Resource hierarchy | Complete | Plant, area, process-stage and resource metadata now produce real synchronized group rows. Groups collapse without row drift and persist stable hierarchy keys as local UI preferences; absent hierarchy levels are not fabricated. Resource focus uses one workbench-state owner and treats the full grid row and timeline lane consistently. |
 | Calendar and capacity truth | Complete | Resource-specific availability intervals and capacity buckets come from the planning read model; missing operations are never treated as downtime. |
 | Reusable synchronized Gantt | Complete | Resource grid, dual-tier time scale and timeline are componentized and share one geometry. |
-| Navigation and performance | Complete | Pointer-anchored zoom, empty-space pan, persistent splitter, `ResizeObserver`, animation-frame coalescing and row/time virtualization are implemented. A 10,000-operation workload mounted 432 operation models and built the warmed scene in 3.2 ms. |
+| Operation semantics | Complete for returned facts | Blocks adapt content to width and expose execution, single-source/alternate-resource count, commitment and baseline-change cues through text/glyphs as well as color; accessible names carry the same canonical facts. |
+| Navigation and performance | Complete | Pointer-anchored zoom, empty-space pan, persistent splitter, `ResizeObserver`, animation-frame coalescing and row/time virtualization are implemented. A hierarchical 10,000-operation workload mounted 336 operation models and built the warmed scene in 3.2 ms. |
 | Proposal drag lifecycle | Complete with final rendered interaction recheck noted below | Source remains fixed, a ghost carries the proposal, grab offset is preserved, eligible lanes are explicit, Escape/pointer cancel/blur clean up, and running/completed work is rejected in both UI geometry and the authoritative command service. Shift snap uses target-resource calendar boundaries and explicitly rejects a target/window with no boundary. |
 | Baseline comparison | Complete | Unchanged, time moved, resource changed, added and removed states are classified. All-baseline, changed-only and expanded compare-subrow modes share synchronized row geometry. Original baseline resources remain visible when assignments change. |
 | Scheduling layers | Complete | Baseline, calendar, campaign, dependency, marker/fence, execution and proposal layers are explicit components on the shared coordinate system. Focused dependencies retain geometry across row virtualization and expose type, category, minimum/current lag and headroom. |
@@ -23,11 +24,11 @@ Branch: `codex/gantt-workbench-overhaul`
 
 ## Verification completed
 
-- `dotnet test tests/APS.UI.Tests/APS.UI.Tests.csproj --no-restore`: 121 passed.
+- `dotnet test tests/APS.UI.Tests/APS.UI.Tests.csproj --no-restore`: 126 passed.
 - `dotnet test tests/APS.Planning.Tests/APS.Planning.Tests.csproj --no-restore`: 160 passed.
 - `dotnet build APS.slnx --no-restore`: succeeded with 0 warnings and 0 errors.
-- The 10,000-operation performance gate measured 3.2 ms warmed scene construction, 432 mounted operation models and 18/100 mounted rows.
-- Latest service-host SSR against the existing database returned 105 operation buttons, exactly one operation Tab stop, Compare Subrow/Schedule List/Fullscreen controls, truthful `Binding chain unavailable`, and `Shift unavailable` because the visible eight lanes return no calendar boundary.
+- The hierarchical 10,000-operation performance gate measured 3.2 ms warmed scene construction, 336 mounted operation models and 14/126 mounted display rows.
+- Latest service-host SSR against the existing database returned 105 operation buttons, exactly one operation Tab stop, eight authoritative hierarchy group toggles for eight resources, Compare Subrow/Schedule List/Fullscreen controls, truthful `Binding chain unavailable`, and `Shift unavailable` because the visible eight lanes return no calendar boundary.
 - `/`, `/api/health`, `_content/APS.UI/planning-workbench.js` and `_content/APS.UI/tailwind.css` returned HTTP 200.
 
 ## Explicit boundaries and follow-up inputs

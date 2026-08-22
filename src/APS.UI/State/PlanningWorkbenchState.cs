@@ -50,6 +50,7 @@ public sealed class PlanningWorkbenchState
 {
     private readonly Stack<PlanHistoryEntry> undo = new();
     private readonly Stack<PlanHistoryEntry> redo = new();
+    private readonly HashSet<string> collapsedResourceGroups = new(StringComparer.OrdinalIgnoreCase);
 
     public GanttViewportState Viewport { get; } = new();
 
@@ -70,6 +71,7 @@ public sealed class PlanningWorkbenchState
     public DateTime VisibleEndUtc => Viewport.VisibleEndUtc;
     public string SearchText { get; private set; } = string.Empty;
     public string? SelectedPlanningKey { get; private set; }
+    public Guid? SelectedResourceId { get; private set; }
     public PlanningMoveProposal? StagedMove { get; private set; }
     public PlanningProposalImpact? Impact { get; private set; }
     public bool ShowBaseline { get; private set; } = true;
@@ -79,6 +81,7 @@ public sealed class PlanningWorkbenchState
     public bool OperationListOpen { get; private set; }
     public int CapacityPanelHeightPx { get; private set; } = 220;
     public GanttCapacityFocus? CapacityFocus { get; private set; }
+    public IReadOnlySet<string> CollapsedResourceGroups => collapsedResourceGroups;
     public int GanttRowHeightPx => Viewport.RowHeightPx + (BaselineMode == GanttBaselineMode.CompareSubrow ? 20 : 0);
     public bool IsReleasedPlan { get; private set; }
     public bool CanEditSchedule => !IsReleasedPlan || ScenarioIntent is PlanningScenarioIntent.New or PlanningScenarioIntent.Clone or PlanningScenarioIntent.Recovery;
@@ -108,11 +111,13 @@ public sealed class PlanningWorkbenchState
     }
 
     public void SetSearch(string? value) { SearchText = value?.Trim() ?? string.Empty; Notify(); }
-    public void SelectOperation(string? planningKey) { SelectedPlanningKey = planningKey; CapacityFocus = null; ClearMove(false); Notify(); }
+    public void SelectOperation(string? planningKey, Guid? resourceId = null) { SelectedPlanningKey = planningKey; SelectedResourceId = resourceId; CapacityFocus = null; ClearMove(false); Notify(); }
+    public void SelectResource(Guid resourceId) { SelectedPlanningKey = null; SelectedResourceId = resourceId; CapacityFocus = null; ClearMove(false); Notify(); }
     public void ClearFocus()
     {
         SearchText = string.Empty;
         SelectedPlanningKey = null;
+        SelectedResourceId = null;
         CapacityFocus = null;
         ClearMove(false);
         Notify();
@@ -176,6 +181,22 @@ public sealed class PlanningWorkbenchState
     public void SetBaselineMode(GanttBaselineMode mode) { BaselineMode = mode; Notify(); }
     public void ToggleCapacityPanel() { CapacityPanelOpen = !CapacityPanelOpen; Notify(); }
     public void ToggleOperationList() { OperationListOpen = !OperationListOpen; Notify(); }
+    public void ToggleResourceGroup(string groupKey)
+    {
+        if (string.IsNullOrWhiteSpace(groupKey)) return;
+        if (!collapsedResourceGroups.Add(groupKey)) collapsedResourceGroups.Remove(groupKey);
+        Notify();
+    }
+    public void SetCollapsedResourceGroups(IEnumerable<string>? groupKeys)
+    {
+        collapsedResourceGroups.Clear();
+        if (groupKeys is not null)
+        {
+            foreach (var groupKey in groupKeys.Where(x => !string.IsNullOrWhiteSpace(x)))
+                collapsedResourceGroups.Add(groupKey);
+        }
+        Notify();
+    }
     public void SetCapacityPanel(bool open, int heightPx)
     {
         CapacityPanelOpen = open;
@@ -187,6 +208,7 @@ public sealed class PlanningWorkbenchState
     {
         CapacityFocus = new GanttCapacityFocus(resourceId, startUtc, endUtc);
         SelectedPlanningKey = null;
+        SelectedResourceId = resourceId;
         Viewport.FocusRange(startUtc, endUtc);
         Notify();
     }

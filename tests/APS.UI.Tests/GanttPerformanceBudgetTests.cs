@@ -60,8 +60,19 @@ public sealed class GanttPerformanceBudgetTests(ITestOutputHelper output)
             ResourceOperatingState.Available,
             1d,
             operations,
+            PlantId: Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            PlantCode: "PERF",
+            PlantName: "Performance plant",
+            AreaId: DeterministicGuid(resourceIndex / 20 + 1),
+            AreaCode: $"AREA-{resourceIndex / 20 + 1:00}",
+            AreaName: $"Performance area {resourceIndex / 20 + 1:00}",
+            ProcessStageId: DeterministicGuid(100 + resourceIndex / 5 + 1),
+            ProcessStageCode: $"STAGE-{resourceIndex / 5 + 1:00}",
+            ProcessStageName: $"Performance stage {resourceIndex / 5 + 1:00}",
             DisplayOrder: resourceIndex);
     }
+
+    private static Guid DeterministicGuid(int value) => new(value, 0, 0, new byte[8]);
 
     private static PlanningWorkbenchView Workbench(IReadOnlyCollection<ScheduleResourceLaneView> lanes)
     {

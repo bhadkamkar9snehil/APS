@@ -90,11 +90,33 @@ public sealed class PlanningWorkbenchStateTests
         state.FocusCapacity(resourceId, start.AddHours(4), start.AddHours(8));
 
         Assert.Equal(resourceId, state.CapacityFocus?.ResourceId);
+        Assert.Equal(resourceId, state.SelectedResourceId);
         Assert.Equal(start.AddHours(4), state.VisibleStartUtc);
         Assert.Equal(start.AddHours(8), state.VisibleEndUtc);
 
         state.ClearFocus();
         Assert.Null(state.CapacityFocus);
+        Assert.Null(state.SelectedResourceId);
+    }
+
+    [Fact]
+    public void Resource_and_operation_selection_have_one_explicit_focus_owner()
+    {
+        var state = new PlanningWorkbenchState();
+        var firstResource = Guid.NewGuid();
+        var secondResource = Guid.NewGuid();
+
+        state.SelectResource(firstResource);
+        Assert.Equal(firstResource, state.SelectedResourceId);
+        Assert.Null(state.SelectedPlanningKey);
+
+        state.SelectOperation("EAF:HEAT-01", secondResource);
+        Assert.Equal(secondResource, state.SelectedResourceId);
+        Assert.Equal("EAF:HEAT-01", state.SelectedPlanningKey);
+
+        state.SelectResource(firstResource);
+        Assert.Equal(firstResource, state.SelectedResourceId);
+        Assert.Null(state.SelectedPlanningKey);
     }
 
     [Fact]

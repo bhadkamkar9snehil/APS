@@ -26,6 +26,11 @@
                 @if (Model.ExecutionStatus == OperationExecutionStatus.Running) { <span class="aps-pulse-dot h-1.5 w-1.5 rounded-full bg-inverted" title="Running"></span> }
                 else if (Model.ExecutionStatus == OperationExecutionStatus.Completed) { <span class="aps-op-card__badge text-inverted" title="Completed">&#10003;</span> }
                 @if (Model.IsSingleSourced) { <span class="aps-op-card__badge text-inverted" title="Only one eligible resource">!</span> }
+                else if (Model.EligibleResourceCount > 1) { <span class="aps-op-card__badge text-inverted" title="@($"{Model.EligibleResourceCount} eligible resources")">A@Model.EligibleResourceCount</span> }
+                @if (Model.CommitmentState is OperationAssignmentCommitmentState.Firm or OperationAssignmentCommitmentState.Committed)
+                {
+                    <span class="aps-op-card__badge text-inverted" title="@($"Assignment {Model.CommitmentState}")">@(Model.CommitmentState == OperationAssignmentCommitmentState.Firm ? "F" : "C")</span>
+                }
                 @if (Model.BaselineChange != GanttBaselineChange.Unchanged) { <span class="aps-op-card__badge text-inverted" title="@BaselineTitle(Model.BaselineChange)">@BaselineGlyph(Model.BaselineChange)</span> }
                 @if (CapacityFocused) { <span class="aps-op-card__badge text-inverted" title="Contributes to selected resource-load bucket">L</span> }
             </span>

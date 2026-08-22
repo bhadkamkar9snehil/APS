@@ -15,7 +15,26 @@ public sealed record GanttScene(
     IReadOnlyList<PlanningBindingEvidenceView> BindingEvidence)
 {
     public int VisibleOperationCount => Rows.Sum(x => x.Operations.Count);
+    public IReadOnlyList<GanttResourceGroupModel> ResourceGroups { get; init; } = Array.Empty<GanttResourceGroupModel>();
+    public int ResourceCount { get; init; }
 }
+
+public enum GanttResourceGroupLevel
+{
+    Plant,
+    Area,
+    ProcessStage
+}
+
+public sealed record GanttResourceGroupModel(
+    int SceneIndex,
+    string Key,
+    string? ParentKey,
+    GanttResourceGroupLevel Level,
+    string Code,
+    string Label,
+    int ResourceCount,
+    bool IsCollapsed);
 
 public sealed record GanttRowModel(
     int SceneIndex,
@@ -39,7 +58,11 @@ public sealed record GanttOperationModel(
     string AccessibleName,
     bool IsSingleSourced,
     double RunningProgressPercent,
-    GanttBaselineChange BaselineChange);
+    GanttBaselineChange BaselineChange)
+{
+    public OperationAssignmentCommitmentState? CommitmentState { get; init; }
+    public int EligibleResourceCount { get; init; }
+}
 
 public enum GanttBaselineChange
 {
@@ -128,20 +151,22 @@ public static class GanttModels
             .ThenBy(x => x.ProcessUnitType)
             .ThenBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var mountedRange = state.Viewport.MountedRowRange(orderedLanes.Length);
+        var hierarchy = BuildHierarchy(orderedLanes, state.CollapsedResourceGroups);
+        var mountedRange = state.Viewport.MountedRowRange(hierarchy.TotalRowCount);
         var mountedStart = mountedRange.Start.Value;
         var mountedEnd = mountedRange.End.Value;
-        var rows = orderedLanes
-            .Select((lane, index) => (lane, index))
-            .Skip(mountedStart)
-            .Take(mountedEnd - mountedStart)
-            .Select(item => BuildRow(workbench, state, item.lane, item.index, details, allOperations, baselineByKey, baselineByResource, calendarsByResource))
+        var rows = hierarchy.Lanes
+            .Where(item => item.SceneIndex >= mountedStart && item.SceneIndex < mountedEnd)
+            .Select(item => BuildRow(workbench, state, item.Lane, item.SceneIndex, details, allOperations, baselineByKey, baselineByResource, calendarsByResource))
             .ToArray();
-        var dependencyLines = BuildFocusedDependencyLines(workbench.DependencyLinks, orderedLanes, state);
+        var resourceGroups = hierarchy.Groups
+            .Where(item => item.SceneIndex >= mountedStart && item.SceneIndex < mountedEnd)
+            .ToArray();
+        var dependencyLines = BuildFocusedDependencyLines(workbench.DependencyLinks, hierarchy.Lanes, state);
 
         return new GanttScene(
             rows,
-            orderedLanes.Length,
+            hierarchy.TotalRowCount,
             BuildTicks(state),
             workbench.Demand.Rows
                 .Where(x => x.RequiredDate >= state.VisibleStartUtc && x.RequiredDate <= state.VisibleEndUtc)
@@ -152,7 +177,94 @@ public static class GanttModels
             dependencyLines,
             allOperations,
             details,
-            (workbench.BindingEvidence ?? Array.Empty<PlanningBindingEvidenceView>()).ToArray());
+            (workbench.BindingEvidence ?? Array.Empty<PlanningBindingEvidenceView>()).ToArray())
+        {
+            ResourceGroups = resourceGroups,
+            ResourceCount = orderedLanes.Length
+        };
+    }
+
+    private static GanttHierarchyLayout BuildHierarchy(
+        IReadOnlyList<ScheduleResourceLaneView> orderedLanes,
+        IReadOnlySet<string> collapsedGroups)
+    {
+        var descriptorsByResource = orderedLanes.ToDictionary(x => x.ResourceId, GroupDescriptors);
+        var laneOrdinal = orderedLanes.Select((lane, index) => (lane.ResourceId, index))
+            .ToDictionary(x => x.ResourceId, x => x.index);
+        var groupCounts = descriptorsByResource.Values
+            .SelectMany(x => x)
+            .GroupBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.Count(), StringComparer.OrdinalIgnoreCase);
+        var groupFirstOrdinal = orderedLanes
+            .SelectMany(lane => descriptorsByResource[lane.ResourceId].Select(group => (group.Key, Ordinal: laneOrdinal[lane.ResourceId])))
+            .GroupBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.Min(item => item.Ordinal), StringComparer.OrdinalIgnoreCase);
+        var hierarchyOrderedLanes = orderedLanes
+            .OrderBy(lane => GroupOrdinal(lane, 0))
+            .ThenBy(lane => GroupOrdinal(lane, 1))
+            .ThenBy(lane => GroupOrdinal(lane, 2))
+            .ThenBy(lane => laneOrdinal[lane.ResourceId])
+            .ToArray();
+        var emittedGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var groups = new List<GanttResourceGroupModel>();
+        var lanes = new List<GanttLaneLayout>();
+        var sceneIndex = 0;
+
+        foreach (var lane in hierarchyOrderedLanes)
+        {
+            var ancestorCollapsed = false;
+            foreach (var descriptor in descriptorsByResource[lane.ResourceId])
+            {
+                if (ancestorCollapsed) break;
+                var collapsed = collapsedGroups.Contains(descriptor.Key);
+                if (emittedGroups.Add(descriptor.Key))
+                {
+                    groups.Add(new GanttResourceGroupModel(
+                        sceneIndex++,
+                        descriptor.Key,
+                        descriptor.ParentKey,
+                        descriptor.Level,
+                        descriptor.Code,
+                        descriptor.Label,
+                        groupCounts[descriptor.Key],
+                        collapsed));
+                }
+                ancestorCollapsed = collapsed;
+            }
+            if (!ancestorCollapsed) lanes.Add(new GanttLaneLayout(sceneIndex++, lane));
+        }
+
+        return new GanttHierarchyLayout(lanes, groups, sceneIndex);
+
+        int GroupOrdinal(ScheduleResourceLaneView lane, int level)
+        {
+            var descriptors = descriptorsByResource[lane.ResourceId];
+            return descriptors.Count > level ? groupFirstOrdinal[descriptors[level].Key] : laneOrdinal[lane.ResourceId];
+        }
+    }
+
+    private static IReadOnlyList<GanttGroupDescriptor> GroupDescriptors(ScheduleResourceLaneView lane)
+    {
+        var result = new List<GanttGroupDescriptor>(3);
+        string? parentKey = null;
+        Add(GanttResourceGroupLevel.Plant, lane.PlantId, lane.PlantCode, lane.PlantName);
+        Add(GanttResourceGroupLevel.Area, lane.AreaId, lane.AreaCode, lane.AreaName);
+        Add(GanttResourceGroupLevel.ProcessStage, lane.ProcessStageId, lane.ProcessStageCode, lane.ProcessStageName);
+        return result;
+
+        void Add(GanttResourceGroupLevel level, Guid? id, string? code, string? name)
+        {
+            if (id is null && string.IsNullOrWhiteSpace(code) && string.IsNullOrWhiteSpace(name)) return;
+            var identity = id?.ToString("N") ?? code?.Trim().ToUpperInvariant() ?? name!.Trim().ToUpperInvariant();
+            var key = $"{level.ToString().ToLowerInvariant()}:{parentKey ?? "root"}:{identity}";
+            result.Add(new GanttGroupDescriptor(
+                key,
+                parentKey,
+                level,
+                string.IsNullOrWhiteSpace(code) ? name ?? level.ToString() : code,
+                string.IsNullOrWhiteSpace(name) ? code ?? level.ToString() : name));
+            parentKey = key;
+        }
     }
 
     private static IEnumerable<ScheduleResourceLaneView> BuildBaselineOnlyLanes(PlanningWorkbenchView workbench)
@@ -224,6 +336,13 @@ public static class GanttModels
                 var clippedEnd = operation.EndUtc > state.VisibleEndUtc ? state.VisibleEndUtc : operation.EndUtc;
                 var widthPercent = WidthPercent(state, clippedStart, clippedEnd);
                 var execution = detail?.ExecutionStatus ?? OperationExecutionStatus.Planned;
+                var eligibleResourceCount = detail is null
+                    ? 0
+                    : detail.ResourceOptions.Select(x => x.ResourceId).Append(operation.ResourceId).Distinct().Count();
+                var accessibleCommitment = detail is null ? "commitment not returned" : detail.CommitmentState.ToString();
+                var accessibleEligibility = eligibleResourceCount == 0
+                    ? "eligible resources not returned"
+                    : $"{eligibleResourceCount} eligible resource{(eligibleResourceCount == 1 ? string.Empty : "s")}";
                 return new GanttOperationModel(
                     operation,
                     detail,
@@ -237,10 +356,14 @@ public static class GanttModels
                         : operation.ProcessOperationType.ToString().ToUpperInvariant(),
                     $"{OperationLabel(state.Mode, operation, detail)}, {operation.ProcessOperationType}, " +
                     $"{operation.ResourceCode}, {operation.StartUtc:dd MMM HH:mm} to {operation.EndUtc:dd MMM HH:mm}, " +
-                    $"{operation.QuantityMt:0.##} metric tonnes, {execution}",
-                    detail is { ResourceOptions.Count: 1 },
+                    $"{operation.QuantityMt:0.##} metric tonnes, {execution}, {accessibleCommitment}, {accessibleEligibility}",
+                    eligibleResourceCount == 1,
                     RunningProgress(workbench.Plan.ReferenceTimeUtc, operation),
-                    BaselineChange(operation, baselineByKey.GetValueOrDefault(operation.PlanningKey)));
+                    BaselineChange(operation, baselineByKey.GetValueOrDefault(operation.PlanningKey)))
+                {
+                    CommitmentState = detail?.CommitmentState,
+                    EligibleResourceCount = eligibleResourceCount
+                };
             })
             .ToArray();
         var baselines = (baselineByResource.GetValueOrDefault(lane.ResourceId) ?? [])
@@ -295,14 +418,14 @@ public static class GanttModels
 
     private static IReadOnlyList<GanttDependencyLineModel> BuildFocusedDependencyLines(
         IReadOnlyCollection<PlanningDependencyLinkView> links,
-        IReadOnlyList<ScheduleResourceLaneView> orderedLanes,
+        IReadOnlyList<GanttLaneLayout> orderedLanes,
         PlanningWorkbenchState state)
     {
         if (!state.ShowDependencies || string.IsNullOrWhiteSpace(state.SelectedPlanningKey))
             return Array.Empty<GanttDependencyLineModel>();
 
         var placements = orderedLanes
-            .SelectMany((lane, rowIndex) => lane.Operations.Select(operation => (operation, rowIndex)))
+            .SelectMany(lane => lane.Lane.Operations.Select(operation => (operation, rowIndex: lane.SceneIndex)))
             .ToDictionary(x => x.operation.PlanningKey, StringComparer.OrdinalIgnoreCase);
         if (!placements.ContainsKey(state.SelectedPlanningKey)) return Array.Empty<GanttDependencyLineModel>();
 
@@ -345,6 +468,20 @@ public static class GanttModels
             })
             .ToArray();
     }
+
+    private sealed record GanttGroupDescriptor(
+        string Key,
+        string? ParentKey,
+        GanttResourceGroupLevel Level,
+        string Code,
+        string Label);
+
+    private sealed record GanttLaneLayout(int SceneIndex, ScheduleResourceLaneView Lane);
+
+    private sealed record GanttHierarchyLayout(
+        IReadOnlyList<GanttLaneLayout> Lanes,
+        IReadOnlyList<GanttResourceGroupModel> Groups,
+        int TotalRowCount);
 
     private static IReadOnlyList<GanttAxisTickModel> BuildTicks(PlanningWorkbenchState state)
     {
