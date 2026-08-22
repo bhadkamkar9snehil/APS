@@ -20,9 +20,9 @@
             <strong>Binding:</strong> @string.Join(" · ", SelectedBindings.Select(x => $"{x.Cause}: {x.Description}"))
         </div>
     }
-    <div class="min-h-0 flex-1 overflow-auto" data-gantt-scroll style="--aps-gantt-grid-width:@($"{State.Viewport.GridWidthPx:0}px");--aps-gantt-row-height:@($"{State.Viewport.RowHeightPx}px")">
+    <div class="min-h-0 flex-1 overflow-auto" data-gantt-scroll style="--aps-gantt-grid-width:@($"{State.Viewport.GridWidthPx:0}px");--aps-gantt-row-height:@($"{State.GanttRowHeightPx}px")">
         <div class="relative grid min-w-[1120px]" style="grid-template-columns:var(--aps-gantt-grid-width) minmax(760px, 1fr)">
-            <GanttResourceGrid Scene="Scene" RowHeightPx="State.Viewport.RowHeightPx" ResourceSelected="ResourceSelected" />
+            <GanttResourceGrid Scene="Scene" RowHeightPx="State.GanttRowHeightPx" ResourceSelected="ResourceSelected" />
             <div class="relative min-w-0 border-l border-border" data-gantt-timeline>
                 <GanttTimeScale Scene="Scene" State="State" ReferenceTimeUtc="Workbench.Plan.ReferenceTimeUtc" FrozenFenceEndUtc="FrozenFenceEndUtc" />
                 <GanttTimelineViewport Scene="Scene" State="State" Workbench="Workbench" FrozenFenceEndUtc="FrozenFenceEndUtc" KeyboardAnchorPlanningKey="KeyboardAnchorPlanningKey" OperationSelected="OperationSelected" KeyboardNavigate="HandleKeyboardNavigation" ContextRequested="OpenContextMenu" />

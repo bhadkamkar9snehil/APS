@@ -1,7 +1,7 @@
 @if (State.ShowDependencies && State.SelectedPlanningKey is not null)
 {
     <svg class="pointer-events-none absolute inset-0 z-20 h-full w-full overflow-visible"
-         viewBox="@($"0 0 100 {Math.Max(1, Scene.TotalRowCount * State.Viewport.RowHeightPx)}")"
+         viewBox="@($"0 0 100 {Math.Max(1, Scene.TotalRowCount * State.GanttRowHeightPx)}")"
          preserveAspectRatio="none"
          aria-hidden="true">
         @foreach (var edge in Scene.DependencyLines)

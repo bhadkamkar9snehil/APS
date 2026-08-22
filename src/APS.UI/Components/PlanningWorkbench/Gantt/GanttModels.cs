@@ -324,7 +324,7 @@ public static class GanttModels
             {
                 var predecessor = placements[x.PredecessorPlanningKey];
                 var successor = placements[x.SuccessorPlanningKey];
-                var rowHeight = state.Viewport.RowHeightPx;
+                var rowHeight = state.GanttRowHeightPx;
                 return new GanttDependencyLineModel(
                     x.PredecessorPlanningKey,
                     x.SuccessorPlanningKey,

@@ -118,6 +118,22 @@ public sealed class PlanningWorkbenchMarkupTests
         Assert.Contains("SegmentFocused", panel);
         Assert.Contains("GanttCapacityPanel", gantt);
         Assert.Contains("State.CapacityPanelOpen", gantt);
+        Assert.Contains("FocusCapacity", File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor")));
+        Assert.Contains("CapacityFocused", File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttResourceLane.razor")));
+    }
+
+    [Fact]
+    public void Baseline_compare_subrow_expands_shared_lane_geometry_and_keeps_current_blocks_distinct()
+    {
+        var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+        var gantt = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/WorkbenchGantt.razor"));
+        var baseline = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttBaselineLayer.razor"));
+        var block = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttOperationBlock.razor"));
+
+        Assert.Contains("CompareSubrow", page);
+        Assert.Contains("State.GanttRowHeightPx", gantt);
+        Assert.Contains("CompareSubrow", baseline);
+        Assert.Contains("VerticalClass", block);
     }
 
     [Fact]

@@ -40,8 +40,11 @@ public enum PlanningWorkbenchQueueContent
 public enum GanttBaselineMode
 {
     Ghost,
-    ChangedOnly
+    ChangedOnly,
+    CompareSubrow
 }
+
+public sealed record GanttCapacityFocus(Guid ResourceId, DateTime StartUtc, DateTime EndUtc);
 
 public sealed class PlanningWorkbenchState
 {
@@ -74,6 +77,8 @@ public sealed class PlanningWorkbenchState
     public bool ShowDependencies { get; private set; }
     public bool CapacityPanelOpen { get; private set; }
     public int CapacityPanelHeightPx { get; private set; } = 220;
+    public GanttCapacityFocus? CapacityFocus { get; private set; }
+    public int GanttRowHeightPx => Viewport.RowHeightPx + (BaselineMode == GanttBaselineMode.CompareSubrow ? 20 : 0);
     public bool IsReleasedPlan { get; private set; }
     public bool CanEditSchedule => !IsReleasedPlan || ScenarioIntent is PlanningScenarioIntent.New or PlanningScenarioIntent.Clone or PlanningScenarioIntent.Recovery;
     public bool CanStartRecovery => IsReleasedPlan && ScenarioIntent != PlanningScenarioIntent.Recovery;
@@ -102,11 +107,12 @@ public sealed class PlanningWorkbenchState
     }
 
     public void SetSearch(string? value) { SearchText = value?.Trim() ?? string.Empty; Notify(); }
-    public void SelectOperation(string? planningKey) { SelectedPlanningKey = planningKey; ClearMove(false); Notify(); }
+    public void SelectOperation(string? planningKey) { SelectedPlanningKey = planningKey; CapacityFocus = null; ClearMove(false); Notify(); }
     public void ClearFocus()
     {
         SearchText = string.Empty;
         SelectedPlanningKey = null;
+        CapacityFocus = null;
         ClearMove(false);
         Notify();
     }
@@ -175,6 +181,13 @@ public sealed class PlanningWorkbenchState
         Notify();
     }
     public void FocusRange(DateTime startUtc, DateTime endUtc) { Viewport.FocusRange(startUtc, endUtc); Notify(); }
+    public void FocusCapacity(Guid resourceId, DateTime startUtc, DateTime endUtc)
+    {
+        CapacityFocus = new GanttCapacityFocus(resourceId, startUtc, endUtc);
+        SelectedPlanningKey = null;
+        Viewport.FocusRange(startUtc, endUtc);
+        Notify();
+    }
     public void ToggleDependencies() { ShowDependencies = !ShowDependencies; Notify(); }
     public void SetLayerVisibility(bool showBaseline, bool showDependencies)
     {

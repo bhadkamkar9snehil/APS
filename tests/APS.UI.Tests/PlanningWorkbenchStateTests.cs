@@ -80,6 +80,36 @@ public sealed class PlanningWorkbenchStateTests
     }
 
     [Fact]
+    public void Capacity_focus_owns_resource_time_context_and_clear_focus_removes_it()
+    {
+        var state = new PlanningWorkbenchState();
+        var start = new DateTime(2026, 8, 21, 0, 0, 0, DateTimeKind.Utc);
+        var resourceId = Guid.NewGuid();
+        state.SetPlanWindow(start, start.AddDays(3));
+
+        state.FocusCapacity(resourceId, start.AddHours(4), start.AddHours(8));
+
+        Assert.Equal(resourceId, state.CapacityFocus?.ResourceId);
+        Assert.Equal(start.AddHours(4), state.VisibleStartUtc);
+        Assert.Equal(start.AddHours(8), state.VisibleEndUtc);
+
+        state.ClearFocus();
+        Assert.Null(state.CapacityFocus);
+    }
+
+    [Fact]
+    public void Compare_subrow_expands_the_shared_row_height_without_changing_density()
+    {
+        var state = new PlanningWorkbenchState();
+        var normal = state.GanttRowHeightPx;
+
+        state.SetBaselineMode(GanttBaselineMode.CompareSubrow);
+
+        Assert.Equal(GanttDensity.Standard, state.Viewport.Density);
+        Assert.Equal(normal + 20, state.GanttRowHeightPx);
+    }
+
+    [Fact]
     public void Fit_frames_the_scheduled_operations_instead_of_the_full_plan_horizon()
     {
         var state = new PlanningWorkbenchState();

@@ -14,6 +14,7 @@
                              Selected="@(State.SelectedPlanningKey == operation.Operation.PlanningKey)"
                              CanEdit="State.CanEditSchedule"
                              IsFrozen="@(operation.Operation.StartUtc <= FrozenFenceEndUtc)"
+                             CapacityFocused="@IsCapacityFocused(operation.Operation)"
                              TabIndex="@(operation.Operation.PlanningKey.Equals(KeyboardAnchorPlanningKey, StringComparison.OrdinalIgnoreCase) ? 0 : -1)"
                              OperationSelected="OperationSelected"
                              KeyboardNavigate="KeyboardNavigate"
@@ -42,4 +43,7 @@
         .Distinct()
         .OrderBy(x => x)
         .Select(x => x.ToString("O")));
+    private bool IsCapacityFocused(ScheduledProcessOperationView operation) => State.CapacityFocus is { } focus &&
+        operation.ResourceId == focus.ResourceId &&
+        operation.EndUtc > focus.StartUtc && operation.StartUtc < focus.EndUtc;
 }

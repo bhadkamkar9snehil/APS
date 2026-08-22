@@ -1,5 +1,5 @@
 <button type="button"
-        class="aps-operation aps-op-card absolute inset-y-2 z-10 overflow-hidden rounded-control border px-1.5 py-1 text-left text-[10px] leading-tight @ProcessClass(Model.Operation.ProcessOperationType) @ExecutionClass(Model.ExecutionStatus) @BaselineClass(Model.BaselineChange) @(Selected ? "border-accent ring-2 ring-accent" : "border-transparent hover:border-primary") @(State.StagedMove?.PlanningKey == Model.Operation.PlanningKey ? "opacity-55" : "")"
+        class="aps-operation aps-op-card absolute z-10 overflow-hidden rounded-control border px-1.5 py-1 text-left text-[10px] leading-tight @VerticalClass @ProcessClass(Model.Operation.ProcessOperationType) @ExecutionClass(Model.ExecutionStatus) @BaselineClass(Model.BaselineChange) @(CapacityFocused ? "aps-operation--capacity-focus" : "") @(Selected ? "border-accent ring-2 ring-accent" : "border-transparent hover:border-primary") @(State.StagedMove?.PlanningKey == Model.Operation.PlanningKey ? "opacity-55" : "")"
         style="left:calc(@Model.LeftPercent% + 1px);width:calc(@Model.WidthPercent% - 2px)"
         data-planning-key="@Model.Operation.PlanningKey"
         data-source-resource-id="@Model.Operation.ResourceId"
@@ -27,6 +27,7 @@
                 else if (Model.ExecutionStatus == OperationExecutionStatus.Completed) { <span class="aps-op-card__badge text-inverted" title="Completed">&#10003;</span> }
                 @if (Model.IsSingleSourced) { <span class="aps-op-card__badge text-inverted" title="Only one eligible resource">!</span> }
                 @if (Model.BaselineChange != GanttBaselineChange.Unchanged) { <span class="aps-op-card__badge text-inverted" title="@BaselineTitle(Model.BaselineChange)">@BaselineGlyph(Model.BaselineChange)</span> }
+                @if (CapacityFocused) { <span class="aps-op-card__badge text-inverted" title="Contributes to selected resource-load bucket">L</span> }
             </span>
         </span>
     }
@@ -54,6 +55,7 @@
     [Parameter] public bool Selected { get; set; }
     [Parameter] public bool CanEdit { get; set; }
     [Parameter] public bool IsFrozen { get; set; }
+    [Parameter] public bool CapacityFocused { get; set; }
     [Parameter] public int TabIndex { get; set; } = -1;
     [Parameter] public EventCallback<ScheduledProcessOperationView> OperationSelected { get; set; }
     [Parameter] public EventCallback<GanttKeyboardNavigationRequest> KeyboardNavigate { get; set; }
@@ -62,6 +64,7 @@
     private string EligibleResourceIds => string.Join(",", (Model.Detail?.ResourceOptions.Select(x => x.ResourceId) ?? [])
         .Append(Model.Operation.ResourceId)
         .Distinct());
+    private string VerticalClass => State.BaselineMode == GanttBaselineMode.CompareSubrow ? "top-2 bottom-6" : "inset-y-2";
 
     private static string ProcessClass(ProcessOperationType type) => type switch
     {

@@ -1,9 +1,9 @@
-<div class="relative" style="height:@($"{Scene.TotalRowCount * State.Viewport.RowHeightPx}px")">
+<div class="relative" style="height:@($"{Scene.TotalRowCount * State.GanttRowHeightPx}px")">
     <GanttDependencyLayer Scene="Scene" State="State" />
     <div>
         @if (Scene.Rows.Count > 0 && Scene.Rows[0].SceneIndex > 0)
         {
-            <div aria-hidden="true" style="height:@($"{Scene.Rows[0].SceneIndex * State.Viewport.RowHeightPx}px")"></div>
+            <div aria-hidden="true" style="height:@($"{Scene.Rows[0].SceneIndex * State.GanttRowHeightPx}px")"></div>
         }
         @foreach (var row in Scene.Rows)
         {
@@ -11,7 +11,7 @@
         }
         @if (Scene.Rows.Count > 0 && Scene.Rows[^1].SceneIndex < Scene.TotalRowCount - 1)
         {
-            <div aria-hidden="true" style="height:@($"{(Scene.TotalRowCount - Scene.Rows[^1].SceneIndex - 1) * State.Viewport.RowHeightPx}px")"></div>
+            <div aria-hidden="true" style="height:@($"{(Scene.TotalRowCount - Scene.Rows[^1].SceneIndex - 1) * State.GanttRowHeightPx}px")"></div>
         }
     </div>
 </div>

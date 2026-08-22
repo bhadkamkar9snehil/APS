@@ -3,7 +3,7 @@
     @foreach (var baseline in VisibleBaselines())
     {
         var selected = State.SelectedPlanningKey?.Equals(baseline.Placement.PlanningKey, StringComparison.OrdinalIgnoreCase) == true;
-        <div class="aps-baseline aps-baseline--@CssChange(baseline.Change) pointer-events-none absolute bottom-1 z-[4] h-2 rounded-sm border border-dashed @(selected ? "ring-2 ring-accent" : "")"
+        <div class="aps-baseline aps-baseline--@CssChange(baseline.Change) pointer-events-none absolute bottom-1 z-[4] rounded-sm border border-dashed @BaselineGeometryClass @(selected ? "ring-2 ring-accent" : "")"
              style="left:@baseline.LeftPercent%;width:@baseline.WidthPercent%"
              title="@Description(baseline)"></div>
     }
@@ -16,6 +16,7 @@
     private IEnumerable<GanttBaselineModel> VisibleBaselines() => State.BaselineMode == GanttBaselineMode.ChangedOnly
         ? Row.Baselines.Where(x => x.Change != GanttBaselineChange.Unchanged)
         : Row.Baselines;
+    private string BaselineGeometryClass => State.BaselineMode == GanttBaselineMode.CompareSubrow ? "h-4 border-2" : "h-2";
 
     private static string CssChange(GanttBaselineChange change) => change.ToString().ToLowerInvariant();
 

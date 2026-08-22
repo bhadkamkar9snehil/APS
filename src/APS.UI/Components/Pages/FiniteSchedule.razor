@@ -87,6 +87,7 @@
                 <select aria-label="Baseline display" value="@state.BaselineMode" @onchange="BaselineModeChangedAsync" disabled="@(!state.ShowBaseline)" class="rounded-control border border-border bg-surface-raised px-2 py-1 text-xs disabled:opacity-50">
                     <option value="Ghost">All baseline</option>
                     <option value="ChangedOnly">Changed only</option>
+                    <option value="CompareSubrow">Compare subrow</option>
                 </select>
                 <ToggleButton Active="state.ShowDependencies" Label="Selected chain" OnClick="ToggleDependenciesAsync" />
                 @if (workbench.BindingEvidence is { Count: > 0 })
@@ -457,7 +458,7 @@
     {
         var lane = workbench?.Schedule.ResourceLanes.FirstOrDefault(x => x.ResourceId == segment.ResourceId);
         if (lane is not null) SelectResource(lane);
-        state.FocusRange(segment.StartUtc, segment.EndUtc);
+        state.FocusCapacity(segment.ResourceId, segment.StartUtc, segment.EndUtc);
     }
     private void FocusDemand(DemandSupplyRowView demand) { state.SetSearch(demand.ProductionOrderNumber); var detail = workbench?.OperationDetails.FirstOrDefault(x => x.ProductionOrderNumbers.Contains(demand.ProductionOrderNumber, StringComparer.OrdinalIgnoreCase)); var operation = FindOperation(detail?.PlanningKey); if (operation is not null) SelectOperation(operation); }
     private void FocusCampaign(CampaignView campaign) { state.SetSearch(campaign.CampaignNumber); var detail = workbench?.OperationDetails.FirstOrDefault(x => x.CampaignNumber == campaign.CampaignNumber); var operation = FindOperation(detail?.PlanningKey); if (operation is not null) SelectOperation(operation); }
