@@ -4,14 +4,12 @@ namespace APS.UI.Theme;
 
 public sealed class ThemeService(IJSRuntime js) : IAsyncDisposable
 {
-    private const string ApplyIdentifier = "apsTheme.apply";
-    private ThemePreference preference = ThemePreference.Default;
     private bool disposed;
 
     public async Task InitializeAsync()
     {
         ThrowIfDisposed();
-        preference = await js.InvokeAsync<ThemePreference>("apsTheme.initialize");
+        await js.InvokeVoidAsync("apsTheme.initialize");
     }
 
     public async Task SetModeAsync(ThemeMode mode)
@@ -20,8 +18,7 @@ public sealed class ThemeService(IJSRuntime js) : IAsyncDisposable
         if (!Enum.IsDefined(mode))
             throw new ArgumentOutOfRangeException(nameof(mode));
 
-        preference = preference with { Mode = mode };
-        await js.InvokeVoidAsync(ApplyIdentifier, preference);
+        await js.InvokeVoidAsync("apsTheme.setMode", (int)mode);
     }
 
     public async ValueTask DisposeAsync()
