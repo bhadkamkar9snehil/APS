@@ -73,6 +73,14 @@ public sealed class RelationalPersistenceContractTests
         const string routeDecisions = "[{\"operation\":\"VD\",\"decision\":\"Skipped\",\"reason\":\"GradeNotRequired\"}]";
         const string eligibleResources = "[{\"resourceCode\":\"LRF-01\"},{\"resourceCode\":\"LRF-02\"}]";
 
+        database.Context.PlanVersions.Add(new PlanVersion
+        {
+            Id = planVersionId,
+            VersionNumber = "PV-TEST-0042",
+            CreatedOnUtc = ReferenceTime,
+            Reason = "Relational persistence contract",
+            IsReleased = false
+        });
         database.Context.PlanVersionStates.Add(new PlanVersionState
         {
             PlanVersionId = planVersionId,
@@ -156,7 +164,7 @@ public sealed class RelationalPersistenceContractTests
         Assert.Equal(20, operation.RouteSequenceNumber);
         Assert.Equal(OperationAssignmentCommitmentState.Flexible, operation.AssignmentCommitmentState);
         Assert.Equal(eligibleResources, operation.EligibleResourceOptionsJson);
-        Assert.Equal([selectedResourceId, alternateResourceId], options.Select(x => x.ResourceId));
+        Assert.Equal(new[] { selectedResourceId, alternateResourceId }, options.Select(x => x.ResourceId));
         Assert.True(options[0].WasSelected);
         Assert.False(options[1].WasSelected);
     }
