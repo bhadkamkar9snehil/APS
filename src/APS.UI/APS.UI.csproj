@@ -35,26 +35,19 @@
 
     <TailwindExeSuffix Condition="'$(TailwindOs)' == 'windows'">.exe</TailwindExeSuffix>
     <TailwindAsset>tailwindcss-$(TailwindOs)-$(TailwindArch)$(TailwindExeSuffix)</TailwindAsset>
-    <!-- Cache key includes version and asset, so a version bump fetches rather than reusing a stale binary. -->
     <TailwindCliPath>$([System.IO.Path]::Combine('$(TailwindCacheDir)','$(TailwindVersion)','$(TailwindAsset)'))</TailwindCliPath>
     <TailwindCliUrl>https://github.com/tailwindlabs/tailwindcss/releases/download/$(TailwindVersion)/$(TailwindAsset)</TailwindCliUrl>
-
-    <TailwindInputCss>$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)','wwwroot','tailwind-input.css'))</TailwindInputCss>
-    <TailwindOutputCss>$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)','wwwroot','tailwind.css'))</TailwindOutputCss>
   </PropertyGroup>
 
   <Target Name="EnsureTailwindCli" BeforeTargets="CompileTailwindCss" Condition="!Exists('$(TailwindCliPath)')">
     <Error Condition="'$(TailwindOs)' == ''"
            Text="Unsupported OS for the Tailwind standalone CLI. Tailwind publishes Windows, macOS and Linux builds; see APS.UI.csproj." />
-    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(TailwindCliPath)'))" />
-
-    <!-- curl is present on macOS and Linux; PowerShell is the portable fetch on Windows. -->
-    <Exec Condition="'$(TailwindOs)' != 'windows'"
-          Command="curl -sSL --fail -o &quot;$(TailwindCliPath)&quot; &quot;$(TailwindCliUrl)&quot;" />
+    <DownloadFile SourceUrl="$(TailwindCliUrl)"
+                  DestinationFolder="$([System.IO.Path]::GetDirectoryName('$(TailwindCliPath)'))"
+                  DestinationFileName="$(TailwindAsset)"
+                  Retries="2" />
     <Exec Condition="'$(TailwindOs)' != 'windows'"
           Command="chmod +x &quot;$(TailwindCliPath)&quot;" />
-    <Exec Condition="'$(TailwindOs)' == 'windows'"
-          Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Invoke-WebRequest -Uri '$(TailwindCliUrl)' -OutFile '$(TailwindCliPath)'&quot;" />
   </Target>
 
   <Target Name="CompileTailwindCss" BeforeTargets="Build;Publish"

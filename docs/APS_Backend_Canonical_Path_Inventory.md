@@ -1,80 +1,83 @@
 # APS Backend Canonical Path Inventory
 
-**Issue:** #38  
-**Status:** Canonical backend-path classification  
-**Scope:** Production planning/query/release/execution authority. UI design is out of scope except explicit demo isolation.
-
-This document classifies every significant backend path as **Canonical**, **Adapter**, **Demo**, **Compatibility**, **Future-only**, **Legacy/Reference**, or **Dead/Superseded**. A path is not production-authoritative merely because it calls the real solver.
+**Status:** Current canonical backend architecture  
+**Updated:** 2026-08-22  
+**Scope:** Production planning, persistence, query, release, execution, and explicit demo surfaces.
 
 ## 1. Canonical production lifecycle
 
 ```text
 Production planning command
   -> IPlanningLifecycleService
-       -> IPlanningMasterDataProvider (SQL authoritative masters)
-       -> IInventorySnapshotProvider (authoritative current inventory)
-       -> IPlanningEngine (calculation kernel, Production mode)
-       -> IPlanVersionRepository (immutable persisted Plan Version)
-  -> IPlannerWorkspaceQueryService (read/query facade)
-  -> IPersistedPlanReleaseService (identity-only persisted release)
+       -> IPlanningMasterDataProvider
+       -> IInventorySnapshotProvider
+       -> IPlanningEngine (Production mode)
+       -> IPlanVersionRepository
+  -> IPlannerWorkspaceQueryService
+  -> IPersistedPlanReleaseService
        -> IPlanReleaseRepository
   -> execution services / MES event adapters
   -> IReplanningActualStateProvider
   -> IPlanningLifecycleService.ReplanAsync
 ```
 
-### Production calculation/release endpoints
+There is one production planning authority. Demo/component planners do not form a second production path.
+
+## 2. Persistence invariant
+
+APS is self-contained and always provisions a local SQLite database when no `ConnectionStrings:APS` value is supplied. `AddApsInfrastructure` therefore has one service graph and `MigrateApsDatabaseAsync` always runs at startup.
+
+```text
+configured APS connection string
+        or
+%LocalAppData%/APS-Data/Data/aps.db
+        -> EF Core SQLite
+        -> migrations
+        -> canonical APS repositories/services
+```
+
+The former no-database service graph and `Unavailable*` implementations were removed because that runtime state is no longer reachable. SQL Server is not an active APS persistence provider; MES/plant integration can add an adapter when a concrete integration requirement exists.
+
+## 3. Production API surfaces
 
 | Surface | Classification | Rule |
 |---|---|---|
-| `POST /api/planning/calculate` | Canonical | Calls `IPlanningLifecycleService.CalculateAsync`; caller supplies demand/planning controls, not plant/inventory truth. |
-| `POST /api/planning/run` | Adapter | Compatibility alias to the exact same lifecycle. It contains no separate calculation/persistence behavior. |
-| `POST /api/planning/replan/{planVersionId}` | Canonical | Calls `IPlanningLifecycleService.ReplanAsync`; baseline, actual inventory, committed in-process supply and masters are resolved by backend. |
-| `POST /api/planning/versions/{planVersionId}/release` | Canonical | Releases only immutable persisted Plan Version truth through `IPersistedPlanReleaseService`. |
-| `POST /api/planning/release/{planVersionId}` | Adapter | Identity-only compatibility alias to the exact same persisted release service. |
-| `IPlanningLifecycleService` | Canonical application lifecycle | Owns authoritative input resolution + `IPlanningEngine` invocation + Plan Version persistence. |
-| `IPlanningEngine` | Canonical calculation kernel | Reusable planning kernel. It is not by itself a production lifecycle because it does not own persistence/source-of-truth resolution. |
-| `IPersistedPlanReleaseService` | Canonical production release | Reconstructs release solely from immutable Plan Version snapshots and persists released WOs/operations. |
-| `PlanningExecutionMode.Production` | Canonical kernel mode | Used by production lifecycle-built requests. Missing route configuration is rejected before simplified structure can execute. |
-| `PlanningExecutionMode.Compatibility` | Compatibility/demo/test | Preserves the simplified structure path for focused tests and explicitly enabled demo scenarios; not legal as a production host fallback. |
+| `POST /api/planning/calculate` | Canonical | Calls `IPlanningLifecycleService.CalculateAsync`. |
+| `POST /api/planning/run` | Compatibility adapter | Alias to the same canonical lifecycle. |
+| `POST /api/planning/replan/{planVersionId}` | Canonical | Replans from persisted baseline plus authoritative current state. |
+| `POST /api/planning/versions/{planVersionId}/release` | Canonical | Releases immutable persisted Plan Version truth. |
+| `POST /api/planning/release/{planVersionId}` | Compatibility adapter | Alias to the same persisted release service. |
+| `/api/ui/planner/*` | Canonical query adapter | Reads through `IPlannerWorkspaceQueryService`. |
+| `/api/execution/*` | Canonical execution adapter | Writes through execution services. |
+| `/api/integration/xstudio/*-events` | MES adapter | Writes MES events into the same canonical execution services. |
+| `/api/traceability/*` | Canonical query adapter | Reads persisted execution/material lineage. |
 
-The former body-based production release endpoint that accepted `PlanReleaseBuildRequest` has been removed. `PlanReleaseBuildRequest`/`IPlanReleaseBuilder` remain only for in-memory demo/test use.
+Compatibility aliases contain no separate planning or persistence behavior.
 
-## 2. Production data authority
+## 4. Production data authority
 
 | Data | Canonical source |
 |---|---|
-| Plant/resources/capabilities/calendars/flow/transition/route masters | `IPlanningMasterDataProvider` / SQL |
-| Steel grades, sections, material and packaging masters | `IPlanningMasterDataProvider` / SQL where currently wired; remaining master wiring tracked by #39 |
+| Plant/resources/capabilities/calendars/routes | `IPlanningMasterDataProvider` / APS persistence |
 | Current qualified inventory | `IInventorySnapshotProvider` |
-| Known incoming material | authoritative persisted/integration supply facts loaded through master/inventory path; not caller-invented procurement |
-| Released/running future internal output during replan | `IReplanningActualStateProvider` |
+| Sales-order and MTO demand | `IProductionDemandOrchestrationService` |
+| Released/running internal output during replan | `IReplanningActualStateProvider` |
 | Plan history | `IPlanVersionRepository` |
-| Execution actuals | execution services and integration adapters persisted in canonical entities |
-| Release structure | immutable Plan Version snapshot tables, not live master data and not caller reconstruction |
+| Planner reads | `IPlannerWorkspaceQueryService` |
+| Execution actuals | execution services and MES adapters |
+| Release structure | immutable Plan Version snapshots |
 
-A production HTTP caller must not post an arbitrary resource/calendar/inventory/master snapshot and thereby create a second planning truth.
+A production caller must not provide an alternative resource, inventory, or master-data truth that bypasses this lifecycle.
 
-## 3. Query/read authority
+## 5. Planner query architecture
 
-`IPlannerWorkspaceQueryService` is the single planner read facade.
+`IPlannerWorkspaceQueryService` is the single planner read facade. Its contract and implementation files are split by concern, not by authority.
 
-The following files are **contract partitions**, not duplicate query implementations:
+The planning workbench composes persisted plan context, demand, campaigns, schedule, material, comparison, exceptions, and operation details from this facade. There is no empty-workspace fallback service.
 
-- `PlannerWorkspaceContracts.cs`
-- `PhysicalWorkspaceContracts.cs`
-- `ExecutionWorkspaceContracts.cs`
-- `DecisionWorkspaceContracts.cs`
+## 6. Demo surface
 
-The implementation is one partial `PlannerWorkspaceQueryService` split by concern for maintainability.
-
-`UnavailablePlannerWorkspaceQueryService` is not an alternative planner. It exists only to make configuration state explicit and, when demo mode is explicitly enabled, permit the no-database demo shell to render without pretending an empty database is production truth.
-
-## 4. Demo / component paths
-
-Component-level algorithms remain useful, but they are not independent production APIs.
-
-When `APS:DemoModeEnabled=true`, the host may expose:
+`APS:DemoModeEnabled` controls only explicit demo/component endpoints:
 
 ```text
 /api/demo/planning/run
@@ -85,9 +88,7 @@ When `APS:DemoModeEnabled=true`, the host may expose:
 /api/demo/planning/release/build
 ```
 
-These are classified **Demo**. They may return non-persisted calculation results for development/reference use. They must never be exposed as `/api/planning/*` production lifecycle endpoints.
-
-Default configuration is:
+Default:
 
 ```json
 {
@@ -97,101 +98,50 @@ Default configuration is:
 }
 ```
 
-The Blazor calculation sandbox is now explicitly routed at `/demo/planning`, hidden from navigation when demo mode is disabled, checks the same setting before calculation/release, and labels its outputs as ephemeral demo results.
+Demo results are non-authoritative and must not be exposed as production `/api/planning/*` behavior.
 
-## 5. Missing-database behavior
+## 7. Release authority
 
-Without an APS SQL connection:
-
-- production calculate/run/replan/release are unavailable;
-- the host returns an explicit configuration/service-unavailable response;
-- it does not run `IPlanningEngine` and return an ephemeral production-looking plan;
-- empty/null workspace data is not used to disguise missing production configuration;
-- the no-DB calculation sandbox is available only under explicit demo opt-in.
-
-## 6. Release authority
-
-### Previous unsafe path
-
-The former production endpoint accepted a `PlanReleaseBuildRequest` containing campaigns, production structure and finite schedule from the caller and persisted WOs from that payload. This allowed release input to diverge from the stored Plan Version.
-
-That path is no longer part of the production surface.
-
-### Canonical release path
+Production release accepts Plan Version identity, not a caller-reconstructed plan:
 
 ```text
 PlanVersionId
-  -> PlanVersion / PlanVersionState
-  -> immutable production-order/campaign/heat/rolling/route-operation/operation snapshots
+  -> immutable plan snapshots
   -> IPersistedPlanReleaseService
   -> PlanRelease
   -> IPlanReleaseRepository
-  -> released Work Orders + ScheduledOperations
+  -> Work Orders + Scheduled Operations
 ```
 
-The client submits **identity/intent only**, never a reconstructed plan.
+`IPersistedPlanReleaseService` remains idempotent. Component-level `IPlanReleaseBuilder` is retained for the explicitly enabled demo/test path only.
 
-During #38, `PlanRouteOperationSnapshot` and `PlanRouteOperationAllocationSnapshot` were found in the domain but missing from SQL registration/persistence. They are now registered in `ApsDbContext` and written by `PlanStructureSnapshotProjector`, so downstream configured route work can be released from the approved immutable Plan Version rather than live masters.
+## 8. Execution and MES authority
 
-`IPersistedPlanReleaseService` is idempotent: a second release request reloads the already-persisted WOs/operations rather than generating a second set.
+Manual execution endpoints and XStudio/MES event endpoints converge on the same services:
 
-## 7. Execution authority
+- `IOperationExecutionService`
+- `IWorkOrderExecutionService`
+- `IHeatExecutionService`
 
-| Surface | Classification |
-|---|---|
-| `IOperationExecutionService` | Canonical | Operation-grain planned/committed/actual execution state. |
-| `IWorkOrderExecutionService` | Canonical | WO lifecycle and external execution linkage. |
-| `IHeatExecutionService` | Canonical specialization | Heat/cast specialization where physical strand/material outputs are required. |
-| `/api/execution/*` | Adapter | Manual/operational transport into canonical execution services. |
-| `/api/integration/.../*-events` | Adapter | MES/integration transport into the same canonical execution services. |
+The specialized heat path remains because casting produces physical strand/billet output. Integration transport must adapt to these canonical services rather than create parallel planning or execution state.
 
-The specialized heat path is retained because casting creates physical strand/billet output; it is not an independent second planning truth.
+## 9. Future-only integration code
 
-`ExecutionActual` remains a transport-neutral mapping DTO used by the integration project. It is not the persisted execution state.
+Future integration capability is not treated as an active runtime dependency. In particular:
 
-## 8. Future-only application ports
+- the APS service no longer references the standalone `APS.Integrations` project because no current service code consumes it;
+- SQL client/provider packages are not retained solely for possible future use;
+- future outbound publication or reconciliation should be added when a concrete integration contract requires it.
 
-Two older application ports have no current production implementation:
+This does not remove the existing XStudio MES event API surface in `APS.Service`.
 
-- `IExecutionActualProvider` — potential reconciliation/polling input port;
-- `IPlanPublisher` — potential outbound publication transport port.
+## 10. Retired paths
 
-They are explicitly classified **Future-only**, not production authority. Current execution feedback enters through execution event services/endpoints; current release authority stops at persisted APS Work Orders/ScheduledOperations. If these ports are implemented later, they must adapt to the same canonical execution/release lifecycle rather than create parallel state.
+The Python/workbook planner and earlier UI prototypes remain retired from the active production path. Historical snapshots belong in version history/tags, not as runtime fallbacks.
 
-## 9. Retired implementation
+## 11. Canonical-path rule
 
-The Python/workbook stack and earlier UI prototypes were retired from the active tree in v0.2.6. Their final snapshot is available at tag `v0.2.5` for deliberate historical comparison. They were never invoked by the .NET production service and must not be reintroduced as a fallback planner.
-
-## 10. #38 implementation findings and resolution
-
-| Finding | Resolution |
-|---|---|
-| No-DB `/api/planning/run` generated non-persisted plan | Production path now returns explicit 503 and does not calculate. |
-| Production caller supplied resources/inventory/masters directly | `IPlanningLifecycleService` now resolves authoritative master/inventory state. |
-| Component planners exposed under production `/api/planning/*` namespace | Moved to explicit opt-in `/api/demo/planning/*`. |
-| Simplified structure fallback looked production-capable | Classified as Compatibility mode; Production mode rejects missing configured route. |
-| Multiple read DTO files looked like duplicate query services | Audited: one query facade; files are contract partitions. |
-| Production release trusted client-supplied plan | Removed; production release is now identity-only from persisted Plan Version. |
-| Route-operation snapshot entities existed but were not persisted | Corrected in `ApsDbContext` + `PlanStructureSnapshotProjector`. |
-| Demo Blazor page directly called kernel under `/planning` | Moved to `/demo/planning`, hidden/gated by `APS:DemoModeEnabled`. |
-| `PlanningIssue` invalid-structure construction had reversed constructor arguments | Corrected during static #38 consistency pass. |
-
-## 11. Boundary regression coverage checked in
-
-`tests/APS.Planning.Tests/CanonicalBackendBoundaryTests.cs` covers:
-
-1. production lifecycle obtains master/inventory truth from providers and persists the Plan Version;
-2. missing configured route fails instead of entering compatibility fallback;
-3. speculative BUY/TRANSFER/manual supply policy is rejected by production manufacturing-only lifecycle;
-4. direct Production-mode kernel invocation cannot enter compatibility structure fallback;
-5. persisted release is identity-only and idempotent;
-6. configured downstream route-operation snapshots release as downstream WOs with PO allocation lineage.
-
-These tests are **checked in but not executed here**. Per project rule, GitHub Actions/CI is not used; build/test execution is deferred to the intended developer environment.
-
-## 12. Canonical path completion rule
-
-The backend now has one declared production authority:
+Any new production feature must attach to this chain:
 
 ```text
 IPlanningLifecycleService
@@ -204,4 +154,4 @@ IPlanningLifecycleService
  -> IPlanningLifecycleService.ReplanAsync
 ```
 
-Any new backend/API/UI feature must attach to that lifecycle. Demo, compatibility and legacy/reference code must remain explicitly segregated.
+If a second path appears to provide the same authority, delete or adapt it rather than maintain two truths.

@@ -458,7 +458,7 @@
     private async Task ApplyMoveAsync()
     {
         if (workbench is null) return; var proposal = state.StagedMove ?? BuildProposal(); if (proposal is null) return; acting = true; message = null;
-        try { var result = await Commands.ApplyMoveAsync(new PlanningMoveApplyRequest(proposal, BuildPlanningRequest(), new PlanningTimeFencePolicy(frozenMinutes))); if (!result.Replan.Plan.IsFeasible) throw new InvalidOperationException("The move could not produce a feasible repaired plan. The current plan remains unchanged."); var previous = workbench.Plan.PlanVersionId; var current = result.Replan.Version.PlanVersionId; undoHistory.Push((previous, current)); redoHistory.Clear(); state.RecordAppliedPlan(previous, current); SetMessage("Move applied. A repaired child Plan Version is now active.", false); await LoadAsync(current, previous); }
+        try { var result = await Commands.ApplyMoveAsync(new PlanningMoveApplyRequest(proposal, BuildPlanningRequest(), new PlanningTimeFencePolicy(frozenMinutes))); if (!result.Replan.Plan.IsFeasible) throw new InvalidOperationException("The move could not produce a feasible repaired plan. The current plan remains unchanged."); var previous = workbench.Plan.PlanVersionId; var current = result.Replan.Version.PlanVersionId; undoHistory.Push((previous, current)); redoHistory.Clear(); state.ClearMove(); SetMessage("Move applied. A repaired child Plan Version is now active.", false); await LoadAsync(current, previous); }
         catch (Exception ex) { SetMessage(ex.Message, true); } finally { acting = false; }
     }
 

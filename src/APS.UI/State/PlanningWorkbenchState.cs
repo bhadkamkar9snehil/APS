@@ -36,9 +36,6 @@ public enum PlanningWorkbenchQueueContent
 
 public sealed class PlanningWorkbenchState
 {
-    private readonly Stack<PlanHistoryEntry> undo = new();
-    private readonly Stack<PlanHistoryEntry> redo = new();
-
     public PlanningWorkbenchMode Mode { get; private set; } = PlanningWorkbenchMode.Plan;
     public PlanningScenarioIntent ScenarioIntent { get; private set; } = PlanningScenarioIntent.Existing;
     public PlanningWorkbenchZoom Zoom { get; private set; } = PlanningWorkbenchZoom.Fit;
@@ -61,9 +58,6 @@ public sealed class PlanningWorkbenchState
     public bool ShowBaseline { get; private set; } = true;
     public bool ShowDependencies { get; private set; }
     public bool ShowCriticalPath { get; private set; }
-    public bool QueueOpen { get; private set; } = true;
-    public bool InspectorOpen { get; private set; }
-    public bool AnalysisDockOpen { get; private set; }
     public bool IsReleasedPlan { get; private set; }
     public bool CanEditSchedule => !IsReleasedPlan || ScenarioIntent is PlanningScenarioIntent.New or PlanningScenarioIntent.Clone or PlanningScenarioIntent.Recovery;
     public bool CanStartRecovery => IsReleasedPlan && ScenarioIntent != PlanningScenarioIntent.Recovery;
@@ -89,12 +83,11 @@ public sealed class PlanningWorkbenchState
     }
 
     public void SetSearch(string? value) { SearchText = value?.Trim() ?? string.Empty; Notify(); }
-    public void SelectOperation(string? planningKey) { SelectedPlanningKey = planningKey; InspectorOpen = !string.IsNullOrWhiteSpace(planningKey); ClearMove(false); Notify(); }
+    public void SelectOperation(string? planningKey) { SelectedPlanningKey = planningKey; ClearMove(false); Notify(); }
     public void ClearFocus()
     {
         SearchText = string.Empty;
         SelectedPlanningKey = null;
-        InspectorOpen = false;
         ClearMove(false);
         Notify();
     }
@@ -117,9 +110,6 @@ public sealed class PlanningWorkbenchState
     public void ToggleBaseline() { ShowBaseline = !ShowBaseline; Notify(); }
     public void ToggleDependencies() { ShowDependencies = !ShowDependencies; Notify(); }
     public void ToggleCriticalPath() { ShowCriticalPath = !ShowCriticalPath; Notify(); }
-    public void ToggleQueue() { QueueOpen = !QueueOpen; Notify(); }
-    public void ToggleInspector() { InspectorOpen = !InspectorOpen; Notify(); }
-    public void ToggleAnalysisDock() { AnalysisDockOpen = !AnalysisDockOpen; Notify(); }
 
     public void StageMove(PlanningMoveProposal proposal)
     {
@@ -131,30 +121,6 @@ public sealed class PlanningWorkbenchState
 
     public void SetImpact(PlanningProposalImpact impact) { Impact = impact; Notify(); }
     public void ClearMove() { ClearMove(true); }
-
-    public void RecordAppliedPlan(Guid previousPlanId, Guid newPlanId)
-    {
-        undo.Push(new PlanHistoryEntry(previousPlanId, newPlanId));
-        redo.Clear();
-        ClearMove(false);
-        Notify();
-    }
-
-    public Guid? UndoPlan()
-    {
-        if (!undo.TryPop(out var entry)) return null;
-        redo.Push(entry);
-        Notify();
-        return entry.PreviousPlanId;
-    }
-
-    public Guid? RedoPlan()
-    {
-        if (!redo.TryPop(out var entry)) return null;
-        undo.Push(entry);
-        Notify();
-        return entry.NewPlanId;
-    }
 
     private void ApplyZoom()
     {
@@ -246,12 +212,5 @@ public sealed class PlanningWorkbenchState
         Notify();
     }
 
-    public void SetScenarioIntent(PlanningScenarioIntent intent)
-    {
-        ScenarioIntent = intent;
-        Notify();
-    }
-
     private void Notify() => Changed?.Invoke();
-    private sealed record PlanHistoryEntry(Guid PreviousPlanId, Guid NewPlanId);
 }

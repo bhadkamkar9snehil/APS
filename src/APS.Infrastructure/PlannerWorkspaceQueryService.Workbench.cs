@@ -179,7 +179,7 @@ public sealed partial class PlannerWorkspaceQueryService
                 new PlannerEntityRef(PlannerEntityType.ProductionOrder, row.ProductionOrderId, row.ProductionOrderNumber)));
         }
 
-        foreach (var salesOrder in demand.EffectiveSalesOrders().Where(x => x.PlannerAttentionRequired))
+        foreach (var salesOrder in (demand.SalesOrders ?? Array.Empty<SalesOrderDemandRowView>()).Where(x => x.PlannerAttentionRequired))
         {
             result.Add(new PlanningWorkbenchException(
                 $"DEMAND-ATTENTION-{salesOrder.SalesOrderNumber}-{salesOrder.SalesOrderItemNumber}",
@@ -214,10 +214,4 @@ public sealed partial class PlannerWorkspaceQueryService
 
         return result;
     }
-}
-
-internal static class DemandSupplyViewExtensions
-{
-    public static IReadOnlyCollection<SalesOrderDemandRowView> EffectiveSalesOrders(this DemandSupplyView view) =>
-        view.SalesOrders ?? Array.Empty<SalesOrderDemandRowView>();
 }

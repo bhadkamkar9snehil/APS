@@ -12,7 +12,6 @@ public sealed class PlanningWorkbenchStateTests
         Assert.Equal(PlanningWorkbenchMode.Plan, state.Mode);
         Assert.Equal(PlanningScenarioIntent.Existing, state.ScenarioIntent);
         Assert.False(state.ShowDependencies);
-        Assert.False(state.AnalysisDockOpen);
     }
 
     [Fact]
@@ -99,31 +98,6 @@ public sealed class PlanningWorkbenchStateTests
     }
 
     [Fact]
-    public void Applied_plan_history_supports_undo_and_redo()
-    {
-        var state = new PlanningWorkbenchState();
-        var baseline = Guid.NewGuid();
-        var child = Guid.NewGuid();
-
-        state.RecordAppliedPlan(baseline, child);
-
-        Assert.Equal(baseline, state.UndoPlan());
-        Assert.Equal(child, state.RedoPlan());
-    }
-
-    [Fact]
-    public void Inspector_stays_out_of_the_way_until_an_operation_is_selected()
-    {
-        var state = new PlanningWorkbenchState();
-
-        Assert.False(state.InspectorOpen);
-
-        state.SelectOperation("EAF:HEAT-01");
-
-        Assert.True(state.InspectorOpen);
-    }
-
-    [Fact]
     public void Clear_focus_restores_the_unfiltered_schedule()
     {
         var state = new PlanningWorkbenchState();
@@ -134,6 +108,5 @@ public sealed class PlanningWorkbenchStateTests
 
         Assert.Equal(string.Empty, state.SearchText);
         Assert.Null(state.SelectedPlanningKey);
-        Assert.False(state.InspectorOpen);
     }
 }

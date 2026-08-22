@@ -3,7 +3,7 @@ using APS.Domain;
 
 namespace APS.Integrations.XStudio;
 
-public sealed class XStudioPlanReleaseMapper : IXStudioPlanReleaseMapper
+public sealed class XStudioPlanReleaseMapper
 {
     public XStudioPlanReleaseEnvelope Map(
         PlanRelease release,
