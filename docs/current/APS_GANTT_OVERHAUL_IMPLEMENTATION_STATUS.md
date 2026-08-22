@@ -11,24 +11,31 @@ Branch: `codex/gantt-workbench-overhaul`
 | Resource hierarchy | Complete | Plant, area, process stage and resource metadata are projected into the schedule lanes. |
 | Calendar and capacity truth | Complete | Resource-specific availability intervals and capacity buckets come from the planning read model; missing operations are never treated as downtime. |
 | Reusable synchronized Gantt | Complete | Resource grid, dual-tier time scale and timeline are componentized and share one geometry. |
-| Navigation and performance | Complete | Pointer-anchored zoom, empty-space pan, persistent splitter, `ResizeObserver`, animation-frame coalescing and row virtualization are implemented. |
-| Proposal drag lifecycle | Complete with runtime recheck noted below | Source remains fixed, a ghost carries the proposal, grab offset is preserved, eligible lanes are explicit, Escape/pointer cancel/blur clean up, and running/completed work is rejected in both UI geometry and the authoritative command service. |
-| Baseline comparison | Complete | Unchanged, time moved, resource changed, added and removed states are classified. All-baseline and changed-only modes are persisted. Original baseline resources remain visible when assignments change. |
-| Scheduling layers | Complete | Baseline, calendar, campaign, dependency, marker/fence, execution and proposal layers are explicit components on the shared coordinate system. |
+| Navigation and performance | Complete | Pointer-anchored zoom, empty-space pan, persistent splitter, `ResizeObserver`, animation-frame coalescing and row/time virtualization are implemented. A 10,000-operation workload mounted 432 operation models and built the warmed scene in 3.2 ms. |
+| Proposal drag lifecycle | Complete with final rendered interaction recheck noted below | Source remains fixed, a ghost carries the proposal, grab offset is preserved, eligible lanes are explicit, Escape/pointer cancel/blur clean up, and running/completed work is rejected in both UI geometry and the authoritative command service. Shift snap uses target-resource calendar boundaries and explicitly rejects a target/window with no boundary. |
+| Baseline comparison | Complete | Unchanged, time moved, resource changed, added and removed states are classified. All-baseline, changed-only and expanded compare-subrow modes share synchronized row geometry. Original baseline resources remain visible when assignments change. |
+| Scheduling layers | Complete | Baseline, calendar, campaign, dependency, marker/fence, execution and proposal layers are explicit components on the shared coordinate system. Focused dependencies retain geometry across row virtualization and expose type, category, minimum/current lag and headroom. |
 | Binding chain semantics | Safe extension point | `PlanningBindingEvidenceView` carries solver/read-model causes and slack. The UI states `Binding chain unavailable` when evidence is absent; no pixel-adjacency critical-path heuristic remains. |
-| Synchronized resource load | Complete | Collapsible capacity region uses the same time axis, aggregates at hour/shift/day scale and exposes processing, downtime and overload with resource/time focus. |
-| Accessibility | Complete for implemented controls | Operations and capacity buckets are native buttons with semantic labels; resource rows and splitter are keyboard-focusable; significant state has text/tooltips in addition to color; reduced motion and focus-visible rules remain active. |
+| Synchronized resource load | Complete | Collapsible capacity region uses the same time axis, aggregates at hour/shift/day scale, exposes processing/downtime/overload, focuses the selected resource/time range and marks contributing operations with a non-color `L` cue. |
+| Keyboard and assistive access | Complete for the delivered surface | Exactly one mounted operation is a roving Tab stop; arrow keys navigate by lane/time; Shift+F10/context-menu key opens the real operation menu; a synchronized schedule table supports dense textual review; semantic labels, reduced motion and focus-visible rules remain active. |
+| Compact shell | Complete | The control toolbar remains one horizontally scrollable row, schedule list/capacity/queue/inspector are overlays or collapsible regions, and Fullscreen API state is synchronized back to .NET. |
+| Planner inspector | Complete for returned facts | Plan, actuals, lineage, baseline delta, scheduling mode/eligibility/commitment/routing, binding evidence, material pools and PO reservations are shown only from the workbench read model. |
 
 ## Verification completed
 
-- `dotnet test tests/APS.UI.Tests/APS.UI.Tests.csproj --no-restore`: 109 passed.
+- `dotnet test tests/APS.UI.Tests/APS.UI.Tests.csproj --no-restore`: 121 passed.
 - `dotnet test tests/APS.Planning.Tests/APS.Planning.Tests.csproj --no-restore`: 160 passed.
 - `dotnet build APS.slnx --no-restore`: succeeded with 0 warnings and 0 errors.
-- Live workbench smoke proof before the final layer/capacity rebuild loaded the existing persisted plan with 105 operations across 8 resources and exercised fit, density persistence, selection and inspector behavior.
+- The 10,000-operation performance gate measured 3.2 ms warmed scene construction, 432 mounted operation models and 18/100 mounted rows.
+- Latest service-host SSR against the existing database returned 105 operation buttons, exactly one operation Tab stop, Compare Subrow/Schedule List/Fullscreen controls, truthful `Binding chain unavailable`, and `Shift unavailable` because the visible eight lanes return no calendar boundary.
+- `/`, `/api/health`, `_content/APS.UI/planning-workbench.js` and `_content/APS.UI/tailwind.css` returned HTTP 200.
 
 ## Explicit boundaries and follow-up inputs
 
-- The in-app browser security policy blocked the final local-page reload after the layer/capacity rebuild. The final build and deterministic suites are verified, but a final visual acceptance pass of those last two slices remains a human/browser check; it is not claimed here.
-- No authoritative shift-template boundary collection is present in the current workbench read model. Shift snap therefore does not fabricate boundaries and behaves as free placement until canonical boundaries are supplied.
+- The in-app browser security policy blocked the final local-page reload and forbade alternate browser workarounds. Final light/dark, practical-size and pointer-drag visual acceptance therefore remains unclaimed.
+- A user-owned `APS.DesktopHost` process from `build/publish/workbench-0.4.0-cockpit` (PID 19300 during verification) was already running. The current DesktopHost build succeeded with 0 warnings, but it was not duplicated or used to replace the user's running process; current-build desktop launch proof remains pending.
+- The active plan has calendar facts but no shift boundary inside the visible eight resource lanes/window. Shift snap is disabled as `Shift unavailable`; target-resource drops also fail clearly if a boundary is absent. No boundary is fabricated and no free-placement fallback is used.
 - Genuine binding-chain visualization remains disabled unless solver/read-model `PlanningBindingEvidenceView` records are supplied.
 - Capacity exposes only categories supported by the current read model: processing, unavailable/downtime and overload. Setup/changeover/idle are not invented.
+- The canonical command service exposes one validated move at a time, not an atomic bulk-move contract. Multi-selection/bulk apply is not presented as working.
+- Pin/unpin, scoped repair and operation-to-material trace commands remain visible but disabled in the context menu with the missing authoritative contract stated explicitly.
