@@ -1,3 +1,4 @@
+@implements IDisposable
 @inject NavigationManager Navigation
 @inject PlannerCockpitState Cockpit
 @inject ThemeService Theme
@@ -52,11 +53,26 @@
         {
             <MenuButton Label="@($"Download update v{Updates.Status.AvailableVersion}")" OnClick="() => Updates.DownloadAsync()" />
         }
+        else if (Updates.Status.Phase == UpdatePhase.Downloading)
+        {
+            <div class="px-3 py-2 text-xs text-secondary">Downloading update… @Updates.Status.DownloadProgress%</div>
+        }
+        else if (Updates.Status.Phase == UpdatePhase.ReadyToRestart)
+        {
+            <MenuButton Label="@($"Restart to apply v{Updates.Status.AvailableVersion}")" OnClick="RestartAndApply" />
+        }
     </DesktopMenu>
     <div class="ml-auto px-2 text-[11px] font-semibold tracking-wide text-muted">APS</div>
 </header>
 
 @code {
     private static readonly string AppVersion = System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.1.0";
+
+    protected override void OnInitialized() => Updates.Changed += OnUpdatesChanged;
+
     private void OpenWorkbench() => Navigation.NavigateTo("/");
+    private void RestartAndApply() => Updates.RestartAndApply();
+    private void OnUpdatesChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Updates.Changed -= OnUpdatesChanged;
 }
