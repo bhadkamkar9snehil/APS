@@ -203,7 +203,7 @@ public sealed class PlanningWorkbenchCommandService(
             [new ValidationTarget(request.Proposal.PlanningKey, request.Proposal.TargetResourceId)],
             cancellationToken);
         var impact = ValidateMove(request.Proposal, request.TimeFencePolicy, context);
-        EnsureApplicable(impact.CanApply, impact.Findings);
+        if (!impact.CanApply) throw BuildBlockedException(impact.Findings);
 
         var scheduleOverride = new OperationScheduleOverride(
             request.Proposal.PlanningKey,
@@ -219,7 +219,7 @@ public sealed class PlanningWorkbenchCommandService(
                 ReferenceTimeUtc: context.State.ReferenceTimeUtc,
                 Trigger: PlanTriggerType.OperationalRedispatch,
                 Reason: $"Planner schedule move: {request.Proposal.ReasonCode}",
-                ScheduleOverrides: [scheduleOverride],
+                ScheduleOverrides: new[] { scheduleOverride },
                 RepairScope: request.RepairScope),
             cancellationToken);
 
@@ -232,7 +232,7 @@ public sealed class PlanningWorkbenchCommandService(
     {
         var prepared = PrepareBulkValidation(proposal);
         if (prepared.Moves.Length == 0)
-            return new PlanningBulkMoveImpact(false, [], prepared.Findings);
+            return new PlanningBulkMoveImpact(false, Array.Empty<PlanningProposalImpact>(), prepared.Findings);
 
         var context = await LoadValidationContextAsync(
             proposal.BaselinePlanVersionId,
@@ -250,18 +250,14 @@ public sealed class PlanningWorkbenchCommandService(
         CancellationToken cancellationToken = default)
     {
         var prepared = PrepareBulkValidation(request.Proposal);
-        if (prepared.Moves.Length == 0)
-        {
-            EnsureApplicable(false, prepared.Findings);
-            throw new InvalidOperationException("Atomic bulk move contains no valid operations.");
-        }
+        if (prepared.Moves.Length == 0) throw BuildBlockedException(prepared.Findings);
 
         var context = await LoadValidationContextAsync(
             request.Proposal.BaselinePlanVersionId,
             prepared.Moves.Select(x => new ValidationTarget(x.PlanningKey, x.TargetResourceId)).ToArray(),
             cancellationToken);
         var impact = ValidateBulkMove(request.Proposal, request.TimeFencePolicy, prepared, context);
-        EnsureApplicable(impact.CanApply, impact.Findings);
+        if (!impact.CanApply) throw BuildBlockedException(impact.Findings);
 
         var scheduleOverrides = request.Proposal.Moves.Select(move => new OperationScheduleOverride(
             move.PlanningKey,
@@ -416,14 +412,14 @@ public sealed class PlanningWorkbenchCommandService(
         var relevantResourceIds = sourceResourceIds.Concat(targetResourceIds).Distinct().ToArray();
 
         var resources = relevantResourceIds.Length == 0
-            ? []
+            ? Array.Empty<Resource>()
             : await db.Resources.AsNoTracking()
                 .Where(x => relevantResourceIds.Contains(x.Id))
                 .ToArrayAsync(cancellationToken);
         var resourcesById = resources.ToDictionary(x => x.Id);
 
         var resourceOptions = planningKeys.Length == 0 || targetResourceIds.Length == 0
-            ? []
+            ? Array.Empty<PlanOperationResourceOptionSnapshot>()
             : await db.PlanOperationResourceOptionSnapshots.AsNoTracking()
                 .Where(x => x.PlanVersionId == planVersionId &&
                             planningKeys.Contains(x.PlanningKey) &&
@@ -437,7 +433,7 @@ public sealed class PlanningWorkbenchCommandService(
                 StringComparer.OrdinalIgnoreCase);
 
         var calendars = targetResourceIds.Length == 0
-            ? []
+            ? Array.Empty<ResourceCalendar>()
             : await db.ResourceCalendars.AsNoTracking()
                 .Where(x => targetResourceIds.Contains(x.ResourceId))
                 .ToArrayAsync(cancellationToken);
@@ -456,17 +452,12 @@ public sealed class PlanningWorkbenchCommandService(
             calendarsByResourceId);
     }
 
-    private static void EnsureApplicable(
-        bool canApply,
-        IReadOnlyCollection<PlanningConstraintFinding> findings)
-    {
-        if (canApply) return;
-        throw new InvalidOperationException(
-            string.Join(" ", findings
-                .Where(x => x.Severity == PlanningConstraintSeverity.Blocker)
-                .Select(x => x.Message)
-                .Distinct(StringComparer.Ordinal)));
-    }
+    private static InvalidOperationException BuildBlockedException(
+        IReadOnlyCollection<PlanningConstraintFinding> findings) =>
+        new(string.Join(" ", findings
+            .Where(x => x.Severity == PlanningConstraintSeverity.Blocker)
+            .Select(x => x.Message)
+            .Distinct(StringComparer.Ordinal)));
 
     private static PlanningConstraintFinding Blocker(
         string code,
@@ -478,9 +469,9 @@ public sealed class PlanningWorkbenchCommandService(
 
     private static IReadOnlyCollection<string> DeserializeKeys(string? json)
     {
-        if (string.IsNullOrWhiteSpace(json)) return [];
-        try { return JsonSerializer.Deserialize<string[]>(json) ?? []; }
-        catch (JsonException) { return []; }
+        if (string.IsNullOrWhiteSpace(json)) return Array.Empty<string>();
+        try { return JsonSerializer.Deserialize<string[]>(json) ?? Array.Empty<string>(); }
+        catch (JsonException) { return Array.Empty<string>(); }
     }
 
     private sealed record ValidationTarget(string PlanningKey, Guid TargetResourceId);
