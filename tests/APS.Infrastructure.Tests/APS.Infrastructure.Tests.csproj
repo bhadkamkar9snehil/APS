@@ -5,16 +5,16 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\APS.UI\APS.UI.csproj" />
-    <PackageReference Include="bunit" Version="2.9.0" />
+    <ProjectReference Include="..\..\src\APS.Domain\APS.Domain.csproj" />
+    <ProjectReference Include="..\..\src\APS.Application\APS.Application.csproj" />
+    <ProjectReference Include="..\..\src\APS.Infrastructure\APS.Infrastructure.csproj" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.10" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-  </ItemGroup>
-  <ItemGroup>
-    <Using Include="Xunit" />
   </ItemGroup>
 </Project>
