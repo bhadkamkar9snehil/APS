@@ -33,6 +33,19 @@ public sealed class LayoutThemeContractTests
     }
 
     [Fact]
+    public void Desktop_update_menu_tracks_background_state_and_can_apply_prepared_updates()
+    {
+        var menu = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/DesktopMenuBar.razor"));
+
+        Assert.Contains("Updates.Changed += OnUpdatesChanged", menu);
+        Assert.Contains("UpdatePhase.Available", menu);
+        Assert.Contains("UpdatePhase.Downloading", menu);
+        Assert.Contains("UpdatePhase.ReadyToRestart", menu);
+        Assert.Contains("RestartAndApply", menu);
+        Assert.Contains("Updates.Changed -= OnUpdatesChanged", menu);
+    }
+
+    [Fact]
     public void Desktop_window_chrome_uses_neutral_caption_colors()
     {
         var chrome = File.ReadAllText(Repo.File("src/APS.DesktopHost/NativeWindowTheme.cs"));
