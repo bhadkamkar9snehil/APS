@@ -166,6 +166,7 @@ public sealed class PlanningWorkbenchMarkupTests
         Assert.Contains("ShiftKey", block);
         Assert.Contains("GanttKeyboardDirection", block);
         Assert.Contains("KeyboardNavigate", gantt);
+        Assert.Contains("KeyboardAnchorPlanningKey=\"@KeyboardAnchorPlanningKey\"", gantt);
         Assert.Contains("GanttOperationContextMenu", gantt);
         Assert.Contains("role=\"menu\"", menu);
         Assert.Contains("Inspect operation", menu);
@@ -279,7 +280,12 @@ public sealed class PlanningWorkbenchMarkupTests
         Assert.DoesNotContain("data-shift-boundaries", block);
         Assert.Contains("grid.dataset.shiftBoundaries", script);
         Assert.Contains("TargetShiftBoundaries(targetResourceId)", page);
-        Assert.Contains("state.Viewport.SnapMode,\n            TargetShiftBoundaries(targetResourceId)", page.Replace("\r\n", "\n"));
+        Assert.Contains("Shift unavailable", page);
+        Assert.Contains("HasShiftBoundaries", page);
+        Assert.Contains("targetShiftBoundaries.Count == 0", page);
+        Assert.Contains("Shift calendar unavailable for resource", script);
+        Assert.Contains("snapped.unavailable", script);
+        Assert.Contains("state.Viewport.SnapMode,\n            targetShiftBoundaries", page.Replace("\r\n", "\n"));
     }
 
 }

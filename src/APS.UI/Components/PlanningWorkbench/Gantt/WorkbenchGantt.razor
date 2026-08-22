@@ -25,7 +25,7 @@
             <GanttResourceGrid Scene="Scene" RowHeightPx="State.GanttRowHeightPx" ResourceSelected="ResourceSelected" />
             <div class="relative min-w-0 border-l border-border" data-gantt-timeline>
                 <GanttTimeScale Scene="Scene" State="State" ReferenceTimeUtc="Workbench.Plan.ReferenceTimeUtc" FrozenFenceEndUtc="FrozenFenceEndUtc" />
-                <GanttTimelineViewport Scene="Scene" State="State" Workbench="Workbench" FrozenFenceEndUtc="FrozenFenceEndUtc" KeyboardAnchorPlanningKey="KeyboardAnchorPlanningKey" OperationSelected="OperationSelected" KeyboardNavigate="HandleKeyboardNavigation" ContextRequested="OpenContextMenu" />
+                <GanttTimelineViewport Scene="Scene" State="State" Workbench="Workbench" FrozenFenceEndUtc="FrozenFenceEndUtc" KeyboardAnchorPlanningKey="@KeyboardAnchorPlanningKey" OperationSelected="OperationSelected" KeyboardNavigate="HandleKeyboardNavigation" ContextRequested="OpenContextMenu" />
             </div>
             <button type="button" class="aps-gantt-splitter" data-gantt-splitter aria-label="Resize resource grid" title="Drag to resize resource grid"></button>
         </div>

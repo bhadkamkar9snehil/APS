@@ -110,6 +110,24 @@ public sealed class PlanningWorkbenchStateTests
     }
 
     [Fact]
+    public void Staged_proposal_survives_zoom_and_row_virtualization_with_unchanged_domain_geometry()
+    {
+        var state = new PlanningWorkbenchState();
+        var start = new DateTime(2026, 8, 21, 0, 0, 0, DateTimeKind.Utc);
+        state.SetPlanWindow(start, start.AddDays(10));
+        var proposal = new APS.Application.PlanningMoveProposal(Guid.NewGuid(), "OP-100", Guid.NewGuid(), start.AddHours(9), "TEST");
+        state.StageMove(proposal);
+
+        state.SetZoom(PlanningWorkbenchZoom.Day);
+        state.Viewport.SetVisibleRowRange(50, 10);
+
+        var staged = Assert.IsType<APS.Application.PlanningMoveProposal>(state.StagedMove);
+        Assert.Same(proposal, staged);
+        Assert.Equal(start.AddHours(9), staged.TargetStartUtc);
+        Assert.Equal("OP-100", state.SelectedPlanningKey);
+    }
+
+    [Fact]
     public void Fit_frames_the_scheduled_operations_instead_of_the_full_plan_horizon()
     {
         var state = new PlanningWorkbenchState();

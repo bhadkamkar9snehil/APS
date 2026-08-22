@@ -7,7 +7,7 @@
         }
         @foreach (var row in Scene.Rows)
         {
-            <div style="height:var(--aps-gantt-row-height)"><GanttResourceLane Row="row" Scene="Scene" State="State" Workbench="Workbench" FrozenFenceEndUtc="FrozenFenceEndUtc" KeyboardAnchorPlanningKey="KeyboardAnchorPlanningKey" OperationSelected="OperationSelected" KeyboardNavigate="KeyboardNavigate" ContextRequested="ContextRequested" /></div>
+            <div style="height:var(--aps-gantt-row-height)"><GanttResourceLane Row="row" Scene="Scene" State="State" Workbench="Workbench" FrozenFenceEndUtc="FrozenFenceEndUtc" KeyboardAnchorPlanningKey="@KeyboardAnchorPlanningKey" OperationSelected="OperationSelected" KeyboardNavigate="KeyboardNavigate" ContextRequested="ContextRequested" /></div>
         }
         @if (Scene.Rows.Count > 0 && Scene.Rows[^1].SceneIndex < Scene.TotalRowCount - 1)
         {

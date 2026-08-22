@@ -81,7 +81,10 @@
                     @foreach (var density in Enum.GetValues<GanttDensity>()) { <option value="@density">@density</option> }
                 </select>
                 <select aria-label="Move snap" value="@state.Viewport.SnapMode" @onchange="SnapChangedAsync" class="rounded-control border border-border bg-surface-raised px-2 py-1 text-xs">
-                    @foreach (var snap in Enum.GetValues<GanttSnapMode>()) { <option value="@snap">@SnapLabel(snap)</option> }
+                    @foreach (var snap in Enum.GetValues<GanttSnapMode>())
+                    {
+                        <option value="@snap" disabled="@(snap == GanttSnapMode.ShiftBoundary && !HasShiftBoundaries)">@(snap == GanttSnapMode.ShiftBoundary && !HasShiftBoundaries ? "Shift unavailable" : SnapLabel(snap))</option>
+                    }
                 </select>
                 <ToggleButton Active="state.ShowBaseline" Label="Baseline" OnClick="ToggleBaselineAsync" />
                 <select aria-label="Baseline display" value="@state.BaselineMode" @onchange="BaselineModeChangedAsync" disabled="@(!state.ShowBaseline)" class="rounded-control border border-border bg-surface-raised px-2 py-1 text-xs disabled:opacity-50">
@@ -368,6 +371,10 @@
             ? "Completed work is fixed to its actual result and cannot be moved."
             : "Running work is protected. Repair the future schedule around it instead of moving it.";
     private bool CanRelease => !acting && !workbench!.Plan.IsReleased && workbench.Plan.Status == PlanVersionStatus.Feasible;
+    private bool HasShiftBoundaries => workbench is not null && workbench.Schedule.ResourceLanes.Any(lane =>
+        workbench.ResourceCalendarIntervals.Any(interval => interval.ResourceId == lane.ResourceId &&
+            ((interval.StartUtc >= state.VisibleStartUtc && interval.StartUtc <= state.VisibleEndUtc) ||
+             (interval.EndUtc >= state.VisibleStartUtc && interval.EndUtc <= state.VisibleEndUtc))));
     private string ScenarioName => state.ScenarioIntent == PlanningScenarioIntent.Recovery
         ? $"Recovery · {workbench!.Plan.ReferenceTimeUtc:dd MMM HH:mm}"
         : state.ScenarioIntent == PlanningScenarioIntent.Clone
@@ -520,7 +527,7 @@
         preferences = GanttPreferencesStore.Parse(json, availableWidthPx);
         state.Viewport.SetGridWidth(preferences.GridWidthPx, availableWidthPx);
         state.Viewport.SetDensity(preferences.Density);
-        state.Viewport.SetSnapMode(preferences.SnapMode);
+        state.Viewport.SetSnapMode(preferences.SnapMode == GanttSnapMode.ShiftBoundary && !HasShiftBoundaries ? GanttSnapMode.FifteenMinutes : preferences.SnapMode);
         state.SetLayerVisibility(preferences.ShowBaseline, preferences.ShowDependencies);
         state.SetBaselineMode(preferences.BaselineMode);
         state.SetCapacityPanel(preferences.CapacityPanelOpen, preferences.CapacityPanelHeightPx);
@@ -550,6 +557,12 @@
             !DateTimeOffset.TryParse(targetStartUtc, out var parsedStart)) return;
         var operation = FindOperation(planningKey);
         if (operation is null) return;
+        var targetShiftBoundaries = TargetShiftBoundaries(targetResourceId);
+        if (state.Viewport.SnapMode == GanttSnapMode.ShiftBoundary && targetShiftBoundaries.Count == 0)
+        {
+            SetMessage("Shift snap is unavailable for this resource and visible time window because no authoritative calendar boundary was returned.", true);
+            return;
+        }
         var decision = GanttDragGeometry.EvaluateDrop(
             operation,
             draggedDetail,
@@ -564,7 +577,7 @@
             operation.EndUtc - operation.StartUtc,
             0d,
             state.Viewport.SnapMode,
-            TargetShiftBoundaries(targetResourceId));
+            targetShiftBoundaries);
         targetResourceText = targetResourceId.ToString();
         targetStartText = targetStart.ToString("yyyy-MM-ddTHH:mm");
         if (decision.RequiresFrozenOverride && !allowFrozenOverride)
@@ -609,7 +622,7 @@
     private IReadOnlyList<DateTime> TargetShiftBoundaries(Guid resourceId) => workbench?.ResourceCalendarIntervals
         .Where(x => x.ResourceId == resourceId)
         .SelectMany(x => new[] { x.StartUtc, x.EndUtc })
-        .Where(x => x >= state.PlanStartUtc && x <= state.PlanEndUtc)
+        .Where(x => x >= state.VisibleStartUtc && x <= state.VisibleEndUtc)
         .Distinct()
         .OrderBy(x => x)
         .ToArray() ?? Array.Empty<DateTime>();

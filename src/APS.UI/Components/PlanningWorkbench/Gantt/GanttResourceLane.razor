@@ -39,7 +39,7 @@
         : null;
     private string ShiftBoundaries => string.Join(",", Row.CalendarIntervals
         .SelectMany(x => new[] { x.StartUtc, x.EndUtc })
-        .Where(x => x >= State.PlanStartUtc && x <= State.PlanEndUtc)
+        .Where(x => x >= State.VisibleStartUtc && x <= State.VisibleEndUtc)
         .Distinct()
         .OrderBy(x => x)
         .Select(x => x.ToString("O")));

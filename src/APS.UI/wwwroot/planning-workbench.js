@@ -51,7 +51,8 @@
       if (drag.snapMode === 'ShiftBoundary') {
         const boundaries = (grid.dataset.shiftBoundaries || '').split(',').filter(Boolean)
           .map(value => new Date(value).getTime()).filter(Number.isFinite);
-        if (boundaries.length) candidate = boundaries.reduce((nearest, value) => Math.abs(value - candidate) < Math.abs(nearest - candidate) ? value : nearest);
+        if (!boundaries.length) return { unavailable: true };
+        candidate = boundaries.reduce((nearest, value) => Math.abs(value - candidate) < Math.abs(nearest - candidate) ? value : nearest);
       } else if (increments[drag.snapMode]) {
         const incrementMs = increments[drag.snapMode] * 60000;
         const day = new Date(candidate);
@@ -214,7 +215,7 @@
         state.drag.lastEligible = eligible;
         const snapped = eligible ? snap(grid, event.clientX, state.drag) : null;
         state.drag.lastCandidate = snapped;
-        if (eligible && snapped) {
+        if (eligible && snapped && !snapped.unavailable) {
           if (!state.guide) {
             state.guide = document.createElement('div');
             state.guide.className = 'aps-snap-guide';
@@ -228,6 +229,10 @@
           const end = new Date(snapped.candidate + state.drag.durationMs);
           const deltaMinutes = Math.round((snapped.candidate - new Date(state.drag.block.dataset.operationStart).getTime()) / 60000);
           setFeedback(state.drag, `${start.toISOString().slice(11,16)}–${end.toISOString().slice(11,16)} · ${deltaMinutes >= 0 ? '+' : ''}${deltaMinutes} min${state.drag.frozen ? ' · override required' : ''}`, state.drag.frozen ? 'warning' : 'eligible');
+        } else if (eligible && snapped?.unavailable) {
+          clearGuide();
+          state.drag.lastCandidate = null;
+          setFeedback(state.drag, 'Shift calendar unavailable for resource', 'ineligible');
         } else {
           clearGuide();
           setFeedback(state.drag, 'Resource not eligible', 'ineligible');
@@ -270,7 +275,7 @@
       const grid = lane?.querySelector?.('.aps-time-grid');
       if (!lane || !grid || !drag.eligibleResources.has(lane.dataset.resourceId)) return;
       const snapped = snap(grid, event.clientX, drag);
-      if (!snapped) return;
+      if (!snapped || snapped.unavailable) return;
       await dotnet.invokeMethodAsync('StageDraggedMove', drag.planningKey, lane.dataset.resourceId, snapped.iso);
     };
 
