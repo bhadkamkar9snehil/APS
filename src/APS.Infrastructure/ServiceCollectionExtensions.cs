@@ -12,7 +12,7 @@ namespace APS.Infrastructure;
 /// </summary>
 public static class ServiceCollectionExtensions
 {
-    public static ApsInfrastructureRegistration AddApsInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    public static bool AddApsInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         var sqliteConnection = configuration.GetConnectionString("APS");
         if (string.IsNullOrWhiteSpace(sqliteConnection))
@@ -50,11 +50,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPlanningWorkbenchCommandService, PlanningWorkbenchCommandService>();
         services.AddScoped<IMasterDataAdminService, MasterDataAdminService>();
 
-        var demoModeEnabled = bool.TryParse(configuration["APS:DemoModeEnabled"], out var enabled) && enabled;
-        return new ApsInfrastructureRegistration(true, demoModeEnabled);
+        return bool.TryParse(configuration["APS:DemoModeEnabled"], out var demoModeEnabled) && demoModeEnabled;
     }
 
-    /// <summary>Applies pending EF Core migrations to the self-contained SQLite database before hosted services start.</summary>
+    /// <summary>
+    /// Applies pending EF Core migrations to the self-contained SQLite database before hosted services start.
+    /// </summary>
     public static async Task MigrateApsDatabaseAsync(this IServiceProvider services, CancellationToken cancellationToken = default)
     {
         await using var scope = services.CreateAsyncScope();
@@ -62,5 +63,3 @@ public static class ServiceCollectionExtensions
         await db.Database.MigrateAsync(cancellationToken);
     }
 }
-
-public sealed record ApsInfrastructureRegistration(bool HasApsDatabase, bool DemoModeEnabled);
