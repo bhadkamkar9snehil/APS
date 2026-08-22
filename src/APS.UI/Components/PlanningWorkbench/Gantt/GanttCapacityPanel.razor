@@ -1,0 +1,55 @@
+<section class="border-t border-border bg-surface shadow-raised" style="height:@($"{State.CapacityPanelHeightPx}px")" aria-label="Synchronized resource load">
+    <div class="grid h-full" style="grid-template-columns:var(--aps-gantt-grid-width) minmax(760px, 1fr)">
+        <div class="border-r border-border bg-surface-raised">
+            <div class="flex h-8 items-center justify-between border-b border-border px-3 text-[11px]">
+                <strong>Resource load</strong><span class="text-muted">@ScaleLabel</span>
+            </div>
+            <div class="space-y-1 p-2 text-[10px] text-secondary">
+                <span class="mr-3 inline-flex items-center gap-1"><i class="h-2 w-2 bg-accent"></i>Processing</span>
+                <span class="mr-3 inline-flex items-center gap-1"><i class="aps-calendar-unavailable h-2 w-2"></i>Downtime</span>
+                <span class="inline-flex items-center gap-1"><i class="h-2 w-2 bg-danger"></i>Overload</span>
+            </div>
+        </div>
+        <div class="relative overflow-hidden bg-surface-inset" aria-label="Capacity buckets on the schedule time scale">
+            @foreach (var tick in Scene.Ticks)
+            {
+                <div class="pointer-events-none absolute inset-y-0 w-px @(tick.IsMajor ? "bg-border-strong" : "bg-border/50")" style="left:@tick.LeftPercent%"></div>
+            }
+            @foreach (var group in Segments.GroupBy(x => x.ResourceId).Select((items, index) => (items, index)))
+            {
+                var top = 8 + group.index * 22;
+                @foreach (var segment in group.items)
+                {
+                    <button type="button"
+                            class="absolute z-10 min-w-px rounded-sm border @(segment.IsOverloaded ? "border-danger bg-danger" : "border-accent-border bg-accent")"
+                            style="left:@segment.LeftPercent%;width:@segment.WidthPercent%;top:@($"{top}px");height:@($"{Math.Clamp((double)segment.OccupancyPercent / 100d * 16d, 3d, 16d):0.#}px")"
+                            aria-label="@SegmentLabel(segment)"
+                            title="@SegmentLabel(segment)"
+                            @onclick="() => SegmentFocused.InvokeAsync(segment)"></button>
+                    @if (segment.UnavailableMinutes > 0)
+                    {
+                        <span class="aps-calendar-unavailable pointer-events-none absolute z-[9] h-1"
+                              style="left:@segment.LeftPercent%;width:@segment.WidthPercent%;top:@($"{top + 17}px")"></span>
+                    }
+                }
+            }
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public PlanningWorkbenchView Workbench { get; set; } = default!;
+    [Parameter, EditorRequired] public PlanningWorkbenchState State { get; set; } = default!;
+    [Parameter, EditorRequired] public GanttScene Scene { get; set; } = default!;
+    [Parameter] public EventCallback<GanttCapacitySegmentModel> SegmentFocused { get; set; }
+
+    private IReadOnlyList<GanttCapacitySegmentModel> Segments => GanttCapacityModels.Build(Workbench.CapacityBuckets, State);
+    private string ScaleLabel => GanttCapacityModels.ScaleFor(State).ToString();
+    private string SegmentLabel(GanttCapacitySegmentModel segment)
+    {
+        var resource = Workbench.Schedule.ResourceLanes.FirstOrDefault(x => x.ResourceId == segment.ResourceId)?.ResourceCode ?? segment.ResourceId.ToString();
+        return $"{resource} · {segment.StartUtc:dd MMM HH:mm}–{segment.EndUtc:HH:mm} · {segment.OccupancyPercent:0.#}% occupied" +
+               (segment.IsOverloaded ? " · Overload" : string.Empty) +
+               (segment.UnavailableMinutes > 0 ? $" · {segment.UnavailableMinutes:0.#} downtime min" : string.Empty);
+    }
+}

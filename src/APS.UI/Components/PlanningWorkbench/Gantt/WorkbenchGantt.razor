@@ -18,8 +18,8 @@
             <strong>Binding:</strong> @string.Join(" · ", SelectedBindings.Select(x => $"{x.Cause}: {x.Description}"))
         </div>
     }
-    <div class="min-h-0 flex-1 overflow-auto" data-gantt-scroll>
-        <div class="relative grid min-w-[1120px]" style="grid-template-columns:var(--aps-gantt-grid-width) minmax(760px, 1fr);--aps-gantt-grid-width:@($"{State.Viewport.GridWidthPx:0}px");--aps-gantt-row-height:@($"{State.Viewport.RowHeightPx}px")">
+    <div class="min-h-0 flex-1 overflow-auto" data-gantt-scroll style="--aps-gantt-grid-width:@($"{State.Viewport.GridWidthPx:0}px");--aps-gantt-row-height:@($"{State.Viewport.RowHeightPx}px")">
+        <div class="relative grid min-w-[1120px]" style="grid-template-columns:var(--aps-gantt-grid-width) minmax(760px, 1fr)">
             <GanttResourceGrid Scene="Scene" RowHeightPx="State.Viewport.RowHeightPx" ResourceSelected="ResourceSelected" />
             <div class="relative min-w-0 border-l border-border" data-gantt-timeline>
                 <GanttTimeScale Scene="Scene" State="State" ReferenceTimeUtc="Workbench.Plan.ReferenceTimeUtc" FrozenFenceEndUtc="FrozenFenceEndUtc" />
@@ -27,6 +27,12 @@
             </div>
             <button type="button" class="aps-gantt-splitter" data-gantt-splitter aria-label="Resize resource grid" title="Drag to resize resource grid"></button>
         </div>
+        @if (State.CapacityPanelOpen)
+        {
+            <div class="sticky bottom-0 z-30 min-w-[1120px]">
+                <GanttCapacityPanel Workbench="Workbench" State="State" Scene="Scene" SegmentFocused="CapacitySegmentFocused" />
+            </div>
+        }
     </div>
 </section>
 
@@ -36,6 +42,7 @@
     [Parameter] public DateTime FrozenFenceEndUtc { get; set; }
     [Parameter] public EventCallback<ScheduledProcessOperationView> OperationSelected { get; set; }
     [Parameter] public EventCallback<ScheduleResourceLaneView> ResourceSelected { get; set; }
+    [Parameter] public EventCallback<GanttCapacitySegmentModel> CapacitySegmentFocused { get; set; }
 
     private GanttScene Scene { get; set; } = default!;
 

@@ -72,6 +72,8 @@ public sealed class PlanningWorkbenchState
     public bool ShowBaseline { get; private set; } = true;
     public GanttBaselineMode BaselineMode { get; private set; } = GanttBaselineMode.Ghost;
     public bool ShowDependencies { get; private set; }
+    public bool CapacityPanelOpen { get; private set; }
+    public int CapacityPanelHeightPx { get; private set; } = 220;
     public bool IsReleasedPlan { get; private set; }
     public bool CanEditSchedule => !IsReleasedPlan || ScenarioIntent is PlanningScenarioIntent.New or PlanningScenarioIntent.Clone or PlanningScenarioIntent.Recovery;
     public bool CanStartRecovery => IsReleasedPlan && ScenarioIntent != PlanningScenarioIntent.Recovery;
@@ -165,6 +167,14 @@ public sealed class PlanningWorkbenchState
 
     public void ToggleBaseline() { ShowBaseline = !ShowBaseline; Notify(); }
     public void SetBaselineMode(GanttBaselineMode mode) { BaselineMode = mode; Notify(); }
+    public void ToggleCapacityPanel() { CapacityPanelOpen = !CapacityPanelOpen; Notify(); }
+    public void SetCapacityPanel(bool open, int heightPx)
+    {
+        CapacityPanelOpen = open;
+        CapacityPanelHeightPx = Math.Clamp(heightPx, 120, 600);
+        Notify();
+    }
+    public void FocusRange(DateTime startUtc, DateTime endUtc) { Viewport.FocusRange(startUtc, endUtc); Notify(); }
     public void ToggleDependencies() { ShowDependencies = !ShowDependencies; Notify(); }
     public void SetLayerVisibility(bool showBaseline, bool showDependencies)
     {

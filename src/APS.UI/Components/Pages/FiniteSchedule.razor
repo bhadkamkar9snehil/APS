@@ -97,6 +97,7 @@
                 {
                     <button type="button" disabled class="rounded-control border border-border px-2 py-1 text-xs text-muted opacity-60" title="Solver-derived slack and binding-cause evidence are not available in this plan read model">Binding chain unavailable</button>
                 }
+                <button type="button" class="rounded-control border px-2 py-1 text-xs @(state.CapacityPanelOpen ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="ToggleCapacityPanelAsync">@(state.CapacityPanelOpen ? "Hide load" : "Resource load")</button>
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="Cockpit.ToggleQueue">@(Cockpit.QueueOpen ? "Hide queue" : "Demand queue")</button>
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="Cockpit.ToggleInspector">@(Cockpit.InspectorOpen ? "Hide inspector" : "Inspector")</button>
             </div>
@@ -162,7 +163,8 @@
                                 State="state"
                                 FrozenFenceEndUtc="FrozenFenceEndUtc"
                                 OperationSelected="SelectOperation"
-                                ResourceSelected="SelectResource" />
+                                ResourceSelected="SelectResource"
+                                CapacitySegmentFocused="FocusCapacitySegment" />
             </main>
 
             @if (Cockpit.InspectorOpen)
@@ -398,6 +400,12 @@
         await SaveGanttPreferenceAsync("baselineMode", mode.ToString());
     }
 
+    private async Task ToggleCapacityPanelAsync()
+    {
+        state.ToggleCapacityPanel();
+        await SaveGanttPreferenceAsync("capacityPanelOpen", state.CapacityPanelOpen);
+    }
+
     private ValueTask SaveGanttPreferenceAsync(string key, object value) =>
         JS.InvokeVoidAsync("apsPlanningWorkbench.savePreference", key, value);
 
@@ -438,12 +446,19 @@
         state.Viewport.SetSnapMode(preferences.SnapMode);
         state.SetLayerVisibility(preferences.ShowBaseline, preferences.ShowDependencies);
         state.SetBaselineMode(preferences.BaselineMode);
+        state.SetCapacityPanel(preferences.CapacityPanelOpen, preferences.CapacityPanelHeightPx);
         if (preferences.Zoom != state.Zoom) state.SetZoom(preferences.Zoom);
         StateHasChanged();
     }
 
     private void SelectOperation(ScheduledProcessOperationView operation) { state.SelectOperation(operation.PlanningKey); Cockpit.OpenInspector(); WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Operation, operation.OperationSnapshotId, FriendlyOperationName(operation.PlanningKey))); targetResourceText = operation.ResourceId.ToString(); targetStartText = operation.StartUtc.ToString("yyyy-MM-ddTHH:mm"); moveComment = null; allowFrozenOverride = false; }
     private void SelectResource(ScheduleResourceLaneView lane) => WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Resource, lane.ResourceId, lane.ResourceCode));
+    private void FocusCapacitySegment(GanttCapacitySegmentModel segment)
+    {
+        var lane = workbench?.Schedule.ResourceLanes.FirstOrDefault(x => x.ResourceId == segment.ResourceId);
+        if (lane is not null) SelectResource(lane);
+        state.FocusRange(segment.StartUtc, segment.EndUtc);
+    }
     private void FocusDemand(DemandSupplyRowView demand) { state.SetSearch(demand.ProductionOrderNumber); var detail = workbench?.OperationDetails.FirstOrDefault(x => x.ProductionOrderNumbers.Contains(demand.ProductionOrderNumber, StringComparer.OrdinalIgnoreCase)); var operation = FindOperation(detail?.PlanningKey); if (operation is not null) SelectOperation(operation); }
     private void FocusCampaign(CampaignView campaign) { state.SetSearch(campaign.CampaignNumber); var detail = workbench?.OperationDetails.FirstOrDefault(x => x.CampaignNumber == campaign.CampaignNumber); var operation = FindOperation(detail?.PlanningKey); if (operation is not null) SelectOperation(operation); }
     private void FocusException(PlanningWorkbenchException exception) { state.SetSearch(exception.Entity?.DisplayCode ?? exception.Title); }

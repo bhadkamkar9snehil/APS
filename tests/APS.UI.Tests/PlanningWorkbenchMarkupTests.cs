@@ -106,6 +106,21 @@ public sealed class PlanningWorkbenchMarkupTests
     }
 
     [Fact]
+    public void Capacity_panel_shares_the_gantt_viewport_and_exposes_resource_time_focus()
+    {
+        var panel = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttCapacityPanel.razor"));
+        var gantt = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/WorkbenchGantt.razor"));
+
+        Assert.Contains("GanttCapacityModels.Build", panel);
+        Assert.Contains("Processing", panel);
+        Assert.Contains("Downtime", panel);
+        Assert.Contains("Overload", panel);
+        Assert.Contains("SegmentFocused", panel);
+        Assert.Contains("GanttCapacityPanel", gantt);
+        Assert.Contains("State.CapacityPanelOpen", gantt);
+    }
+
+    [Fact]
     public void Gantt_is_a_reusable_synchronized_control_not_page_local_markup()
     {
         var root = "src/APS.UI/Components/PlanningWorkbench/Gantt";

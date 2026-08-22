@@ -176,6 +176,13 @@ public sealed class GanttViewportState
 
     public void FitContent() => Fit(ContentStartUtc, ContentEndUtc);
 
+    public void FocusRange(DateTime startUtc, DateTime endUtc)
+    {
+        SetVisibleRange(AsUtc(startUtc), AsUtc(endUtc));
+        Zoom = InferZoom(VisibleEndUtc - VisibleStartUtc);
+        fitRestore = null;
+    }
+
     public bool ResetFit()
     {
         if (fitRestore is null) return false;
