@@ -6,44 +6,28 @@ namespace APS.UI.Tests;
 public sealed class ThemeServiceTests
 {
     [Fact]
-    public async Task Invalid_custom_accent_preserves_previous_preference()
+    public async Task Mode_change_preserves_accent_and_applies_preference()
     {
         var js = new RecordingJsRuntime();
         await using var service = new ThemeService(js);
-        await service.SetPresetAsync(ThemeAccentKind.Forest);
+        var accent = service.Preference.Accent;
 
-        var changed = await service.SetCustomAccentAsync("not-a-color");
+        await service.SetModeAsync(ThemeMode.Dark);
 
-        Assert.False(changed);
-        Assert.Equal(ThemeAccentKind.Forest, service.Preference.Accent.Kind);
-        Assert.Single(js.Invocations);
-    }
-
-    [Fact]
-    public async Task Valid_custom_accent_is_normalized_and_applied()
-    {
-        var js = new RecordingJsRuntime();
-        await using var service = new ThemeService(js);
-
-        var changed = await service.SetCustomAccentAsync("#7c3aed");
-
-        Assert.True(changed);
-        Assert.Equal(ThemeAccentKind.Custom, service.Preference.Accent.Kind);
-        Assert.Equal("#7C3AED", service.Preference.Accent.CustomHex);
+        Assert.Equal(ThemeMode.Dark, service.Preference.Mode);
+        Assert.Equal(accent, service.Preference.Accent);
         Assert.Equal("apsTheme.apply", js.Invocations.Single());
     }
 
     [Fact]
-    public async Task Reset_restores_system_and_amber()
+    public async Task Invalid_mode_is_rejected_before_javascript_invocation()
     {
         var js = new RecordingJsRuntime();
         await using var service = new ThemeService(js);
-        await service.SetModeAsync(ThemeMode.Dark);
 
-        await service.ResetAsync();
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => service.SetModeAsync((ThemeMode)99));
 
-        Assert.Equal(ThemePreference.Default, service.Preference);
-        Assert.Equal("apsTheme.reset", js.Invocations.Last());
+        Assert.Empty(js.Invocations);
     }
 
     [Fact]
@@ -55,6 +39,18 @@ public sealed class ThemeServiceTests
 
         Assert.Equal("dark", service.EffectiveTheme);
         Assert.Equal(ThemeMode.System, service.Preference.Mode);
+    }
+
+    [Fact]
+    public async Task Explicit_mode_ignores_system_theme_notifications()
+    {
+        var js = new RecordingJsRuntime();
+        await using var service = new ThemeService(js);
+        await service.SetModeAsync(ThemeMode.Light);
+
+        await service.OnSystemThemeChanged(true);
+
+        Assert.Equal("light", service.EffectiveTheme);
     }
 
     private sealed class RecordingJsRuntime : IJSRuntime
