@@ -487,7 +487,7 @@
             operation.EndUtc - operation.StartUtc,
             0d,
             state.Viewport.SnapMode,
-            Array.Empty<DateTime>());
+            TargetShiftBoundaries(targetResourceId));
         targetResourceText = targetResourceId.ToString();
         targetStartText = targetStart.ToString("yyyy-MM-ddTHH:mm");
         if (decision.RequiresFrozenOverride && !allowFrozenOverride)
@@ -529,6 +529,13 @@
     private IReadOnlyCollection<PlanningOperationResourceOptionView> EligibleResources(ScheduledProcessOperationView op, PlanningOperationWorkbenchDetail? d) => d?.ResourceOptions.Count > 0 ? d.ResourceOptions : new[] { new PlanningOperationResourceOptionView(op.ResourceId, op.ResourceCode, op.ResourceName, (int)(op.EndUtc - op.StartUtc).TotalMinutes, 0, true, null) };
     private ScheduledProcessOperationView? FindOperation(string? key) => string.IsNullOrWhiteSpace(key) || workbench is null ? null : workbench.Schedule.ResourceLanes.SelectMany(x => x.Operations).FirstOrDefault(x => x.PlanningKey.Equals(key, StringComparison.OrdinalIgnoreCase));
     private PlanningOperationWorkbenchDetail? FindDetail(string? key) => string.IsNullOrWhiteSpace(key) || workbench is null ? null : workbench.OperationDetails.FirstOrDefault(x => x.PlanningKey.Equals(key, StringComparison.OrdinalIgnoreCase));
+    private IReadOnlyList<DateTime> TargetShiftBoundaries(Guid resourceId) => workbench?.ResourceCalendarIntervals
+        .Where(x => x.ResourceId == resourceId)
+        .SelectMany(x => new[] { x.StartUtc, x.EndUtc })
+        .Where(x => x >= state.PlanStartUtc && x <= state.PlanEndUtc)
+        .Distinct()
+        .OrderBy(x => x)
+        .ToArray() ?? Array.Empty<DateTime>();
 
     private bool HasFocus => !string.IsNullOrWhiteSpace(state.SearchText) || state.SelectedPlanningKey is not null;
     private string QueueTitle => state.Mode switch { PlanningWorkbenchMode.Campaigns => "Campaigns", PlanningWorkbenchMode.Execution => "Execution exceptions", PlanningWorkbenchMode.Recovery => "Recovery queue", _ => "Demand queue" };

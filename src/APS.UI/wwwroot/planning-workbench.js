@@ -49,7 +49,8 @@
       let candidate = start + rawRatio * duration - drag.durationMs * drag.grabRatio;
       const increments = { Hour: 60, ThirtyMinutes: 30, FifteenMinutes: 15, FiveMinutes: 5 };
       if (drag.snapMode === 'ShiftBoundary') {
-        const boundaries = drag.shiftBoundaries.map(value => new Date(value).getTime()).filter(Number.isFinite);
+        const boundaries = (grid.dataset.shiftBoundaries || '').split(',').filter(Boolean)
+          .map(value => new Date(value).getTime()).filter(Number.isFinite);
         if (boundaries.length) candidate = boundaries.reduce((nearest, value) => Math.abs(value - candidate) < Math.abs(nearest - candidate) ? value : nearest);
       } else if (increments[drag.snapMode]) {
         const incrementMs = increments[drag.snapMode] * 60000;
@@ -167,7 +168,6 @@
         durationMs: Number(block.dataset.durationMs),
         eligibleResources: new Set((block.dataset.eligibleResources || '').split(',').filter(Boolean)),
         snapMode: block.dataset.snapMode || 'FifteenMinutes',
-        shiftBoundaries: (block.dataset.shiftBoundaries || '').split(',').filter(Boolean),
         frozen: block.dataset.frozen === 'true'
       };
       block.setPointerCapture?.(event.pointerId);

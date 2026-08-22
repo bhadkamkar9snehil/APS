@@ -184,4 +184,19 @@ public sealed class PlanningWorkbenchMarkupTests
         Assert.Contains("string targetStartUtc", page);
     }
 
+    [Fact]
+    public void Shift_snap_uses_the_target_resources_authoritative_calendar_boundaries()
+    {
+        var script = File.ReadAllText(Repo.File("src/APS.UI/wwwroot/planning-workbench.js"));
+        var block = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttOperationBlock.razor"));
+        var lane = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttResourceLane.razor"));
+        var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+
+        Assert.Contains("data-shift-boundaries=\"@ShiftBoundaries\"", lane);
+        Assert.DoesNotContain("data-shift-boundaries", block);
+        Assert.Contains("grid.dataset.shiftBoundaries", script);
+        Assert.Contains("TargetShiftBoundaries(targetResourceId)", page);
+        Assert.Contains("state.Viewport.SnapMode,\n            TargetShiftBoundaries(targetResourceId)", page.Replace("\r\n", "\n"));
+    }
+
 }

@@ -10,7 +10,6 @@
         data-drag-protected="@((!CanEdit || Model.ExecutionStatus is OperationExecutionStatus.Running or OperationExecutionStatus.Completed).ToString().ToLowerInvariant())"
         data-frozen="@(IsFrozen.ToString().ToLowerInvariant())"
         data-snap-mode="@State.Viewport.SnapMode"
-        data-shift-boundaries=""
         data-baseline-change="@Model.BaselineChange"
         aria-label="@Model.AccessibleName"
         title="@Model.AccessibleName"
