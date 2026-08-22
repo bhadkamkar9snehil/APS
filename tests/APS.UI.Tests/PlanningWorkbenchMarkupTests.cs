@@ -121,6 +121,33 @@ public sealed class PlanningWorkbenchMarkupTests
     }
 
     [Fact]
+    public void Gantt_uses_roving_keyboard_focus_and_a_keyboard_reachable_operation_menu()
+    {
+        var block = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttOperationBlock.razor"));
+        var gantt = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/WorkbenchGantt.razor"));
+        var menu = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttOperationContextMenu.razor"));
+
+        Assert.Contains("tabindex=\"@TabIndex\"", block);
+        Assert.Contains("ShiftKey", block);
+        Assert.Contains("GanttKeyboardDirection", block);
+        Assert.Contains("KeyboardNavigate", gantt);
+        Assert.Contains("GanttOperationContextMenu", gantt);
+        Assert.Contains("role=\"menu\"", menu);
+        Assert.Contains("Inspect operation", menu);
+        Assert.Contains("Show selected chain", menu);
+        Assert.Contains("Fit operation", menu);
+        Assert.Contains("Compare with baseline", menu);
+        Assert.Contains("Move or reassign", menu);
+        Assert.Contains("Find alternate resource", menu);
+        Assert.Contains("Trace demand", menu);
+        Assert.Contains("Trace campaign or heat", menu);
+        Assert.Contains("Trace material", menu);
+        Assert.Contains("Pin or unpin", menu);
+        Assert.Contains("Repair selection", menu);
+        Assert.Contains("Copy business ID", menu);
+    }
+
+    [Fact]
     public void Gantt_is_a_reusable_synchronized_control_not_page_local_markup()
     {
         var root = "src/APS.UI/Components/PlanningWorkbench/Gantt";

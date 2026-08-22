@@ -7,7 +7,7 @@
         }
         @foreach (var row in Scene.Rows)
         {
-            <div style="height:var(--aps-gantt-row-height)"><GanttResourceLane Row="row" Scene="Scene" State="State" Workbench="Workbench" FrozenFenceEndUtc="FrozenFenceEndUtc" OperationSelected="OperationSelected" /></div>
+            <div style="height:var(--aps-gantt-row-height)"><GanttResourceLane Row="row" Scene="Scene" State="State" Workbench="Workbench" FrozenFenceEndUtc="FrozenFenceEndUtc" KeyboardAnchorPlanningKey="KeyboardAnchorPlanningKey" OperationSelected="OperationSelected" KeyboardNavigate="KeyboardNavigate" ContextRequested="ContextRequested" /></div>
         }
         @if (Scene.Rows.Count > 0 && Scene.Rows[^1].SceneIndex < Scene.TotalRowCount - 1)
         {
@@ -21,6 +21,9 @@
     [Parameter, EditorRequired] public PlanningWorkbenchState State { get; set; } = default!;
     [Parameter, EditorRequired] public PlanningWorkbenchView Workbench { get; set; } = default!;
     [Parameter] public DateTime FrozenFenceEndUtc { get; set; }
+    [Parameter] public string KeyboardAnchorPlanningKey { get; set; } = string.Empty;
     [Parameter] public EventCallback<ScheduledProcessOperationView> OperationSelected { get; set; }
+    [Parameter] public EventCallback<GanttKeyboardNavigationRequest> KeyboardNavigate { get; set; }
+    [Parameter] public EventCallback<GanttContextMenuRequest> ContextRequested { get; set; }
 
 }

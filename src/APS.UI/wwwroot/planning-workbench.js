@@ -282,6 +282,10 @@
     };
 
     const keydown = event => { if (event.key === 'Escape') cancel(); };
+    const operationKeydown = event => {
+      if (event.target.closest?.('.aps-operation') && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key))
+        event.preventDefault();
+    };
 
     const wheel = event => {
       if (!event.ctrlKey || !event.target.closest('[data-gantt-timeline]')) return;
@@ -305,6 +309,7 @@
     root.addEventListener('pointerup', up);
     root.addEventListener('pointercancel', cancel);
     root.addEventListener('wheel', wheel, { passive: false });
+    root.addEventListener('keydown', operationKeydown);
     window.addEventListener('keydown', keydown);
     window.addEventListener('blur', cancel);
     dotnet.invokeMethodAsync('ApplyGanttPreferences', JSON.stringify(preferences()), root.clientWidth).then(requestMetrics);
@@ -314,6 +319,7 @@
       root.removeEventListener('pointerup', up);
       root.removeEventListener('pointercancel', cancel);
       root.removeEventListener('wheel', wheel);
+      root.removeEventListener('keydown', operationKeydown);
       window.removeEventListener('keydown', keydown);
       window.removeEventListener('blur', cancel);
       if (scroller) scroller.removeEventListener('scroll', requestMetrics);
@@ -331,5 +337,11 @@
   }
 
   function dispose(root) { const state = states.get(root); state?.cleanup?.(); states.delete(root); }
-  window.apsPlanningWorkbench = { initialize, dispose, savePreference };
+  function focusOperation(planningKey) {
+    const escaped = window.CSS?.escape ? window.CSS.escape(planningKey) : planningKey.replace(/["\\]/g, '\\$&');
+    document.querySelector(`.aps-operation[data-planning-key="${escaped}"]`)?.focus();
+  }
+  function focusContextMenu() { document.querySelector('[data-gantt-context-menu] [role="menuitem"]')?.focus(); }
+  function copyText(value) { return navigator.clipboard.writeText(value); }
+  window.apsPlanningWorkbench = { initialize, dispose, savePreference, focusOperation, focusContextMenu, copyText };
 })();

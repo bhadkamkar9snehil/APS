@@ -1,0 +1,50 @@
+<div class="fixed z-[80] min-w-48 rounded-surface border border-border bg-surface p-1 shadow-popover"
+     style="@PositionStyle"
+     role="menu"
+     aria-label="Operation actions"
+     data-gantt-context-menu
+     @onkeydown="HandleKeyDown"
+     @onkeydown:stopPropagation>
+    <div class="border-b border-border px-2 py-1.5 text-[10px] font-semibold text-secondary">@PlanningKey</div>
+    <button type="button" role="menuitem" class="block w-full rounded-control px-2 py-1.5 text-left text-xs hover:bg-surface-raised" @onclick="Inspect">Inspect operation</button>
+    <button type="button" role="menuitem" class="block w-full rounded-control px-2 py-1.5 text-left text-xs hover:bg-surface-raised" @onclick="ShowChain">Show selected chain</button>
+    <button type="button" role="menuitem" class="block w-full rounded-control px-2 py-1.5 text-left text-xs hover:bg-surface-raised" @onclick="Fit">Fit operation</button>
+    <button type="button" role="menuitem" disabled="@(!CanCompare)" title="@(CanCompare ? "Show changed-only baseline comparison" : "No persisted baseline placement exists for this operation")" class="block w-full rounded-control px-2 py-1.5 text-left text-xs hover:bg-surface-raised disabled:text-muted disabled:opacity-55" @onclick="CompareBaseline">Compare with baseline</button>
+    <button type="button" role="menuitem" disabled="@(!CanMove)" title="@(CanMove ? "Open validated move and reassign controls" : "Released, running, or completed work cannot be moved here")" class="block w-full rounded-control px-2 py-1.5 text-left text-xs hover:bg-surface-raised disabled:text-muted disabled:opacity-55" @onclick="Move">Move or reassign</button>
+    <button type="button" role="menuitem" disabled="@(!HasAlternateResource)" title="@(HasAlternateResource ? "Inspect authoritative eligible resources" : "No alternate eligible resource is returned by the planning read model")" class="block w-full rounded-control px-2 py-1.5 text-left text-xs hover:bg-surface-raised disabled:text-muted disabled:opacity-55" @onclick="FindAlternate">Find alternate resource</button>
+    <div class="my-1 border-t border-border"></div>
+    <button type="button" role="menuitem" disabled="@(!CanTraceDemand)" title="@(CanTraceDemand ? "Focus the allocated production order" : "No production-order allocation is available")" class="block w-full rounded-control px-2 py-1.5 text-left text-xs hover:bg-surface-raised disabled:text-muted disabled:opacity-55" @onclick="TraceDemand">Trace demand</button>
+    <button type="button" role="menuitem" disabled="@(!CanTraceCampaign)" title="@(CanTraceCampaign ? "Focus the canonical campaign and heat" : "No campaign or heat membership is available")" class="block w-full rounded-control px-2 py-1.5 text-left text-xs hover:bg-surface-raised disabled:text-muted disabled:opacity-55" @onclick="TraceCampaign">Trace campaign or heat</button>
+    <button type="button" role="menuitem" disabled title="No operation-to-material peg is present in the current workbench read model" class="block w-full rounded-control px-2 py-1.5 text-left text-xs text-muted opacity-55">Trace material</button>
+    <button type="button" role="menuitem" disabled title="Pinning requires a persisted planning commitment command and audit trail" class="block w-full rounded-control px-2 py-1.5 text-left text-xs text-muted opacity-55">Pin or unpin</button>
+    <button type="button" role="menuitem" disabled title="Scoped repair is not exposed by the current canonical command contract" class="block w-full rounded-control px-2 py-1.5 text-left text-xs text-muted opacity-55">Repair selection</button>
+    <button type="button" role="menuitem" class="block w-full rounded-control px-2 py-1.5 text-left text-xs hover:bg-surface-raised" @onclick="CopyId">Copy business ID</button>
+    <button type="button" role="menuitem" class="block w-full rounded-control px-2 py-1.5 text-left text-xs text-secondary hover:bg-surface-raised" @onclick="Close">Close menu</button>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string PlanningKey { get; set; } = string.Empty;
+    [Parameter] public double ClientX { get; set; }
+    [Parameter] public double ClientY { get; set; }
+    [Parameter] public bool FromKeyboard { get; set; }
+    [Parameter] public bool CanCompare { get; set; }
+    [Parameter] public bool CanMove { get; set; }
+    [Parameter] public bool HasAlternateResource { get; set; }
+    [Parameter] public bool CanTraceDemand { get; set; }
+    [Parameter] public bool CanTraceCampaign { get; set; }
+    [Parameter] public EventCallback Inspect { get; set; }
+    [Parameter] public EventCallback ShowChain { get; set; }
+    [Parameter] public EventCallback Fit { get; set; }
+    [Parameter] public EventCallback CompareBaseline { get; set; }
+    [Parameter] public EventCallback Move { get; set; }
+    [Parameter] public EventCallback FindAlternate { get; set; }
+    [Parameter] public EventCallback TraceDemand { get; set; }
+    [Parameter] public EventCallback TraceCampaign { get; set; }
+    [Parameter] public EventCallback CopyId { get; set; }
+    [Parameter] public EventCallback Close { get; set; }
+
+    private string PositionStyle => FromKeyboard
+        ? "left:50%;top:7rem;transform:translateX(-50%)"
+        : $"left:{Math.Max(8, ClientX):0}px;top:{Math.Max(8, ClientY):0}px";
+    private Task HandleKeyDown(KeyboardEventArgs args) => args.Key == "Escape" ? Close.InvokeAsync() : Task.CompletedTask;
+}

@@ -11,8 +11,12 @@
         data-frozen="@(IsFrozen.ToString().ToLowerInvariant())"
         data-snap-mode="@State.Viewport.SnapMode"
         data-baseline-change="@Model.BaselineChange"
+        tabindex="@TabIndex"
         aria-label="@Model.AccessibleName"
         title="@Model.AccessibleName"
+        @onkeydown="HandleKeyDown"
+        @oncontextmenu="HandleContextMenu"
+        @oncontextmenu:preventDefault
         @onclick="() => OperationSelected.InvokeAsync(Model.Operation)">
     @if (Model.LogicalWidthPx >= 68)
     {
@@ -50,7 +54,10 @@
     [Parameter] public bool Selected { get; set; }
     [Parameter] public bool CanEdit { get; set; }
     [Parameter] public bool IsFrozen { get; set; }
+    [Parameter] public int TabIndex { get; set; } = -1;
     [Parameter] public EventCallback<ScheduledProcessOperationView> OperationSelected { get; set; }
+    [Parameter] public EventCallback<GanttKeyboardNavigationRequest> KeyboardNavigate { get; set; }
+    [Parameter] public EventCallback<GanttContextMenuRequest> ContextRequested { get; set; }
 
     private string EligibleResourceIds => string.Join(",", (Model.Detail?.ResourceOptions.Select(x => x.ResourceId) ?? [])
         .Append(Model.Operation.ResourceId)
@@ -96,4 +103,22 @@
         GanttBaselineChange.Added => "Added since baseline",
         _ => "Unchanged from baseline"
     };
+    private Task HandleContextMenu(MouseEventArgs args) => ContextRequested.InvokeAsync(
+        new GanttContextMenuRequest(Model.Operation.PlanningKey, args.ClientX, args.ClientY, false));
+    private Task HandleKeyDown(KeyboardEventArgs args)
+    {
+        if ((args.ShiftKey && args.Key == "F10") || args.Key == "ContextMenu")
+            return ContextRequested.InvokeAsync(new GanttContextMenuRequest(Model.Operation.PlanningKey, 0, 0, true));
+        var direction = args.Key switch
+        {
+            "ArrowLeft" => GanttKeyboardDirection.Left,
+            "ArrowRight" => GanttKeyboardDirection.Right,
+            "ArrowUp" => GanttKeyboardDirection.Up,
+            "ArrowDown" => GanttKeyboardDirection.Down,
+            _ => (GanttKeyboardDirection?)null
+        };
+        return direction is { } value
+            ? KeyboardNavigate.InvokeAsync(new GanttKeyboardNavigationRequest(Model.Operation.PlanningKey, value))
+            : Task.CompletedTask;
+    }
 }
