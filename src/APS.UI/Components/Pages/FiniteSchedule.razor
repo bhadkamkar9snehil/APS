@@ -808,7 +808,8 @@
             GanttDragGeometry.BulkMoveItems(selected, anchor.PlanningKey, parsedStart.UtcDateTime),
             moveReason,
             moveComment,
-            allowFrozenOverride);
+            allowFrozenOverride,
+            new PlanningTimeFencePolicy(frozenMinutes));
         acting = true;
         message = null;
         try
@@ -868,7 +869,7 @@
         if (workbench is null || SelectedOperation is null) return null;
         if (!Guid.TryParse(targetResourceText, out var resourceId)) { SetMessage("Select an eligible target resource.", true); return null; }
         if (!DateTime.TryParse(targetStartText, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var start)) { SetMessage("Enter a valid target start.", true); return null; }
-        return new PlanningMoveProposal(workbench.Plan.PlanVersionId, SelectedOperation.PlanningKey, resourceId, DateTime.SpecifyKind(start, DateTimeKind.Utc), moveReason, moveComment, allowFrozenOverride);
+        return new PlanningMoveProposal(workbench.Plan.PlanVersionId, SelectedOperation.PlanningKey, resourceId, DateTime.SpecifyKind(start, DateTimeKind.Utc), moveReason, moveComment, allowFrozenOverride, new PlanningTimeFencePolicy(frozenMinutes));
     }
 
     private PlanningCalculationRequest BuildPlanningRequest() => new(new PlanningDemandSelection(), new CampaignPlanningPolicy(nominalHeatMt, nominalHeatMt * .7m, nominalHeatMt * 1.15m, maximumCampaignMt, maximumCampaignMt), new ProductionStructurePlanningPolicy(), workbench?.Plan.HorizonStartUtc ?? DateTime.UtcNow, workbench?.Plan.HorizonEndUtc ?? DateTime.UtcNow.AddDays(7), solverSeconds);
