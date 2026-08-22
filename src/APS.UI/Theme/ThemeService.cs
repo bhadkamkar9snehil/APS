@@ -11,9 +11,7 @@ public sealed class ThemeService(IJSRuntime js) : IAsyncDisposable
     public async Task InitializeAsync()
     {
         ThrowIfDisposed();
-        var loaded = await js.InvokeAsync<ThemePreference?>("apsTheme.initialize");
-        if (loaded is not null && IsValid(loaded))
-            preference = loaded;
+        preference = await js.InvokeAsync<ThemePreference>("apsTheme.initialize");
     }
 
     public async Task SetModeAsync(ThemeMode mode)
@@ -43,12 +41,6 @@ public sealed class ThemeService(IJSRuntime js) : IAsyncDisposable
         {
         }
     }
-
-    private static bool IsValid(ThemePreference value) =>
-        value.Version == ThemePreference.CurrentVersion &&
-        Enum.IsDefined(value.Mode) &&
-        Enum.IsDefined(value.Accent.Kind) &&
-        (value.Accent.Kind != ThemeAccentKind.Custom || ThemeColor.TryParseHex(value.Accent.CustomHex, out _));
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(disposed, this);
 }
