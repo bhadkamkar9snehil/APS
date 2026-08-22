@@ -79,10 +79,6 @@ public sealed class RepositoryTestArchitectureTests
             "src/APS.Application/APS.Application.csproj",
             "src/APS.Planning/APS.Planning.csproj");
         yield return Rule(
-            "src/APS.Integrations/APS.Integrations.csproj",
-            "src/APS.Domain/APS.Domain.csproj",
-            "src/APS.Application/APS.Application.csproj");
-        yield return Rule(
             "src/APS.UI/APS.UI.csproj",
             "src/APS.Domain/APS.Domain.csproj",
             "src/APS.Application/APS.Application.csproj");
@@ -91,7 +87,6 @@ public sealed class RepositoryTestArchitectureTests
             "src/APS.Application/APS.Application.csproj",
             "src/APS.Planning/APS.Planning.csproj",
             "src/APS.Infrastructure/APS.Infrastructure.csproj",
-            "src/APS.Integrations/APS.Integrations.csproj",
             "src/APS.UI/APS.UI.csproj");
         yield return Rule(
             "src/APS.DesktopHost/APS.DesktopHost.csproj",
