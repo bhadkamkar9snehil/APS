@@ -31,7 +31,6 @@
 </div>
 
 @code {
-    private PlanContextView? currentPlan;
     private bool backendUnavailable;
     private string? backendUnavailableMessage;
 
@@ -46,17 +45,13 @@
 
     protected override async Task OnInitializedAsync()
     {
-        WorkspaceState.Changed += OnWorkspaceChanged;
         Theme.Changed += OnThemeChanged;
         Navigation.LocationChanged += OnLocationChanged;
         try
         {
-            currentPlan = await PlannerQuery.GetCurrentPlanAsync();
+            var currentPlan = await PlannerQuery.GetCurrentPlanAsync();
             if (currentPlan is not null)
-            {
                 WorkspaceState.SetPlan(currentPlan.PlanVersionId, currentPlan.ParentPlanVersionId);
-                WorkspaceState.SetWindow(currentPlan.HorizonStartUtc, currentPlan.HorizonEndUtc);
-            }
         }
         catch (InvalidOperationException ex)
         {
@@ -66,36 +61,6 @@
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs args) => _ = InvokeAsync(StateHasChanged);
-
-    private void OnWorkspaceChanged()
-    {
-        if (WorkspaceState.CurrentPlanVersionId.HasValue && WorkspaceState.CurrentPlanVersionId != currentPlan?.PlanVersionId)
-        {
-            _ = InvokeAsync(LoadSelectedPlanAsync);
-            return;
-        }
-        _ = InvokeAsync(StateHasChanged);
-    }
-
-    private async Task LoadSelectedPlanAsync()
-    {
-        try
-        {
-            var planVersionId = WorkspaceState.CurrentPlanVersionId;
-            currentPlan = planVersionId.HasValue
-                ? await PlannerQuery.GetPlanContextAsync(planVersionId.Value)
-                : await PlannerQuery.GetCurrentPlanAsync();
-            if (currentPlan is not null)
-                WorkspaceState.SetWindow(currentPlan.HorizonStartUtc, currentPlan.HorizonEndUtc);
-        }
-        catch (InvalidOperationException ex)
-        {
-            backendUnavailable = true;
-            backendUnavailableMessage = ex.Message;
-        }
-        StateHasChanged();
-    }
-
     private void OnThemeChanged() => _ = InvokeAsync(StateHasChanged);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -105,7 +70,6 @@
 
     public void Dispose()
     {
-        WorkspaceState.Changed -= OnWorkspaceChanged;
         Theme.Changed -= OnThemeChanged;
         Navigation.LocationChanged -= OnLocationChanged;
     }
