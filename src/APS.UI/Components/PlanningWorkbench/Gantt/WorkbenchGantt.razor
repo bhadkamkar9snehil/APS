@@ -3,7 +3,7 @@
         <div class="flex flex-wrap gap-x-4 gap-y-1">
             <span><span class="text-muted">Visible </span><strong>@State.VisibleStartUtc.ToString("dd MMM HH:mm") → @State.VisibleEndUtc.ToString("dd MMM HH:mm")</strong></span>
             <span><span class="text-muted">Mode </span><strong>@ModeLabel(State.Mode)</strong></span>
-            <span><strong>@Scene.VisibleOperationCount</strong> operations · <strong>@Scene.Rows.Count</strong> resources</span>
+            <span><strong>@Scene.VisibleOperationCount</strong> mounted · <strong>@Scene.TotalRowCount</strong> resources</span>
         </div>
         <div class="hidden flex-wrap items-center gap-3 text-[10px] text-muted xl:flex" aria-label="Process legend">
             @foreach (var entry in ProcessLegend)
@@ -13,12 +13,13 @@
         </div>
     </div>
     <div class="min-h-0 flex-1 overflow-auto" data-gantt-scroll>
-        <div class="grid min-w-[1120px]" style="grid-template-columns:@($"{State.Viewport.GridWidthPx:0}px minmax(760px, 1fr)");--aps-gantt-row-height:@($"{State.Viewport.RowHeightPx}px")">
-            <GanttResourceGrid Scene="Scene" ResourceSelected="ResourceSelected" />
-            <div class="min-w-0 border-l border-border">
+        <div class="relative grid min-w-[1120px]" style="grid-template-columns:var(--aps-gantt-grid-width) minmax(760px, 1fr);--aps-gantt-grid-width:@($"{State.Viewport.GridWidthPx:0}px");--aps-gantt-row-height:@($"{State.Viewport.RowHeightPx}px")">
+            <GanttResourceGrid Scene="Scene" RowHeightPx="State.Viewport.RowHeightPx" ResourceSelected="ResourceSelected" />
+            <div class="relative min-w-0 border-l border-border" data-gantt-timeline>
                 <GanttTimeScale Scene="Scene" State="State" ReferenceTimeUtc="Workbench.Plan.ReferenceTimeUtc" FrozenFenceEndUtc="FrozenFenceEndUtc" />
                 <GanttTimelineViewport Scene="Scene" State="State" Workbench="Workbench" FrozenFenceEndUtc="FrozenFenceEndUtc" OperationSelected="OperationSelected" />
             </div>
+            <button type="button" class="aps-gantt-splitter" data-gantt-splitter aria-label="Resize resource grid" title="Drag to resize resource grid"></button>
         </div>
     </div>
 </section>

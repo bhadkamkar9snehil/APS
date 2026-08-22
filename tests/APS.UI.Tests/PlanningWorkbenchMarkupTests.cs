@@ -107,4 +107,22 @@ public sealed class PlanningWorkbenchMarkupTests
         Assert.DoesNotContain("Tight chain", page);
     }
 
+    [Fact]
+    public void Gantt_navigation_uses_frame_bounded_browser_geometry_and_meaningful_dotnet_transitions()
+    {
+        var script = File.ReadAllText(Repo.File("src/APS.UI/wwwroot/planning-workbench.js"));
+        var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+        var gantt = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/WorkbenchGantt.razor"));
+
+        Assert.Contains("requestAnimationFrame", script);
+        Assert.Contains("ResizeObserver", script);
+        Assert.Contains("event.ctrlKey", script);
+        Assert.Contains("PanViewport", script);
+        Assert.Contains("SetVisibleRowRange", script);
+        Assert.Contains("ApplyGanttPreferences", script);
+        Assert.Contains("data-gantt-splitter", gantt);
+        Assert.Contains("[JSInvokable]\n    public void ZoomAt", page.Replace("\r\n", "\n"));
+        Assert.DoesNotContain("pointermove', () => dotnet", script);
+    }
+
 }

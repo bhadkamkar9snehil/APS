@@ -408,6 +408,31 @@ button, input, select, textarea { font: inherit; }
   min-height: var(--aps-gantt-row-height, 60px);
 }
 
+.aps-gantt-splitter {
+  position: absolute;
+  inset-block: 0;
+  left: calc(var(--aps-gantt-grid-width, 320px) - 3px);
+  z-index: 45;
+  width: 7px;
+  cursor: col-resize;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+.aps-gantt-splitter::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  left: 3px;
+  width: 1px;
+  background: var(--aps-border-strong);
+}
+.aps-gantt-splitter:hover::after,
+.aps-gantt-splitter:focus-visible::after {
+  width: 2px;
+  background: var(--aps-accent);
+}
+
 .aps-calendar-unavailable {
   background-color: color-mix(in srgb, var(--aps-surface-inset) 78%, transparent);
   background-image: repeating-linear-gradient(

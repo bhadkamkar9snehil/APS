@@ -6,6 +6,7 @@ namespace APS.UI.Components.PlanningWorkbench.Gantt;
 
 public sealed record GanttScene(
     IReadOnlyList<GanttRowModel> Rows,
+    int TotalRowCount,
     IReadOnlyList<GanttAxisTickModel> Ticks,
     IReadOnlyList<GanttDueMarkerModel> DueMarkers,
     IReadOnlyList<GanttDependencyLineModel> DependencyLines,
@@ -16,6 +17,7 @@ public sealed record GanttScene(
 }
 
 public sealed record GanttRowModel(
+    int SceneIndex,
     ScheduleResourceLaneView Lane,
     IReadOnlyList<GanttOperationModel> Operations,
     IReadOnlyList<GanttBaselineModel> Baselines,
@@ -92,16 +94,25 @@ public static class GanttModels
             if (recoveryLanes.Length > 0) candidateLanes = recoveryLanes;
         }
 
-        var rows = candidateLanes
+        var orderedLanes = candidateLanes
             .OrderBy(x => x.DisplayOrder)
             .ThenBy(x => x.ProcessUnitType)
             .ThenBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)
-            .Select(lane => BuildRow(workbench, state, lane, details, baselineByResource, calendarsByResource))
+            .ToArray();
+        var mountedRange = state.Viewport.MountedRowRange(orderedLanes.Length);
+        var mountedStart = mountedRange.Start.Value;
+        var mountedEnd = mountedRange.End.Value;
+        var rows = orderedLanes
+            .Select((lane, index) => (lane, index))
+            .Skip(mountedStart)
+            .Take(mountedEnd - mountedStart)
+            .Select(item => BuildRow(workbench, state, item.lane, item.index, details, baselineByResource, calendarsByResource))
             .ToArray();
         var dependencyLines = BuildFocusedDependencyLines(workbench.DependencyLinks, rows, state);
 
         return new GanttScene(
             rows,
+            orderedLanes.Length,
             BuildTicks(state),
             workbench.Demand.Rows
                 .Where(x => x.RequiredDate >= state.VisibleStartUtc && x.RequiredDate <= state.VisibleEndUtc)
@@ -165,6 +176,7 @@ public static class GanttModels
         PlanningWorkbenchView workbench,
         PlanningWorkbenchState state,
         ScheduleResourceLaneView lane,
+        int sceneIndex,
         IReadOnlyDictionary<string, PlanningOperationWorkbenchDetail> details,
         IReadOnlyDictionary<Guid, PlanningBaselinePlacementView[]> baselineByResource,
         IReadOnlyDictionary<Guid, PlanningResourceCalendarIntervalView[]> calendarsByResource)
@@ -221,6 +233,7 @@ public static class GanttModels
             : 0m;
 
         return new GanttRowModel(
+            sceneIndex,
             lane,
             operations,
             baselines,
@@ -238,7 +251,7 @@ public static class GanttModels
             return Array.Empty<GanttDependencyLineModel>();
 
         var placements = rows
-            .SelectMany((row, rowIndex) => row.Operations.Select(operation => (operation, rowIndex)))
+            .SelectMany(row => row.Operations.Select(operation => (operation, rowIndex: row.SceneIndex)))
             .ToDictionary(x => x.operation.Operation.PlanningKey, StringComparer.OrdinalIgnoreCase);
         if (!placements.ContainsKey(state.SelectedPlanningKey)) return Array.Empty<GanttDependencyLineModel>();
 

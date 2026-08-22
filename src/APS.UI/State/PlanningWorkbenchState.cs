@@ -116,6 +116,41 @@ public sealed class PlanningWorkbenchState
         Notify();
     }
 
+    public void SetZoomAt(PlanningWorkbenchZoom zoom, double pointerRatio)
+    {
+        if (zoom == PlanningWorkbenchZoom.Fit)
+        {
+            SetZoom(zoom);
+            return;
+        }
+        Viewport.ZoomAt(zoom, Math.Clamp(pointerRatio, 0d, 1d) * Viewport.TimelineWidthPx);
+        Notify();
+    }
+
+    public void StepZoom(int direction, double pointerRatio)
+    {
+        var levels = new[]
+        {
+            (PlanningWorkbenchZoom.Detail, TimeSpan.FromMinutes(30)),
+            (PlanningWorkbenchZoom.Shift, TimeSpan.FromHours(8)),
+            (PlanningWorkbenchZoom.Day, TimeSpan.FromDays(1)),
+            (PlanningWorkbenchZoom.ThreeDays, TimeSpan.FromDays(3)),
+            (PlanningWorkbenchZoom.Week, TimeSpan.FromDays(7)),
+            (PlanningWorkbenchZoom.TwoWeeks, TimeSpan.FromDays(14)),
+            (PlanningWorkbenchZoom.Month, TimeSpan.FromDays(30))
+        };
+        var current = VisibleEndUtc - VisibleStartUtc;
+        var target = direction < 0
+            ? levels.LastOrDefault(x => x.Item2 < current)
+            : levels.FirstOrDefault(x => x.Item2 > current);
+        if (target == default)
+        {
+            if (direction > 0) SetZoom(PlanningWorkbenchZoom.Fit);
+            return;
+        }
+        SetZoomAt(target.Item1, pointerRatio);
+    }
+
     public void Pan(double viewportFraction)
     {
         Viewport.Pan(viewportFraction);
@@ -125,6 +160,12 @@ public sealed class PlanningWorkbenchState
     public void ToggleBaseline() { ShowBaseline = !ShowBaseline; Notify(); }
     public void ToggleDependencies() { ShowDependencies = !ShowDependencies; Notify(); }
     public void ToggleCriticalPath() { ShowCriticalPath = !ShowCriticalPath; Notify(); }
+    public void SetLayerVisibility(bool showBaseline, bool showDependencies)
+    {
+        ShowBaseline = showBaseline;
+        ShowDependencies = showDependencies;
+        Notify();
+    }
     public void StageMove(PlanningMoveProposal proposal)
     {
         StagedMove = proposal;

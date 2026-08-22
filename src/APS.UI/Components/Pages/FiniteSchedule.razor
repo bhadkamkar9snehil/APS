@@ -66,7 +66,7 @@
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="() => state.Pan(-0.75)">Earlier</button>
                 @foreach (var zoom in Enum.GetValues<PlanningWorkbenchZoom>())
                 {
-                    <button class="rounded-control border px-2 py-1 text-xs @(state.Zoom == zoom ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => state.SetZoom(zoom)">@ZoomLabel(zoom)</button>
+                    <button class="rounded-control border px-2 py-1 text-xs @(state.Zoom == zoom ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => SetZoomPreferenceAsync(zoom)">@ZoomLabel(zoom)</button>
                 }
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="() => state.Pan(0.75)">Later</button>
                 <span class="mx-1 h-5 w-px bg-border"></span>
@@ -77,8 +77,14 @@
                         <button type="button" class="rounded-control border border-border px-2 text-xs text-accent" @onclick="ClearFocus">Clear</button>
                     }
                 </div>
-                <ToggleButton Active="state.ShowBaseline" Label="Baseline" OnClick="state.ToggleBaseline" />
-                <ToggleButton Active="state.ShowDependencies" Label="Selected chain" OnClick="state.ToggleDependencies" />
+                <select aria-label="Row density" value="@state.Viewport.Density" @onchange="DensityChangedAsync" class="rounded-control border border-border bg-surface-raised px-2 py-1 text-xs">
+                    @foreach (var density in Enum.GetValues<GanttDensity>()) { <option value="@density">@density</option> }
+                </select>
+                <select aria-label="Move snap" value="@state.Viewport.SnapMode" @onchange="SnapChangedAsync" class="rounded-control border border-border bg-surface-raised px-2 py-1 text-xs">
+                    @foreach (var snap in Enum.GetValues<GanttSnapMode>()) { <option value="@snap">@SnapLabel(snap)</option> }
+                </select>
+                <ToggleButton Active="state.ShowBaseline" Label="Baseline" OnClick="ToggleBaselineAsync" />
+                <ToggleButton Active="state.ShowDependencies" Label="Selected chain" OnClick="ToggleDependenciesAsync" />
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="Cockpit.ToggleQueue">@(Cockpit.QueueOpen ? "Hide queue" : "Demand queue")</button>
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="Cockpit.ToggleInspector">@(Cockpit.InspectorOpen ? "Hide inspector" : "Inspector")</button>
             </div>
@@ -267,6 +273,7 @@
     private bool allowFrozenOverride;
     private decimal nominalHeatMt = 90m, maximumCampaignMt = 600m;
     private int frozenMinutes = 120, solverSeconds = 20;
+    private GanttPreferences preferences = GanttPreferences.Default;
 
     private ScheduledProcessOperationView? SelectedOperation => FindOperation(state.SelectedPlanningKey);
     private PlanningOperationWorkbenchDetail? SelectedDetail => FindDetail(state.SelectedPlanningKey);
@@ -337,6 +344,83 @@
         else ClearFocus();
     }
     private void TargetStartChanged(ChangeEventArgs args) => targetStartText = args.Value?.ToString() ?? string.Empty;
+
+    private async Task SetZoomPreferenceAsync(PlanningWorkbenchZoom zoom)
+    {
+        state.SetZoom(zoom);
+        await SaveGanttPreferenceAsync("zoom", state.Zoom.ToString());
+    }
+
+    private async Task DensityChangedAsync(ChangeEventArgs args)
+    {
+        if (!Enum.TryParse<GanttDensity>(args.Value?.ToString(), out var density)) return;
+        state.Viewport.SetDensity(density);
+        StateHasChanged();
+        await SaveGanttPreferenceAsync("density", density.ToString());
+    }
+
+    private async Task SnapChangedAsync(ChangeEventArgs args)
+    {
+        if (!Enum.TryParse<GanttSnapMode>(args.Value?.ToString(), out var snap)) return;
+        state.Viewport.SetSnapMode(snap);
+        StateHasChanged();
+        await SaveGanttPreferenceAsync("snapMode", snap.ToString());
+    }
+
+    private async Task ToggleBaselineAsync()
+    {
+        state.ToggleBaseline();
+        await SaveGanttPreferenceAsync("showBaseline", state.ShowBaseline);
+    }
+
+    private async Task ToggleDependenciesAsync()
+    {
+        state.ToggleDependencies();
+        await SaveGanttPreferenceAsync("showDependencies", state.ShowDependencies);
+    }
+
+    private ValueTask SaveGanttPreferenceAsync(string key, object value) =>
+        JS.InvokeVoidAsync("apsPlanningWorkbench.savePreference", key, value);
+
+    [JSInvokable]
+    public void UpdateViewportMetrics(double timelineWidthPx, double availableWidthPx)
+    {
+        state.Viewport.SetTimelineWidth(timelineWidthPx);
+        state.Viewport.SetGridWidth(state.Viewport.GridWidthPx, availableWidthPx);
+    }
+
+    [JSInvokable]
+    public void SetVisibleRowRange(int firstVisibleRow, int visibleRowCount)
+    {
+        state.Viewport.SetVisibleRowRange(firstVisibleRow, visibleRowCount);
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public void ZoomAt(int direction, double pointerRatio) => state.StepZoom(direction, pointerRatio);
+
+    [JSInvokable]
+    public void PanViewport(double viewportFraction) => state.Pan(viewportFraction);
+
+    [JSInvokable]
+    public async Task SetGridWidth(double widthPx, double availableWidthPx)
+    {
+        state.Viewport.SetGridWidth(widthPx, availableWidthPx);
+        StateHasChanged();
+        await SaveGanttPreferenceAsync("gridWidthPx", state.Viewport.GridWidthPx);
+    }
+
+    [JSInvokable]
+    public void ApplyGanttPreferences(string? json, double availableWidthPx)
+    {
+        preferences = GanttPreferencesStore.Parse(json, availableWidthPx);
+        state.Viewport.SetGridWidth(preferences.GridWidthPx, availableWidthPx);
+        state.Viewport.SetDensity(preferences.Density);
+        state.Viewport.SetSnapMode(preferences.SnapMode);
+        state.SetLayerVisibility(preferences.ShowBaseline, preferences.ShowDependencies);
+        if (preferences.Zoom != state.Zoom) state.SetZoom(preferences.Zoom);
+        StateHasChanged();
+    }
 
     private void SelectOperation(ScheduledProcessOperationView operation) { state.SelectOperation(operation.PlanningKey); Cockpit.OpenInspector(); WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Operation, operation.OperationSnapshotId, FriendlyOperationName(operation.PlanningKey))); targetResourceText = operation.ResourceId.ToString(); targetStartText = operation.StartUtc.ToString("yyyy-MM-ddTHH:mm"); moveComment = null; allowFrozenOverride = false; }
     private void SelectResource(ScheduleResourceLaneView lane) => WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Resource, lane.ResourceId, lane.ResourceCode));
@@ -414,6 +498,7 @@
     private static string FormatMovement(int minutes) => minutes == 0 ? "No time change" : $"{(minutes > 0 ? "+" : "")}{minutes / 60d:0.##} h";
     private static string ModeLabel(PlanningWorkbenchMode value) => value switch { PlanningWorkbenchMode.Campaigns => "Campaigns", PlanningWorkbenchMode.Execution => "Execution", PlanningWorkbenchMode.Recovery => "Recovery", _ => "Plan" };
     private static string ZoomLabel(PlanningWorkbenchZoom value) => value switch { PlanningWorkbenchZoom.Detail => "30 m", PlanningWorkbenchZoom.Shift => "8 h", PlanningWorkbenchZoom.Day => "1 d", PlanningWorkbenchZoom.ThreeDays => "3 d", PlanningWorkbenchZoom.Week => "7 d", PlanningWorkbenchZoom.TwoWeeks => "2 w", PlanningWorkbenchZoom.Month => "1 mo", _ => "Fit" };
+    private static string SnapLabel(GanttSnapMode value) => value switch { GanttSnapMode.ShiftBoundary => "Shift", GanttSnapMode.Hour => "1 h", GanttSnapMode.ThirtyMinutes => "30 m", GanttSnapMode.FifteenMinutes => "15 m", GanttSnapMode.FiveMinutes => "5 m", _ => "Free" };
     private static string CampaignLabel(PlanningOperationWorkbenchDetail? d) => d is null ? "—" : $"{d.CampaignNumber ?? "—"}{(d.HeatSequenceNumber.HasValue ? $" · Heat {d.HeatSequenceNumber}" : "")}";
     private static string OrderLabel(PlanningOperationWorkbenchDetail? d) => d is null || d.ProductionOrderNumbers.Count == 0 ? "—" : string.Join(", ", d.ProductionOrderNumbers);
     private static string FormatActual(DateTime? value) => value?.ToString("dd MMM yyyy HH:mm") ?? "Not recorded";

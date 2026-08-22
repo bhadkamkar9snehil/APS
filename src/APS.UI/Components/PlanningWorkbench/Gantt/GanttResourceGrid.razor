@@ -3,12 +3,16 @@
          style="grid-template-columns:minmax(112px,1fr) 42px 42px 38px 30px 48px">
         <span class="aps-text-label">Resource</span><span class="text-[9px] text-muted">State</span><span class="text-[9px] text-muted">Busy</span><span class="text-[9px] text-muted">Load</span><span class="text-[9px] text-muted">Ops</span><span class="text-[9px] text-muted">Next</span>
     </div>
-    <div class="grid" style="grid-auto-rows:var(--aps-gantt-row-height)">
+    <div>
+        @if (Scene.Rows.Count > 0 && Scene.Rows[0].SceneIndex > 0)
+        {
+            <div aria-hidden="true" style="height:@($"{Scene.Rows[0].SceneIndex * RowHeightPx}px")"></div>
+        }
         @foreach (var row in Scene.Rows)
         {
             <button type="button"
                     class="grid min-w-0 items-center border-b border-border px-2 text-left even:bg-surface-raised hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                    style="grid-template-columns:minmax(112px,1fr) 42px 42px 38px 30px 48px"
+                    style="grid-template-columns:minmax(112px,1fr) 42px 42px 38px 30px 48px;height:var(--aps-gantt-row-height)"
                     title="@($"{row.Lane.PlantName} / {row.Lane.AreaName} / {row.Lane.ProcessStageName} / {row.Lane.ResourceName}")"
                     @onclick="() => ResourceSelected.InvokeAsync(row.Lane)">
                 <span class="min-w-0"><strong class="block truncate text-xs">@row.Lane.ResourceCode</strong><span class="block truncate text-[9px] text-muted">@HierarchyLabel(row.Lane)</span></span>
@@ -19,12 +23,17 @@
                 <span class="truncate text-[9px] text-secondary">@(row.NextOperation?.StartUtc.ToString("HH:mm") ?? "—")</span>
             </button>
         }
+        @if (Scene.Rows.Count > 0 && Scene.Rows[^1].SceneIndex < Scene.TotalRowCount - 1)
+        {
+            <div aria-hidden="true" style="height:@($"{(Scene.TotalRowCount - Scene.Rows[^1].SceneIndex - 1) * RowHeightPx}px")"></div>
+        }
     </div>
 </div>
 
 @code {
     [Parameter, EditorRequired] public GanttScene Scene { get; set; } = default!;
     [Parameter] public EventCallback<ScheduleResourceLaneView> ResourceSelected { get; set; }
+    [Parameter] public int RowHeightPx { get; set; } = 60;
 
     private static string HierarchyLabel(ScheduleResourceLaneView lane) =>
         string.Join(" · ", new[] { lane.AreaCode, lane.ProcessStageCode }.Where(x => !string.IsNullOrWhiteSpace(x)));

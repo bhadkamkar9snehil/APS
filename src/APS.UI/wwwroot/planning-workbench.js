@@ -3,10 +3,36 @@
   const SNAP_MINUTES = 15;
   const EDGE_SCROLL_PX = 48;
   const EDGE_SCROLL_SPEED = 14;
+  const PREFERENCES_KEY = 'aps.gantt.preferences.v1';
 
   function initialize(root, dotnet) {
     if (!root || states.has(root)) return;
-    const state = { dotnet, drag: null, guide: null, scrollTimer: null };
+    const state = { dotnet, drag: null, pan: null, split: null, guide: null, scrollTimer: null, metricsFrame: null, lastRows: '' };
+
+    function preferences() {
+      try { return JSON.parse(localStorage.getItem(PREFERENCES_KEY) || '{}'); }
+      catch { return {}; }
+    }
+
+    function requestMetrics() {
+      if (state.metricsFrame) return;
+      state.metricsFrame = requestAnimationFrame(async () => {
+        state.metricsFrame = null;
+        const timeline = root.querySelector('[data-gantt-timeline]');
+        const scroller = root.querySelector('[data-gantt-scroll]');
+        if (!timeline || !scroller) return;
+        const rowHeight = parseFloat(getComputedStyle(timeline).getPropertyValue('--aps-gantt-row-height')) || 60;
+        const headerHeight = 56;
+        const firstRow = Math.max(0, Math.floor(Math.max(0, scroller.scrollTop - headerHeight) / rowHeight));
+        const visibleRows = Math.max(1, Math.ceil(scroller.clientHeight / rowHeight));
+        const rowKey = `${firstRow}:${visibleRows}`;
+        if (rowKey !== state.lastRows) {
+          state.lastRows = rowKey;
+          await dotnet.invokeMethodAsync('SetVisibleRowRange', firstRow, visibleRows);
+        }
+        await dotnet.invokeMethodAsync('UpdateViewportMetrics', timeline.clientWidth, root.clientWidth);
+      });
+    }
 
     function currentLane(clientX, clientY) {
       const lane = document.elementFromPoint(clientX, clientY)?.closest?.('[data-resource-id]');
@@ -59,13 +85,42 @@
 
     const down = event => {
       if (event.button !== 0) return;
+      const splitter = event.target.closest('[data-gantt-splitter]');
+      if (splitter && root.contains(splitter)) {
+        state.split = { host: splitter.parentElement, startX: event.clientX, startWidth: parseFloat(getComputedStyle(splitter.parentElement).getPropertyValue('--aps-gantt-grid-width')) || 320 };
+        splitter.setPointerCapture?.(event.pointerId);
+        document.body.style.cursor = 'col-resize';
+        event.preventDefault();
+        return;
+      }
       const block = event.target.closest('.aps-operation');
-      if (!block || !root.contains(block)) return;
+      if (!block || !root.contains(block)) {
+        const grid = event.target.closest('.aps-time-grid');
+        if (grid && root.contains(grid)) {
+          state.pan = { grid, startX: event.clientX, dx: 0 };
+          grid.setPointerCapture?.(event.pointerId);
+        }
+        return;
+      }
       state.drag = { block, planningKey: block.dataset.planningKey, startX: event.clientX, startY: event.clientY };
       block.setPointerCapture?.(event.pointerId);
     };
 
     const move = event => {
+      if (state.split) {
+        const available = root.clientWidth;
+        const width = Math.max(220, Math.min(available * .45, state.split.startWidth + event.clientX - state.split.startX));
+        state.split.width = width;
+        state.split.host.style.setProperty('--aps-gantt-grid-width', `${width}px`);
+        event.preventDefault();
+        return;
+      }
+      if (state.pan) {
+        state.pan.dx = event.clientX - state.pan.startX;
+        if (Math.abs(state.pan.dx) > 4) document.body.style.cursor = 'grabbing';
+        event.preventDefault();
+        return;
+      }
       if (!state.drag) return;
       const dx = event.clientX - state.drag.startX, dy = event.clientY - state.drag.startY;
       if (!state.drag.active) {
@@ -106,6 +161,22 @@
     };
 
     const up = async event => {
+      if (state.split) {
+        const split = state.split;
+        state.split = null;
+        document.body.style.cursor = '';
+        await dotnet.invokeMethodAsync('SetGridWidth', split.width ?? split.startWidth, root.clientWidth);
+        requestMetrics();
+        return;
+      }
+      if (state.pan) {
+        const pan = state.pan;
+        state.pan = null;
+        document.body.style.cursor = '';
+        const width = pan.grid.getBoundingClientRect().width;
+        if (Math.abs(pan.dx) > 4 && width > 0) await dotnet.invokeMethodAsync('PanViewport', -pan.dx / width);
+        return;
+      }
       const drag = state.drag;
       if (!drag) return;
       state.drag = null;
@@ -125,20 +196,49 @@
       await dotnet.invokeMethodAsync('StageDraggedMove', drag.planningKey, lane.dataset.resourceId, snapped.ratio);
     };
 
+    const wheel = event => {
+      if (!event.ctrlKey || !event.target.closest('[data-gantt-timeline]')) return;
+      const timeline = root.querySelector('[data-gantt-timeline]');
+      if (!timeline) return;
+      const rect = timeline.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      event.preventDefault();
+      const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+      const direction = event.deltaY > 0 ? 1 : -1;
+      dotnet.invokeMethodAsync('ZoomAt', direction, ratio);
+    };
+
+    const scroller = root.querySelector('[data-gantt-scroll]');
+    const resizeObserver = new ResizeObserver(requestMetrics);
+    resizeObserver.observe(root);
+    if (scroller) scroller.addEventListener('scroll', requestMetrics, { passive: true });
+
     root.addEventListener('pointerdown', down);
     root.addEventListener('pointermove', move);
     root.addEventListener('pointerup', up);
     root.addEventListener('pointercancel', up);
+    root.addEventListener('wheel', wheel, { passive: false });
+    dotnet.invokeMethodAsync('ApplyGanttPreferences', JSON.stringify(preferences()), root.clientWidth).then(requestMetrics);
     state.cleanup = () => {
       root.removeEventListener('pointerdown', down);
       root.removeEventListener('pointermove', move);
       root.removeEventListener('pointerup', up);
       root.removeEventListener('pointercancel', up);
+      root.removeEventListener('wheel', wheel);
+      if (scroller) scroller.removeEventListener('scroll', requestMetrics);
+      resizeObserver.disconnect();
+      if (state.metricsFrame) cancelAnimationFrame(state.metricsFrame);
       stopAutoScroll();
     };
     states.set(root, state);
   }
 
+  function savePreference(key, value) {
+    const current = (() => { try { return JSON.parse(localStorage.getItem(PREFERENCES_KEY) || '{}'); } catch { return {}; } })();
+    current[key] = value;
+    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(current));
+  }
+
   function dispose(root) { const state = states.get(root); state?.cleanup?.(); states.delete(root); }
-  window.apsPlanningWorkbench = { initialize, dispose };
+  window.apsPlanningWorkbench = { initialize, dispose, savePreference };
 })();

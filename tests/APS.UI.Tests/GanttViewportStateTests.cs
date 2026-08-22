@@ -179,6 +179,34 @@ public sealed class GanttViewportStateTests
         Assert.Equal(80, viewport.RowHeightPx);
     }
 
+    [Fact]
+    public void Visible_row_range_includes_overscan_and_clamps_to_the_scene()
+    {
+        var viewport = Viewport(PlanStart, PlanStart.AddDays(1), 1000);
+
+        viewport.SetVisibleRowRange(firstVisibleRow: 20, visibleRowCount: 10, overscan: 3);
+
+        Assert.Equal(17, viewport.VisibleRowStart);
+        Assert.Equal(33, viewport.VisibleRowEndExclusive);
+        Assert.Equal(17..33, viewport.MountedRowRange(100));
+        Assert.Equal(17..25, viewport.MountedRowRange(25));
+    }
+
+    [Fact]
+    public void Resizing_the_timeline_preserves_the_exact_fit_time_range()
+    {
+        var viewport = Viewport(PlanStart.AddDays(2), PlanStart.AddDays(9), 1000);
+        viewport.Fit(PlanStart.AddDays(5), PlanStart.AddDays(8));
+        var start = viewport.VisibleStartUtc;
+        var end = viewport.VisibleEndUtc;
+
+        viewport.SetTimelineWidth(1675);
+
+        Assert.Equal(start, viewport.VisibleStartUtc);
+        Assert.Equal(end, viewport.VisibleEndUtc);
+        Assert.Equal(1675, viewport.TimelineWidthPx);
+    }
+
     private static GanttViewportState Viewport(DateTime visibleStart, DateTime visibleEnd, double width)
     {
         var viewport = new GanttViewportState();

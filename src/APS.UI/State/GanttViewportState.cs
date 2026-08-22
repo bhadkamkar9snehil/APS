@@ -44,6 +44,8 @@ public sealed class GanttViewportState
         GanttDensity.Expanded => 80,
         _ => 60
     };
+    public int VisibleRowStart { get; private set; }
+    public int VisibleRowEndExclusive { get; private set; } = int.MaxValue;
     public PlanningWorkbenchZoom Zoom { get; private set; } = PlanningWorkbenchZoom.Fit;
 
     public void Configure(
@@ -201,6 +203,22 @@ public sealed class GanttViewportState
     public void SetSnapMode(GanttSnapMode mode) => SnapMode = mode;
 
     public void SetDensity(GanttDensity density) => Density = density;
+
+    public void SetVisibleRowRange(int firstVisibleRow, int visibleRowCount, int overscan = 3)
+    {
+        var safeOverscan = Math.Max(0, overscan);
+        VisibleRowStart = Math.Max(0, firstVisibleRow - safeOverscan);
+        var requestedEnd = (long)Math.Max(0, firstVisibleRow) + Math.Max(1, visibleRowCount) + safeOverscan;
+        VisibleRowEndExclusive = requestedEnd >= int.MaxValue ? int.MaxValue : (int)requestedEnd;
+    }
+
+    public Range MountedRowRange(int totalRowCount)
+    {
+        var total = Math.Max(0, totalRowCount);
+        var start = Math.Min(VisibleRowStart, total);
+        var end = Math.Clamp(VisibleRowEndExclusive, start, total);
+        return start..end;
+    }
 
     private void SetVisibleRange(DateTime startUtc, DateTime endUtc)
     {
