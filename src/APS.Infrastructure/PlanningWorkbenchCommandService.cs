@@ -31,6 +31,16 @@ public sealed class PlanningWorkbenchCommandService(
         var targetEnd = proposal.TargetStartUtc + duration;
         var findings = new List<PlanningConstraintFinding>();
 
+        if (operation.ExecutionStatus is OperationExecutionStatus.Running or OperationExecutionStatus.Completed)
+        {
+            findings.Add(Blocker(
+                "EXECUTION_STATE_PROTECTED",
+                $"{operation.ExecutionStatus} work cannot be moved. Repair the future schedule around it.",
+                PlannerEntityType.Operation,
+                operation.Id,
+                operation.PlanningKey));
+        }
+
         var eligible = operation.ResourceId == target.Id || await db.PlanOperationResourceOptionSnapshots.AsNoTracking()
             .AnyAsync(x => x.PlanVersionId == proposal.BaselinePlanVersionId &&
                            x.PlanningKey == proposal.PlanningKey &&

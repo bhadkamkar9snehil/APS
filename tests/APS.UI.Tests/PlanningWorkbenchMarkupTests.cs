@@ -125,4 +125,26 @@ public sealed class PlanningWorkbenchMarkupTests
         Assert.DoesNotContain("pointermove', () => dotnet", script);
     }
 
+    [Fact]
+    public void Drag_uses_a_readonly_source_and_an_eligibility_aware_proposal_ghost()
+    {
+        var script = File.ReadAllText(Repo.File("src/APS.UI/wwwroot/planning-workbench.js"));
+        var block = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttOperationBlock.razor"));
+        var lane = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttResourceLane.razor"));
+        var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+
+        Assert.Contains("cloneNode(true)", script);
+        Assert.Contains("aps-operation-ghost", script);
+        Assert.Contains("aps-operation-source-dragging", script);
+        Assert.Contains("eligibleResources", script);
+        Assert.Contains("pointercancel', cancel", script);
+        Assert.Contains("window.addEventListener('blur', cancel)", script);
+        Assert.Contains("snapped.iso", script);
+        Assert.DoesNotContain("state.drag.block.style", script);
+        Assert.Contains("data-eligible-resources", block);
+        Assert.Contains("data-drag-protected", block);
+        Assert.Contains("<GanttProposalLayer", lane);
+        Assert.Contains("string targetStartUtc", page);
+    }
+
 }

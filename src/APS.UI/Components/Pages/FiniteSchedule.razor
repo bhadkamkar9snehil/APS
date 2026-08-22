@@ -429,14 +429,35 @@
     private void FocusException(PlanningWorkbenchException exception) { state.SetSearch(exception.Entity?.DisplayCode ?? exception.Title); }
 
     [JSInvokable]
-    public async Task StageDraggedMove(string planningKey, string resourceId, double ratio)
+    public async Task StageDraggedMove(string planningKey, string resourceId, string targetStartUtc)
     {
         if (!state.CanEditSchedule) return;
         var draggedDetail = FindDetail(planningKey);
         if (draggedDetail?.ExecutionStatus is OperationExecutionStatus.Completed or OperationExecutionStatus.Running) return;
-        if (!Guid.TryParse(resourceId, out var targetResourceId)) return; var operation = FindOperation(planningKey); if (operation is null) return; SelectOperation(operation);
-        var minutes = (state.VisibleEndUtc - state.VisibleStartUtc).TotalMinutes * Math.Clamp(ratio, 0d, 1d); var targetStart = state.VisibleStartUtc.AddMinutes(Math.Round(minutes / 15d) * 15d);
-        targetResourceText = targetResourceId.ToString(); targetStartText = targetStart.ToString("yyyy-MM-ddTHH:mm"); await PreviewMoveAsync();
+        if (!Guid.TryParse(resourceId, out var targetResourceId) ||
+            !DateTimeOffset.TryParse(targetStartUtc, out var parsedStart)) return;
+        var operation = FindOperation(planningKey);
+        if (operation is null) return;
+        var decision = GanttDragGeometry.EvaluateDrop(
+            operation,
+            draggedDetail,
+            targetResourceId,
+            state.CanEditSchedule,
+            FrozenFenceEndUtc);
+        if (!decision.IsEligible) { SetMessage(decision.Message, true); return; }
+
+        SelectOperation(operation);
+        var targetStart = GanttDragGeometry.CandidateStart(
+            parsedStart.UtcDateTime,
+            operation.EndUtc - operation.StartUtc,
+            0d,
+            state.Viewport.SnapMode,
+            Array.Empty<DateTime>());
+        targetResourceText = targetResourceId.ToString();
+        targetStartText = targetStart.ToString("yyyy-MM-ddTHH:mm");
+        if (decision.RequiresFrozenOverride && !allowFrozenOverride)
+            SetMessage(decision.Message, true);
+        await PreviewMoveAsync();
     }
 
     private async Task PreviewMoveAsync() { var proposal = BuildProposal(); if (proposal is null) return; acting = true; message = null; try { state.StageMove(proposal); state.SetImpact(await Commands.ValidateMoveAsync(proposal)); } catch (Exception ex) { SetMessage(ex.Message, true); } finally { acting = false; } }

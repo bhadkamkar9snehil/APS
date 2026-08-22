@@ -1,13 +1,12 @@
 (function () {
   const states = new WeakMap();
-  const SNAP_MINUTES = 15;
   const EDGE_SCROLL_PX = 48;
-  const EDGE_SCROLL_SPEED = 14;
+  const EDGE_SCROLL_SPEED = 18;
   const PREFERENCES_KEY = 'aps.gantt.preferences.v1';
 
   function initialize(root, dotnet) {
     if (!root || states.has(root)) return;
-    const state = { dotnet, drag: null, pan: null, split: null, guide: null, scrollTimer: null, metricsFrame: null, lastRows: '' };
+    const state = { dotnet, drag: null, pan: null, split: null, guide: null, autoScrollFrame: null, metricsFrame: null, lastRows: '' };
 
     function preferences() {
       try { return JSON.parse(localStorage.getItem(PREFERENCES_KEY) || '{}'); }
@@ -39,20 +38,27 @@
       return lane && root.contains(lane) ? lane : null;
     }
 
-    // Snaps a pointer position to the nearest 15-minute grid line within a lane's time window,
-    // returning both the ratio (for staging the move) and the pixel x to draw the guide at.
-    function snap(grid, clientX) {
+    function snap(grid, clientX, drag) {
       const rect = grid.getBoundingClientRect();
       if (rect.width <= 0) return null;
       const start = new Date(grid.dataset.windowStart).getTime();
       const end = new Date(grid.dataset.windowEnd).getTime();
-      const totalMinutes = (end - start) / 60000;
-      if (!(totalMinutes > 0)) return null;
+      const duration = end - start;
+      if (!(duration > 0)) return null;
       const rawRatio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-      const rawMinutes = rawRatio * totalMinutes;
-      const snappedMinutes = Math.round(rawMinutes / SNAP_MINUTES) * SNAP_MINUTES;
-      const ratio = Math.max(0, Math.min(1, snappedMinutes / totalMinutes));
-      return { ratio, x: rect.left + ratio * rect.width };
+      let candidate = start + rawRatio * duration - drag.durationMs * drag.grabRatio;
+      const increments = { Hour: 60, ThirtyMinutes: 30, FifteenMinutes: 15, FiveMinutes: 5 };
+      if (drag.snapMode === 'ShiftBoundary') {
+        const boundaries = drag.shiftBoundaries.map(value => new Date(value).getTime()).filter(Number.isFinite);
+        if (boundaries.length) candidate = boundaries.reduce((nearest, value) => Math.abs(value - candidate) < Math.abs(nearest - candidate) ? value : nearest);
+      } else if (increments[drag.snapMode]) {
+        const incrementMs = increments[drag.snapMode] * 60000;
+        const day = new Date(candidate);
+        const dayStart = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate());
+        candidate = dayStart + Math.round((candidate - dayStart) / incrementMs) * incrementMs;
+      }
+      const ratio = (candidate - start) / duration;
+      return { candidate, iso: new Date(candidate).toISOString(), ratio, x: rect.left + ratio * rect.width };
     }
 
     function clearGuide() {
@@ -61,26 +67,70 @@
     }
 
     function clearLaneHighlight() {
-      root.querySelectorAll('.aps-lane-drop-target').forEach(el => el.classList.remove('aps-lane-drop-target'));
+      root.querySelectorAll('.aps-lane-drop-eligible,.aps-lane-drop-ineligible,.aps-lane-drop-checking')
+        .forEach(el => el.classList.remove('aps-lane-drop-eligible', 'aps-lane-drop-ineligible', 'aps-lane-drop-checking'));
     }
 
     function stopAutoScroll() {
-      if (state.scrollTimer) { clearInterval(state.scrollTimer); state.scrollTimer = null; }
+      if (state.autoScrollFrame) cancelAnimationFrame(state.autoScrollFrame);
+      state.autoScrollFrame = null;
     }
 
-    // Keeps a drag usable on a horizon wider than the viewport: without this, a target off-screen to
-    // either side is simply unreachable, since the pointer can't drag the container and the block at
-    // the same time.
-    function autoScroll(clientX) {
+    function autoScroll(clientX, clientY) {
       const scroller = root.querySelector('[data-gantt-scroll]');
       if (!scroller) return;
       const rect = scroller.getBoundingClientRect();
       stopAutoScroll();
-      let direction = 0;
-      if (clientX < rect.left + EDGE_SCROLL_PX) direction = -1;
-      else if (clientX > rect.right - EDGE_SCROLL_PX) direction = 1;
-      if (direction === 0) return;
-      state.scrollTimer = setInterval(() => { scroller.scrollLeft += direction * EDGE_SCROLL_SPEED; }, 16);
+      const edgeVelocity = (value, low, high) => value < low + EDGE_SCROLL_PX
+        ? -Math.min(1, (low + EDGE_SCROLL_PX - value) / EDGE_SCROLL_PX)
+        : value > high - EDGE_SCROLL_PX
+          ? Math.min(1, (value - high + EDGE_SCROLL_PX) / EDGE_SCROLL_PX)
+          : 0;
+      const velocityX = edgeVelocity(clientX, rect.left, rect.right);
+      const velocityY = edgeVelocity(clientY, rect.top, rect.bottom);
+      if (!velocityX && !velocityY) return;
+      const tick = () => {
+        scroller.scrollLeft += velocityX * EDGE_SCROLL_SPEED;
+        scroller.scrollTop += velocityY * EDGE_SCROLL_SPEED;
+        state.autoScrollFrame = requestAnimationFrame(tick);
+      };
+      state.autoScrollFrame = requestAnimationFrame(tick);
+    }
+
+    function setFeedback(drag, text, tone) {
+      if (!drag.feedback) {
+        drag.feedback = document.createElement('div');
+        drag.feedback.className = 'aps-drag-feedback';
+        document.body.appendChild(drag.feedback);
+      }
+      drag.feedback.dataset.tone = tone;
+      drag.feedback.textContent = text;
+      drag.feedback.style.left = `${drag.lastX + 14}px`;
+      drag.feedback.style.top = `${drag.lastY + 16}px`;
+    }
+
+    function activateDrag(drag) {
+      drag.active = true;
+      drag.ghost = drag.block.cloneNode(true);
+      drag.ghost.removeAttribute('id');
+      drag.ghost.classList.add('aps-operation-ghost');
+      Object.assign(drag.ghost.style, {
+        position: 'fixed', left: `${drag.rect.left}px`, top: `${drag.rect.top}px`,
+        width: `${drag.rect.width}px`, height: `${drag.rect.height}px`, zIndex: '1000', pointerEvents: 'none'
+      });
+      document.body.appendChild(drag.ghost);
+      drag.block.classList.add('aps-operation-source-dragging');
+      document.body.style.cursor = 'grabbing';
+    }
+
+    function cleanupDrag(drag) {
+      drag?.ghost?.remove();
+      drag?.feedback?.remove();
+      drag?.block?.classList.remove('aps-operation-source-dragging');
+      document.body.style.cursor = '';
+      clearLaneHighlight();
+      clearGuide();
+      stopAutoScroll();
     }
 
     const down = event => {
@@ -102,7 +152,24 @@
         }
         return;
       }
-      state.drag = { block, planningKey: block.dataset.planningKey, startX: event.clientX, startY: event.clientY };
+      if (block.dataset.dragProtected === 'true') return;
+      const rect = block.getBoundingClientRect();
+      state.drag = {
+        block,
+        planningKey: block.dataset.planningKey,
+        startX: event.clientX,
+        startY: event.clientY,
+        lastX: event.clientX,
+        lastY: event.clientY,
+        rect,
+        grabRatio: Math.max(0, Math.min(1, (event.clientX - rect.left) / Math.max(1, rect.width))),
+        grabY: event.clientY - rect.top,
+        durationMs: Number(block.dataset.durationMs),
+        eligibleResources: new Set((block.dataset.eligibleResources || '').split(',').filter(Boolean)),
+        snapMode: block.dataset.snapMode || 'FifteenMinutes',
+        shiftBoundaries: (block.dataset.shiftBoundaries || '').split(',').filter(Boolean),
+        frozen: block.dataset.frozen === 'true'
+      };
       block.setPointerCapture?.(event.pointerId);
     };
 
@@ -123,25 +190,31 @@
       }
       if (!state.drag) return;
       const dx = event.clientX - state.drag.startX, dy = event.clientY - state.drag.startY;
+      state.drag.lastX = event.clientX;
+      state.drag.lastY = event.clientY;
       if (!state.drag.active) {
         if (Math.abs(dx) + Math.abs(dy) < 4) return;
-        state.drag.active = true;
-        state.drag.block.classList.add('aps-operation-dragging');
+        activateDrag(state.drag);
       }
-      Object.assign(state.drag.block.style, { transform: `translate(${dx}px, ${dy}px) scale(1.03)`, zIndex: '60', opacity: '.85' });
-      document.body.style.cursor = 'grabbing';
+      Object.assign(state.drag.ghost.style, {
+        left: `${event.clientX - state.drag.rect.width * state.drag.grabRatio}px`,
+        top: `${event.clientY - state.drag.grabY}px`
+      });
       event.preventDefault();
 
       const lane = currentLane(event.clientX, event.clientY);
       const grid = lane?.querySelector?.('.aps-time-grid');
       if (lane && grid) {
+        const eligible = state.drag.eligibleResources.has(lane.dataset.resourceId);
         if (lane !== state.drag.lastLane) {
           clearLaneHighlight();
-          lane.classList.add('aps-lane-drop-target');
+          lane.classList.add(eligible ? 'aps-lane-drop-eligible' : 'aps-lane-drop-ineligible');
           state.drag.lastLane = lane;
         }
-        const snapped = snap(grid, event.clientX);
-        if (snapped) {
+        state.drag.lastEligible = eligible;
+        const snapped = eligible ? snap(grid, event.clientX, state.drag) : null;
+        state.drag.lastCandidate = snapped;
+        if (eligible && snapped) {
           if (!state.guide) {
             state.guide = document.createElement('div');
             state.guide.className = 'aps-snap-guide';
@@ -151,13 +224,23 @@
           }
           const gridRect = grid.getBoundingClientRect();
           state.guide.style.left = `${snapped.x - gridRect.left}px`;
+          const start = new Date(snapped.candidate);
+          const end = new Date(snapped.candidate + state.drag.durationMs);
+          const deltaMinutes = Math.round((snapped.candidate - new Date(state.drag.block.dataset.operationStart).getTime()) / 60000);
+          setFeedback(state.drag, `${start.toISOString().slice(11,16)}–${end.toISOString().slice(11,16)} · ${deltaMinutes >= 0 ? '+' : ''}${deltaMinutes} min${state.drag.frozen ? ' · override required' : ''}`, state.drag.frozen ? 'warning' : 'eligible');
+        } else {
+          clearGuide();
+          setFeedback(state.drag, 'Resource not eligible', 'ineligible');
         }
       } else {
         clearLaneHighlight();
         clearGuide();
         state.drag.lastLane = null;
+        state.drag.lastEligible = false;
+        state.drag.lastCandidate = null;
+        setFeedback(state.drag, 'Move over an eligible resource lane', 'neutral');
       }
-      autoScroll(event.clientX);
+      autoScroll(event.clientX, event.clientY);
     };
 
     const up = async event => {
@@ -180,21 +263,25 @@
       const drag = state.drag;
       if (!drag) return;
       state.drag = null;
-      drag.block.classList.remove('aps-operation-dragging');
-      Object.assign(drag.block.style, { transform: '', zIndex: '', opacity: '' });
-      document.body.style.cursor = '';
-      clearLaneHighlight();
-      clearGuide();
-      stopAutoScroll();
+      cleanupDrag(drag);
       if (!drag.active) return;
 
       const lane = currentLane(event.clientX, event.clientY);
       const grid = lane?.querySelector?.('.aps-time-grid');
-      if (!lane || !grid) return;
-      const snapped = snap(grid, event.clientX);
+      if (!lane || !grid || !drag.eligibleResources.has(lane.dataset.resourceId)) return;
+      const snapped = snap(grid, event.clientX, drag);
       if (!snapped) return;
-      await dotnet.invokeMethodAsync('StageDraggedMove', drag.planningKey, lane.dataset.resourceId, snapped.ratio);
+      await dotnet.invokeMethodAsync('StageDraggedMove', drag.planningKey, lane.dataset.resourceId, snapped.iso);
     };
+
+    const cancel = () => {
+      if (!state.drag) return;
+      const drag = state.drag;
+      state.drag = null;
+      cleanupDrag(drag);
+    };
+
+    const keydown = event => { if (event.key === 'Escape') cancel(); };
 
     const wheel = event => {
       if (!event.ctrlKey || !event.target.closest('[data-gantt-timeline]')) return;
@@ -216,15 +303,19 @@
     root.addEventListener('pointerdown', down);
     root.addEventListener('pointermove', move);
     root.addEventListener('pointerup', up);
-    root.addEventListener('pointercancel', up);
+    root.addEventListener('pointercancel', cancel);
     root.addEventListener('wheel', wheel, { passive: false });
+    window.addEventListener('keydown', keydown);
+    window.addEventListener('blur', cancel);
     dotnet.invokeMethodAsync('ApplyGanttPreferences', JSON.stringify(preferences()), root.clientWidth).then(requestMetrics);
     state.cleanup = () => {
       root.removeEventListener('pointerdown', down);
       root.removeEventListener('pointermove', move);
       root.removeEventListener('pointerup', up);
-      root.removeEventListener('pointercancel', up);
+      root.removeEventListener('pointercancel', cancel);
       root.removeEventListener('wheel', wheel);
+      window.removeEventListener('keydown', keydown);
+      window.removeEventListener('blur', cancel);
       if (scroller) scroller.removeEventListener('scroll', requestMetrics);
       resizeObserver.disconnect();
       if (state.metricsFrame) cancelAnimationFrame(state.metricsFrame);

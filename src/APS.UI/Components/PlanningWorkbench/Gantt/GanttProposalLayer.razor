@@ -1,0 +1,15 @@
+@if (State.StagedMove is not null &&
+     State.StagedMove.TargetResourceId == Row.Lane.ResourceId &&
+     Scene.OperationsByKey.TryGetValue(State.StagedMove.PlanningKey, out var source))
+{
+    <div class="pointer-events-none absolute inset-y-2 z-20 rounded-control border-2 border-accent bg-accent-soft/70"
+         style="left:@GanttModels.Percent(State, State.StagedMove.TargetStartUtc)%;width:@GanttModels.WidthPercent(State, State.StagedMove.TargetStartUtc, State.StagedMove.TargetStartUtc + (source.EndUtc - source.StartUtc))%">
+        <span class="px-1 text-[10px] font-semibold text-accent">Proposed · @State.StagedMove.TargetStartUtc.ToString("HH:mm")</span>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public GanttRowModel Row { get; set; } = default!;
+    [Parameter, EditorRequired] public GanttScene Scene { get; set; } = default!;
+    [Parameter, EditorRequired] public PlanningWorkbenchState State { get; set; } = default!;
+}

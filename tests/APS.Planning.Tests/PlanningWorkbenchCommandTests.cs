@@ -67,6 +67,33 @@ public sealed class PlanningWorkbenchCommandTests
         }
     }
 
+    [Theory]
+    [InlineData(OperationExecutionStatus.Running)]
+    [InlineData(OperationExecutionStatus.Completed)]
+    public async Task Rejects_execution_protected_operations_even_when_called_outside_the_ui(
+        OperationExecutionStatus executionStatus)
+    {
+        var (db, planId, operation, target) = await SeedAsync();
+        await using (db)
+        {
+            operation.ExecutionStatus = executionStatus;
+            await db.SaveChangesAsync();
+            var service = new PlanningWorkbenchCommandService(db, new UnusedLifecycle());
+
+            var result = await service.ValidateMoveAsync(new PlanningMoveProposal(
+                planId,
+                operation.PlanningKey,
+                target.Id,
+                operation.StartUtc.AddHours(3),
+                "PLANNER_SEQUENCE"));
+
+            Assert.False(result.CanApply);
+            Assert.Contains(result.Findings, x =>
+                x.Code == "EXECUTION_STATE_PROTECTED" &&
+                x.Severity == PlanningConstraintSeverity.Blocker);
+        }
+    }
+
     private static async Task<(ApsDbContext Db, Guid PlanId, PlanOperationSnapshot Operation, Resource Target)> SeedAsync()
     {
         var options = new DbContextOptionsBuilder<ApsDbContext>()

@@ -2,6 +2,15 @@
         class="aps-operation aps-op-card absolute inset-y-2 z-10 overflow-hidden rounded-control border px-1.5 py-1 text-left text-[10px] leading-tight @ProcessClass(Model.Operation.ProcessOperationType) @ExecutionClass(Model.ExecutionStatus) @(Selected ? "border-accent ring-2 ring-accent" : "border-transparent hover:border-primary") @(State.StagedMove?.PlanningKey == Model.Operation.PlanningKey ? "opacity-55" : "")"
         style="left:calc(@Model.LeftPercent% + 1px);width:calc(@Model.WidthPercent% - 2px)"
         data-planning-key="@Model.Operation.PlanningKey"
+        data-source-resource-id="@Model.Operation.ResourceId"
+        data-operation-start="@Model.Operation.StartUtc.ToString("O")"
+        data-operation-end="@Model.Operation.EndUtc.ToString("O")"
+        data-duration-ms="@((long)(Model.Operation.EndUtc - Model.Operation.StartUtc).TotalMilliseconds)"
+        data-eligible-resources="@EligibleResourceIds"
+        data-drag-protected="@((!CanEdit || Model.ExecutionStatus is OperationExecutionStatus.Running or OperationExecutionStatus.Completed).ToString().ToLowerInvariant())"
+        data-frozen="@(IsFrozen.ToString().ToLowerInvariant())"
+        data-snap-mode="@State.Viewport.SnapMode"
+        data-shift-boundaries=""
         aria-label="@Model.AccessibleName"
         title="@Model.AccessibleName"
         @onclick="() => OperationSelected.InvokeAsync(Model.Operation)">
@@ -41,7 +50,13 @@
     [Parameter, EditorRequired] public GanttOperationModel Model { get; set; } = default!;
     [Parameter, EditorRequired] public PlanningWorkbenchState State { get; set; } = default!;
     [Parameter] public bool Selected { get; set; }
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public bool IsFrozen { get; set; }
     [Parameter] public EventCallback<ScheduledProcessOperationView> OperationSelected { get; set; }
+
+    private string EligibleResourceIds => string.Join(",", (Model.Detail?.ResourceOptions.Select(x => x.ResourceId) ?? [])
+        .Append(Model.Operation.ResourceId)
+        .Distinct());
 
     private static string ProcessClass(ProcessOperationType type) => type switch
     {
