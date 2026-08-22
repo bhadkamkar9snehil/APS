@@ -95,17 +95,9 @@ When `APS:DemoModeEnabled=true`, the host may expose:
 /api/demo/planning/release/build
 ```
 
-The Blazor calculation sandbox is routed only at `/demo/planning`. It is hidden/gated when demo mode is disabled and labels its outputs as ephemeral demo results.
+The Blazor calculation sandbox is routed only at `/demo/planning`. It is gated by the same setting and labels its outputs as ephemeral demo results.
 
-Default configuration remains:
-
-```json
-{
-  "APS": {
-    "DemoModeEnabled": false
-  }
-}
-```
+The setting is host-specific in the checked-in configuration: `APS.Service` sets it to `false`, while `APS.DesktopHost` currently sets it to `true` so the local desktop/reference host can open the sandbox deliberately. The demo path remains segregated from production planning authority in either case. Changing that product exposure should be an explicit configuration decision, not a fallback triggered by missing data.
 
 Demo and compatibility behavior must never silently become a production fallback.
 
