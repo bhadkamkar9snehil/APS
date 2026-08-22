@@ -9,34 +9,15 @@ namespace APS.Infrastructure;
 /// Sales Order reconciliation, MTO/MTS manufacturing demand, plant masters, current inventory, committed
 /// in-process supply and Plan Version persistence are resolved behind this boundary.
 /// </summary>
-public sealed class PlanningLifecycleService : IPlanningLifecycleService
+public sealed class PlanningLifecycleService(
+    IPlanningEngine _planningEngine,
+    IPlanVersionRepository _plans,
+    IPlanningMasterDataProvider _masters,
+    IInventorySnapshotProvider _inventory,
+    IReplanningActualStateProvider _actualState,
+    IProductionDemandOrchestrationService _demand,
+    ILogger<PlanningLifecycleService> _logger) : IPlanningLifecycleService
 {
-    private readonly IPlanningEngine _planningEngine;
-    private readonly IPlanVersionRepository _plans;
-    private readonly IPlanningMasterDataProvider _masters;
-    private readonly IInventorySnapshotProvider _inventory;
-    private readonly IReplanningActualStateProvider _actualState;
-    private readonly IProductionDemandOrchestrationService _demand;
-    private readonly ILogger<PlanningLifecycleService> _logger;
-
-    public PlanningLifecycleService(
-        IPlanningEngine planningEngine,
-        IPlanVersionRepository plans,
-        IPlanningMasterDataProvider masters,
-        IInventorySnapshotProvider inventory,
-        IReplanningActualStateProvider actualState,
-        IProductionDemandOrchestrationService demand,
-        ILogger<PlanningLifecycleService> logger)
-    {
-        _planningEngine = planningEngine;
-        _plans = plans;
-        _masters = masters;
-        _inventory = inventory;
-        _actualState = actualState;
-        _demand = demand;
-        _logger = logger;
-    }
-
     public async Task<PersistedPlanningRunResult> CalculateAsync(
         PlanningCalculationRequest request,
         CancellationToken cancellationToken = default)

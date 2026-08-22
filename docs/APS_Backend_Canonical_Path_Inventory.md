@@ -125,13 +125,14 @@ Manual execution endpoints and XStudio/MES event endpoints converge on the same 
 
 The specialized heat path remains because casting produces physical strand/billet output. Integration transport must adapt to these canonical services rather than create parallel planning or execution state.
 
-## 9. Future-only integration code
+## 9. Integration code is demand-driven
 
-Future integration capability is not treated as an active runtime dependency. In particular:
+Future integration capability is not retained as inactive runtime scaffolding:
 
-- the APS service no longer references the standalone `APS.Integrations` project because no current service code consumes it;
+- the unused standalone `APS.Integrations` project and its unwired XStudio release DTO/mapper were removed;
+- unused future-only `IExecutionActualProvider`, `ExecutionActual`, and `IPlanPublisher` application contracts were removed;
 - SQL client/provider packages are not retained solely for possible future use;
-- future outbound publication or reconciliation should be added when a concrete integration contract requires it.
+- future outbound publication or reconciliation should be added when a concrete integration contract and caller require it.
 
 This does not remove the existing XStudio MES event API surface in `APS.Service`.
 

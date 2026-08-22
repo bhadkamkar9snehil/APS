@@ -6,11 +6,8 @@ public partial class MainWindow : Window
 {
     public MainWindow(IServiceProvider services)
     {
-        Services = services;
         InitializeComponent();
-        DataContext = this;
+        BlazorHost.Services = services;
         SourceInitialized += (_, _) => NativeWindowTheme.Apply(this);
     }
-
-    public IServiceProvider Services { get; }
 }

@@ -11,12 +11,11 @@ APS.Domain
 APS.Application
 APS.Planning
 APS.Infrastructure
-APS.Integrations
 APS.Service
 APS.UI
 ```
 
-The planning kernel is .NET/ASP.NET Core with OR-Tools CP-SAT for finite scheduling, SQL Server persistence/integration infrastructure, Plan Version audit/replanning, and Blazor for the application host/reference UI.
+The planning kernel is .NET/ASP.NET Core with OR-Tools CP-SAT for finite scheduling, self-provisioned SQLite persistence, Plan Version audit/replanning, MES execution adapters, and Blazor for the application host/reference UI.
 
 The retired Python/workbook/Flask prototype and earlier UI implementations were removed from the active tree after the .NET product path became authoritative. Their final retained snapshot remains available in Git history at tag `v0.2.5`; they are not build, runtime or release dependencies.
 
@@ -211,8 +210,7 @@ UI implementation remains dependent on backend truth/read-model readiness rather
 - `src/APS.Application` — application contracts/orchestration
 - `src/APS.Planning` — Campaign/material/route/finite-scheduling logic
 - `src/APS.Infrastructure` — persistence/providers/read models
-- `src/APS.Integrations` — MES/integration adapters
-- `src/APS.Service` — ASP.NET Core/Blazor host and service API
+- `src/APS.Service` — ASP.NET Core/Blazor host, service API and MES execution adapters
 - `src/APS.UI` — Blazor feature pages/components
 - `tests/APS.Planning.Tests` — .NET planning regression/acceptance tests
 

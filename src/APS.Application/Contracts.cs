@@ -472,27 +472,6 @@ public interface IInventorySnapshotProvider
     Task<IReadOnlyCollection<InventoryPosition>> GetInventoryAsync(CancellationToken cancellationToken = default);
 }
 
-public interface IExecutionActualProvider
-{
-    Task<IReadOnlyCollection<ExecutionActual>> GetActualsAsync(DateTime changedSinceUtc, CancellationToken cancellationToken = default);
-}
-
-public sealed record ExecutionActual(
-    string ExternalWorkOrderId,
-    WorkOrderStatus Status,
-    DateTime? ActualStart,
-    DateTime? ActualEnd,
-    decimal ActualQuantityMt,
-    string? MaterialCode,
-    string? GradeCode,
-    string? CrossSectionCode,
-    DateTime ChangedOnUtc);
-
-public interface IPlanPublisher
-{
-    Task PublishAsync(PlanRelease release, CancellationToken cancellationToken = default);
-}
-
 public sealed record PlanRelease(
     Guid PlanVersionId,
     IReadOnlyCollection<WorkOrder> WorkOrders,

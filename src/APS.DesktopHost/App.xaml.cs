@@ -9,6 +9,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Velopack;
+using Velopack.Sources;
 
 namespace APS.DesktopHost;
 
@@ -29,9 +31,8 @@ public partial class App : System.Windows.Application
             {
                 services.AddWpfBlazorWebView();
                 services.AddApsInfrastructure(context.Configuration);
-                services.AddSingleton<IUpdateBackend>(_ => new VelopackUpdateBackend(UpdateSettings.RepositoryUrl));
                 services.AddSingleton<VelopackUpdateService>(sp => new VelopackUpdateService(
-                    sp.GetRequiredService<IUpdateBackend>(),
+                    new UpdateManager(new GithubSource(UpdateSettings.RepositoryUrl, accessToken: null, prerelease: false)),
                     () => Dispatcher.BeginInvoke(new Action(() => Shutdown())),
                     sp.GetRequiredService<ILogger<VelopackUpdateService>>()));
                 services.AddSingleton<IUpdateService>(sp => sp.GetRequiredService<VelopackUpdateService>());

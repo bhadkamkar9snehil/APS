@@ -1,35 +1,28 @@
 using APS.Application;
 using Microsoft.Extensions.Logging;
 using System.Net.Http;
+using Velopack;
 
 namespace APS.DesktopHost.Updates;
 
-public sealed class VelopackUpdateService : IUpdateService, IDisposable
+public sealed class VelopackUpdateService(
+    UpdateManager manager,
+    Action requestShutdown,
+    ILogger<VelopackUpdateService> log) : IUpdateService, IDisposable
 {
-    private readonly IUpdateBackend _backend;
-    private readonly Action _requestShutdown;
-    private readonly ILogger<VelopackUpdateService> _log;
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private UpdateCandidate? _candidate;
+    private UpdateInfo? _candidate;
 
-    public VelopackUpdateService(IUpdateBackend backend, Action requestShutdown, ILogger<VelopackUpdateService> log)
-    {
-        _backend = backend;
-        _requestShutdown = requestShutdown;
-        _log = log;
-        Status = !_backend.IsInstalled
-            ? new UpdateStatus(UpdatePhase.Unsupported, _backend.CurrentVersion)
-            : _backend.PendingVersion is { } pending
-                ? new UpdateStatus(UpdatePhase.ReadyToRestart, _backend.CurrentVersion, pending, 100)
-                : new UpdateStatus(UpdatePhase.Idle, _backend.CurrentVersion);
-    }
-
-    public UpdateStatus Status { get; private set; }
+    public UpdateStatus Status { get; private set; } = !manager.IsInstalled
+        ? new UpdateStatus(UpdatePhase.Unsupported, CurrentVersion(manager))
+        : manager.UpdatePendingRestart is { } pending
+            ? new UpdateStatus(UpdatePhase.ReadyToRestart, CurrentVersion(manager), pending.Version.ToString(), 100)
+            : new UpdateStatus(UpdatePhase.Idle, CurrentVersion(manager));
     public event Action? Changed;
 
     public async Task CheckNowAsync(CancellationToken cancellationToken = default)
     {
-        if (!_backend.IsInstalled || Status.Phase is UpdatePhase.Downloading or UpdatePhase.ReadyToRestart) return;
+        if (!manager.IsInstalled || Status.Phase is UpdatePhase.Downloading or UpdatePhase.ReadyToRestart) return;
         if (!await _gate.WaitAsync(0, cancellationToken)) return;
 
         var previous = Status;
@@ -37,11 +30,13 @@ public sealed class VelopackUpdateService : IUpdateService, IDisposable
         try
         {
             Publish(previous with { Phase = UpdatePhase.Checking, LastAttemptAt = attemptedAt, FailureCode = null });
-            _candidate = await _backend.CheckAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            _candidate = await manager.CheckForUpdatesAsync();
+            cancellationToken.ThrowIfCancellationRequested();
             Publish(_candidate is null
-                ? new UpdateStatus(UpdatePhase.Current, _backend.CurrentVersion, LastAttemptAt: attemptedAt, LastSuccessfulCheckAt: DateTimeOffset.Now)
-                : new UpdateStatus(UpdatePhase.Available, _backend.CurrentVersion, _candidate.Version, LastAttemptAt: attemptedAt, LastSuccessfulCheckAt: DateTimeOffset.Now));
-            _log.LogInformation("APS Planner update check completed. State={State} AvailableVersion={AvailableVersion}", Status.Phase, Status.AvailableVersion);
+                ? new UpdateStatus(UpdatePhase.Current, CurrentVersion(manager), LastAttemptAt: attemptedAt, LastSuccessfulCheckAt: DateTimeOffset.Now)
+                : new UpdateStatus(UpdatePhase.Available, CurrentVersion(manager), _candidate.TargetFullRelease.Version.ToString(), LastAttemptAt: attemptedAt, LastSuccessfulCheckAt: DateTimeOffset.Now));
+            log.LogInformation("APS Planner update check completed. State={State} AvailableVersion={AvailableVersion}", Status.Phase, Status.AvailableVersion);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -52,8 +47,8 @@ public sealed class VelopackUpdateService : IUpdateService, IDisposable
             var code = Classify(exception);
             Publish(previous.Phase == UpdatePhase.Available
                 ? previous with { LastAttemptAt = attemptedAt, FailureCode = code }
-                : new UpdateStatus(UpdatePhase.Failed, _backend.CurrentVersion, previous.AvailableVersion, LastAttemptAt: attemptedAt, LastSuccessfulCheckAt: previous.LastSuccessfulCheckAt, FailureCode: code));
-            _log.LogWarning(exception, "APS Planner update check failed. FailureCode={FailureCode}", code);
+                : new UpdateStatus(UpdatePhase.Failed, CurrentVersion(manager), previous.AvailableVersion, LastAttemptAt: attemptedAt, LastSuccessfulCheckAt: previous.LastSuccessfulCheckAt, FailureCode: code));
+            log.LogWarning(exception, "APS Planner update check failed. FailureCode={FailureCode}", code);
         }
         finally
         {
@@ -70,9 +65,9 @@ public sealed class VelopackUpdateService : IUpdateService, IDisposable
         try
         {
             Publish(available with { Phase = UpdatePhase.Downloading, DownloadProgress = 0, FailureCode = null });
-            await _backend.DownloadAsync(_candidate, progress => Publish(Status with { DownloadProgress = progress }), cancellationToken);
+            await manager.DownloadUpdatesAsync(_candidate, progress => Publish(Status with { DownloadProgress = progress }), cancellationToken);
             Publish(Status with { Phase = UpdatePhase.ReadyToRestart, DownloadProgress = 100 });
-            _log.LogInformation("APS Planner update {Version} downloaded and ready to restart.", Status.AvailableVersion);
+            log.LogInformation("APS Planner update {Version} downloaded and ready to restart.", Status.AvailableVersion);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -81,7 +76,7 @@ public sealed class VelopackUpdateService : IUpdateService, IDisposable
         catch (Exception exception)
         {
             Publish(available with { FailureCode = "DownloadFailed" });
-            _log.LogWarning(exception, "APS Planner update download failed. Version={Version}", available.AvailableVersion);
+            log.LogWarning(exception, "APS Planner update download failed. Version={Version}", available.AvailableVersion);
         }
         finally
         {
@@ -92,9 +87,9 @@ public sealed class VelopackUpdateService : IUpdateService, IDisposable
     public void RestartAndApply()
     {
         if (Status.Phase != UpdatePhase.ReadyToRestart) return;
-        _log.LogInformation("Restarting APS Planner to apply update {Version}.", Status.AvailableVersion);
-        _backend.WaitExitThenApply();
-        _requestShutdown();
+        log.LogInformation("Restarting APS Planner to apply update {Version}.", Status.AvailableVersion);
+        manager.WaitExitThenApplyUpdates(manager.UpdatePendingRestart, silent: true, restart: true);
+        requestShutdown();
     }
 
     private void Publish(UpdateStatus status)
@@ -102,6 +97,9 @@ public sealed class VelopackUpdateService : IUpdateService, IDisposable
         Status = status;
         Changed?.Invoke();
     }
+
+    private static string CurrentVersion(UpdateManager manager) => manager.CurrentVersion?.ToString() ??
+        System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "unknown";
 
     private static string Classify(Exception exception) => exception switch
     {

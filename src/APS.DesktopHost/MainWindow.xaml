@@ -8,7 +8,7 @@
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Display" TextOptions.TextRenderingMode="ClearType">
     <Grid>
-        <blazor:BlazorWebView x:Name="BlazorHost" HostPage="wwwroot\index.html" Services="{Binding Services}">
+        <blazor:BlazorWebView x:Name="BlazorHost" HostPage="wwwroot\index.html">
             <blazor:BlazorWebView.RootComponents>
                 <blazor:RootComponent Selector="#app" ComponentType="{x:Type ui:Routes}" />
             </blazor:BlazorWebView.RootComponents>
