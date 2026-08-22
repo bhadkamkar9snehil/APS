@@ -169,6 +169,66 @@ public sealed class RelationalPersistenceContractTests
         Assert.False(options[1].WasSelected);
     }
 
+    [Fact]
+    public async Task Deleting_a_plan_version_cascades_its_canonical_planning_snapshots()
+    {
+        await using var database = await SqliteDatabase.CreateAsync();
+        var planVersionId = Guid.Parse("10000000-0000-0000-0000-000000000099");
+        var resourceId = Guid.Parse("30000000-0000-0000-0000-000000000099");
+        const string planningKey = "HEAT-2099:LRF";
+
+        var plan = new PlanVersion
+        {
+            Id = planVersionId,
+            VersionNumber = "PV-TEST-0099",
+            CreatedOnUtc = ReferenceTime,
+            Reason = "Cascade contract",
+            IsReleased = false
+        };
+        database.Context.PlanVersions.Add(plan);
+        database.Context.PlanVersionStates.Add(new PlanVersionState
+        {
+            PlanVersionId = planVersionId,
+            Status = PlanVersionStatus.Draft,
+            ReferenceTimeUtc = ReferenceTime,
+            HorizonStartUtc = ReferenceTime,
+            HorizonEndUtc = ReferenceTime.AddDays(1)
+        });
+        database.Context.PlanOperationSnapshots.Add(new PlanOperationSnapshot
+        {
+            PlanVersionId = planVersionId,
+            PlanningKey = planningKey,
+            SourceEntityId = Guid.Parse("20000000-0000-0000-0000-000000000099"),
+            OperationType = PlanOperationType.Lrf,
+            ProcessOperationType = ProcessOperationType.Lrf,
+            ResourceId = resourceId,
+            StartUtc = ReferenceTime.AddHours(1),
+            EndUtc = ReferenceTime.AddHours(2),
+            QuantityMt = 90m,
+            GradeCode = "G42",
+            CrossSectionCode = "BLT-150"
+        });
+        database.Context.PlanOperationResourceOptionSnapshots.Add(new PlanOperationResourceOptionSnapshot
+        {
+            PlanVersionId = planVersionId,
+            PlanningKey = planningKey,
+            SourceEntityId = Guid.Parse("20000000-0000-0000-0000-000000000099"),
+            ProcessOperationType = ProcessOperationType.Lrf,
+            ResourceId = resourceId,
+            DurationMinutes = 60,
+            WasSelected = true,
+            CapturedOnUtc = ReferenceTime
+        });
+        await database.Context.SaveChangesAsync();
+
+        database.Context.PlanVersions.Remove(plan);
+        await database.Context.SaveChangesAsync();
+
+        Assert.False(await database.Context.PlanVersionStates.AnyAsync(x => x.PlanVersionId == planVersionId));
+        Assert.False(await database.Context.PlanOperationSnapshots.AnyAsync(x => x.PlanVersionId == planVersionId));
+        Assert.False(await database.Context.PlanOperationResourceOptionSnapshots.AnyAsync(x => x.PlanVersionId == planVersionId));
+    }
+
     private sealed class SqliteDatabase : IAsyncDisposable
     {
         private SqliteDatabase(SqliteConnection connection, ApsDbContext context)
