@@ -9,33 +9,27 @@ public sealed class PlanningWorkbenchCommandService(
     ApsDbContext db,
     IPlanningLifecycleService lifecycle) : IPlanningWorkbenchCommandService
 {
-    public Task<PlanningProposalImpact> ValidateMoveAsync(
+    public async Task<PlanningProposalImpact> ValidateMoveAsync(
         PlanningMoveProposal proposal,
-        CancellationToken cancellationToken = default) =>
-        ValidateMoveCoreAsync(
-            proposal,
-            proposal.TimeFencePolicy ?? new PlanningTimeFencePolicy(),
+        CancellationToken cancellationToken = default)
+    {
+        var timeFencePolicy = proposal.TimeFencePolicy ?? new PlanningTimeFencePolicy();
+        var context = await LoadValidationContextAsync(
+            proposal.BaselinePlanVersionId,
+            [new ValidationTarget(proposal.PlanningKey, proposal.TargetResourceId)],
             cancellationToken);
+        return ValidateMove(proposal, timeFencePolicy, context);
+    }
 
-    private async Task<PlanningProposalImpact> ValidateMoveCoreAsync(
+    private static PlanningProposalImpact ValidateMove(
         PlanningMoveProposal proposal,
         PlanningTimeFencePolicy timeFencePolicy,
-        CancellationToken cancellationToken)
+        MoveValidationContext context)
     {
-        var state = await db.PlanVersionStates.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.PlanVersionId == proposal.BaselinePlanVersionId, cancellationToken)
-            ?? throw new KeyNotFoundException("The selected baseline Plan Version no longer exists.");
-        var operation = await db.PlanOperationSnapshots.AsNoTracking()
-            .SingleOrDefaultAsync(
-                x => x.PlanVersionId == proposal.BaselinePlanVersionId && x.PlanningKey == proposal.PlanningKey,
-                cancellationToken)
+        var operation = context.OperationsByPlanningKey.GetValueOrDefault(proposal.PlanningKey)
             ?? throw new KeyNotFoundException($"Operation {proposal.PlanningKey} is not present in the selected plan.");
-
-        var resources = await db.Resources.AsNoTracking()
-            .Where(x => x.Id == operation.ResourceId || x.Id == proposal.TargetResourceId)
-            .ToArrayAsync(cancellationToken);
-        var source = resources.FirstOrDefault(x => x.Id == operation.ResourceId);
-        var target = resources.FirstOrDefault(x => x.Id == proposal.TargetResourceId)
+        context.ResourcesById.TryGetValue(operation.ResourceId, out var source);
+        var target = context.ResourcesById.GetValueOrDefault(proposal.TargetResourceId)
             ?? throw new KeyNotFoundException("The selected target resource no longer exists.");
 
         var duration = operation.EndUtc - operation.StartUtc;
@@ -52,11 +46,9 @@ public sealed class PlanningWorkbenchCommandService(
                 operation.PlanningKey));
         }
 
-        var eligible = operation.ResourceId == target.Id || await db.PlanOperationResourceOptionSnapshots.AsNoTracking()
-            .AnyAsync(x => x.PlanVersionId == proposal.BaselinePlanVersionId &&
-                           x.PlanningKey == proposal.PlanningKey &&
-                           x.ResourceId == target.Id,
-                cancellationToken);
+        var eligible = operation.ResourceId == target.Id ||
+                       context.EligibleResourceIdsByPlanningKey.TryGetValue(operation.PlanningKey, out var eligibleResourceIds) &&
+                       eligibleResourceIds.Contains(target.Id);
         if (!eligible)
         {
             findings.Add(Blocker(
@@ -79,7 +71,7 @@ public sealed class PlanningWorkbenchCommandService(
                 target.Code));
         }
 
-        if (proposal.TargetStartUtc < state.HorizonStartUtc || targetEnd > state.HorizonEndUtc)
+        if (proposal.TargetStartUtc < context.State.HorizonStartUtc || targetEnd > context.State.HorizonEndUtc)
         {
             findings.Add(Blocker(
                 "OUTSIDE_PLANNING_HORIZON",
@@ -89,7 +81,7 @@ public sealed class PlanningWorkbenchCommandService(
                 operation.PlanningKey));
         }
 
-        var frozenEnd = state.ReferenceTimeUtc.AddMinutes(timeFencePolicy.FrozenMinutes);
+        var frozenEnd = context.State.ReferenceTimeUtc.AddMinutes(timeFencePolicy.FrozenMinutes);
         if (!proposal.AllowFrozenOverride && operation.StartUtc <= frozenEnd)
         {
             findings.Add(Blocker(
@@ -100,10 +92,10 @@ public sealed class PlanningWorkbenchCommandService(
                 operation.PlanningKey));
         }
 
-        var calendarConflict = await db.ResourceCalendars.AsNoTracking()
-            .AnyAsync(x => x.ResourceId == target.Id && !x.IsAvailable &&
-                           x.Start < targetEnd && x.End > proposal.TargetStartUtc,
-                cancellationToken);
+        var calendarConflict = context.CalendarsByResourceId.TryGetValue(target.Id, out var calendars) &&
+                               calendars.Any(x => !x.IsAvailable &&
+                                                  x.Start < targetEnd &&
+                                                  x.End > proposal.TargetStartUtc);
         if (calendarConflict)
         {
             findings.Add(Blocker(
@@ -116,13 +108,12 @@ public sealed class PlanningWorkbenchCommandService(
 
         if (target.SchedulingMode == ResourceSchedulingMode.Disjunctive)
         {
-            var overlap = await db.PlanOperationSnapshots.AsNoTracking()
-                .Where(x => x.PlanVersionId == proposal.BaselinePlanVersionId &&
-                            x.Id != operation.Id &&
+            var overlap = context.Operations
+                .Where(x => x.Id != operation.Id &&
                             x.ResourceId == target.Id &&
                             x.StartUtc < targetEnd && x.EndUtc > proposal.TargetStartUtc)
                 .OrderBy(x => x.StartUtc)
-                .FirstOrDefaultAsync(cancellationToken);
+                .FirstOrDefault();
             if (overlap is not null)
             {
                 findings.Add(overlap.StartUtc <= frozenEnd
@@ -143,12 +134,9 @@ public sealed class PlanningWorkbenchCommandService(
             }
         }
 
-        var planOperations = await db.PlanOperationSnapshots.AsNoTracking()
-            .Where(x => x.PlanVersionId == proposal.BaselinePlanVersionId && x.Id != operation.Id)
-            .ToArrayAsync(cancellationToken);
         var predecessorKeys = DeserializeKeys(operation.PredecessorPlanningKeysJson);
-        var predecessorConflict = planOperations
-            .Where(x => predecessorKeys.Contains(x.PlanningKey, StringComparer.OrdinalIgnoreCase))
+        var predecessorConflict = context.Operations
+            .Where(x => x.Id != operation.Id && predecessorKeys.Contains(x.PlanningKey, StringComparer.OrdinalIgnoreCase))
             .OrderByDescending(x => x.EndUtc)
             .FirstOrDefault(x => x.EndUtc > proposal.TargetStartUtc);
         if (predecessorConflict is not null)
@@ -170,9 +158,11 @@ public sealed class PlanningWorkbenchCommandService(
                         predecessorConflict.PlanningKey)));
         }
 
-        var affectedSuccessors = planOperations
-            .Where(x => DeserializeKeys(x.PredecessorPlanningKeysJson)
-                .Contains(operation.PlanningKey, StringComparer.OrdinalIgnoreCase) && x.StartUtc < targetEnd)
+        var affectedSuccessors = context.Operations
+            .Where(x => x.Id != operation.Id &&
+                        DeserializeKeys(x.PredecessorPlanningKeysJson)
+                            .Contains(operation.PlanningKey, StringComparer.OrdinalIgnoreCase) &&
+                        x.StartUtc < targetEnd)
             .ToArray();
         if (affectedSuccessors.Length > 0)
         {
@@ -208,7 +198,11 @@ public sealed class PlanningWorkbenchCommandService(
         PlanningMoveApplyRequest request,
         CancellationToken cancellationToken = default)
     {
-        var impact = await ValidateMoveCoreAsync(request.Proposal, request.TimeFencePolicy, cancellationToken);
+        var context = await LoadValidationContextAsync(
+            request.Proposal.BaselinePlanVersionId,
+            [new ValidationTarget(request.Proposal.PlanningKey, request.Proposal.TargetResourceId)],
+            cancellationToken);
+        var impact = ValidateMove(request.Proposal, request.TimeFencePolicy, context);
         if (!impact.CanApply)
         {
             throw new InvalidOperationException(
@@ -217,8 +211,6 @@ public sealed class PlanningWorkbenchCommandService(
                     .Select(x => x.Message)));
         }
 
-        var baselineState = await db.PlanVersionStates.AsNoTracking()
-            .SingleAsync(x => x.PlanVersionId == request.Proposal.BaselinePlanVersionId, cancellationToken);
         var scheduleOverride = new OperationScheduleOverride(
             request.Proposal.PlanningKey,
             request.Proposal.TargetResourceId,
@@ -230,7 +222,7 @@ public sealed class PlanningWorkbenchCommandService(
             new PlanningRecalculationRequest(
                 request.Planning,
                 request.TimeFencePolicy,
-                ReferenceTimeUtc: baselineState.ReferenceTimeUtc,
+                ReferenceTimeUtc: context.State.ReferenceTimeUtc,
                 Trigger: PlanTriggerType.OperationalRedispatch,
                 Reason: $"Planner schedule move: {request.Proposal.ReasonCode}",
                 ScheduleOverrides: new[] { scheduleOverride },
@@ -240,13 +232,13 @@ public sealed class PlanningWorkbenchCommandService(
         return new PlanningMoveApplyResult(impact, replan);
     }
 
-    public Task<PlanningBulkMoveImpact> ValidateBulkMoveAsync(
+    public async Task<PlanningBulkMoveImpact> ValidateBulkMoveAsync(
         PlanningBulkMoveProposal proposal,
-        CancellationToken cancellationToken = default) =>
-        ValidateBulkMoveCoreAsync(
-            proposal,
-            proposal.TimeFencePolicy ?? new PlanningTimeFencePolicy(),
-            cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        var timeFencePolicy = proposal.TimeFencePolicy ?? new PlanningTimeFencePolicy();
+        return await ValidateBulkMoveCoreAsync(proposal, timeFencePolicy, cancellationToken);
+    }
 
     private async Task<PlanningBulkMoveImpact> ValidateBulkMoveCoreAsync(
         PlanningBulkMoveProposal proposal,
@@ -289,10 +281,17 @@ public sealed class PlanningWorkbenchCommandService(
             .Where(x => !string.IsNullOrWhiteSpace(x.PlanningKey))
             .DistinctBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var impacts = new List<PlanningProposalImpact>();
-        foreach (var move in validMoves)
+        if (validMoves.Length == 0)
         {
-            var impact = await ValidateMoveCoreAsync(
+            return new PlanningBulkMoveImpact(false, Array.Empty<PlanningProposalImpact>(), findings);
+        }
+
+        var context = await LoadValidationContextAsync(
+            proposal.BaselinePlanVersionId,
+            validMoves.Select(x => new ValidationTarget(x.PlanningKey, x.TargetResourceId)).ToArray(),
+            cancellationToken);
+        var impacts = validMoves
+            .Select(move => ValidateMove(
                 new PlanningMoveProposal(
                     proposal.BaselinePlanVersionId,
                     move.PlanningKey,
@@ -303,17 +302,17 @@ public sealed class PlanningWorkbenchCommandService(
                     proposal.AllowFrozenOverride,
                     timeFencePolicy),
                 timeFencePolicy,
-                cancellationToken);
-            impacts.Add(impact);
-        }
+                context))
+            .ToArray();
 
-        var targetResourceIds = validMoves.Select(x => x.TargetResourceId).Distinct().ToArray();
-        var targetModes = await db.Resources.AsNoTracking()
-            .Where(x => targetResourceIds.Contains(x.Id))
-            .ToDictionaryAsync(x => x.Id, x => x.SchedulingMode, cancellationToken);
         foreach (var targetGroup in validMoves.GroupBy(x => x.TargetResourceId))
         {
-            if (targetModes.GetValueOrDefault(targetGroup.Key) != ResourceSchedulingMode.Disjunctive) continue;
+            if (!context.ResourcesById.TryGetValue(targetGroup.Key, out var targetResource) ||
+                targetResource.SchedulingMode != ResourceSchedulingMode.Disjunctive)
+            {
+                continue;
+            }
+
             var ordered = targetGroup.Select(impactFor).OrderBy(x => x.TargetStartUtc).ToArray();
             for (var index = 1; index < ordered.Length; index++)
             {
@@ -327,7 +326,7 @@ public sealed class PlanningWorkbenchCommandService(
 
         findings.AddRange(impacts.SelectMany(x => x.Findings));
         return new PlanningBulkMoveImpact(
-            impacts.Count == proposal.Moves.Count && findings.All(x => x.Severity != PlanningConstraintSeverity.Blocker),
+            impacts.Length == proposal.Moves.Count && findings.All(x => x.Severity != PlanningConstraintSeverity.Blocker),
             impacts,
             findings);
 
@@ -339,7 +338,20 @@ public sealed class PlanningWorkbenchCommandService(
         PlanningBulkMoveApplyRequest request,
         CancellationToken cancellationToken = default)
     {
-        var impact = await ValidateBulkMoveCoreAsync(request.Proposal, request.TimeFencePolicy, cancellationToken);
+        ArgumentNullException.ThrowIfNull(request.Proposal.Moves);
+        var validMoves = request.Proposal.Moves
+            .Where(x => !string.IsNullOrWhiteSpace(x.PlanningKey))
+            .DistinctBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var context = validMoves.Length == 0
+            ? null
+            : await LoadValidationContextAsync(
+                request.Proposal.BaselinePlanVersionId,
+                validMoves.Select(x => new ValidationTarget(x.PlanningKey, x.TargetResourceId)).ToArray(),
+                cancellationToken);
+        var impact = context is null
+            ? await ValidateBulkMoveCoreAsync(request.Proposal, request.TimeFencePolicy, cancellationToken)
+            : ValidateBulkMoveFromContext(request.Proposal, request.TimeFencePolicy, validMoves, context);
         if (!impact.CanApply)
         {
             throw new InvalidOperationException(
@@ -349,8 +361,6 @@ public sealed class PlanningWorkbenchCommandService(
                     .Distinct(StringComparer.Ordinal)));
         }
 
-        var baselineState = await db.PlanVersionStates.AsNoTracking()
-            .SingleAsync(x => x.PlanVersionId == request.Proposal.BaselinePlanVersionId, cancellationToken);
         var scheduleOverrides = request.Proposal.Moves.Select(move => new OperationScheduleOverride(
             move.PlanningKey,
             move.TargetResourceId,
@@ -362,7 +372,7 @@ public sealed class PlanningWorkbenchCommandService(
             new PlanningRecalculationRequest(
                 request.Planning,
                 request.TimeFencePolicy,
-                ReferenceTimeUtc: baselineState.ReferenceTimeUtc,
+                ReferenceTimeUtc: context!.State.ReferenceTimeUtc,
                 Trigger: PlanTriggerType.OperationalRedispatch,
                 Reason: $"Planner atomic bulk move ({scheduleOverrides.Length} operations): {request.Proposal.ReasonCode}",
                 ScheduleOverrides: scheduleOverrides,
@@ -370,6 +380,145 @@ public sealed class PlanningWorkbenchCommandService(
             cancellationToken);
 
         return new PlanningBulkMoveApplyResult(impact, replan);
+    }
+
+    private static PlanningBulkMoveImpact ValidateBulkMoveFromContext(
+        PlanningBulkMoveProposal proposal,
+        PlanningTimeFencePolicy timeFencePolicy,
+        IReadOnlyCollection<PlanningBulkMoveItem> validMoves,
+        MoveValidationContext context)
+    {
+        var findings = new List<PlanningConstraintFinding>();
+        if (proposal.Moves.Count < 2)
+        {
+            findings.Add(new PlanningConstraintFinding(
+                "BULK_REQUIRES_MULTIPLE_OPERATIONS",
+                PlanningConstraintSeverity.Blocker,
+                "An atomic bulk move requires at least two operations."));
+        }
+        if (proposal.Moves.Any(x => string.IsNullOrWhiteSpace(x.PlanningKey)))
+        {
+            findings.Add(new PlanningConstraintFinding(
+                "BULK_INVALID_OPERATION_KEY",
+                PlanningConstraintSeverity.Blocker,
+                "Every atomic bulk-move item requires a planning key."));
+        }
+        var duplicateKeys = proposal.Moves
+            .Where(x => !string.IsNullOrWhiteSpace(x.PlanningKey))
+            .GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
+            .Where(x => x.Count() > 1)
+            .Select(x => x.Key)
+            .ToArray();
+        if (duplicateKeys.Length > 0)
+        {
+            findings.Add(new PlanningConstraintFinding(
+                "BULK_DUPLICATE_OPERATION",
+                PlanningConstraintSeverity.Blocker,
+                $"Each operation may appear once in an atomic bulk move. Duplicate: {string.Join(", ", duplicateKeys)}."));
+        }
+
+        var impacts = validMoves
+            .Select(move => ValidateMove(
+                new PlanningMoveProposal(
+                    proposal.BaselinePlanVersionId,
+                    move.PlanningKey,
+                    move.TargetResourceId,
+                    move.TargetStartUtc,
+                    proposal.ReasonCode,
+                    proposal.Comment,
+                    proposal.AllowFrozenOverride,
+                    timeFencePolicy),
+                timeFencePolicy,
+                context))
+            .ToArray();
+
+        foreach (var targetGroup in validMoves.GroupBy(x => x.TargetResourceId))
+        {
+            if (!context.ResourcesById.TryGetValue(targetGroup.Key, out var targetResource) ||
+                targetResource.SchedulingMode != ResourceSchedulingMode.Disjunctive)
+            {
+                continue;
+            }
+
+            var ordered = targetGroup
+                .Select(move => impacts.Single(x => x.PlanningKey.Equals(move.PlanningKey, StringComparison.OrdinalIgnoreCase)))
+                .OrderBy(x => x.TargetStartUtc)
+                .ToArray();
+            for (var index = 1; index < ordered.Length; index++)
+            {
+                if (ordered[index].TargetStartUtc >= ordered[index - 1].TargetEndUtc) continue;
+                findings.Add(new PlanningConstraintFinding(
+                    "BULK_TARGET_CONFLICT",
+                    PlanningConstraintSeverity.Blocker,
+                    $"Atomic move items {ordered[index - 1].PlanningKey} and {ordered[index].PlanningKey} overlap on {ordered[index].TargetResourceCode}."));
+            }
+        }
+
+        findings.AddRange(impacts.SelectMany(x => x.Findings));
+        return new PlanningBulkMoveImpact(
+            impacts.Length == proposal.Moves.Count && findings.All(x => x.Severity != PlanningConstraintSeverity.Blocker),
+            impacts,
+            findings);
+    }
+
+    private async Task<MoveValidationContext> LoadValidationContextAsync(
+        Guid planVersionId,
+        IReadOnlyCollection<ValidationTarget> targets,
+        CancellationToken cancellationToken)
+    {
+        var state = await db.PlanVersionStates.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.PlanVersionId == planVersionId, cancellationToken)
+            ?? throw new KeyNotFoundException("The selected baseline Plan Version no longer exists.");
+
+        var operations = await db.PlanOperationSnapshots.AsNoTracking()
+            .Where(x => x.PlanVersionId == planVersionId)
+            .ToArrayAsync(cancellationToken);
+        var operationsByPlanningKey = operations.ToDictionary(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase);
+
+        var planningKeys = targets.Select(x => x.PlanningKey).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var targetResourceIds = targets.Select(x => x.TargetResourceId).Distinct().ToArray();
+        var sourceResourceIds = operations
+            .Where(x => planningKeys.Contains(x.PlanningKey, StringComparer.OrdinalIgnoreCase))
+            .Select(x => x.ResourceId);
+        var relevantResourceIds = sourceResourceIds.Concat(targetResourceIds).Distinct().ToArray();
+
+        var resources = relevantResourceIds.Length == 0
+            ? Array.Empty<Resource>()
+            : await db.Resources.AsNoTracking()
+                .Where(x => relevantResourceIds.Contains(x.Id))
+                .ToArrayAsync(cancellationToken);
+        var resourcesById = resources.ToDictionary(x => x.Id);
+
+        var resourceOptions = planningKeys.Length == 0 || targetResourceIds.Length == 0
+            ? Array.Empty<PlanOperationResourceOptionSnapshot>()
+            : await db.PlanOperationResourceOptionSnapshots.AsNoTracking()
+                .Where(x => x.PlanVersionId == planVersionId &&
+                            planningKeys.Contains(x.PlanningKey) &&
+                            targetResourceIds.Contains(x.ResourceId))
+                .ToArrayAsync(cancellationToken);
+        var eligibleResourceIdsByPlanningKey = resourceOptions
+            .GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(x => x.ResourceId).ToHashSet(),
+                StringComparer.OrdinalIgnoreCase);
+
+        var calendars = targetResourceIds.Length == 0
+            ? Array.Empty<ResourceCalendar>()
+            : await db.ResourceCalendars.AsNoTracking()
+                .Where(x => targetResourceIds.Contains(x.ResourceId))
+                .ToArrayAsync(cancellationToken);
+        var calendarsByResourceId = calendars
+            .GroupBy(x => x.ResourceId)
+            .ToDictionary(group => group.Key, group => group.ToArray());
+
+        return new MoveValidationContext(
+            state,
+            operations,
+            operationsByPlanningKey,
+            resourcesById,
+            eligibleResourceIdsByPlanningKey,
+            calendarsByResourceId);
     }
 
     private static PlanningConstraintFinding Blocker(
@@ -386,4 +535,14 @@ public sealed class PlanningWorkbenchCommandService(
         try { return JsonSerializer.Deserialize<string[]>(json) ?? Array.Empty<string>(); }
         catch (JsonException) { return Array.Empty<string>(); }
     }
+
+    private sealed record ValidationTarget(string PlanningKey, Guid TargetResourceId);
+
+    private sealed record MoveValidationContext(
+        PlanVersionState State,
+        IReadOnlyCollection<PlanOperationSnapshot> Operations,
+        IReadOnlyDictionary<string, PlanOperationSnapshot> OperationsByPlanningKey,
+        IReadOnlyDictionary<Guid, Resource> ResourcesById,
+        IReadOnlyDictionary<string, HashSet<Guid>> EligibleResourceIdsByPlanningKey,
+        IReadOnlyDictionary<Guid, ResourceCalendar[]> CalendarsByResourceId);
 }
