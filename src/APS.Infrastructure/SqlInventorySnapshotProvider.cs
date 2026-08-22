@@ -12,6 +12,22 @@ public sealed class SqlInventorySnapshotProvider(ApsDbContext db) : IInventorySn
         var lots = await db.MaterialLots
             .AsNoTracking()
             .Where(x => x.Status == MaterialLotStatus.Available || x.Status == MaterialLotStatus.Reserved)
+            .Select(x => new
+            {
+                x.Id,
+                x.MaterialCode,
+                x.GradeCode,
+                x.CrossSectionCode,
+                x.Stage,
+                x.LocationCode,
+                x.AvailableFromUtc,
+                x.QualityStatus,
+                x.ThermalState,
+                x.EstimatedTemperatureC,
+                x.TemperatureObservedOnUtc,
+                x.QuantityMt,
+                x.Status
+            })
             .ToListAsync(cancellationToken);
         if (lots.Count == 0) return Array.Empty<InventoryPosition>();
 
