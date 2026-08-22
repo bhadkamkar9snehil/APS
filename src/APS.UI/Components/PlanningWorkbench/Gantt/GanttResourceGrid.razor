@@ -1,9 +1,9 @@
 <div class="relative min-w-0 bg-surface">
-    <div class="sticky top-0 z-30 grid h-14 items-end border-b border-border bg-surface-raised px-2 pb-1 shadow-soft" data-gantt-grid style="grid-template-columns:@GridTemplate">
+    <div class="sticky top-0 z-30 grid h-14 items-end border-b border-border bg-surface-raised pb-1 shadow-soft" data-gantt-grid style="grid-template-columns:@GridTemplate">
         @foreach (var definition in VisibleDefinitions)
         {
-            <div class="relative min-w-0">
-                <button type="button" class="w-full truncate text-left text-[9px] font-semibold uppercase tracking-wide @(IsSorted(definition) ? "text-accent" : "text-muted")" title="@SortTitle(definition)" @onclick="() => SortAsync(definition)">@definition.Label@SortGlyph(definition)</button>
+            <div class="relative min-w-0 border-r border-border/80 last:border-r-0">
+                <button type="button" class="w-full truncate text-center text-[9px] font-semibold uppercase tracking-normal @(IsSorted(definition) ? "text-accent" : "text-muted")" aria-label="@SortTitle(definition)" title="@SortTitle(definition)" @onclick="() => SortAsync(definition)">@HeaderLabel(definition.Column)@SortGlyph(definition)</button>
                 <span class="absolute -right-1 top-0 h-full w-2 cursor-col-resize" role="separator" aria-orientation="vertical" aria-label="Resize @definition.Label column" data-gantt-column-resizer data-column-key="@definition.Key" data-column-min="@definition.MinimumWidthPx" data-column-max="@definition.MaximumWidthPx"></span>
             </div>
         }
@@ -40,12 +40,12 @@
             }
             else if (RowsByIndex.TryGetValue(sceneIndex, out var row))
             {
-                <button type="button" class="grid min-w-0 items-center border-b px-2 pl-8 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent @(SelectedResourceIds.Contains(row.Lane.ResourceId) ? "border-accent bg-accent-soft shadow-soft" : "border-border even:bg-surface-raised hover:bg-surface-hover")" style="grid-template-columns:@GridTemplate;height:var(--aps-gantt-row-height)" aria-pressed="@SelectedResourceIds.Contains(row.Lane.ResourceId)" data-gantt-grid data-gantt-grid-row data-scene-index="@row.SceneIndex" tabindex="@(row.SceneIndex == FirstMountedSceneIndex ? 0 : -1)" title="@($"{row.Lane.PlantName} / {row.Lane.AreaName} / {row.Lane.ProcessStageName} / {row.Lane.ResourceName}")" @onclick="() => ResourceSelected.InvokeAsync(row.Lane)">
+                <button type="button" class="grid min-w-0 items-center border-b text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent @(SelectedResourceIds.Contains(row.Lane.ResourceId) ? "border-accent bg-accent-soft shadow-soft" : "border-border even:bg-surface-raised hover:bg-surface-hover")" style="grid-template-columns:@GridTemplate;height:var(--aps-gantt-row-height)" aria-pressed="@SelectedResourceIds.Contains(row.Lane.ResourceId)" data-gantt-grid data-gantt-grid-row data-scene-index="@row.SceneIndex" tabindex="@(row.SceneIndex == FirstMountedSceneIndex ? 0 : -1)" title="@($"{row.Lane.PlantName} / {row.Lane.AreaName} / {row.Lane.ProcessStageName} / {row.Lane.ResourceName}")" @onclick="() => ResourceSelected.InvokeAsync(row.Lane)">
                     @foreach (var definition in VisibleDefinitions)
                     {
                         @switch (definition.Column)
                         {
-                            case GanttGridColumn.Resource: <span class="min-w-0"><strong class="block truncate text-xs">@row.Lane.ResourceCode</strong><span class="block truncate text-[9px] text-muted">@HierarchyLabel(row.Lane)</span></span> break;
+                            case GanttGridColumn.Resource: <span class="min-w-0 pl-8 pr-2"><strong class="block truncate text-xs">@row.Lane.ResourceCode</strong><span class="block truncate text-[9px] text-muted">@HierarchyLabel(row.Lane)</span></span> break;
                             case GanttGridColumn.State: <span class="truncate text-[9px] @OperatingStateClass(row.Lane.OperatingState)">@StateLabel(row.Lane.OperatingState)</span> break;
                             case GanttGridColumn.Busy: <span class="aps-text-figure truncate text-[10px]">@row.Lane.OccupiedHours.ToString("0.#")h</span> break;
                             case GanttGridColumn.Load: <span class="aps-text-figure truncate text-[10px]">@row.VisibleUtilization.ToString("P0")</span> break;
@@ -84,6 +84,14 @@
         VisibleDefinitions = GanttGridColumns.All.Where(x => State.VisibleGridColumns.Contains(x.Column)).ToArray();
     }
     private bool IsSorted(GanttGridColumnDefinition definition) => State.GridSortColumn.ToString().Equals(definition.Column.ToString(), StringComparison.Ordinal);
+    private static string HeaderLabel(GanttGridColumn column) => column switch
+    {
+        GanttGridColumn.Busy => "Hrs",
+        GanttGridColumn.Load => "%",
+        GanttGridColumn.Operations => "#",
+        GanttGridColumn.Exceptions => "!",
+        _ => column.ToString()
+    };
     private string SortGlyph(GanttGridColumnDefinition definition) => IsSorted(definition) ? (State.GridSortDescending ? " ↓" : " ↑") : string.Empty;
     private string SortTitle(GanttGridColumnDefinition definition) => $"Sort by {definition.Label}{(IsSorted(definition) ? State.GridSortDescending ? ", descending" : ", ascending" : string.Empty)}";
     private async Task SortAsync(GanttGridColumnDefinition definition) { State.SetGridSort(Enum.Parse<GanttGridSortColumn>(definition.Column.ToString())); await GridPreferencesChanged.InvokeAsync(); }
