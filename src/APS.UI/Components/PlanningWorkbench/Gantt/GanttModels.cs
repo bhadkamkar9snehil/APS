@@ -11,7 +11,8 @@ public sealed record GanttScene(
     IReadOnlyList<GanttDueMarkerModel> DueMarkers,
     IReadOnlyList<GanttDependencyLineModel> DependencyLines,
     IReadOnlyDictionary<string, ScheduledProcessOperationView> OperationsByKey,
-    IReadOnlyDictionary<string, PlanningOperationWorkbenchDetail> DetailsByKey)
+    IReadOnlyDictionary<string, PlanningOperationWorkbenchDetail> DetailsByKey,
+    IReadOnlyList<PlanningBindingEvidenceView> BindingEvidence)
 {
     public int VisibleOperationCount => Rows.Sum(x => x.Operations.Count);
 }
@@ -22,6 +23,7 @@ public sealed record GanttRowModel(
     IReadOnlyList<GanttOperationModel> Operations,
     IReadOnlyList<GanttBaselineModel> Baselines,
     IReadOnlyList<PlanningResourceCalendarIntervalView> CalendarIntervals,
+    IReadOnlyList<GanttCampaignSpanModel> CampaignSpans,
     decimal VisibleUtilization,
     ScheduledProcessOperationView? NextOperation);
 
@@ -36,12 +38,31 @@ public sealed record GanttOperationModel(
     string CompactLabel,
     string AccessibleName,
     bool IsSingleSourced,
-    double RunningProgressPercent);
+    double RunningProgressPercent,
+    GanttBaselineChange BaselineChange);
+
+public enum GanttBaselineChange
+{
+    Unchanged,
+    TimeMoved,
+    ResourceChanged,
+    Added,
+    Removed
+}
 
 public sealed record GanttBaselineModel(
     PlanningBaselinePlacementView Placement,
     double LeftPercent,
-    double WidthPercent);
+    double WidthPercent,
+    GanttBaselineChange Change,
+    int StartDeltaMinutes,
+    int EndDeltaMinutes);
+
+public sealed record GanttCampaignSpanModel(
+    string CampaignNumber,
+    double LeftPercent,
+    double WidthPercent,
+    int OperationCount);
 
 public sealed record GanttAxisTickModel(
     DateTime TimeUtc,
@@ -73,6 +94,9 @@ public static class GanttModels
         var baselineByResource = workbench.BaselinePlacements
             .GroupBy(x => x.ResourceId)
             .ToDictionary(x => x.Key, x => x.ToArray());
+        var baselineByKey = workbench.BaselinePlacements
+            .GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(x => x.Key, x => x.First(), StringComparer.OrdinalIgnoreCase);
         var calendarsByResource = workbench.ResourceCalendarIntervals
             .GroupBy(x => x.ResourceId)
             .ToDictionary(x => x.Key, x => x.ToArray());
@@ -106,7 +130,7 @@ public static class GanttModels
             .Select((lane, index) => (lane, index))
             .Skip(mountedStart)
             .Take(mountedEnd - mountedStart)
-            .Select(item => BuildRow(workbench, state, item.lane, item.index, details, baselineByResource, calendarsByResource))
+            .Select(item => BuildRow(workbench, state, item.lane, item.index, details, allOperations, baselineByKey, baselineByResource, calendarsByResource))
             .ToArray();
         var dependencyLines = BuildFocusedDependencyLines(workbench.DependencyLinks, rows, state);
 
@@ -122,7 +146,8 @@ public static class GanttModels
                 .ToArray(),
             dependencyLines,
             allOperations,
-            details);
+            details,
+            (workbench.BindingEvidence ?? Array.Empty<PlanningBindingEvidenceView>()).ToArray());
     }
 
     private static IEnumerable<ScheduleResourceLaneView> BuildBaselineOnlyLanes(PlanningWorkbenchView workbench)
@@ -178,6 +203,8 @@ public static class GanttModels
         ScheduleResourceLaneView lane,
         int sceneIndex,
         IReadOnlyDictionary<string, PlanningOperationWorkbenchDetail> details,
+        IReadOnlyDictionary<string, ScheduledProcessOperationView> allOperations,
+        IReadOnlyDictionary<string, PlanningBaselinePlacementView> baselineByKey,
         IReadOnlyDictionary<Guid, PlanningBaselinePlacementView[]> baselineByResource,
         IReadOnlyDictionary<Guid, PlanningResourceCalendarIntervalView[]> calendarsByResource)
     {
@@ -207,7 +234,8 @@ public static class GanttModels
                     $"{operation.ResourceCode}, {operation.StartUtc:dd MMM HH:mm} to {operation.EndUtc:dd MMM HH:mm}, " +
                     $"{operation.QuantityMt:0.##} metric tonnes, {execution}",
                     detail is { ResourceOptions.Count: 1 },
-                    RunningProgress(workbench.Plan.ReferenceTimeUtc, operation));
+                    RunningProgress(workbench.Plan.ReferenceTimeUtc, operation),
+                    BaselineChange(operation, baselineByKey.GetValueOrDefault(operation.PlanningKey)));
             })
             .ToArray();
         var baselines = (baselineByResource.GetValueOrDefault(lane.ResourceId) ?? [])
@@ -216,8 +244,25 @@ public static class GanttModels
             {
                 var start = x.StartUtc < state.VisibleStartUtc ? state.VisibleStartUtc : x.StartUtc;
                 var end = x.EndUtc > state.VisibleEndUtc ? state.VisibleEndUtc : x.EndUtc;
-                return new GanttBaselineModel(x, Percent(state, start), WidthPercent(state, start, end));
+                allOperations.TryGetValue(x.PlanningKey, out var current);
+                var change = current is null ? GanttBaselineChange.Removed : BaselineChange(current, x);
+                return new GanttBaselineModel(
+                    x,
+                    Percent(state, start),
+                    WidthPercent(state, start, end),
+                    change,
+                    current is null ? 0 : (int)Math.Round((current.StartUtc - x.StartUtc).TotalMinutes),
+                    current is null ? 0 : (int)Math.Round((current.EndUtc - x.EndUtc).TotalMinutes));
             })
+            .ToArray();
+        var campaignSpans = operations
+            .Where(x => !string.IsNullOrWhiteSpace(x.Detail?.CampaignNumber))
+            .GroupBy(x => x.Detail!.CampaignNumber!, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new GanttCampaignSpanModel(
+                group.Key,
+                group.Min(x => x.LeftPercent),
+                group.Max(x => x.LeftPercent + x.WidthPercent) - group.Min(x => x.LeftPercent),
+                group.Count()))
             .ToArray();
         var calendars = (calendarsByResource.GetValueOrDefault(lane.ResourceId) ?? [])
             .Where(x => x.EndUtc > state.VisibleStartUtc && x.StartUtc < state.VisibleEndUtc)
@@ -238,6 +283,7 @@ public static class GanttModels
             operations,
             baselines,
             calendars,
+            campaignSpans,
             decimal.Round(utilization, 3),
             lane.Operations.Where(x => x.StartUtc >= workbench.Plan.ReferenceTimeUtc).OrderBy(x => x.StartUtc).FirstOrDefault());
     }
@@ -356,6 +402,17 @@ public static class GanttModels
         var total = (operation.EndUtc - operation.StartUtc).TotalMinutes;
         if (total <= 0d) return 0d;
         return Math.Clamp((referenceTimeUtc - operation.StartUtc).TotalMinutes / total * 100d, 0d, 100d);
+    }
+
+    private static GanttBaselineChange BaselineChange(
+        ScheduledProcessOperationView operation,
+        PlanningBaselinePlacementView? baseline)
+    {
+        if (baseline is null) return GanttBaselineChange.Added;
+        if (baseline.ResourceId != operation.ResourceId) return GanttBaselineChange.ResourceChanged;
+        return baseline.StartUtc == operation.StartUtc && baseline.EndUtc == operation.EndUtc
+            ? GanttBaselineChange.Unchanged
+            : GanttBaselineChange.TimeMoved;
     }
 
     public static double Percent(PlanningWorkbenchState state, DateTime value)

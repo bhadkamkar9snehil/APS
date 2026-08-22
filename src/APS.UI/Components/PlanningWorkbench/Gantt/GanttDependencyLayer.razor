@@ -1,0 +1,19 @@
+@if (State.ShowDependencies && State.SelectedPlanningKey is not null)
+{
+    <svg class="pointer-events-none absolute inset-0 z-20 h-full w-full overflow-visible"
+         viewBox="@($"0 0 100 {Math.Max(1, Scene.TotalRowCount * State.Viewport.RowHeightPx)}")"
+         preserveAspectRatio="none"
+         aria-hidden="true">
+        @foreach (var edge in Scene.DependencyLines)
+        {
+            var elbow = Math.Max(edge.StartXPercent + .4d, (edge.StartXPercent + edge.EndXPercent) / 2d);
+            <path d="M @(edge.StartXPercent) @(edge.StartYpx) H @elbow V @(edge.EndYpx) H @(edge.EndXPercent)"
+                  fill="none" stroke="var(--aps-border-strong)" stroke-width="1.25" stroke-dasharray="3 3" vector-effect="non-scaling-stroke" />
+        }
+    </svg>
+}
+
+@code {
+    [Parameter, EditorRequired] public GanttScene Scene { get; set; } = default!;
+    [Parameter, EditorRequired] public PlanningWorkbenchState State { get; set; } = default!;
+}

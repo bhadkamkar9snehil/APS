@@ -12,6 +12,12 @@
             }
         </div>
     </div>
+    @if (SelectedBindings.Count > 0)
+    {
+        <div class="shrink-0 border-b border-border bg-warning-soft px-3 py-1.5 text-[11px]" aria-label="Selected operation binding evidence">
+            <strong>Binding:</strong> @string.Join(" · ", SelectedBindings.Select(x => $"{x.Cause}: {x.Description}"))
+        </div>
+    }
     <div class="min-h-0 flex-1 overflow-auto" data-gantt-scroll>
         <div class="relative grid min-w-[1120px]" style="grid-template-columns:var(--aps-gantt-grid-width) minmax(760px, 1fr);--aps-gantt-grid-width:@($"{State.Viewport.GridWidthPx:0}px");--aps-gantt-row-height:@($"{State.Viewport.RowHeightPx}px")">
             <GanttResourceGrid Scene="Scene" RowHeightPx="State.Viewport.RowHeightPx" ResourceSelected="ResourceSelected" />
@@ -34,6 +40,9 @@
     private GanttScene Scene { get; set; } = default!;
 
     protected override void OnParametersSet() => Scene = GanttModels.BuildScene(Workbench, State);
+    private IReadOnlyList<PlanningBindingEvidenceView> SelectedBindings => State.SelectedPlanningKey is null
+        ? Array.Empty<PlanningBindingEvidenceView>()
+        : Scene.BindingEvidence.Where(x => x.PlanningKey.Equals(State.SelectedPlanningKey, StringComparison.OrdinalIgnoreCase)).ToArray();
     private static string ModeLabel(PlanningWorkbenchMode value) => value switch
     {
         PlanningWorkbenchMode.Campaigns => "Campaigns",

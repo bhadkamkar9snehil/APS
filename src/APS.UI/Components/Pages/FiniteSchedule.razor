@@ -84,7 +84,19 @@
                     @foreach (var snap in Enum.GetValues<GanttSnapMode>()) { <option value="@snap">@SnapLabel(snap)</option> }
                 </select>
                 <ToggleButton Active="state.ShowBaseline" Label="Baseline" OnClick="ToggleBaselineAsync" />
+                <select aria-label="Baseline display" value="@state.BaselineMode" @onchange="BaselineModeChangedAsync" disabled="@(!state.ShowBaseline)" class="rounded-control border border-border bg-surface-raised px-2 py-1 text-xs disabled:opacity-50">
+                    <option value="Ghost">All baseline</option>
+                    <option value="ChangedOnly">Changed only</option>
+                </select>
                 <ToggleButton Active="state.ShowDependencies" Label="Selected chain" OnClick="ToggleDependenciesAsync" />
+                @if (workbench.BindingEvidence is { Count: > 0 })
+                {
+                    <button type="button" class="rounded-control border border-border px-2 py-1 text-xs" @onclick="ToggleDependenciesAsync" title="Show the solver-derived binding evidence for the selected operation">Binding chain</button>
+                }
+                else
+                {
+                    <button type="button" disabled class="rounded-control border border-border px-2 py-1 text-xs text-muted opacity-60" title="Solver-derived slack and binding-cause evidence are not available in this plan read model">Binding chain unavailable</button>
+                }
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="Cockpit.ToggleQueue">@(Cockpit.QueueOpen ? "Hide queue" : "Demand queue")</button>
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="Cockpit.ToggleInspector">@(Cockpit.InspectorOpen ? "Hide inspector" : "Inspector")</button>
             </div>
@@ -379,6 +391,13 @@
         await SaveGanttPreferenceAsync("showDependencies", state.ShowDependencies);
     }
 
+    private async Task BaselineModeChangedAsync(ChangeEventArgs args)
+    {
+        if (!Enum.TryParse<GanttBaselineMode>(args.Value?.ToString(), out var mode)) return;
+        state.SetBaselineMode(mode);
+        await SaveGanttPreferenceAsync("baselineMode", mode.ToString());
+    }
+
     private ValueTask SaveGanttPreferenceAsync(string key, object value) =>
         JS.InvokeVoidAsync("apsPlanningWorkbench.savePreference", key, value);
 
@@ -418,6 +437,7 @@
         state.Viewport.SetDensity(preferences.Density);
         state.Viewport.SetSnapMode(preferences.SnapMode);
         state.SetLayerVisibility(preferences.ShowBaseline, preferences.ShowDependencies);
+        state.SetBaselineMode(preferences.BaselineMode);
         if (preferences.Zoom != state.Zoom) state.SetZoom(preferences.Zoom);
         StateHasChanged();
     }

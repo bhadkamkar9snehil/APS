@@ -2,31 +2,10 @@
      data-resource-id="@Row.Lane.ResourceId"
      data-window-start="@State.VisibleStartUtc.ToString("O")"
      data-window-end="@State.VisibleEndUtc.ToString("O")">
-    @foreach (var tick in Scene.Ticks)
-    {
-        <div class="pointer-events-none absolute inset-y-0 w-px @(tick.IsMajor ? "bg-border" : "bg-border/45")" style="left:@tick.LeftPercent%"></div>
-    }
-    @if (FrozenFenceEndUtc > State.VisibleStartUtc && Workbench.Plan.ReferenceTimeUtc < State.VisibleEndUtc)
-    {
-        <div class="pointer-events-none absolute inset-y-0 bg-danger-soft/40"
-             style="left:@GanttModels.Percent(State, Workbench.Plan.ReferenceTimeUtc)%;width:@GanttModels.WidthPercent(State, Workbench.Plan.ReferenceTimeUtc, FrozenFenceEndUtc)%"
-             title="Frozen planning fence"></div>
-    }
-    @foreach (var interval in Row.CalendarIntervals.Where(x => !x.IsAvailable))
-    {
-        <div class="aps-calendar-unavailable pointer-events-none absolute inset-y-0 z-[2]"
-             style="left:@GanttModels.Percent(State, interval.StartUtc)%;width:@GanttModels.WidthPercent(State, interval.StartUtc, interval.EndUtc)%"
-             title="@(interval.ReasonCode ?? "Resource unavailable") · @interval.StartUtc.ToString("dd MMM HH:mm")–@interval.EndUtc.ToString("HH:mm")"></div>
-    }
-    @if (State.ShowBaseline)
-    {
-        @foreach (var baseline in Row.Baselines)
-        {
-            <div class="pointer-events-none absolute bottom-1 z-[4] h-2 rounded-sm border border-dashed border-border-strong bg-surface-inset/70"
-                 style="left:@baseline.LeftPercent%;width:@baseline.WidthPercent%"
-                 title="Baseline · @baseline.Placement.PlanningKey · @baseline.Placement.StartUtc.ToString("dd MMM HH:mm")"></div>
-        }
-    }
+    <GanttMarkerLayer Scene="Scene" State="State" ReferenceTimeUtc="Workbench.Plan.ReferenceTimeUtc" FrozenFenceEndUtc="FrozenFenceEndUtc" />
+    <GanttCalendarLayer Row="Row" State="State" />
+    <GanttBaselineLayer Row="Row" State="State" />
+    <GanttCampaignLayer Row="Row" State="State" SelectedCampaign="SelectedCampaign" />
     @foreach (var operation in Row.Operations)
     {
         <GanttOperationBlock Model="operation"
@@ -46,4 +25,8 @@
     [Parameter, EditorRequired] public PlanningWorkbenchView Workbench { get; set; } = default!;
     [Parameter] public DateTime FrozenFenceEndUtc { get; set; }
     [Parameter] public EventCallback<ScheduledProcessOperationView> OperationSelected { get; set; }
+
+    private string? SelectedCampaign => State.SelectedPlanningKey is not null && Scene.DetailsByKey.TryGetValue(State.SelectedPlanningKey, out var detail)
+        ? detail.CampaignNumber
+        : null;
 }

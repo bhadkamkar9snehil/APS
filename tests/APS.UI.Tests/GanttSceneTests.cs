@@ -67,6 +67,82 @@ public sealed class GanttSceneTests
         Assert.Equal("LRF-01", originalLane.Lane.ResourceCode);
     }
 
+    [Fact]
+    public void Baseline_comparison_classifies_time_resource_added_and_removed_semantics()
+    {
+        var unchanged = Lane(1, Start.AddHours(2));
+        var moved = Lane(2, Start.AddHours(5));
+        var resourceChanged = Lane(3, Start.AddHours(7));
+        var added = Lane(4, Start.AddHours(9));
+        var removedResourceId = Guid.NewGuid();
+        var baselines = new[]
+        {
+            BaselineFor(unchanged.Operations.Single(), unchanged.ResourceId, Start.AddHours(2)),
+            BaselineFor(moved.Operations.Single(), moved.ResourceId, Start.AddHours(4)),
+            BaselineFor(resourceChanged.Operations.Single(), Guid.NewGuid(), Start.AddHours(7)),
+            BaselineFor(null, removedResourceId, Start.AddHours(11), "REMOVED-OP")
+        };
+
+        var scene = GanttModels.BuildScene(Workbench([unchanged, moved, resourceChanged, added], baselines), State());
+
+        Assert.Equal(GanttBaselineChange.Unchanged, FindOperation(scene, unchanged).BaselineChange);
+        Assert.Equal(GanttBaselineChange.TimeMoved, FindOperation(scene, moved).BaselineChange);
+        Assert.Equal(GanttBaselineChange.ResourceChanged, FindOperation(scene, resourceChanged).BaselineChange);
+        Assert.Equal(GanttBaselineChange.Added, FindOperation(scene, added).BaselineChange);
+        Assert.Contains(scene.Rows.SelectMany(x => x.Baselines), x => x.Change == GanttBaselineChange.Removed);
+    }
+
+    [Fact]
+    public void Campaign_spans_are_derived_from_canonical_operation_details()
+    {
+        var lane = Lane(7, Start.AddHours(3));
+        var operation = lane.Operations.Single();
+        var detail = new PlanningOperationWorkbenchDetail(
+            operation.OperationSnapshotId,
+            operation.PlanningKey,
+            operation.SourceEntityId,
+            OperationAssignmentCommitmentState.Flexible,
+            OperationExecutionStatus.Planned,
+            null,
+            null,
+            0m,
+            Array.Empty<string>(),
+            Array.Empty<PlanningOperationResourceOptionView>(),
+            "CMP-STEEL-01",
+            3,
+            ["PO-1001"]);
+
+        var scene = GanttModels.BuildScene(Workbench([lane], details: [detail]), State());
+
+        var span = Assert.Single(Assert.Single(scene.Rows).CampaignSpans);
+        Assert.Equal("CMP-STEEL-01", span.CampaignNumber);
+        Assert.Equal(1, span.OperationCount);
+    }
+
+    private static GanttOperationModel FindOperation(GanttScene scene, ScheduleResourceLaneView lane) =>
+        scene.Rows.SelectMany(x => x.Operations).Single(x => x.Operation.PlanningKey == lane.Operations.Single().PlanningKey);
+
+    private static PlanningBaselinePlacementView BaselineFor(
+        ScheduledProcessOperationView? operation,
+        Guid resourceId,
+        DateTime start,
+        string? planningKey = null) => new(
+        Guid.NewGuid(),
+        operation?.OperationSnapshotId ?? Guid.NewGuid(),
+        planningKey ?? operation!.PlanningKey,
+        resourceId,
+        "BASE-01",
+        "Baseline resource",
+        ProcessUnitType.Eaf,
+        ResourceOperatingState.Available,
+        ResourceSchedulingMode.Disjunctive,
+        start,
+        start.AddHours(1),
+        ProcessOperationType.Eaf,
+        "SAE1008",
+        "BLT-150",
+        null, null, null, null, null, null, null, null, null, 1);
+
     private static PlanningWorkbenchState State()
     {
         var state = new PlanningWorkbenchState();
@@ -105,7 +181,8 @@ public sealed class GanttSceneTests
 
     private static PlanningWorkbenchView Workbench(
         IReadOnlyCollection<ScheduleResourceLaneView> lanes,
-        IReadOnlyCollection<PlanningBaselinePlacementView>? baselines = null)
+        IReadOnlyCollection<PlanningBaselinePlacementView>? baselines = null,
+        IReadOnlyCollection<PlanningOperationWorkbenchDetail>? details = null)
     {
         var plan = new PlanContextView(
             Guid.NewGuid(),
@@ -147,7 +224,7 @@ public sealed class GanttSceneTests
             null,
             new PlanningQueueView(0, 0, 0, 0, 0, 0, 0),
             Array.Empty<PlanningWorkbenchException>(),
-            Array.Empty<PlanningOperationWorkbenchDetail>(),
+            details ?? Array.Empty<PlanningOperationWorkbenchDetail>(),
             Array.Empty<PlanningDependencyLinkView>(),
             Array.Empty<PlanningResourceCalendarIntervalView>(),
             baselines ?? Array.Empty<PlanningBaselinePlacementView>(),

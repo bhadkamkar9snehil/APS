@@ -1,0 +1,21 @@
+@foreach (var tick in Scene.Ticks)
+{
+    <div class="pointer-events-none absolute inset-y-0 w-px @(tick.IsMajor ? "bg-border" : "bg-border/45")" style="left:@tick.LeftPercent%"></div>
+}
+@if (ReferenceTimeUtc >= State.VisibleStartUtc && ReferenceTimeUtc <= State.VisibleEndUtc)
+{
+    <div class="pointer-events-none absolute inset-y-0 z-[3] w-px bg-accent/70" style="left:@GanttModels.Percent(State, ReferenceTimeUtc)%" title="Planning reference time"></div>
+}
+@if (FrozenFenceEndUtc > State.VisibleStartUtc && ReferenceTimeUtc < State.VisibleEndUtc)
+{
+    <div class="pointer-events-none absolute inset-y-0 z-[1] bg-danger-soft/40"
+         style="left:@GanttModels.Percent(State, ReferenceTimeUtc)%;width:@GanttModels.WidthPercent(State, ReferenceTimeUtc, FrozenFenceEndUtc)%"
+         title="Frozen horizon · exceptional authority required"></div>
+}
+
+@code {
+    [Parameter, EditorRequired] public GanttScene Scene { get; set; } = default!;
+    [Parameter, EditorRequired] public PlanningWorkbenchState State { get; set; } = default!;
+    [Parameter] public DateTime ReferenceTimeUtc { get; set; }
+    [Parameter] public DateTime FrozenFenceEndUtc { get; set; }
+}

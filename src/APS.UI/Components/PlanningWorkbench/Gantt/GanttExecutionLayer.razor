@@ -1,0 +1,8 @@
+@if (Model.ExecutionStatus == OperationExecutionStatus.Running)
+{
+    <span class="aps-op-card__progress" style="--aps-op-progress:@Model.RunningProgressPercent%" title="Running progress at planning reference time"></span>
+}
+
+@code {
+    [Parameter, EditorRequired] public GanttOperationModel Model { get; set; } = default!;
+}

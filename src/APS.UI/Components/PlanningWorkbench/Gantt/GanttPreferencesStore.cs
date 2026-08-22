@@ -10,6 +10,7 @@ public sealed record GanttPreferences(
     GanttSnapMode SnapMode,
     PlanningWorkbenchZoom Zoom,
     bool ShowBaseline,
+    GanttBaselineMode BaselineMode,
     bool ShowDependencies,
     IReadOnlyList<string> VisibleColumns,
     IReadOnlyList<string> CollapsedGroups,
@@ -22,6 +23,7 @@ public sealed record GanttPreferences(
         GanttSnapMode.FifteenMinutes,
         PlanningWorkbenchZoom.Fit,
         true,
+        GanttBaselineMode.Ghost,
         false,
         ["resource", "state", "busy", "load", "operations", "next"],
         Array.Empty<string>(),
@@ -60,6 +62,7 @@ public static class GanttPreferencesStore
             payload.SnapMode ?? defaults.SnapMode,
             payload.Zoom ?? defaults.Zoom,
             payload.ShowBaseline ?? defaults.ShowBaseline,
+            payload.BaselineMode ?? defaults.BaselineMode,
             payload.ShowDependencies ?? defaults.ShowDependencies,
             payload.VisibleColumns ?? defaults.VisibleColumns,
             payload.CollapsedGroups ?? defaults.CollapsedGroups,
@@ -85,6 +88,7 @@ public static class GanttPreferencesStore
         public GanttSnapMode? SnapMode { get; set; }
         public PlanningWorkbenchZoom? Zoom { get; set; }
         public bool? ShowBaseline { get; set; }
+        public GanttBaselineMode? BaselineMode { get; set; }
         public bool? ShowDependencies { get; set; }
         public IReadOnlyList<string>? VisibleColumns { get; set; }
         public IReadOnlyList<string>? CollapsedGroups { get; set; }

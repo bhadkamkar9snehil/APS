@@ -115,6 +115,30 @@ public sealed record PlanningBaselinePlacementView(
     string? ProcessStageName,
     int DisplayOrder);
 
+public enum PlanningBindingCause
+{
+    PredecessorTiming = 1,
+    ResourceSequence = 2,
+    CampaignSequence = 3,
+    QueueWindow = 4,
+    ThermalWindow = 5,
+    MaterialAvailability = 6,
+    FrozenFence = 7,
+    DueDatePressure = 8,
+    SingleEligibleResource = 9
+}
+
+/// <summary>
+/// Solver/read-model evidence for a genuine finite-capacity binding chain. The UI must not
+/// synthesize this evidence from rendered positions or visual adjacency.
+/// </summary>
+public sealed record PlanningBindingEvidenceView(
+    string PlanningKey,
+    PlanningBindingCause Cause,
+    int? TotalSlackMinutes,
+    string EvidenceCode,
+    string Description);
+
 public enum PlanningCapacityBasis
 {
     MachineTime = 1,
@@ -148,4 +172,5 @@ public sealed record PlanningWorkbenchView(
     IReadOnlyCollection<PlanningDependencyLinkView> DependencyLinks,
     IReadOnlyCollection<PlanningResourceCalendarIntervalView> ResourceCalendarIntervals,
     IReadOnlyCollection<PlanningBaselinePlacementView> BaselinePlacements,
-    IReadOnlyCollection<PlanningCapacityBucketView> CapacityBuckets);
+    IReadOnlyCollection<PlanningCapacityBucketView> CapacityBuckets,
+    IReadOnlyCollection<PlanningBindingEvidenceView>? BindingEvidence = null);

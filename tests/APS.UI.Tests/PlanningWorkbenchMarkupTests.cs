@@ -77,10 +77,32 @@ public sealed class PlanningWorkbenchMarkupTests
     public void Dependency_layer_is_focused_on_the_selected_chain()
     {
         var gantt = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttTimelineViewport.razor"));
+        var layer = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttDependencyLayer.razor"));
 
-        Assert.Contains("FocusedDependencyLines", gantt);
-        Assert.Contains("State.SelectedPlanningKey", gantt);
+        Assert.Contains("GanttDependencyLayer", gantt);
+        Assert.Contains("State.SelectedPlanningKey", layer);
         Assert.DoesNotContain("@foreach (var edge in DependencyLines())", gantt);
+    }
+
+    [Fact]
+    public void Planning_layers_are_explicit_and_binding_chain_is_truthfully_disabled_without_evidence()
+    {
+        var root = "src/APS.UI/Components/PlanningWorkbench/Gantt";
+        foreach (var file in new[]
+                 {
+                     "GanttBaselineLayer.razor",
+                     "GanttCalendarLayer.razor",
+                     "GanttCampaignLayer.razor",
+                     "GanttDependencyLayer.razor",
+                     "GanttMarkerLayer.razor",
+                     "GanttExecutionLayer.razor"
+                 })
+            Assert.True(File.Exists(Repo.File($"{root}/{file}")), $"Missing explicit planning layer: {file}");
+
+        var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+        Assert.Contains("Binding chain unavailable", page);
+        Assert.DoesNotContain("ShowCriticalPath", page);
+        Assert.DoesNotContain("ToggleCriticalPath", page);
     }
 
     [Fact]

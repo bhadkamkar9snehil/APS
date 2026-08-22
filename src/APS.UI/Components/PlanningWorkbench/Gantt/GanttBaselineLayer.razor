@@ -1,0 +1,29 @@
+@if (State.ShowBaseline)
+{
+    @foreach (var baseline in VisibleBaselines())
+    {
+        var selected = State.SelectedPlanningKey?.Equals(baseline.Placement.PlanningKey, StringComparison.OrdinalIgnoreCase) == true;
+        <div class="aps-baseline aps-baseline--@CssChange(baseline.Change) pointer-events-none absolute bottom-1 z-[4] h-2 rounded-sm border border-dashed @(selected ? "ring-2 ring-accent" : "")"
+             style="left:@baseline.LeftPercent%;width:@baseline.WidthPercent%"
+             title="@Description(baseline)"></div>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public GanttRowModel Row { get; set; } = default!;
+    [Parameter, EditorRequired] public PlanningWorkbenchState State { get; set; } = default!;
+
+    private IEnumerable<GanttBaselineModel> VisibleBaselines() => State.BaselineMode == GanttBaselineMode.ChangedOnly
+        ? Row.Baselines.Where(x => x.Change != GanttBaselineChange.Unchanged)
+        : Row.Baselines;
+
+    private static string CssChange(GanttBaselineChange change) => change.ToString().ToLowerInvariant();
+
+    private static string Description(GanttBaselineModel baseline) => baseline.Change switch
+    {
+        GanttBaselineChange.TimeMoved => $"Baseline · moved {baseline.StartDeltaMinutes:+#;-#;0} min · {baseline.Placement.StartUtc:dd MMM HH:mm}",
+        GanttBaselineChange.ResourceChanged => $"Baseline · resource changed from {baseline.Placement.ResourceCode} · {baseline.Placement.StartUtc:dd MMM HH:mm}",
+        GanttBaselineChange.Removed => $"Baseline · removed from current plan · {baseline.Placement.PlanningKey}",
+        _ => $"Baseline · {baseline.Placement.PlanningKey} · {baseline.Placement.StartUtc:dd MMM HH:mm}"
+    };
+}

@@ -37,6 +37,12 @@ public enum PlanningWorkbenchQueueContent
     Exceptions
 }
 
+public enum GanttBaselineMode
+{
+    Ghost,
+    ChangedOnly
+}
+
 public sealed class PlanningWorkbenchState
 {
     private readonly Stack<PlanHistoryEntry> undo = new();
@@ -64,8 +70,8 @@ public sealed class PlanningWorkbenchState
     public PlanningMoveProposal? StagedMove { get; private set; }
     public PlanningProposalImpact? Impact { get; private set; }
     public bool ShowBaseline { get; private set; } = true;
+    public GanttBaselineMode BaselineMode { get; private set; } = GanttBaselineMode.Ghost;
     public bool ShowDependencies { get; private set; }
-    public bool ShowCriticalPath { get; private set; }
     public bool IsReleasedPlan { get; private set; }
     public bool CanEditSchedule => !IsReleasedPlan || ScenarioIntent is PlanningScenarioIntent.New or PlanningScenarioIntent.Clone or PlanningScenarioIntent.Recovery;
     public bool CanStartRecovery => IsReleasedPlan && ScenarioIntent != PlanningScenarioIntent.Recovery;
@@ -158,8 +164,8 @@ public sealed class PlanningWorkbenchState
     }
 
     public void ToggleBaseline() { ShowBaseline = !ShowBaseline; Notify(); }
+    public void SetBaselineMode(GanttBaselineMode mode) { BaselineMode = mode; Notify(); }
     public void ToggleDependencies() { ShowDependencies = !ShowDependencies; Notify(); }
-    public void ToggleCriticalPath() { ShowCriticalPath = !ShowCriticalPath; Notify(); }
     public void SetLayerVisibility(bool showBaseline, bool showDependencies)
     {
         ShowBaseline = showBaseline;

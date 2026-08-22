@@ -1,5 +1,5 @@
 <button type="button"
-        class="aps-operation aps-op-card absolute inset-y-2 z-10 overflow-hidden rounded-control border px-1.5 py-1 text-left text-[10px] leading-tight @ProcessClass(Model.Operation.ProcessOperationType) @ExecutionClass(Model.ExecutionStatus) @(Selected ? "border-accent ring-2 ring-accent" : "border-transparent hover:border-primary") @(State.StagedMove?.PlanningKey == Model.Operation.PlanningKey ? "opacity-55" : "")"
+        class="aps-operation aps-op-card absolute inset-y-2 z-10 overflow-hidden rounded-control border px-1.5 py-1 text-left text-[10px] leading-tight @ProcessClass(Model.Operation.ProcessOperationType) @ExecutionClass(Model.ExecutionStatus) @BaselineClass(Model.BaselineChange) @(Selected ? "border-accent ring-2 ring-accent" : "border-transparent hover:border-primary") @(State.StagedMove?.PlanningKey == Model.Operation.PlanningKey ? "opacity-55" : "")"
         style="left:calc(@Model.LeftPercent% + 1px);width:calc(@Model.WidthPercent% - 2px)"
         data-planning-key="@Model.Operation.PlanningKey"
         data-source-resource-id="@Model.Operation.ResourceId"
@@ -11,6 +11,7 @@
         data-frozen="@(IsFrozen.ToString().ToLowerInvariant())"
         data-snap-mode="@State.Viewport.SnapMode"
         data-shift-boundaries=""
+        data-baseline-change="@Model.BaselineChange"
         aria-label="@Model.AccessibleName"
         title="@Model.AccessibleName"
         @onclick="() => OperationSelected.InvokeAsync(Model.Operation)">
@@ -22,6 +23,7 @@
                 @if (Model.ExecutionStatus == OperationExecutionStatus.Running) { <span class="aps-pulse-dot h-1.5 w-1.5 rounded-full bg-inverted" title="Running"></span> }
                 else if (Model.ExecutionStatus == OperationExecutionStatus.Completed) { <span class="aps-op-card__badge text-inverted" title="Completed">&#10003;</span> }
                 @if (Model.IsSingleSourced) { <span class="aps-op-card__badge text-inverted" title="Only one eligible resource">!</span> }
+                @if (Model.BaselineChange != GanttBaselineChange.Unchanged) { <span class="aps-op-card__badge text-inverted" title="@BaselineTitle(Model.BaselineChange)">@BaselineGlyph(Model.BaselineChange)</span> }
             </span>
         </span>
     }
@@ -40,10 +42,7 @@
     {
         <span class="flex items-baseline justify-between gap-1 text-inverted/70"><span class="truncate">@Model.Operation.GradeCode</span><span>@Model.ExecutionStatus</span></span>
     }
-    @if (Model.ExecutionStatus == OperationExecutionStatus.Running)
-    {
-        <span class="aps-op-card__progress" style="--aps-op-progress:@Model.RunningProgressPercent%"></span>
-    }
+    <GanttExecutionLayer Model="Model" />
 </button>
 
 @code {
@@ -76,5 +75,26 @@
         OperationExecutionStatus.Completed => "opacity-65",
         OperationExecutionStatus.Ready => "outline outline-1 outline-success",
         _ => ""
+    };
+    private static string BaselineClass(GanttBaselineChange value) => value switch
+    {
+        GanttBaselineChange.TimeMoved => "aps-operation--baseline-moved",
+        GanttBaselineChange.ResourceChanged => "aps-operation--baseline-resource-changed",
+        GanttBaselineChange.Added => "aps-operation--baseline-added",
+        _ => ""
+    };
+    private static string BaselineGlyph(GanttBaselineChange value) => value switch
+    {
+        GanttBaselineChange.TimeMoved => "Δ",
+        GanttBaselineChange.ResourceChanged => "R",
+        GanttBaselineChange.Added => "+",
+        _ => ""
+    };
+    private static string BaselineTitle(GanttBaselineChange value) => value switch
+    {
+        GanttBaselineChange.TimeMoved => "Timing changed from baseline",
+        GanttBaselineChange.ResourceChanged => "Resource changed from baseline",
+        GanttBaselineChange.Added => "Added since baseline",
+        _ => "Unchanged from baseline"
     };
 }
