@@ -79,7 +79,6 @@
                 </div>
                 <ToggleButton Active="state.ShowBaseline" Label="Baseline" OnClick="state.ToggleBaseline" />
                 <ToggleButton Active="state.ShowDependencies" Label="Selected chain" OnClick="state.ToggleDependencies" />
-                <ToggleButton Active="state.ShowCriticalPath" Label="Tight chain" OnClick="state.ToggleCriticalPath" />
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="Cockpit.ToggleQueue">@(Cockpit.QueueOpen ? "Hide queue" : "Demand queue")</button>
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="Cockpit.ToggleInspector">@(Cockpit.InspectorOpen ? "Hide inspector" : "Inspector")</button>
             </div>
@@ -141,105 +140,11 @@
             }
 
             <main class="h-full min-w-0 overflow-hidden bg-canvas">
-                <div class="flex h-full min-h-0 flex-col">
-                    <div class="flex shrink-0 items-center justify-between border-b border-border bg-surface-raised px-3 py-2 text-xs">
-                        <div class="flex gap-4"><span><span class="text-muted">Visible </span><strong>@state.VisibleStartUtc.ToString("dd MMM HH:mm") → @state.VisibleEndUtc.ToString("dd MMM HH:mm")</strong></span><span><span class="text-muted">Mode </span><strong>@ModeLabel(state.Mode)</strong></span><span><strong>@VisibleOperationCount</strong> shown</span></div>
-                        @* A legend has to show the colour it's naming, not just repeat the abbreviation next to it (#UI-depth). *@
-                        <div class="flex flex-wrap items-center gap-3 text-[10px] text-muted">
-                            @foreach (var entry in ProcessLegend)
-                            {
-                                <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full @entry.ColorClass"></span>@entry.Label</span>
-                            }
-                        </div>
-                    </div>
-                    <div class="min-h-0 flex-1 overflow-auto" data-gantt-scroll>
-                        <div class="h-full min-w-[900px]">
-                            <div class="sticky top-0 z-30 grid grid-cols-[176px_1fr] border-b border-border bg-surface-raised shadow-soft">
-                                <div class="border-r border-border px-3 py-2 text-[10px] font-semibold uppercase tracking-wide text-muted">Resource / load</div>
-                                <div class="relative h-10 overflow-hidden">
-                                    @foreach (var tick in AxisTicks())
-                                    {
-                                        <div class="absolute top-0 h-full w-px bg-border" style="left:@Percent(tick.Time)%"><span class="ml-1 whitespace-nowrap text-[10px] text-muted">@tick.Time.ToString(tick.Format)</span></div>
-                                    }
-                                    @foreach (var due in DueMarkers()) { <div class="absolute bottom-0 top-5 w-px bg-warning" style="left:@Percent(due.Time)%" title="@due.Label"></div> }
-                                    @if (FrozenFenceEndUtc > state.VisibleStartUtc && workbench.Plan.ReferenceTimeUtc < state.VisibleEndUtc)
-                                    {
-                                        <div class="absolute bottom-0 top-5 w-px bg-danger" style="left:@Percent(FrozenFenceEndUtc)%" title="Frozen fence ends @FrozenFenceEndUtc.ToString("dd MMM HH:mm")"></div>
-                                        @* The tinted band below reads as an unexplained smear without this - "frozen" is a real
-                                           planning concept (work inside it needs an authorized override to move), not decoration. *@
-                                        <span class="absolute bottom-0.5 whitespace-nowrap rounded bg-danger px-1 text-[9px] font-semibold text-inverted" style="left:@Percent(workbench.Plan.ReferenceTimeUtc)%">Frozen</span>
-                                    }
-                                </div>
-                            </div>
-                            <div class="aps-gantt-lanes relative" style="@($"--aps-visible-lanes: {Math.Max(1, VisibleLanes.Count)}")">
-                                @if (state.ShowDependencies && state.SelectedPlanningKey is not null)
-                                {
-                                    <svg class="pointer-events-none absolute inset-0 z-20 h-full w-full overflow-visible" aria-hidden="true">
-                                        @foreach (var edge in FocusedDependencyLines()) { <line x1="calc(176px + (100% - 176px) * @(edge.X1 / 100d))" y1="@($"{edge.Y1}%")" x2="calc(176px + (100% - 176px) * @(edge.X2 / 100d))" y2="@($"{edge.Y2}%")" stroke="var(--aps-border-strong)" stroke-width="1" stroke-dasharray="3 3" /> }
-                                    </svg>
-                                }
-                                @for (var laneIndex = 0; laneIndex < VisibleLanes.Count; laneIndex++)
-                                {
-                                    var lane = VisibleLanes[laneIndex];
-                                    <div class="aps-gantt-lane grid grid-cols-[176px_1fr] border-b border-border @(laneIndex % 2 == 0 ? "bg-surface" : "bg-surface-raised")" data-resource-id="@lane.ResourceId">
-                                        <button class="sticky left-0 z-10 border-r border-border bg-inherit px-3 py-2 text-left hover:bg-surface-hover" @onclick="() => SelectResource(lane)">
-                                            <span class="flex justify-between gap-2"><strong class="text-xs">@lane.ResourceCode</strong><em class="not-italic text-[10px] @OperatingStateClass(lane.OperatingState)">@lane.OperatingState</em></span>
-                                            <span class="block truncate text-[10px] text-muted">@lane.ProcessUnitType · @lane.OccupiedHours.ToString("0.#") h · @lane.Operations.Count ops</span>
-                                        </button>
-                                        <div class="aps-time-grid relative h-full overflow-hidden" data-window-start="@state.VisibleStartUtc.ToString("O")" data-window-end="@state.VisibleEndUtc.ToString("O")">
-                                            @foreach (var tick in AxisTicks()) { <div class="pointer-events-none absolute inset-y-0 w-px bg-border/50" style="left:@Percent(tick.Time)%"></div> }
-                                            @if (FrozenFenceEndUtc > state.VisibleStartUtc && workbench.Plan.ReferenceTimeUtc < state.VisibleEndUtc) { <div class="pointer-events-none absolute inset-y-0 bg-danger-soft/45" style="left:@Percent(workbench.Plan.ReferenceTimeUtc)%;width:@WidthPercent(workbench.Plan.ReferenceTimeUtc, FrozenFenceEndUtc)%" title="Frozen planning fence"></div> }
-                                            @if (state.ShowBaseline && workbench.Comparison is not null)
-                                            {
-                                                @foreach (var baseline in BaselineBlocks(lane.ResourceCode)) { <div class="pointer-events-none absolute inset-y-2 rounded border border-dashed border-border-strong bg-surface-inset/40" style="left:@Percent(baseline.Start)%;width:@WidthPercent(baseline.Start, baseline.End)%" title="Baseline position"></div> }
-                                            }
-                                            @foreach (var operation in VisibleOperations(lane))
-                                            {
-                                                var selected = state.SelectedPlanningKey == operation.PlanningKey;
-                                                var opDetail = FindDetail(operation.PlanningKey);
-                                                var execution = opDetail?.ExecutionStatus ?? OperationExecutionStatus.Planned;
-                                                var frozenHere = FrozenFenceEndUtc > operation.StartUtc && workbench.Plan.ReferenceTimeUtc < operation.EndUtc;
-                                                var tight = state.ShowCriticalPath && IsTightChain(operation);
-                                                var singleSourced = opDetail is { ResourceOptions.Count: 1 };
-                                                <button class="aps-operation aps-op-card absolute inset-y-2 z-10 min-w-2 overflow-hidden rounded-control border px-1.5 py-1 text-left text-[10px] leading-tight @(ProcessClass(operation.ProcessOperationType)) @(ExecutionClass(execution)) @(selected ? "border-accent ring-2 ring-accent" : "border-transparent hover:border-primary") @(state.StagedMove?.PlanningKey == operation.PlanningKey ? "opacity-55" : "") @(tight ? "ring-2 ring-warning" : "")"
-                                                        style="left:calc(@Percent(operation.StartUtc)% + 1px);width:calc(@WidthPercent(operation.StartUtc, operation.EndUtc)% - 2px)" data-planning-key="@operation.PlanningKey" title="@OperationTitle(operation)" @onclick="() => SelectOperation(operation)">
-                                                    <span class="flex items-start justify-between gap-1">
-                                                        <strong class="aps-truncate-start min-w-0 text-inverted">@OperationBlockLabel(operation)</strong>
-                                                        <span class="flex shrink-0 items-center gap-0.5">
-                                                            @if (execution == OperationExecutionStatus.Running) { <span class="aps-pulse-dot h-1.5 w-1.5 rounded-full bg-inverted" title="Running now"></span> }
-                                                            else if (execution == OperationExecutionStatus.Completed) { <span class="aps-op-card__badge text-inverted" title="Completed">&#10003;</span> }
-                                                            @if (frozenHere) { <span class="aps-op-card__badge text-inverted" title="Inside the frozen fence - needs an authorized override to move">&#128274;</span> }
-                                                            @if (tight) { <span class="aps-op-card__badge text-inverted" title="Tight chain - no slack to its predecessor">&#9889;</span> }
-                                                            @if (singleSourced) { <span class="aps-op-card__badge text-inverted" title="Only one eligible resource - no fallback if this slips">!</span> }
-                                                        </span>
-                                                    </span>
-                                                    <span class="flex items-baseline justify-between gap-1 text-inverted/85">
-                                                        <span class="min-w-0 truncate">@operation.StartUtc.ToString("HH:mm")&ndash;@operation.EndUtc.ToString("HH:mm")</span>
-                                                        <span class="shrink-0 font-semibold">@operation.QuantityMt.ToString("0.#") MT</span>
-                                                    </span>
-                                                    <span class="flex items-baseline justify-between gap-1 text-inverted/70">
-                                                        <span class="min-w-0 truncate">@operation.GradeCode</span>
-                                                        @if (state.Mode == PlanningWorkbenchMode.Execution) { <span class="shrink-0 truncate">@execution</span> }
-                                                        else if (opDetail?.CampaignNumber is not null) { <span class="shrink-0 truncate">Heat @(opDetail.HeatSequenceNumber?.ToString("00"))</span> }
-                                                    </span>
-                                                    @if (execution == OperationExecutionStatus.Running)
-                                                    {
-                                                        <span class="aps-op-card__progress" style="--aps-op-progress:@(RunningProgressPercent(operation))%"></span>
-                                                    }
-                                                </button>
-                                            }
-                                            @if (state.StagedMove is not null && state.StagedMove.TargetResourceId == lane.ResourceId)
-                                            {
-                                                var source = FindOperation(state.StagedMove.PlanningKey);
-                                                @if (source is not null) { <div class="pointer-events-none absolute inset-y-2 z-20 rounded-control border-2 border-accent bg-accent-soft/70" style="left:@Percent(state.StagedMove.TargetStartUtc)%;width:@WidthPercent(state.StagedMove.TargetStartUtc, state.StagedMove.TargetStartUtc + (source.EndUtc - source.StartUtc))%"><span class="px-1 text-[10px] font-semibold text-accent">Proposed · @state.StagedMove.TargetStartUtc.ToString("HH:mm")</span></div> }
-                                            }
-                                        </div>
-                                    </div>
-                                }
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <WorkbenchGantt Workbench="workbench"
+                                State="state"
+                                FrozenFenceEndUtc="FrozenFenceEndUtc"
+                                OperationSelected="SelectOperation"
+                                ResourceSelected="SelectResource" />
             </main>
 
             @if (Cockpit.InspectorOpen)
@@ -363,10 +268,8 @@
     private decimal nominalHeatMt = 90m, maximumCampaignMt = 600m;
     private int frozenMinutes = 120, solverSeconds = 20;
 
-    private IReadOnlyList<ScheduleResourceLaneView> VisibleLanes => BuildVisibleLanes();
     private ScheduledProcessOperationView? SelectedOperation => FindOperation(state.SelectedPlanningKey);
     private PlanningOperationWorkbenchDetail? SelectedDetail => FindDetail(state.SelectedPlanningKey);
-    private int VisibleOperationCount => VisibleLanes.Sum(x => VisibleOperations(x).Count);
     private bool CanUndo => state.CanUndo;
     private bool CanRedo => state.CanRedo;
     private bool CanMoveSelectedOperation => state.CanEditSchedule && SelectedDetail?.ExecutionStatus is not OperationExecutionStatus.Completed and not OperationExecutionStatus.Running;
@@ -480,33 +383,12 @@
     }
 
     private PlanningCalculationRequest BuildPlanningRequest() => new(new PlanningDemandSelection(), new CampaignPlanningPolicy(nominalHeatMt, nominalHeatMt * .7m, nominalHeatMt * 1.15m, maximumCampaignMt, maximumCampaignMt), new ProductionStructurePlanningPolicy(), workbench?.Plan.HorizonStartUtc ?? DateTime.UtcNow, workbench?.Plan.HorizonEndUtc ?? DateTime.UtcNow.AddDays(7), solverSeconds);
-    private IReadOnlyList<ScheduleResourceLaneView> BuildVisibleLanes() { if (workbench is null) return Array.Empty<ScheduleResourceLaneView>(); var lanes = workbench.Schedule.ResourceLanes.Where(l => l.Operations.Any(op => OperationMatches(op, state.SearchText))).ToArray(); if (state.Mode == PlanningWorkbenchMode.Recovery) { var resourceIds = workbench.Exceptions.Where(x => x.Entity?.EntityType == PlannerEntityType.Resource).Select(x => x.Entity!.EntityId).ToHashSet(); var constrained = lanes.Where(x => resourceIds.Contains(x.ResourceId) || x.OperatingState != ResourceOperatingState.Available).ToArray(); if (constrained.Length > 0) lanes = constrained; } return lanes.OrderBy(x => x.ProcessUnitType).ThenBy(x => x.ResourceCode).ToArray(); }
-    private IReadOnlyList<ScheduledProcessOperationView> VisibleOperations(ScheduleResourceLaneView lane) => lane.Operations.Where(x => x.EndUtc > state.VisibleStartUtc && x.StartUtc < state.VisibleEndUtc && OperationMatches(x, state.SearchText)).OrderBy(x => x.StartUtc).ToArray();
-    private bool OperationMatches(ScheduledProcessOperationView op, string query) { if (string.IsNullOrWhiteSpace(query)) return true; var d = FindDetail(op.PlanningKey); return Contains(op.ResourceCode, query) || Contains(op.ResourceName, query) || Contains(op.GradeCode, query) || Contains(op.CrossSectionCode, query) || Contains(op.ProcessOperationType.ToString(), query) || Contains(d?.CampaignNumber, query) || d?.ProductionOrderNumbers.Any(x => Contains(x, query)) == true; }
     private IReadOnlyList<DemandSupplyRowView> FilteredDemand() => workbench?.Demand.Rows.Where(x => string.IsNullOrWhiteSpace(state.SearchText) || Contains(x.ProductionOrderNumber, state.SearchText) || Contains(x.GradeCode, state.SearchText)).OrderByDescending(x => x.Priority).ThenBy(x => x.RequiredDate).ToArray() ?? Array.Empty<DemandSupplyRowView>();
     private IReadOnlyList<CampaignView> FilteredCampaigns() => workbench?.Campaigns.Campaigns.Where(x => string.IsNullOrWhiteSpace(state.SearchText) || Contains(x.CampaignNumber, state.SearchText) || Contains(x.GradeSequenceClassCode, state.SearchText) || x.Allocations.Any(a => Contains(a.ProductionOrderNumber, state.SearchText))).OrderBy(x => x.RequiredDate).ToArray() ?? Array.Empty<CampaignView>();
     private IReadOnlyList<PlanningWorkbenchException> FilteredExceptions() => workbench?.Exceptions.Where(x => string.IsNullOrWhiteSpace(state.SearchText) || Contains(x.Title, state.SearchText) || Contains(x.Impact, state.SearchText) || Contains(x.Entity?.DisplayCode, state.SearchText)).OrderByDescending(x => x.Severity).ToArray() ?? Array.Empty<PlanningWorkbenchException>();
     private IReadOnlyCollection<PlanningOperationResourceOptionView> EligibleResources(ScheduledProcessOperationView op, PlanningOperationWorkbenchDetail? d) => d?.ResourceOptions.Count > 0 ? d.ResourceOptions : new[] { new PlanningOperationResourceOptionView(op.ResourceId, op.ResourceCode, op.ResourceName, (int)(op.EndUtc - op.StartUtc).TotalMinutes, 0, true, null) };
     private ScheduledProcessOperationView? FindOperation(string? key) => string.IsNullOrWhiteSpace(key) || workbench is null ? null : workbench.Schedule.ResourceLanes.SelectMany(x => x.Operations).FirstOrDefault(x => x.PlanningKey.Equals(key, StringComparison.OrdinalIgnoreCase));
     private PlanningOperationWorkbenchDetail? FindDetail(string? key) => string.IsNullOrWhiteSpace(key) || workbench is null ? null : workbench.OperationDetails.FirstOrDefault(x => x.PlanningKey.Equals(key, StringComparison.OrdinalIgnoreCase));
-    private IReadOnlyList<BaselineBlock> BaselineBlocks(string resourceCode) => workbench?.Comparison?.Changes.Where(x => x.BaselineResourceCode == resourceCode && x.BaselineStartUtc.HasValue && x.BaselineEndUtc.HasValue).Select(x => new BaselineBlock(x.BaselineStartUtc!.Value, x.BaselineEndUtc!.Value)).ToArray() ?? Array.Empty<BaselineBlock>();
-    private IReadOnlyList<DependencyLine> FocusedDependencyLines()
-    {
-        if (state.SelectedPlanningKey is null) return Array.Empty<DependencyLine>();
-        var placements = VisibleLanes.SelectMany((lane, index) => VisibleOperations(lane).Select(operation => new Placement(operation, index))).ToDictionary(x => x.Operation.PlanningKey, StringComparer.OrdinalIgnoreCase);
-        if (!placements.ContainsKey(state.SelectedPlanningKey)) return Array.Empty<DependencyLine>();
-        var links = placements.Values.SelectMany(item => (FindDetail(item.Operation.PlanningKey)?.PredecessorPlanningKeys ?? Array.Empty<string>()).Where(placements.ContainsKey).Select(predecessor => (From: predecessor, To: item.Operation.PlanningKey))).ToArray();
-        var focused = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { state.SelectedPlanningKey };
-        var pending = new Queue<string>(); pending.Enqueue(state.SelectedPlanningKey);
-        while (pending.TryDequeue(out var key)) foreach (var link in links.Where(x => x.From.Equals(key, StringComparison.OrdinalIgnoreCase) || x.To.Equals(key, StringComparison.OrdinalIgnoreCase))) { var next = link.From.Equals(key, StringComparison.OrdinalIgnoreCase) ? link.To : link.From; if (focused.Add(next)) pending.Enqueue(next); }
-        var laneCount = Math.Max(1, VisibleLanes.Count);
-        return links.Where(x => focused.Contains(x.From) && focused.Contains(x.To)).Select(link => { var from = placements[link.From]; var to = placements[link.To]; return new DependencyLine((double)Percent(from.Operation.EndUtc), (from.Lane + .5d) / laneCount * 100d, (double)Percent(to.Operation.StartUtc), (to.Lane + .5d) / laneCount * 100d); }).ToArray();
-    }
-    private bool IsTightChain(ScheduledProcessOperationView op) => FindDetail(op.PlanningKey)?.PredecessorPlanningKeys.Select(FindOperation).Any(x => x is not null && Math.Abs((op.StartUtc - x.EndUtc).TotalMinutes) <= 1d) == true;
-    private IReadOnlyList<AxisTick> AxisTicks() { var hours = (state.VisibleEndUtc - state.VisibleStartUtc).TotalHours; var step = hours <= 12 ? TimeSpan.FromHours(1) : hours <= 36 ? TimeSpan.FromHours(4) : hours <= 96 ? TimeSpan.FromHours(12) : TimeSpan.FromDays(1); var result = new List<AxisTick>(); for (var t = state.VisibleStartUtc; t <= state.VisibleEndUtc; t += step) result.Add(new AxisTick(t, hours <= 36 ? "HH:mm" : "dd MMM")); return result; }
-    private IReadOnlyList<DueMarker> DueMarkers() => workbench?.Demand.Rows.Where(x => x.RequiredDate >= state.VisibleStartUtc && x.RequiredDate <= state.VisibleEndUtc).GroupBy(x => x.RequiredDate).Select(x => new DueMarker(x.Key, $"{x.Count()} order(s) due")).ToArray() ?? Array.Empty<DueMarker>();
-    private decimal Percent(DateTime value) { var total = Math.Max(1d, (state.VisibleEndUtc - state.VisibleStartUtc).TotalMinutes); return (decimal)Math.Clamp((value - state.VisibleStartUtc).TotalMinutes / total * 100d, 0d, 100d); }
-    private decimal WidthPercent(DateTime start, DateTime end) { var total = Math.Max(1d, (state.VisibleEndUtc - state.VisibleStartUtc).TotalMinutes); var s = start < state.VisibleStartUtc ? state.VisibleStartUtc : start; var e = end > state.VisibleEndUtc ? state.VisibleEndUtc : end; return (decimal)Math.Clamp((e - s).TotalMinutes / total * 100d, .25d, 100d); }
 
     private bool HasFocus => !string.IsNullOrWhiteSpace(state.SearchText) || state.SelectedPlanningKey is not null;
     private string QueueTitle => state.Mode switch { PlanningWorkbenchMode.Campaigns => "Campaigns", PlanningWorkbenchMode.Execution => "Execution exceptions", PlanningWorkbenchMode.Recovery => "Recovery queue", _ => "Demand queue" };
@@ -515,17 +397,6 @@
     private static bool Contains(string? value, string query) => value?.Contains(query, StringComparison.OrdinalIgnoreCase) == true;
     private static string FriendlyPlanName(string value) => value.StartsWith("PLAN-", StringComparison.OrdinalIgnoreCase) ? value[5..] : value;
     private static string FriendlyOperationName(string? key) { if (string.IsNullOrWhiteSpace(key)) return "Operation"; var p = key.Split(':'); return p.Length >= 4 ? $"{p[1]} · {p[2]} · {p[^1]}" : "Scheduled operation"; }
-    private string OperationBlockLabel(ScheduledProcessOperationView op) => state.Mode switch { PlanningWorkbenchMode.Campaigns => $"{FindDetail(op.PlanningKey)?.CampaignNumber ?? "Campaign"} · H{FindDetail(op.PlanningKey)?.HeatSequenceNumber:00}", PlanningWorkbenchMode.Plan => FindDetail(op.PlanningKey)?.ProductionOrderNumbers.FirstOrDefault() ?? $"{op.ProcessOperationType} · {op.GradeCode}", _ => $"{op.ProcessOperationType} · {op.GradeCode}" };
-    private static string OperationTitle(ScheduledProcessOperationView op) => $"{op.ProcessOperationType} · {op.ResourceCode} · {op.StartUtc:dd MMM HH:mm} → {op.EndUtc:dd MMM HH:mm} · {op.QuantityMt:0.##} MT · {op.GradeCode}/{op.CrossSectionCode}";
-    private static string ProcessClass(ProcessOperationType type) => type switch { ProcessOperationType.Eaf => "bg-process-eaf", ProcessOperationType.Lrf => "bg-process-lrf", ProcessOperationType.Vd => "bg-process-vd", ProcessOperationType.Ccm => "bg-process-casting", ProcessOperationType.Reheat => "bg-process-reheat", ProcessOperationType.HotRoll => "bg-process-hot-roll", ProcessOperationType.ColdRoll => "bg-process-cold-roll", _ => "bg-process-finishing" };
-
-    private static readonly (string Label, string ColorClass)[] ProcessLegend =
-    [
-        ("EAF", "bg-process-eaf"), ("LRF", "bg-process-lrf"), ("VD", "bg-process-vd"),
-        ("Cast", "bg-process-casting"), ("Reheat", "bg-process-reheat"), ("Hot roll", "bg-process-hot-roll"),
-        ("Cold roll", "bg-process-cold-roll"), ("Finish", "bg-process-finishing")
-    ];
-    private static string OperatingStateClass(ResourceOperatingState value) => value == ResourceOperatingState.Available ? "text-success" : "text-danger";
     // The commitment badge previously rendered bg-info-soft/text-info unconditionally, so a Flexible
     // operation and a Running one carried the identical pill - colour said nothing a planner could act
     // on. Escalating tone tracks how costly it is to disturb: flexible is still open, running is not.
@@ -539,7 +410,6 @@
     // "Not recorded" is an absence, not a fact - it should read differently from an actual timestamp
     // rather than blending into the same grey figures as everything that already happened.
     private static string ActualValueClass(DateTime? value) => value.HasValue ? "aps-text-body" : "aps-text-caption italic";
-    private static string ExecutionClass(OperationExecutionStatus value) => value switch { OperationExecutionStatus.Running => "outline outline-2 outline-warning", OperationExecutionStatus.Held => "outline outline-2 outline-danger", OperationExecutionStatus.Completed => "opacity-65", OperationExecutionStatus.Ready => "outline outline-1 outline-success", _ => "" };
     private static string FindingClass(PlanningConstraintSeverity value) => value switch { PlanningConstraintSeverity.Blocker => "bg-danger-soft text-danger", PlanningConstraintSeverity.Warning => "bg-warning-soft text-warning", _ => "bg-info-soft text-info" };
     private static string FormatMovement(int minutes) => minutes == 0 ? "No time change" : $"{(minutes > 0 ? "+" : "")}{minutes / 60d:0.##} h";
     private static string ModeLabel(PlanningWorkbenchMode value) => value switch { PlanningWorkbenchMode.Campaigns => "Campaigns", PlanningWorkbenchMode.Execution => "Execution", PlanningWorkbenchMode.Recovery => "Recovery", _ => "Plan" };
@@ -547,22 +417,6 @@
     private static string CampaignLabel(PlanningOperationWorkbenchDetail? d) => d is null ? "—" : $"{d.CampaignNumber ?? "—"}{(d.HeatSequenceNumber.HasValue ? $" · Heat {d.HeatSequenceNumber}" : "")}";
     private static string OrderLabel(PlanningOperationWorkbenchDetail? d) => d is null || d.ProductionOrderNumbers.Count == 0 ? "—" : string.Join(", ", d.ProductionOrderNumbers);
     private static string FormatActual(DateTime? value) => value?.ToString("dd MMM yyyy HH:mm") ?? "Not recorded";
-    // The card's progress fill reads off the plan's reference clock, not wall-clock time, so it stays
-    // correct against whatever moment the loaded scenario represents rather than the browser's "now".
-    private double RunningProgressPercent(ScheduledProcessOperationView op)
-    {
-        var total = (op.EndUtc - op.StartUtc).TotalMinutes;
-        if (total <= 0d) return 0d;
-        var elapsed = (workbench!.Plan.ReferenceTimeUtc - op.StartUtc).TotalMinutes;
-        return Math.Clamp(elapsed / total * 100d, 0d, 100d);
-    }
-
-    private sealed record AxisTick(DateTime Time, string Format);
-    private sealed record DueMarker(DateTime Time, string Label);
-    private sealed record BaselineBlock(DateTime Start, DateTime End);
-    private sealed record Placement(ScheduledProcessOperationView Operation, int Lane);
-    private sealed record DependencyLine(double X1, double Y1, double X2, double Y2);
-
     public async ValueTask DisposeAsync()
     {
         WorkspaceState.Changed -= OnWorkspaceChanged;

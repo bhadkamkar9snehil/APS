@@ -316,6 +316,8 @@ public sealed class PlanningWorkbenchQueryTests
         Assert.Equal(start, unchanged.StartUtc);
         var resourceChanged = Assert.Single(result.BaselinePlacements, x => x.PlanningKey.EndsWith(":LRF"));
         Assert.Equal(originalLrfResourceId, resourceChanged.ResourceId);
+        Assert.Equal("LRF-01", resourceChanged.ResourceCode);
+        Assert.Equal("LRF", resourceChanged.ProcessStageCode);
         Assert.Equal(start.AddMinutes(75), resourceChanged.StartUtc);
 
         var processingBucket = Assert.Single(result.CapacityBuckets, x =>

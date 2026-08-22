@@ -404,18 +404,19 @@ body {
 
 button, input, select, textarea { font: inherit; }
 
-.aps-gantt-lanes {
-  display: grid;
-  min-height: calc(100% - 2.5rem);
-  grid-template-rows: repeat(var(--aps-visible-lanes), minmax(64px, 1fr));
-}
-
 .aps-gantt-lane {
-  min-height: 64px;
+  min-height: var(--aps-gantt-row-height, 60px);
 }
 
-@media (max-height: 760px) {
-  .aps-gantt-lanes { grid-template-rows: repeat(var(--aps-visible-lanes), 64px); }
+.aps-calendar-unavailable {
+  background-color: color-mix(in srgb, var(--aps-surface-inset) 78%, transparent);
+  background-image: repeating-linear-gradient(
+    -45deg,
+    transparent 0,
+    transparent 5px,
+    color-mix(in srgb, var(--aps-border-strong) 42%, transparent) 5px,
+    color-mix(in srgb, var(--aps-border-strong) 42%, transparent) 7px
+  );
 }
 
 input, select, textarea {

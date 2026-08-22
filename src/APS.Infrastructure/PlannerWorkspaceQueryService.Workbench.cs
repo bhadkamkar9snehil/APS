@@ -24,6 +24,7 @@ public sealed partial class PlannerWorkspaceQueryService
         if (demand is null || campaigns is null || schedule is null || material is null) return null;
 
         PlanContextView? baseline = null;
+        FiniteScheduleWorkspaceView? baselineSchedule = null;
         PlanComparisonWorkspaceView? comparison = null;
         var effectiveBaselineId = baselinePlanVersionId ?? plan.ParentPlanVersionId;
         if (effectiveBaselineId.HasValue && effectiveBaselineId.Value != plan.PlanVersionId)
@@ -31,6 +32,7 @@ public sealed partial class PlannerWorkspaceQueryService
             baseline = await GetPlanContextAsync(effectiveBaselineId.Value, cancellationToken);
             if (baseline is not null)
             {
+                baselineSchedule = await GetFiniteScheduleAsync(effectiveBaselineId.Value, cancellationToken);
                 comparison = await GetPlanComparisonAsync(
                     effectiveBaselineId.Value,
                     plan.PlanVersionId,
@@ -42,9 +44,9 @@ public sealed partial class PlannerWorkspaceQueryService
         var operationDetails = await BuildOperationDetailsAsync(plan.PlanVersionId, campaigns, cancellationToken);
         var dependencyLinks = BuildDependencyLinks(schedule, operationDetails);
         var calendarIntervals = await BuildCalendarIntervalsAsync(plan, schedule, cancellationToken);
-        var baselinePlacements = baseline is null
+        var baselinePlacements = baselineSchedule is null
             ? Array.Empty<PlanningBaselinePlacementView>()
-            : await BuildBaselinePlacementsAsync(baseline.PlanVersionId, cancellationToken);
+            : BuildBaselinePlacements(baselineSchedule);
         var capacityBuckets = await BuildCapacityBucketsAsync(
             plan,
             schedule,
@@ -136,24 +138,37 @@ public sealed partial class PlannerWorkspaceQueryService
             .ToArrayAsync(cancellationToken);
     }
 
-    private async Task<IReadOnlyCollection<PlanningBaselinePlacementView>> BuildBaselinePlacementsAsync(
-        Guid baselinePlanVersionId,
-        CancellationToken cancellationToken) =>
-        await db.PlanOperationSnapshots.AsNoTracking()
-            .Where(x => x.PlanVersionId == baselinePlanVersionId)
+    private static IReadOnlyCollection<PlanningBaselinePlacementView> BuildBaselinePlacements(
+        FiniteScheduleWorkspaceView baselineSchedule) =>
+        baselineSchedule.ResourceLanes
+            .SelectMany(lane => lane.Operations.Select(operation => new PlanningBaselinePlacementView(
+                baselineSchedule.Plan.PlanVersionId,
+                operation.OperationSnapshotId,
+                operation.PlanningKey,
+                lane.ResourceId,
+                lane.ResourceCode,
+                lane.ResourceName,
+                lane.ProcessUnitType,
+                lane.OperatingState,
+                lane.SchedulingMode,
+                operation.StartUtc,
+                operation.EndUtc,
+                operation.ProcessOperationType,
+                operation.GradeCode,
+                operation.CrossSectionCode,
+                lane.PlantId,
+                lane.PlantCode,
+                lane.PlantName,
+                lane.AreaId,
+                lane.AreaCode,
+                lane.AreaName,
+                lane.ProcessStageId,
+                lane.ProcessStageCode,
+                lane.ProcessStageName,
+                lane.DisplayOrder)))
             .OrderBy(x => x.StartUtc)
-            .ThenBy(x => x.PlanningKey)
-            .Select(x => new PlanningBaselinePlacementView(
-                baselinePlanVersionId,
-                x.Id,
-                x.PlanningKey,
-                x.ResourceId,
-                x.StartUtc,
-                x.EndUtc,
-                x.ProcessOperationType,
-                x.GradeCode,
-                x.CrossSectionCode))
-            .ToArrayAsync(cancellationToken);
+            .ThenBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
 
     private async Task<IReadOnlyCollection<PlanningCapacityBucketView>> BuildCapacityBucketsAsync(
         PlanContextView plan,

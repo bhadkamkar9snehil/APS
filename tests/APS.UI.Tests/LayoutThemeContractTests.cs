@@ -67,6 +67,7 @@ public sealed class LayoutThemeContractTests
         Assert.Contains("@(TailwindSource)", project);
         Assert.Contains("Inputs=\"$(TailwindInputCss);@(TailwindSource)\"", project);
         Assert.Contains("Outputs=\"$(TailwindOutputCss)\"", project);
-        Assert.Contains(".aps-gantt-lanes", input);
+        Assert.Contains(".aps-gantt-lane", input);
+        Assert.Contains("--aps-gantt-row-height", input);
     }
 }

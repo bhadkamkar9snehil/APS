@@ -1,0 +1,49 @@
+<section class="flex h-full min-h-0 flex-col" aria-label="Finite-capacity schedule">
+    <div class="flex shrink-0 items-center justify-between border-b border-border bg-surface-raised px-3 py-2 text-xs">
+        <div class="flex flex-wrap gap-x-4 gap-y-1">
+            <span><span class="text-muted">Visible </span><strong>@State.VisibleStartUtc.ToString("dd MMM HH:mm") → @State.VisibleEndUtc.ToString("dd MMM HH:mm")</strong></span>
+            <span><span class="text-muted">Mode </span><strong>@ModeLabel(State.Mode)</strong></span>
+            <span><strong>@Scene.VisibleOperationCount</strong> operations · <strong>@Scene.Rows.Count</strong> resources</span>
+        </div>
+        <div class="hidden flex-wrap items-center gap-3 text-[10px] text-muted xl:flex" aria-label="Process legend">
+            @foreach (var entry in ProcessLegend)
+            {
+                <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full @entry.ColorClass"></span>@entry.Label</span>
+            }
+        </div>
+    </div>
+    <div class="min-h-0 flex-1 overflow-auto" data-gantt-scroll>
+        <div class="grid min-w-[1120px]" style="grid-template-columns:@($"{State.Viewport.GridWidthPx:0}px minmax(760px, 1fr)");--aps-gantt-row-height:@($"{State.Viewport.RowHeightPx}px")">
+            <GanttResourceGrid Scene="Scene" ResourceSelected="ResourceSelected" />
+            <div class="min-w-0 border-l border-border">
+                <GanttTimeScale Scene="Scene" State="State" ReferenceTimeUtc="Workbench.Plan.ReferenceTimeUtc" FrozenFenceEndUtc="FrozenFenceEndUtc" />
+                <GanttTimelineViewport Scene="Scene" State="State" Workbench="Workbench" FrozenFenceEndUtc="FrozenFenceEndUtc" OperationSelected="OperationSelected" />
+            </div>
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public PlanningWorkbenchView Workbench { get; set; } = default!;
+    [Parameter, EditorRequired] public PlanningWorkbenchState State { get; set; } = default!;
+    [Parameter] public DateTime FrozenFenceEndUtc { get; set; }
+    [Parameter] public EventCallback<ScheduledProcessOperationView> OperationSelected { get; set; }
+    [Parameter] public EventCallback<ScheduleResourceLaneView> ResourceSelected { get; set; }
+
+    private GanttScene Scene { get; set; } = default!;
+
+    protected override void OnParametersSet() => Scene = GanttModels.BuildScene(Workbench, State);
+    private static string ModeLabel(PlanningWorkbenchMode value) => value switch
+    {
+        PlanningWorkbenchMode.Campaigns => "Campaigns",
+        PlanningWorkbenchMode.Execution => "Execution",
+        PlanningWorkbenchMode.Recovery => "Recovery",
+        _ => "Plan"
+    };
+    private static readonly (string Label, string ColorClass)[] ProcessLegend =
+    [
+        ("EAF", "bg-process-eaf"), ("LRF", "bg-process-lrf"), ("VD", "bg-process-vd"),
+        ("Cast", "bg-process-casting"), ("Reheat", "bg-process-reheat"), ("Hot roll", "bg-process-hot-roll"),
+        ("Cold roll", "bg-process-cold-roll"), ("Finish", "bg-process-finishing")
+    ];
+}

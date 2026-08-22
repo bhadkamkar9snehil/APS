@@ -20,9 +20,11 @@ public sealed class PlannerCockpitMarkupTests
     public void Workbench_gives_the_gantt_full_space_and_uses_overlay_drawers()
     {
         var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+        var gantt = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/WorkbenchGantt.razor"));
 
-        Assert.Contains("aps-gantt-lanes", page);
-        Assert.Contains("--aps-visible-lanes", page);
+        Assert.Contains("<WorkbenchGantt", page);
+        Assert.Contains("--aps-gantt-row-height", gantt);
+        Assert.Contains("data-gantt-scroll", gantt);
         Assert.Contains("absolute inset-y-0 left-0", page);
         Assert.Contains("absolute inset-y-0 right-0", page);
         Assert.DoesNotContain("BodyGridClass", page);

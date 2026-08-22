@@ -1,0 +1,34 @@
+<div class="min-w-0 bg-surface">
+    <div class="sticky top-0 z-30 grid h-14 items-end border-b border-border bg-surface-raised px-2 pb-1 shadow-soft"
+         style="grid-template-columns:minmax(112px,1fr) 42px 42px 38px 30px 48px">
+        <span class="aps-text-label">Resource</span><span class="text-[9px] text-muted">State</span><span class="text-[9px] text-muted">Busy</span><span class="text-[9px] text-muted">Load</span><span class="text-[9px] text-muted">Ops</span><span class="text-[9px] text-muted">Next</span>
+    </div>
+    <div class="grid" style="grid-auto-rows:var(--aps-gantt-row-height)">
+        @foreach (var row in Scene.Rows)
+        {
+            <button type="button"
+                    class="grid min-w-0 items-center border-b border-border px-2 text-left even:bg-surface-raised hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+                    style="grid-template-columns:minmax(112px,1fr) 42px 42px 38px 30px 48px"
+                    title="@($"{row.Lane.PlantName} / {row.Lane.AreaName} / {row.Lane.ProcessStageName} / {row.Lane.ResourceName}")"
+                    @onclick="() => ResourceSelected.InvokeAsync(row.Lane)">
+                <span class="min-w-0"><strong class="block truncate text-xs">@row.Lane.ResourceCode</strong><span class="block truncate text-[9px] text-muted">@HierarchyLabel(row.Lane)</span></span>
+                <span class="truncate text-[9px] @OperatingStateClass(row.Lane.OperatingState)">@StateLabel(row.Lane.OperatingState)</span>
+                <span class="aps-text-figure text-[10px]">@row.Lane.OccupiedHours.ToString("0.#")h</span>
+                <span class="aps-text-figure text-[10px]">@row.VisibleUtilization.ToString("P0")</span>
+                <span class="aps-text-figure text-[10px]">@row.Lane.Operations.Count</span>
+                <span class="truncate text-[9px] text-secondary">@(row.NextOperation?.StartUtc.ToString("HH:mm") ?? "—")</span>
+            </button>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public GanttScene Scene { get; set; } = default!;
+    [Parameter] public EventCallback<ScheduleResourceLaneView> ResourceSelected { get; set; }
+
+    private static string HierarchyLabel(ScheduleResourceLaneView lane) =>
+        string.Join(" · ", new[] { lane.AreaCode, lane.ProcessStageCode }.Where(x => !string.IsNullOrWhiteSpace(x)));
+    private static string StateLabel(ResourceOperatingState value) => value == ResourceOperatingState.Available ? "Ready" : value.ToString();
+    private static string OperatingStateClass(ResourceOperatingState value) =>
+        value == ResourceOperatingState.Available ? "text-success" : "text-danger";
+}

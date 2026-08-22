@@ -1,0 +1,65 @@
+<button type="button"
+        class="aps-operation aps-op-card absolute inset-y-2 z-10 overflow-hidden rounded-control border px-1.5 py-1 text-left text-[10px] leading-tight @ProcessClass(Model.Operation.ProcessOperationType) @ExecutionClass(Model.ExecutionStatus) @(Selected ? "border-accent ring-2 ring-accent" : "border-transparent hover:border-primary") @(State.StagedMove?.PlanningKey == Model.Operation.PlanningKey ? "opacity-55" : "")"
+        style="left:calc(@Model.LeftPercent% + 1px);width:calc(@Model.WidthPercent% - 2px)"
+        data-planning-key="@Model.Operation.PlanningKey"
+        aria-label="@Model.AccessibleName"
+        title="@Model.AccessibleName"
+        @onclick="() => OperationSelected.InvokeAsync(Model.Operation)">
+    @if (Model.LogicalWidthPx >= 68)
+    {
+        <span class="flex items-start justify-between gap-1">
+            <strong class="aps-truncate-start min-w-0 text-inverted">@Model.Label</strong>
+            <span class="flex shrink-0 items-center gap-0.5">
+                @if (Model.ExecutionStatus == OperationExecutionStatus.Running) { <span class="aps-pulse-dot h-1.5 w-1.5 rounded-full bg-inverted" title="Running"></span> }
+                else if (Model.ExecutionStatus == OperationExecutionStatus.Completed) { <span class="aps-op-card__badge text-inverted" title="Completed">&#10003;</span> }
+                @if (Model.IsSingleSourced) { <span class="aps-op-card__badge text-inverted" title="Only one eligible resource">!</span> }
+            </span>
+        </span>
+    }
+    else if (Model.LogicalWidthPx >= 28)
+    {
+        <strong class="truncate text-center text-[9px] text-inverted">@Model.CompactLabel</strong>
+    }
+    @if (Model.LogicalWidthPx >= 82)
+    {
+        <span class="flex items-baseline justify-between gap-1 text-inverted/85">
+            <span class="min-w-0 truncate">@Model.Operation.StartUtc.ToString("HH:mm")–@Model.Operation.EndUtc.ToString("HH:mm")</span>
+            <span class="shrink-0 font-semibold">@Model.Operation.QuantityMt.ToString("0.#") MT</span>
+        </span>
+    }
+    @if (Model.LogicalWidthPx >= 145)
+    {
+        <span class="flex items-baseline justify-between gap-1 text-inverted/70"><span class="truncate">@Model.Operation.GradeCode</span><span>@Model.ExecutionStatus</span></span>
+    }
+    @if (Model.ExecutionStatus == OperationExecutionStatus.Running)
+    {
+        <span class="aps-op-card__progress" style="--aps-op-progress:@Model.RunningProgressPercent%"></span>
+    }
+</button>
+
+@code {
+    [Parameter, EditorRequired] public GanttOperationModel Model { get; set; } = default!;
+    [Parameter, EditorRequired] public PlanningWorkbenchState State { get; set; } = default!;
+    [Parameter] public bool Selected { get; set; }
+    [Parameter] public EventCallback<ScheduledProcessOperationView> OperationSelected { get; set; }
+
+    private static string ProcessClass(ProcessOperationType type) => type switch
+    {
+        ProcessOperationType.Eaf => "bg-process-eaf",
+        ProcessOperationType.Lrf => "bg-process-lrf",
+        ProcessOperationType.Vd => "bg-process-vd",
+        ProcessOperationType.Ccm => "bg-process-casting",
+        ProcessOperationType.Reheat => "bg-process-reheat",
+        ProcessOperationType.HotRoll => "bg-process-hot-roll",
+        ProcessOperationType.ColdRoll => "bg-process-cold-roll",
+        _ => "bg-process-finishing"
+    };
+    private static string ExecutionClass(OperationExecutionStatus value) => value switch
+    {
+        OperationExecutionStatus.Running => "outline outline-2 outline-warning",
+        OperationExecutionStatus.Held => "outline outline-2 outline-danger",
+        OperationExecutionStatus.Completed => "opacity-65",
+        OperationExecutionStatus.Ready => "outline outline-1 outline-success",
+        _ => ""
+    };
+}

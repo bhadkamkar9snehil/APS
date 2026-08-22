@@ -94,11 +94,26 @@ public sealed record PlanningBaselinePlacementView(
     Guid OperationSnapshotId,
     string PlanningKey,
     Guid ResourceId,
+    string ResourceCode,
+    string ResourceName,
+    ProcessUnitType ProcessUnitType,
+    ResourceOperatingState OperatingState,
+    ResourceSchedulingMode SchedulingMode,
     DateTime StartUtc,
     DateTime EndUtc,
     ProcessOperationType ProcessOperationType,
     string GradeCode,
-    string CrossSectionCode);
+    string CrossSectionCode,
+    Guid? PlantId,
+    string? PlantCode,
+    string? PlantName,
+    Guid? AreaId,
+    string? AreaCode,
+    string? AreaName,
+    Guid? ProcessStageId,
+    string? ProcessStageCode,
+    string? ProcessStageName,
+    int DisplayOrder);
 
 public enum PlanningCapacityBasis
 {

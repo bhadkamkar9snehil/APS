@@ -76,11 +76,35 @@ public sealed class PlanningWorkbenchMarkupTests
     [Fact]
     public void Dependency_layer_is_focused_on_the_selected_chain()
     {
-        var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+        var gantt = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttTimelineViewport.razor"));
 
-        Assert.Contains("FocusedDependencyLines", page);
-        Assert.Contains("state.SelectedPlanningKey", page);
-        Assert.DoesNotContain("@foreach (var edge in DependencyLines())", page);
+        Assert.Contains("FocusedDependencyLines", gantt);
+        Assert.Contains("State.SelectedPlanningKey", gantt);
+        Assert.DoesNotContain("@foreach (var edge in DependencyLines())", gantt);
+    }
+
+    [Fact]
+    public void Gantt_is_a_reusable_synchronized_control_not_page_local_markup()
+    {
+        var root = "src/APS.UI/Components/PlanningWorkbench/Gantt";
+        foreach (var file in new[]
+                 {
+                     "WorkbenchGantt.razor",
+                     "GanttResourceGrid.razor",
+                     "GanttTimeScale.razor",
+                     "GanttTimelineViewport.razor",
+                     "GanttResourceLane.razor",
+                     "GanttOperationBlock.razor",
+                     "GanttModels.cs"
+                 })
+            Assert.True(File.Exists(Repo.File($"{root}/{file}")), $"Missing reusable Gantt surface: {file}");
+
+        var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+        Assert.Contains("<WorkbenchGantt", page);
+        Assert.DoesNotContain("grid-cols-[176px_1fr]", page);
+        Assert.DoesNotContain("<svg", page);
+        Assert.DoesNotContain("aps-operation", page);
+        Assert.DoesNotContain("Tight chain", page);
     }
 
 }
