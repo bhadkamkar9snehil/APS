@@ -25,23 +25,57 @@ public sealed class ProductionDemandOrchestrationService(
         foreach (var row in salesOrders)
             await validator.ValidateAndThrowAsync(row, cancellationToken);
 
+        var orderedInputs = salesOrders
+            .OrderBy(x => x.CustomerRequiredDate)
+            .ThenBy(x => x.SalesOrderNumber, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.ItemNumber, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var salesOrderNumbers = orderedInputs
+            .Select(x => x.SalesOrderNumber.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        var itemNumbers = orderedInputs
+            .Select(x => x.ItemNumber.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        var existingOrders = salesOrderNumbers.Length == 0
+            ? new List<SalesOrder>()
+            : await db.SalesOrders
+                .Where(x => salesOrderNumbers.Contains(x.SalesOrderNumber) && itemNumbers.Contains(x.ItemNumber))
+                .ToListAsync(cancellationToken);
+        var orderByKey = existingOrders.ToDictionary(
+            x => SalesOrderKey(x.SalesOrderNumber, x.ItemNumber),
+            StringComparer.Ordinal);
+        var existingOrderIds = existingOrders.Select(x => x.Id).ToArray();
+
+        var existingStates = existingOrderIds.Length == 0
+            ? new List<SalesOrderDemandState>()
+            : await db.SalesOrderDemandStates
+                .Where(x => existingOrderIds.Contains(x.SalesOrderId))
+                .ToListAsync(cancellationToken);
+        var stateBySalesOrderId = existingStates.ToDictionary(x => x.SalesOrderId);
+
+        var existingProfiles = existingOrderIds.Length == 0
+            ? new List<SalesOrderRequirementProfile>()
+            : await db.SalesOrderRequirementProfiles
+                .Include(x => x.ChemistryOverrides)
+                .Include(x => x.ProcessOverrides)
+                .AsSplitQuery()
+                .Where(x => existingOrderIds.Contains(x.SalesOrderId))
+                .ToListAsync(cancellationToken);
+        var profileBySalesOrderId = existingProfiles.ToDictionary(x => x.SalesOrderId);
+
         var created = 0;
         var updated = 0;
         var unchanged = 0;
         var closed = 0;
-        var ids = new List<Guid>();
+        var ids = new List<Guid>(orderedInputs.Length);
 
-        foreach (var input in salesOrders
-                     .OrderBy(x => x.CustomerRequiredDate)
-                     .ThenBy(x => x.SalesOrderNumber, StringComparer.OrdinalIgnoreCase)
-                     .ThenBy(x => x.ItemNumber, StringComparer.OrdinalIgnoreCase))
+        foreach (var input in orderedInputs)
         {
-            var order = await db.SalesOrders
-                .SingleOrDefaultAsync(x =>
-                    x.SalesOrderNumber == input.SalesOrderNumber && x.ItemNumber == input.ItemNumber,
-                    cancellationToken);
-
-            var isNew = order is null;
+            var key = SalesOrderKey(input.SalesOrderNumber, input.ItemNumber);
+            var isNew = !orderByKey.TryGetValue(key, out var order);
             order ??= new SalesOrder
             {
                 SalesOrderNumber = input.SalesOrderNumber.Trim(),
@@ -77,6 +111,7 @@ public sealed class ProductionDemandOrchestrationService(
             if (isNew)
             {
                 db.SalesOrders.Add(order);
+                orderByKey[key] = order;
                 created++;
             }
             else if (changed)
@@ -88,9 +123,7 @@ public sealed class ProductionDemandOrchestrationService(
                 unchanged++;
             }
 
-            var state = await db.SalesOrderDemandStates
-                .SingleOrDefaultAsync(x => x.SalesOrderId == order.Id, cancellationToken);
-            if (state is null)
+            if (!stateBySalesOrderId.TryGetValue(order.Id, out var state))
             {
                 state = new SalesOrderDemandState
                 {
@@ -101,6 +134,7 @@ public sealed class ProductionDemandOrchestrationService(
                     Disposition = DemandReconciliationDisposition.Unchanged
                 };
                 db.SalesOrderDemandStates.Add(state);
+                stateBySalesOrderId[order.Id] = state;
             }
 
             state.OpenDemandQuantityMt = normalizedOpen;
@@ -108,7 +142,13 @@ public sealed class ProductionDemandOrchestrationService(
             state.ConfirmedDeliveryDate = input.ConfirmedDeliveryDate;
             state.Priority = Math.Max(0, input.Priority);
             state.CalculatedOnUtc = DateTime.UtcNow;
-            await ReconcileRequirementProfileAsync(order, input, isNew, cancellationToken);
+
+            profileBySalesOrderId.TryGetValue(order.Id, out var profile);
+            profile = ReconcileRequirementProfile(order, input, profile);
+            if (profile is null)
+                profileBySalesOrderId.Remove(order.Id);
+            else
+                profileBySalesOrderId[order.Id] = profile;
 
             if (IsClosed(input.ExternalStatus)) closed++;
             ids.Add(order.Id);
@@ -176,6 +216,7 @@ public sealed class ProductionDemandOrchestrationService(
             : await db.SalesOrderRequirementProfiles
                 .Include(x => x.ChemistryOverrides)
                 .Include(x => x.ProcessOverrides)
+                .AsSplitQuery()
                 .Where(x => salesOrderIds.Contains(x.SalesOrderId))
                 .ToListAsync(cancellationToken);
         var requirementBySalesOrder = requirementProfiles.ToDictionary(x => x.SalesOrderId);
@@ -186,6 +227,7 @@ public sealed class ProductionDemandOrchestrationService(
                 .Include(x => x.Requirement!).ThenInclude(x => x.ChemistryOverrides)
                 .Include(x => x.Requirement!).ThenInclude(x => x.ProcessOverrides)
                 .Include(x => x.SalesOrder)
+                .AsSplitQuery()
                 .Where(x => x.DemandSource == DemandSourceType.MakeToOrder &&
                             x.SalesOrderId.HasValue && salesOrderIds.Contains(x.SalesOrderId.Value))
                 .ToListAsync(cancellationToken);
@@ -351,6 +393,7 @@ public sealed class ProductionDemandOrchestrationService(
             ? await db.ProductionOrders
                 .Include(x => x.Requirement!).ThenInclude(x => x.ChemistryOverrides)
                 .Include(x => x.Requirement!).ThenInclude(x => x.ProcessOverrides)
+                .AsSplitQuery()
                 .Where(x => x.DemandSource == DemandSourceType.MakeToStock &&
                             x.Status != ProductionOrderStatus.Cancelled &&
                             x.Status != ProductionOrderStatus.Completed &&
@@ -413,23 +456,15 @@ public sealed class ProductionDemandOrchestrationService(
             .ToArray();
     }
 
-    private async Task ReconcileRequirementProfileAsync(
+    private SalesOrderRequirementProfile? ReconcileRequirementProfile(
         SalesOrder order,
         SalesOrderDemandInput input,
-        bool isNewOrder,
-        CancellationToken cancellationToken)
+        SalesOrderRequirementProfile? profile)
     {
-        var profile = isNewOrder
-            ? null
-            : await db.SalesOrderRequirementProfiles
-                .Include(x => x.ChemistryOverrides)
-                .Include(x => x.ProcessOverrides)
-                .SingleOrDefaultAsync(x => x.SalesOrderId == order.Id, cancellationToken);
-
         if (input.Requirement is null)
         {
             if (profile is not null) db.SalesOrderRequirementProfiles.Remove(profile);
-            return;
+            return null;
         }
 
         profile ??= new SalesOrderRequirementProfile
@@ -495,6 +530,8 @@ public sealed class ProductionDemandOrchestrationService(
                 MaximumQueueMinutes = process.MaximumQueueMinutes
             });
         }
+
+        return profile;
     }
 
     private static List<FinishedGoodsPoolRow> BuildFinishedGoodsPool(IReadOnlyCollection<InventoryPosition> inventory) =>
@@ -901,6 +938,9 @@ public sealed class ProductionDemandOrchestrationService(
         while (same.Contains($"{baseNumber}-R{revision}")) revision++;
         return $"{baseNumber}-R{revision}";
     }
+
+    private static string SalesOrderKey(string salesOrderNumber, string itemNumber) =>
+        $"{salesOrderNumber.Trim()}\u001f{itemNumber.Trim()}";
 
     private static string SafeToken(string value) =>
         new(value.Trim().Where(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_').ToArray());
