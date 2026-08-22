@@ -39,7 +39,33 @@ jobs:
           Write-Host "Commit:     $(Build.SourceVersion)"
           Write-Host "Agent:      $(Agent.Name) / $(Agent.MachineName)"
           git --version
-        displayName: Windows agent / checkout preflight
+
+          foreach ($path in @(
+            "$(testResultsDirectory)",
+            "$(publishDirectory)",
+            "$(diagnosticsDirectory)"
+          )) {
+            if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
+            New-Item -ItemType Directory -Force -Path $path | Out-Null
+          }
+
+          $files = @(Get-ChildItem ./build -Filter '*.ps1' -File -Recurse)
+          if ($files.Count -eq 0) { throw 'No APS PowerShell build scripts were found to validate.' }
+          $failures = [System.Collections.Generic.List[string]]::new()
+          foreach ($file in $files) {
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$parseErrors)
+            foreach ($parseError in @($parseErrors)) {
+              $failures.Add("$($file.FullName):$($parseError.Extent.StartLineNumber): $($parseError.Message)")
+            }
+          }
+          if ($failures.Count -gt 0) {
+            foreach ($failure in $failures) { Write-Host "##vso[task.logissue type=error]$failure" }
+            throw "APS PowerShell validation failed with $($failures.Count) error(s)."
+          }
+          Write-Host "PowerShell validation passed for $($files.Count) APS build script(s)."
+        displayName: Windows agent, clean-output & PowerShell preflight
 
       - task: UseDotNet@2
         displayName: Use .NET SDK from global.json
