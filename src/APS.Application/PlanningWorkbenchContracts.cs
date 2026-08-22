@@ -60,6 +60,65 @@ public sealed record PlanningOperationWorkbenchDetail(
     int? HeatSequenceNumber,
     IReadOnlyCollection<string> ProductionOrderNumbers);
 
+public enum PlanningDependencyType
+{
+    FinishStart = 1
+}
+
+public enum PlanningDependencyCategory
+{
+    Routing = 1
+}
+
+public sealed record PlanningDependencyLinkView(
+    Guid PredecessorOperationSnapshotId,
+    string PredecessorPlanningKey,
+    Guid SuccessorOperationSnapshotId,
+    string SuccessorPlanningKey,
+    PlanningDependencyType Type,
+    PlanningDependencyCategory Category,
+    int? MinimumLagMinutes,
+    int CurrentLagMinutes);
+
+public sealed record PlanningResourceCalendarIntervalView(
+    Guid ResourceId,
+    DateTime StartUtc,
+    DateTime EndUtc,
+    bool IsAvailable,
+    decimal? CapacityFactorPct,
+    string? ReasonCode,
+    string Source);
+
+public sealed record PlanningBaselinePlacementView(
+    Guid BaselinePlanVersionId,
+    Guid OperationSnapshotId,
+    string PlanningKey,
+    Guid ResourceId,
+    DateTime StartUtc,
+    DateTime EndUtc,
+    ProcessOperationType ProcessOperationType,
+    string GradeCode,
+    string CrossSectionCode);
+
+public enum PlanningCapacityBasis
+{
+    MachineTime = 1,
+    Slots = 2,
+    MassEquivalentMt = 3,
+    Positions = 4
+}
+
+public sealed record PlanningCapacityBucketView(
+    Guid ResourceId,
+    DateTime StartUtc,
+    DateTime EndUtc,
+    double AvailableMinutes,
+    double ProcessingMinutes,
+    double UnavailableMinutes,
+    decimal OccupancyRatio,
+    PlanningCapacityBasis Basis,
+    ResourceSchedulingMode SchedulingMode);
+
 public sealed record PlanningWorkbenchView(
     PlanContextView Plan,
     PlanContextView? Baseline,
@@ -70,4 +129,8 @@ public sealed record PlanningWorkbenchView(
     PlanComparisonWorkspaceView? Comparison,
     PlanningQueueView Queue,
     IReadOnlyCollection<PlanningWorkbenchException> Exceptions,
-    IReadOnlyCollection<PlanningOperationWorkbenchDetail> OperationDetails);
+    IReadOnlyCollection<PlanningOperationWorkbenchDetail> OperationDetails,
+    IReadOnlyCollection<PlanningDependencyLinkView> DependencyLinks,
+    IReadOnlyCollection<PlanningResourceCalendarIntervalView> ResourceCalendarIntervals,
+    IReadOnlyCollection<PlanningBaselinePlacementView> BaselinePlacements,
+    IReadOnlyCollection<PlanningCapacityBucketView> CapacityBuckets);

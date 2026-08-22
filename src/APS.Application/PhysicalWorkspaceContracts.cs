@@ -67,7 +67,17 @@ public sealed record ScheduleResourceLaneView(
     /// <summary>Wall-clock hours this lane was running anything, counting overlap once.</summary>
     double OccupiedHours = 0d,
     int PeakConcurrentOperations = 0,
-    decimal? NominalConcurrentCapacity = null);
+    decimal? NominalConcurrentCapacity = null,
+    Guid? PlantId = null,
+    string? PlantCode = null,
+    string? PlantName = null,
+    Guid? AreaId = null,
+    string? AreaCode = null,
+    string? AreaName = null,
+    Guid? ProcessStageId = null,
+    string? ProcessStageCode = null,
+    string? ProcessStageName = null,
+    int DisplayOrder = int.MaxValue);
 
 public sealed record FiniteScheduleWorkspaceView(
     PlanContextView Plan,
