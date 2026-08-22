@@ -28,10 +28,10 @@ function Invoke-Checked {
     }
 }
 
-New-Item -ItemType Directory -Force -Path $results | Out-Null
-New-Item -ItemType Directory -Force -Path $diagnostics | Out-Null
-if (Test-Path $publish) { Remove-Item $publish -Recurse -Force }
-New-Item -ItemType Directory -Force -Path $publish | Out-Null
+foreach ($path in @($results, $publish, $diagnostics)) {
+    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $path | Out-Null
+}
 
 Push-Location $repoRoot
 try {
