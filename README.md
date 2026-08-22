@@ -11,12 +11,11 @@ APS.Domain
 APS.Application
 APS.Planning
 APS.Infrastructure
-APS.Integrations
 APS.Service
 APS.UI
 ```
 
-The planning kernel is .NET/ASP.NET Core with OR-Tools CP-SAT for finite scheduling, SQL Server persistence/integration infrastructure, Plan Version audit/replanning, and Blazor for the application host/reference UI.
+The planning kernel is .NET/ASP.NET Core with OR-Tools CP-SAT for finite scheduling, self-provisioned SQLite persistence, Plan Version audit/replanning, MES execution adapters, and Blazor for the application host/reference UI.
 
 The retired Python/workbook/Flask prototype and earlier UI implementations were removed from the active tree after the .NET product path became authoritative. Their final retained snapshot remains available in Git history at tag `v0.2.5`; they are not build, runtime or release dependencies.
 
@@ -34,6 +33,7 @@ The primary backend documents are:
 6. [`docs/APS_Backend_Visibility_Contract.md`](docs/APS_Backend_Visibility_Contract.md)
 7. [`docs/APS_Steel_Domain_Architecture_Roadmap.md`](docs/APS_Steel_Domain_Architecture_Roadmap.md)
 8. [`docs/dotnet-planning-core.md`](docs/dotnet-planning-core.md) — current implementation note, subordinate to the architecture/audit documents above.
+9. [`docs/APS_Testing_Strategy.md`](docs/APS_Testing_Strategy.md) — test-layer ownership and APS acceptance coverage strategy.
 
 Documentation authority is deliberately separated:
 
@@ -210,11 +210,13 @@ UI implementation remains dependent on backend truth/read-model readiness rather
 - `src/APS.Domain` — manufacturing/planning domain model
 - `src/APS.Application` — application contracts/orchestration
 - `src/APS.Planning` — Campaign/material/route/finite-scheduling logic
-- `src/APS.Infrastructure` — persistence/providers/read models
-- `src/APS.Integrations` — MES/integration adapters
-- `src/APS.Service` — ASP.NET Core/Blazor host and service API
+- `src/APS.Infrastructure` — SQLite persistence/providers/read models
+- `src/APS.Service` — ASP.NET Core/Blazor host, service API and MES execution adapters
 - `src/APS.UI` — Blazor feature pages/components
-- `tests/APS.Planning.Tests` — .NET planning regression/acceptance tests
+- `tests/APS.Architecture.Tests` — repository/project dependency contracts
+- `tests/APS.Infrastructure.Tests` — relational/provider/persistence contracts
+- `tests/APS.Planning.Tests` — planning regression/acceptance tests
+- `tests/APS.UI.Tests` — UI state/model/rendered-component tests
 
 ### Historical implementation boundary
 
