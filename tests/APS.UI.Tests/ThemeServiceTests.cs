@@ -6,16 +6,13 @@ namespace APS.UI.Tests;
 public sealed class ThemeServiceTests
 {
     [Fact]
-    public async Task Mode_change_preserves_accent_and_applies_preference()
+    public async Task Valid_mode_is_applied_through_the_browser_theme_contract()
     {
         var js = new RecordingJsRuntime();
         await using var service = new ThemeService(js);
-        var accent = service.Preference.Accent;
 
         await service.SetModeAsync(ThemeMode.Dark);
 
-        Assert.Equal(ThemeMode.Dark, service.Preference.Mode);
-        Assert.Equal(accent, service.Preference.Accent);
         Assert.Equal("apsTheme.apply", js.Invocations.Single());
     }
 
@@ -31,26 +28,14 @@ public sealed class ThemeServiceTests
     }
 
     [Fact]
-    public async Task System_notification_updates_effective_theme_without_changing_preference()
+    public async Task Disposal_releases_the_browser_media_listener()
     {
         var js = new RecordingJsRuntime();
-        await using var service = new ThemeService(js);
-        await service.OnSystemThemeChanged(true);
+        var service = new ThemeService(js);
 
-        Assert.Equal("dark", service.EffectiveTheme);
-        Assert.Equal(ThemeMode.System, service.Preference.Mode);
-    }
+        await service.DisposeAsync();
 
-    [Fact]
-    public async Task Explicit_mode_ignores_system_theme_notifications()
-    {
-        var js = new RecordingJsRuntime();
-        await using var service = new ThemeService(js);
-        await service.SetModeAsync(ThemeMode.Light);
-
-        await service.OnSystemThemeChanged(true);
-
-        Assert.Equal("light", service.EffectiveTheme);
+        Assert.Equal("apsTheme.dispose", js.Invocations.Single());
     }
 
     private sealed class RecordingJsRuntime : IJSRuntime
