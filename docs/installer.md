@@ -1,66 +1,49 @@
 # Installer & Auto-Update (Velopack)
 
-Status: **implemented and operational**. APS desktop releases are packaged locally and published to
-GitHub Releases through the verified manual workflow below.
+APS desktop releases are built and packaged locally with Velopack. GitHub Actions is not used as the APS verification or release pipeline.
 
-## What's in place
+## Runtime update path
 
-- **Package**: `Velopack` referenced in `src/APS.DesktopHost/APS.DesktopHost.csproj`.
-- **Startup hook**: `Program.Main` calls `VelopackApp.Build().Run()` before constructing the WPF
-  `App`, per Velopack's integration contract. This intercepts the special command-line invocations
-  Velopack uses during install/uninstall/update (e.g. creating shortcuts) and exits early when one
-  is detected — it must run before any other app code.
-- **Update source**: `VelopackUpdateBackend` uses `GithubSource` against the public APS GitHub
-  Releases repository configured in `UpdateSettings.RepositoryUrl`
-  (`https://github.com/bhadkamkar9snehil/APS`).
-- **Update lifecycle**: `UpdateCheckWorker` checks when the host starts, then roughly hourly with
-  jitter while APS Planner is open. Feed failures back off to two, four, then six hours. Checks
-  never download automatically. `IUpdateService` exposes immutable state; `MainLayout`'s footer
-  shows it and lets the user trigger Download / Restart.
-- **Explicit actions**: an available release remains available until Download is clicked. A
-  prepared release survives application restarts through Velopack's `UpdatePendingRestart` marker.
-  Restart uses `WaitExitThenApplyUpdates`, then closes APS Planner normally before files are
-  replaced.
-- **Development builds**: non-installed launches (running the .exe directly from `bin/`) report
-  `Unsupported` and do not contact GitHub — confirmed by the startup log line "Skipping update
-  checks because APS Planner is not running from a Velopack installation."
+- `Program.Main` calls `VelopackApp.Build().Run()` before constructing the WPF application.
+- `App.xaml.cs` constructs `VelopackUpdateService` with a `GithubSource` for the public APS repository.
+- `UpdateCheckWorker` checks at startup and then roughly hourly, with jitter and exponential backoff after feed failures.
+- Update checks do not download automatically.
+- `IUpdateService` exposes update state and explicit download/apply operations to the UI.
+- Non-installed development launches report `Unsupported` and do not poll the GitHub release feed.
 
-## Building a release
+The repository URL is owned by the desktop composition root because that is its only runtime consumer. The Velopack package id is fixed as `APS` by the release script and must remain stable across releases.
 
-Run `build/release.ps1` from Windows (win-x64 publish + `vpk pack` both require Windows):
+## Build a release
+
+Run on Windows:
 
 ```powershell
 pwsh build/release.ps1 -Version 1.0.0
 ```
 
-It runs, in order:
-1. `dotnet test` on `tests/APS.Planning.Tests` — aborts on any failure.
-2. `dotnet publish` of `APS.DesktopHost.csproj` for `win-x64`, self-contained,
-   `PublishReadyToRun=true`.
-3. `vpk pack` on the publish output, producing a `Setup.exe` installer and update package in the
-   clean version-specific directory `build/Releases/<version>/`.
+The script performs:
 
-The version-specific directory is recreated for every build. Packages from an older or mistakenly
-higher version therefore cannot contaminate the current Velopack feed or block a valid package.
+1. `dotnet test APS.slnx` and aborts on failure unless `-SkipTests` is explicitly supplied for local iteration.
+2. `dotnet publish` of `APS.DesktopHost.csproj`.
+3. `vpk pack`, producing installer/update assets in `build/Releases/<version>/`.
 
-If `-Version` is omitted, the script reads `<Version>` from the `APS.DesktopHost.csproj` instead.
+Runtime identifier, self-contained publishing and ReadyToRun are owned by `APS.DesktopHost.csproj`; the release script does not duplicate those settings.
 
-The installer registers **APS Planner** in Windows Installed Apps, creates Start Menu and Desktop
-shortcuts, and installs per-user; application binaries land under the Velopack-managed install
-directory while persistent data (SQL connection is external, but logs) lives under
-`%LocalAppData%\APS\Data`.
+If `-Version` is omitted, the script reads `<Version>` from `APS.DesktopHost.csproj`.
 
-**Prerequisite**: the Velopack CLI must be installed once per machine:
+### Prerequisites
+
+- .NET 10 SDK
+- Windows
+- Velopack CLI:
 
 ```powershell
 dotnet tool install -g vpk
 ```
 
-**Publishing is manual and local — no GitHub Actions.** Per explicit repository policy, GitHub
-Actions (a paid feature) is never used for this project, for verification or for releases. After
-`build/release.ps1` produces the packages in `build/Releases/<version>/`; publish them by running
-`vpk upload github` directly from a Windows machine with the Velopack CLI and a GitHub token with
-`repo` scope:
+## Publish the release
+
+Publishing is manual and local. After `build/release.ps1` succeeds, upload the generated release directory with Velopack and a GitHub token with the required repository permission, for example:
 
 ```powershell
 vpk upload github `
@@ -72,37 +55,38 @@ vpk upload github `
   --tag "v1.0.0"
 ```
 
-Tag and `APS.DesktopHost.csproj` `<Version>` should match by convention, but nothing enforces this
-automatically since there is no CI step — check it by hand before publishing.
+The tag, package version and `APS.DesktopHost.csproj` version must describe the same release.
 
-## Versioning policy
+## Persistent data
 
-`src/APS.DesktopHost/APS.DesktopHost.csproj` is the sole application-version authority. Use
-semantic versioning against the most recent published desktop release:
+Velopack owns the application install directory and may replace it during updates. Persistent APS data therefore lives outside that tree under the `LocalApplicationPaths` location:
 
-- patch (`0.3.0` to `0.3.1`) for compatible fixes and small refinements;
-- minor (`0.3.x` to `0.4.0`) for substantial new planner capabilities or workflows;
-- major (`0.x` to `1.0.0`, then `1.x` to `2.0.0`) only for a declared stable milestone or a
-  compatibility-breaking product change.
+```text
+%LocalAppData%\APS-Data\Data\
+```
 
-The tag must be `v<Version>`, point at the exact commit used to build the assets, and match the
-published GitHub release. Historical prototypes use `archive/*` tags so they cannot be mistaken for
-the active desktop release lineage.
+The self-contained APS SQLite database is `aps.db` in that data directory when no explicit APS connection string is configured. Logs live under its `logs` child directory.
 
-## Current state
+## Versioning
 
-- v0.3.1 is the current desktop release. It corrects the workbench-first navigation, Gantt viewport,
-  inspector docking, and Tailwind source-tracking defects found in v0.3.0.
-- The active desktop release lineage is v0.1.0 through v0.3.1. Earlier prototype milestones are
-  retained only under `archive/*` tags.
-- `src/APS.DesktopHost/Assets/app-icon.ico` exists (7-size multi-res PNG-in-ICO, generated
-  programmatically) and is wired into the `.exe`, the WPF window/taskbar icon, and
-  `build/release.ps1`'s `vpk pack --icon`.
+`src/APS.DesktopHost/APS.DesktopHost.csproj` is the application-version authority. Use semantic versioning:
+
+- patch for compatible fixes and small refinements;
+- minor for substantial planner capabilities/workflows;
+- major only for a declared stable milestone or compatibility-breaking product change.
+
+Release tags use `v<Version>` and must point at the exact commit used to build the published assets. Historical prototypes use `archive/*` tags and are not part of the active release lineage.
+
+Do not hard-code a “current published release” in this document; the GitHub Releases feed is the authority for what is currently published.
 
 ## Release verification
 
-Once a release exists: verify from an installed preceding version — discover, download, close and
-reopen before applying, confirm the prepared update is recovered, restart, and verify the new
-version in APS Planner, executable metadata, and Windows Installed Apps. Exercise delta and full
--package fallback for the second release onward (the first release has no prior version to diff
-against).
+For a real release, verify from an installed preceding version:
+
+- update discovery;
+- download and prepared-update persistence;
+- application shutdown/restart and update application;
+- resulting application version and Windows Installed Apps metadata;
+- delta/full-package behavior from the second published release onward.
+
+The repository policy remains: build/test/runtime verification is performed in the intended developer environment, not inferred from GitHub Actions status.
