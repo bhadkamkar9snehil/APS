@@ -20,10 +20,13 @@ public enum PlanningScenarioIntent
 
 public enum PlanningWorkbenchZoom
 {
+    Detail,
     Shift,
     Day,
     ThreeDays,
     Week,
+    TwoWeeks,
+    Month,
     Fit
 }
 
@@ -39,21 +42,23 @@ public sealed class PlanningWorkbenchState
     private readonly Stack<PlanHistoryEntry> undo = new();
     private readonly Stack<PlanHistoryEntry> redo = new();
 
+    public GanttViewportState Viewport { get; } = new();
+
     public PlanningWorkbenchMode Mode { get; private set; } = PlanningWorkbenchMode.Plan;
     public PlanningScenarioIntent ScenarioIntent { get; private set; } = PlanningScenarioIntent.Existing;
-    public PlanningWorkbenchZoom Zoom { get; private set; } = PlanningWorkbenchZoom.Fit;
+    public PlanningWorkbenchZoom Zoom => Viewport.Zoom;
     public PlanningWorkbenchQueueContent QueueContent => Mode switch
     {
         PlanningWorkbenchMode.Campaigns => PlanningWorkbenchQueueContent.Campaigns,
         PlanningWorkbenchMode.Execution or PlanningWorkbenchMode.Recovery => PlanningWorkbenchQueueContent.Exceptions,
         _ => PlanningWorkbenchQueueContent.Demand
     };
-    public DateTime PlanStartUtc { get; private set; }
-    public DateTime PlanEndUtc { get; private set; }
-    public DateTime ContentStartUtc { get; private set; }
-    public DateTime ContentEndUtc { get; private set; }
-    public DateTime VisibleStartUtc { get; private set; }
-    public DateTime VisibleEndUtc { get; private set; }
+    public DateTime PlanStartUtc => Viewport.PlanStartUtc;
+    public DateTime PlanEndUtc => Viewport.PlanEndUtc;
+    public DateTime ContentStartUtc => Viewport.ContentStartUtc;
+    public DateTime ContentEndUtc => Viewport.ContentEndUtc;
+    public DateTime VisibleStartUtc => Viewport.VisibleStartUtc;
+    public DateTime VisibleEndUtc => Viewport.VisibleEndUtc;
     public string SearchText { get; private set; } = string.Empty;
     public string? SelectedPlanningKey { get; private set; }
     public PlanningMoveProposal? StagedMove { get; private set; }
@@ -61,9 +66,6 @@ public sealed class PlanningWorkbenchState
     public bool ShowBaseline { get; private set; } = true;
     public bool ShowDependencies { get; private set; }
     public bool ShowCriticalPath { get; private set; }
-    public bool QueueOpen { get; private set; } = true;
-    public bool InspectorOpen { get; private set; }
-    public bool AnalysisDockOpen { get; private set; }
     public bool IsReleasedPlan { get; private set; }
     public bool CanEditSchedule => !IsReleasedPlan || ScenarioIntent is PlanningScenarioIntent.New or PlanningScenarioIntent.Clone or PlanningScenarioIntent.Recovery;
     public bool CanStartRecovery => IsReleasedPlan && ScenarioIntent != PlanningScenarioIntent.Recovery;
@@ -76,51 +78,53 @@ public sealed class PlanningWorkbenchState
         DateTime? contentStartUtc = null,
         DateTime? contentEndUtc = null)
     {
-        PlanStartUtc = startUtc;
-        PlanEndUtc = endUtc > startUtc ? endUtc : startUtc.AddHours(1);
-        ContentStartUtc = Clamp(contentStartUtc ?? PlanStartUtc, PlanStartUtc, PlanEndUtc);
-        ContentEndUtc = Clamp(contentEndUtc ?? PlanEndUtc, PlanStartUtc, PlanEndUtc);
-        if (ContentEndUtc <= ContentStartUtc)
-        {
-            ContentStartUtc = PlanStartUtc;
-            ContentEndUtc = PlanEndUtc;
-        }
-        ApplyZoom();
+        var requestedZoom = Zoom;
+        var planEnd = endUtc > startUtc ? endUtc : startUtc.AddHours(1);
+        Viewport.Configure(
+            startUtc,
+            planEnd,
+            startUtc,
+            planEnd,
+            Viewport.TimelineWidthPx,
+            contentStartUtc ?? startUtc,
+            contentEndUtc ?? planEnd);
+        if (requestedZoom == PlanningWorkbenchZoom.Fit) Viewport.FitContent();
+        else Viewport.ZoomAt(requestedZoom, Viewport.TimelineWidthPx / 2d);
+        Notify();
     }
 
     public void SetSearch(string? value) { SearchText = value?.Trim() ?? string.Empty; Notify(); }
-    public void SelectOperation(string? planningKey) { SelectedPlanningKey = planningKey; InspectorOpen = !string.IsNullOrWhiteSpace(planningKey); ClearMove(false); Notify(); }
+    public void SelectOperation(string? planningKey) { SelectedPlanningKey = planningKey; ClearMove(false); Notify(); }
     public void ClearFocus()
     {
         SearchText = string.Empty;
         SelectedPlanningKey = null;
-        InspectorOpen = false;
         ClearMove(false);
         Notify();
     }
-    public void SetZoom(PlanningWorkbenchZoom zoom) { Zoom = zoom; ApplyZoom(); }
+    public void SetZoom(PlanningWorkbenchZoom zoom)
+    {
+        if (zoom == PlanningWorkbenchZoom.Fit)
+        {
+            if (Viewport.Zoom == PlanningWorkbenchZoom.Fit && Viewport.ResetFit()) { Notify(); return; }
+            Viewport.FitContent();
+        }
+        else
+        {
+            Viewport.ZoomAt(zoom, Viewport.TimelineWidthPx / 2d);
+        }
+        Notify();
+    }
 
     public void Pan(double viewportFraction)
     {
-        var duration = VisibleEndUtc - VisibleStartUtc;
-        if (duration <= TimeSpan.Zero) return;
-        var shift = TimeSpan.FromTicks((long)(duration.Ticks * viewportFraction));
-        var start = VisibleStartUtc + shift;
-        var end = VisibleEndUtc + shift;
-        if (start < PlanStartUtc) { start = PlanStartUtc; end = start + duration; }
-        if (end > PlanEndUtc) { end = PlanEndUtc; start = end - duration; }
-        VisibleStartUtc = start < PlanStartUtc ? PlanStartUtc : start;
-        VisibleEndUtc = end > PlanEndUtc ? PlanEndUtc : end;
+        Viewport.Pan(viewportFraction);
         Notify();
     }
 
     public void ToggleBaseline() { ShowBaseline = !ShowBaseline; Notify(); }
     public void ToggleDependencies() { ShowDependencies = !ShowDependencies; Notify(); }
     public void ToggleCriticalPath() { ShowCriticalPath = !ShowCriticalPath; Notify(); }
-    public void ToggleQueue() { QueueOpen = !QueueOpen; Notify(); }
-    public void ToggleInspector() { InspectorOpen = !InspectorOpen; Notify(); }
-    public void ToggleAnalysisDock() { AnalysisDockOpen = !AnalysisDockOpen; Notify(); }
-
     public void StageMove(PlanningMoveProposal proposal)
     {
         StagedMove = proposal;
@@ -132,9 +136,14 @@ public sealed class PlanningWorkbenchState
     public void SetImpact(PlanningProposalImpact impact) { Impact = impact; Notify(); }
     public void ClearMove() { ClearMove(true); }
 
-    public void RecordAppliedPlan(Guid previousPlanId, Guid newPlanId)
+    public bool CanUndo => undo.Count > 0;
+    public bool CanRedo => redo.Count > 0;
+    public string? UndoDescription => undo.TryPeek(out var entry) ? entry.Description : null;
+    public string? RedoDescription => redo.TryPeek(out var entry) ? entry.Description : null;
+
+    public void RecordAppliedPlan(Guid previousPlanId, Guid newPlanId, string description = "Apply planning change")
     {
-        undo.Push(new PlanHistoryEntry(previousPlanId, newPlanId));
+        undo.Push(new PlanHistoryEntry(previousPlanId, newPlanId, description));
         redo.Clear();
         ClearMove(false);
         Notify();
@@ -155,59 +164,6 @@ public sealed class PlanningWorkbenchState
         Notify();
         return entry.NewPlanId;
     }
-
-    private void ApplyZoom()
-    {
-        var full = PlanEndUtc - PlanStartUtc;
-        if (Zoom == PlanningWorkbenchZoom.Fit)
-        {
-            FitToContent();
-            Notify();
-            return;
-        }
-
-        var requested = Zoom switch
-        {
-            PlanningWorkbenchZoom.Shift => TimeSpan.FromHours(8),
-            PlanningWorkbenchZoom.Day => TimeSpan.FromDays(1),
-            PlanningWorkbenchZoom.ThreeDays => TimeSpan.FromDays(3),
-            PlanningWorkbenchZoom.Week => TimeSpan.FromDays(7),
-            _ => full
-        };
-        var duration = requested < full ? requested : full;
-        var center = VisibleEndUtc > VisibleStartUtc
-            ? VisibleStartUtc + TimeSpan.FromTicks((VisibleEndUtc - VisibleStartUtc).Ticks / 2)
-            : PlanStartUtc + TimeSpan.FromTicks(full.Ticks / 2);
-        var start = center - TimeSpan.FromTicks(duration.Ticks / 2);
-        var end = start + duration;
-        if (start < PlanStartUtc) { start = PlanStartUtc; end = start + duration; }
-        if (end > PlanEndUtc) { end = PlanEndUtc; start = end - duration; }
-        VisibleStartUtc = start;
-        VisibleEndUtc = end;
-        Notify();
-    }
-
-    private void FitToContent()
-    {
-        var contentDuration = ContentEndUtc - ContentStartUtc;
-        var paddingTicks = Math.Clamp(
-            (long)(contentDuration.Ticks * 0.05d),
-            TimeSpan.FromMinutes(30).Ticks,
-            TimeSpan.FromHours(4).Ticks);
-        var padding = TimeSpan.FromTicks(paddingTicks);
-        var start = ContentStartUtc - padding;
-        var end = ContentEndUtc + padding;
-
-        if (start < PlanStartUtc) start = PlanStartUtc;
-        if (end > PlanEndUtc) end = PlanEndUtc;
-        if (end <= start) end = start.AddHours(1) <= PlanEndUtc ? start.AddHours(1) : PlanEndUtc;
-
-        VisibleStartUtc = start;
-        VisibleEndUtc = end;
-    }
-
-    private static DateTime Clamp(DateTime value, DateTime min, DateTime max) =>
-        value < min ? min : value > max ? max : value;
 
     private void ClearMove(bool notify)
     {
@@ -253,5 +209,5 @@ public sealed class PlanningWorkbenchState
     }
 
     private void Notify() => Changed?.Invoke();
-    private sealed record PlanHistoryEntry(Guid PreviousPlanId, Guid NewPlanId);
+    private sealed record PlanHistoryEntry(Guid PreviousPlanId, Guid NewPlanId, string Description);
 }

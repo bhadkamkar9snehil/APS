@@ -362,15 +362,13 @@
     private bool allowFrozenOverride;
     private decimal nominalHeatMt = 90m, maximumCampaignMt = 600m;
     private int frozenMinutes = 120, solverSeconds = 20;
-    private readonly Stack<(Guid Previous, Guid Current)> undoHistory = new();
-    private readonly Stack<(Guid Previous, Guid Current)> redoHistory = new();
 
     private IReadOnlyList<ScheduleResourceLaneView> VisibleLanes => BuildVisibleLanes();
     private ScheduledProcessOperationView? SelectedOperation => FindOperation(state.SelectedPlanningKey);
     private PlanningOperationWorkbenchDetail? SelectedDetail => FindDetail(state.SelectedPlanningKey);
     private int VisibleOperationCount => VisibleLanes.Sum(x => VisibleOperations(x).Count);
-    private bool CanUndo => undoHistory.Count > 0;
-    private bool CanRedo => redoHistory.Count > 0;
+    private bool CanUndo => state.CanUndo;
+    private bool CanRedo => state.CanRedo;
     private bool CanMoveSelectedOperation => state.CanEditSchedule && SelectedDetail?.ExecutionStatus is not OperationExecutionStatus.Completed and not OperationExecutionStatus.Running;
     private string MoveRestrictionMessage => !state.CanEditSchedule
         ? "This released baseline is read-only. Create a planning or recovery scenario to change future work."
@@ -437,7 +435,7 @@
     }
     private void TargetStartChanged(ChangeEventArgs args) => targetStartText = args.Value?.ToString() ?? string.Empty;
 
-    private void SelectOperation(ScheduledProcessOperationView operation) { state.SelectOperation(operation.PlanningKey); WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Operation, operation.OperationSnapshotId, FriendlyOperationName(operation.PlanningKey))); targetResourceText = operation.ResourceId.ToString(); targetStartText = operation.StartUtc.ToString("yyyy-MM-ddTHH:mm"); moveComment = null; allowFrozenOverride = false; }
+    private void SelectOperation(ScheduledProcessOperationView operation) { state.SelectOperation(operation.PlanningKey); Cockpit.OpenInspector(); WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Operation, operation.OperationSnapshotId, FriendlyOperationName(operation.PlanningKey))); targetResourceText = operation.ResourceId.ToString(); targetStartText = operation.StartUtc.ToString("yyyy-MM-ddTHH:mm"); moveComment = null; allowFrozenOverride = false; }
     private void SelectResource(ScheduleResourceLaneView lane) => WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Resource, lane.ResourceId, lane.ResourceCode));
     private void FocusDemand(DemandSupplyRowView demand) { state.SetSearch(demand.ProductionOrderNumber); var detail = workbench?.OperationDetails.FirstOrDefault(x => x.ProductionOrderNumbers.Contains(demand.ProductionOrderNumber, StringComparer.OrdinalIgnoreCase)); var operation = FindOperation(detail?.PlanningKey); if (operation is not null) SelectOperation(operation); }
     private void FocusCampaign(CampaignView campaign) { state.SetSearch(campaign.CampaignNumber); var detail = workbench?.OperationDetails.FirstOrDefault(x => x.CampaignNumber == campaign.CampaignNumber); var operation = FindOperation(detail?.PlanningKey); if (operation is not null) SelectOperation(operation); }
@@ -458,20 +456,20 @@
     private async Task ApplyMoveAsync()
     {
         if (workbench is null) return; var proposal = state.StagedMove ?? BuildProposal(); if (proposal is null) return; acting = true; message = null;
-        try { var result = await Commands.ApplyMoveAsync(new PlanningMoveApplyRequest(proposal, BuildPlanningRequest(), new PlanningTimeFencePolicy(frozenMinutes))); if (!result.Replan.Plan.IsFeasible) throw new InvalidOperationException("The move could not produce a feasible repaired plan. The current plan remains unchanged."); var previous = workbench.Plan.PlanVersionId; var current = result.Replan.Version.PlanVersionId; undoHistory.Push((previous, current)); redoHistory.Clear(); state.RecordAppliedPlan(previous, current); SetMessage("Move applied. A repaired child Plan Version is now active.", false); await LoadAsync(current, previous); }
+        try { var result = await Commands.ApplyMoveAsync(new PlanningMoveApplyRequest(proposal, BuildPlanningRequest(), new PlanningTimeFencePolicy(frozenMinutes))); if (!result.Replan.Plan.IsFeasible) throw new InvalidOperationException("The move could not produce a feasible repaired plan. The current plan remains unchanged."); var previous = workbench.Plan.PlanVersionId; var current = result.Replan.Version.PlanVersionId; state.RecordAppliedPlan(previous, current, $"Move {FriendlyOperationName(proposal.PlanningKey)} · {FormatMovement(result.Impact.MovementMinutes)}"); SetMessage("Move applied. A repaired child Plan Version is now active.", false); await LoadAsync(current, previous); }
         catch (Exception ex) { SetMessage(ex.Message, true); } finally { acting = false; }
     }
 
     private async Task ReplanAsync()
     {
         if (workbench is null) return; acting = true; message = null;
-        try { var previous = workbench.Plan.PlanVersionId; var result = await Lifecycle.ReplanAsync(previous, new PlanningRecalculationRequest(BuildPlanningRequest(), new PlanningTimeFencePolicy(frozenMinutes), workbench.Plan.ReferenceTimeUtc, PlanTriggerType.Manual, "Planner workbench recalculation")); if (!result.Plan.IsFeasible) throw new InvalidOperationException("Recalculation produced an infeasible candidate. The current plan remains active."); undoHistory.Push((previous, result.Version.PlanVersionId)); redoHistory.Clear(); SetMessage("Plan recalculated. Review changes against the baseline before release.", false); await LoadAsync(result.Version.PlanVersionId, previous); }
+        try { var previous = workbench.Plan.PlanVersionId; var result = await Lifecycle.ReplanAsync(previous, new PlanningRecalculationRequest(BuildPlanningRequest(), new PlanningTimeFencePolicy(frozenMinutes), workbench.Plan.ReferenceTimeUtc, PlanTriggerType.Manual, "Planner workbench recalculation")); if (!result.Plan.IsFeasible) throw new InvalidOperationException("Recalculation produced an infeasible candidate. The current plan remains active."); state.RecordAppliedPlan(previous, result.Version.PlanVersionId, "Optimize flexible horizon"); SetMessage("Plan recalculated. Review changes against the baseline before release.", false); await LoadAsync(result.Version.PlanVersionId, previous); }
         catch (Exception ex) { SetMessage(ex.Message, true); } finally { acting = false; }
     }
 
     private async Task ReleaseAsync() { if (workbench is null) return; acting = true; try { var release = await ReleaseService.ReleaseAsync(workbench.Plan.PlanVersionId); SetMessage($"Plan released as {release.WorkOrders.Count} work orders.", false); await LoadAsync(workbench.Plan.PlanVersionId, workbench.Baseline?.PlanVersionId); } catch (Exception ex) { SetMessage(ex.Message, true); } finally { acting = false; } }
-    private async Task UndoAsync() { if (!undoHistory.TryPop(out var entry)) return; redoHistory.Push(entry); await LoadAsync(entry.Previous, null); SetMessage("Showing the previous Plan Version. No planning data was deleted.", false); }
-    private async Task RedoAsync() { if (!redoHistory.TryPop(out var entry)) return; undoHistory.Push(entry); await LoadAsync(entry.Current, entry.Previous); SetMessage("Showing the reapplied child Plan Version.", false); }
+    private async Task UndoAsync() { var planId = state.UndoPlan(); if (!planId.HasValue) return; await LoadAsync(planId.Value, null); SetMessage("Showing the previous Plan Version. No planning data was deleted.", false); }
+    private async Task RedoAsync() { var planId = state.RedoPlan(); if (!planId.HasValue) return; await LoadAsync(planId.Value, WorkspaceState.CurrentPlanVersionId); SetMessage("Showing the reapplied child Plan Version.", false); }
 
     private PlanningMoveProposal? BuildProposal()
     {
@@ -545,7 +543,7 @@
     private static string FindingClass(PlanningConstraintSeverity value) => value switch { PlanningConstraintSeverity.Blocker => "bg-danger-soft text-danger", PlanningConstraintSeverity.Warning => "bg-warning-soft text-warning", _ => "bg-info-soft text-info" };
     private static string FormatMovement(int minutes) => minutes == 0 ? "No time change" : $"{(minutes > 0 ? "+" : "")}{minutes / 60d:0.##} h";
     private static string ModeLabel(PlanningWorkbenchMode value) => value switch { PlanningWorkbenchMode.Campaigns => "Campaigns", PlanningWorkbenchMode.Execution => "Execution", PlanningWorkbenchMode.Recovery => "Recovery", _ => "Plan" };
-    private static string ZoomLabel(PlanningWorkbenchZoom value) => value switch { PlanningWorkbenchZoom.Shift => "8 h", PlanningWorkbenchZoom.Day => "1 d", PlanningWorkbenchZoom.ThreeDays => "3 d", PlanningWorkbenchZoom.Week => "7 d", _ => "Fit" };
+    private static string ZoomLabel(PlanningWorkbenchZoom value) => value switch { PlanningWorkbenchZoom.Detail => "30 m", PlanningWorkbenchZoom.Shift => "8 h", PlanningWorkbenchZoom.Day => "1 d", PlanningWorkbenchZoom.ThreeDays => "3 d", PlanningWorkbenchZoom.Week => "7 d", PlanningWorkbenchZoom.TwoWeeks => "2 w", PlanningWorkbenchZoom.Month => "1 mo", _ => "Fit" };
     private static string CampaignLabel(PlanningOperationWorkbenchDetail? d) => d is null ? "—" : $"{d.CampaignNumber ?? "—"}{(d.HeatSequenceNumber.HasValue ? $" · Heat {d.HeatSequenceNumber}" : "")}";
     private static string OrderLabel(PlanningOperationWorkbenchDetail? d) => d is null || d.ProductionOrderNumbers.Count == 0 ? "—" : string.Join(", ", d.ProductionOrderNumbers);
     private static string FormatActual(DateTime? value) => value?.ToString("dd MMM yyyy HH:mm") ?? "Not recorded";

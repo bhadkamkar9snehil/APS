@@ -12,7 +12,6 @@ public sealed class PlanningWorkbenchStateTests
         Assert.Equal(PlanningWorkbenchMode.Plan, state.Mode);
         Assert.Equal(PlanningScenarioIntent.Existing, state.ScenarioIntent);
         Assert.False(state.ShowDependencies);
-        Assert.False(state.AnalysisDockOpen);
     }
 
     [Fact]
@@ -99,28 +98,34 @@ public sealed class PlanningWorkbenchStateTests
     }
 
     [Fact]
-    public void Applied_plan_history_supports_undo_and_redo()
+    public void Applied_plan_history_supports_semantic_undo_and_redo()
     {
         var state = new PlanningWorkbenchState();
         var baseline = Guid.NewGuid();
         var child = Guid.NewGuid();
 
-        state.RecordAppliedPlan(baseline, child);
+        state.RecordAppliedPlan(baseline, child, "Move HEAT-104 · LRF-01 → LRF-02 · +45 min");
 
+        Assert.True(state.CanUndo);
+        Assert.Equal("Move HEAT-104 · LRF-01 → LRF-02 · +45 min", state.UndoDescription);
         Assert.Equal(baseline, state.UndoPlan());
+        Assert.True(state.CanRedo);
+        Assert.Equal("Move HEAT-104 · LRF-01 → LRF-02 · +45 min", state.RedoDescription);
         Assert.Equal(child, state.RedoPlan());
     }
 
     [Fact]
-    public void Inspector_stays_out_of_the_way_until_an_operation_is_selected()
+    public void Recalculation_history_uses_the_same_owner_as_move_history()
     {
         var state = new PlanningWorkbenchState();
+        var baseline = Guid.NewGuid();
+        var optimized = Guid.NewGuid();
 
-        Assert.False(state.InspectorOpen);
+        state.RecordAppliedPlan(baseline, optimized, "Optimize flexible horizon");
 
-        state.SelectOperation("EAF:HEAT-01");
-
-        Assert.True(state.InspectorOpen);
+        Assert.True(state.CanUndo);
+        Assert.Equal("Optimize flexible horizon", state.UndoDescription);
+        Assert.Equal(baseline, state.UndoPlan());
     }
 
     [Fact]
@@ -134,6 +139,5 @@ public sealed class PlanningWorkbenchStateTests
 
         Assert.Equal(string.Empty, state.SearchText);
         Assert.Null(state.SelectedPlanningKey);
-        Assert.False(state.InspectorOpen);
     }
 }
