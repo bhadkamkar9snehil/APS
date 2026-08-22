@@ -17,6 +17,7 @@ public sealed record GanttScene(
     public int VisibleOperationCount => Rows.Sum(x => x.Operations.Count);
     public IReadOnlyList<GanttResourceGroupModel> ResourceGroups { get; init; } = Array.Empty<GanttResourceGroupModel>();
     public int ResourceCount { get; init; }
+    public int TotalResourceCount { get; init; }
 }
 
 public enum GanttResourceGroupLevel
@@ -44,7 +45,8 @@ public sealed record GanttRowModel(
     IReadOnlyList<PlanningResourceCalendarIntervalView> CalendarIntervals,
     IReadOnlyList<GanttCampaignSpanModel> CampaignSpans,
     decimal VisibleUtilization,
-    ScheduledProcessOperationView? NextOperation);
+    ScheduledProcessOperationView? NextOperation,
+    int ExceptionCount = 0);
 
 public sealed record GanttOperationModel(
     ScheduledProcessOperationView Operation,
@@ -153,7 +155,7 @@ public static class GanttModels
             .ThenBy(x => x.ProcessUnitType)
             .ThenBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var hierarchy = BuildHierarchy(orderedLanes, state.CollapsedResourceGroups);
+        var hierarchy = BuildHierarchy(orderedLanes, state.CollapsedResourceGroups, workbench, state);
         var mountedRange = state.Viewport.MountedRowRange(hierarchy.TotalRowCount);
         var mountedStart = mountedRange.Start.Value;
         var mountedEnd = mountedRange.End.Value;
@@ -182,13 +184,17 @@ public static class GanttModels
             (workbench.BindingEvidence ?? Array.Empty<PlanningBindingEvidenceView>()).ToArray())
         {
             ResourceGroups = resourceGroups,
-            ResourceCount = orderedLanes.Length
+            ResourceCount = orderedLanes.Length,
+            TotalResourceCount = workbench.Schedule.ResourceLanes.Select(x => x.ResourceId)
+                .Concat(workbench.BaselinePlacements.Select(x => x.ResourceId)).Distinct().Count()
         };
     }
 
     private static GanttHierarchyLayout BuildHierarchy(
         IReadOnlyList<ScheduleResourceLaneView> orderedLanes,
-        IReadOnlySet<string> collapsedGroups)
+        IReadOnlySet<string> collapsedGroups,
+        PlanningWorkbenchView workbench,
+        PlanningWorkbenchState state)
     {
         var descriptorsByResource = orderedLanes.ToDictionary(x => x.ResourceId, GroupDescriptors);
         var laneOrdinal = orderedLanes.Select((lane, index) => (lane.ResourceId, index))
@@ -201,12 +207,18 @@ public static class GanttModels
             .SelectMany(lane => descriptorsByResource[lane.ResourceId].Select(group => (group.Key, Ordinal: laneOrdinal[lane.ResourceId])))
             .GroupBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(x => x.Key, x => x.Min(item => item.Ordinal), StringComparer.OrdinalIgnoreCase);
-        var hierarchyOrderedLanes = orderedLanes
+        var canonicalHierarchyLanes = orderedLanes
             .OrderBy(lane => GroupOrdinal(lane, 0))
             .ThenBy(lane => GroupOrdinal(lane, 1))
             .ThenBy(lane => GroupOrdinal(lane, 2))
             .ThenBy(lane => laneOrdinal[lane.ResourceId])
             .ToArray();
+        var hierarchyOrderedLanes = state.GridSortColumn == GanttGridSortColumn.Canonical
+            ? canonicalHierarchyLanes
+            : canonicalHierarchyLanes
+                .GroupBy(lane => descriptorsByResource[lane.ResourceId].LastOrDefault()?.Key ?? $"resource:{lane.ResourceId:N}", StringComparer.OrdinalIgnoreCase)
+                .SelectMany(group => SortResourceGroup(group, workbench, state))
+                .ToArray();
         var emittedGroups = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var groups = new List<GanttResourceGroupModel>();
         var lanes = new List<GanttLaneLayout>();
@@ -243,6 +255,42 @@ public static class GanttModels
             var descriptors = descriptorsByResource[lane.ResourceId];
             return descriptors.Count > level ? groupFirstOrdinal[descriptors[level].Key] : laneOrdinal[lane.ResourceId];
         }
+    }
+
+    private static IEnumerable<ScheduleResourceLaneView> SortResourceGroup(
+        IEnumerable<ScheduleResourceLaneView> lanes,
+        PlanningWorkbenchView workbench,
+        PlanningWorkbenchState state)
+    {
+        Func<ScheduleResourceLaneView, IComparable?> key = state.GridSortColumn switch
+        {
+            GanttGridSortColumn.Resource => lane => lane.ResourceCode,
+            GanttGridSortColumn.State => lane => lane.OperatingState,
+            GanttGridSortColumn.Busy => lane => lane.OccupiedHours,
+            GanttGridSortColumn.Load => lane => VisibleUtilization(workbench, state, lane.ResourceId),
+            GanttGridSortColumn.Operations => lane => lane.Operations.Count,
+            GanttGridSortColumn.Next => lane => lane.Operations.Where(x => x.StartUtc >= workbench.Plan.ReferenceTimeUtc).Select(x => (DateTime?)x.StartUtc).Min(),
+            GanttGridSortColumn.Exceptions => lane => ExceptionCount(workbench, lane),
+            _ => lane => lane.DisplayOrder
+        };
+        return state.GridSortDescending
+            ? lanes.OrderByDescending(key).ThenBy(x => x.DisplayOrder).ThenBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)
+            : lanes.OrderBy(key).ThenBy(x => x.DisplayOrder).ThenBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static decimal VisibleUtilization(PlanningWorkbenchView workbench, PlanningWorkbenchState state, Guid resourceId)
+    {
+        var buckets = workbench.CapacityBuckets.Where(x => x.ResourceId == resourceId && x.EndUtc > state.VisibleStartUtc && x.StartUtc < state.VisibleEndUtc).ToArray();
+        var available = buckets.Sum(x => x.AvailableMinutes);
+        return available > 0d ? decimal.Round((decimal)(buckets.Sum(x => x.ProcessingMinutes) / available), 3) : 0m;
+    }
+
+    private static int ExceptionCount(PlanningWorkbenchView workbench, ScheduleResourceLaneView lane)
+    {
+        var operationIds = lane.Operations.Select(x => x.OperationSnapshotId).ToHashSet();
+        return workbench.Exceptions.Count(x => x.Entity is not null &&
+            ((x.Entity.EntityType == PlannerEntityType.Resource && x.Entity.EntityId == lane.ResourceId) ||
+             (x.Entity.EntityType == PlannerEntityType.Operation && operationIds.Contains(x.Entity.EntityId))));
     }
 
     private static IReadOnlyList<GanttGroupDescriptor> GroupDescriptors(ScheduleResourceLaneView lane)
@@ -400,14 +448,7 @@ public static class GanttModels
             .Where(x => x.EndUtc > state.VisibleStartUtc && x.StartUtc < state.VisibleEndUtc)
             .OrderBy(x => x.StartUtc)
             .ToArray();
-        var buckets = workbench.CapacityBuckets
-            .Where(x => x.ResourceId == lane.ResourceId &&
-                        x.EndUtc > state.VisibleStartUtc && x.StartUtc < state.VisibleEndUtc)
-            .ToArray();
-        var available = buckets.Sum(x => x.AvailableMinutes);
-        var utilization = available > 0d
-            ? (decimal)(buckets.Sum(x => x.ProcessingMinutes) / available)
-            : 0m;
+        var utilization = VisibleUtilization(workbench, state, lane.ResourceId);
 
         return new GanttRowModel(
             sceneIndex,
@@ -416,8 +457,9 @@ public static class GanttModels
             baselines,
             calendars,
             campaignSpans,
-            decimal.Round(utilization, 3),
-            lane.Operations.Where(x => x.StartUtc >= workbench.Plan.ReferenceTimeUtc).OrderBy(x => x.StartUtc).FirstOrDefault());
+            utilization,
+            lane.Operations.Where(x => x.StartUtc >= workbench.Plan.ReferenceTimeUtc).OrderBy(x => x.StartUtc).FirstOrDefault(),
+            ExceptionCount(workbench, lane));
     }
 
     private static IReadOnlyList<GanttDependencyLineModel> BuildFocusedDependencyLines(

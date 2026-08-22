@@ -6,7 +6,7 @@
 
   function initialize(root, dotnet) {
     if (!root || states.has(root)) return;
-    const state = { dotnet, drag: null, pan: null, split: null, guide: null, autoScrollFrame: null, metricsFrame: null, lastRows: '' };
+    const state = { dotnet, drag: null, pan: null, split: null, columnSplit: null, capacitySplit: null, guide: null, autoScrollFrame: null, metricsFrame: null, lastRows: '' };
 
     function preferences() {
       try { return JSON.parse(localStorage.getItem(PREFERENCES_KEY) || '{}'); }
@@ -148,6 +148,33 @@
 
     const down = event => {
       if (event.button !== 0) return;
+      const capacityResizer = event.target.closest('[data-gantt-capacity-resizer]');
+      if (capacityResizer && root.contains(capacityResizer)) {
+        const panel = capacityResizer.parentElement;
+        state.capacitySplit = { panel, startY: event.clientY, startHeight: panel.getBoundingClientRect().height };
+        capacityResizer.setPointerCapture?.(event.pointerId);
+        document.body.style.cursor = 'row-resize';
+        event.preventDefault();
+        return;
+      }
+      const columnResizer = event.target.closest('[data-gantt-column-resizer]');
+      if (columnResizer && root.contains(columnResizer)) {
+        const header = columnResizer.closest('[data-gantt-grid]');
+        const cells = Array.from(header?.children || []).filter(x => x.querySelector?.('[data-gantt-column-resizer]'));
+        state.columnSplit = {
+          key: columnResizer.dataset.columnKey,
+          index: cells.indexOf(columnResizer.parentElement),
+          startX: event.clientX,
+          startWidth: columnResizer.parentElement.getBoundingClientRect().width,
+          min: Number(columnResizer.dataset.columnMin) || 28,
+          max: Number(columnResizer.dataset.columnMax) || 240
+        };
+        columnResizer.setPointerCapture?.(event.pointerId);
+        document.body.style.cursor = 'col-resize';
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       const splitter = event.target.closest('[data-gantt-splitter]');
       if (splitter && root.contains(splitter)) {
         state.split = { host: splitter.parentElement, startX: event.clientX, startWidth: parseFloat(getComputedStyle(splitter.parentElement).getPropertyValue('--aps-gantt-grid-width')) || 320 };
@@ -194,6 +221,27 @@
     };
 
     const move = event => {
+      if (state.capacitySplit) {
+        const resize = state.capacitySplit;
+        resize.height = Math.max(120, Math.min(600, resize.startHeight + resize.startY - event.clientY));
+        resize.panel.style.height = `${resize.height}px`;
+        document.body.style.cursor = 'row-resize';
+        event.preventDefault();
+        return;
+      }
+      if (state.columnSplit) {
+        const resize = state.columnSplit;
+        resize.width = Math.max(resize.min, Math.min(resize.max, resize.startWidth + event.clientX - resize.startX));
+        root.querySelectorAll('[data-gantt-grid]').forEach(grid => {
+          const columns = getComputedStyle(grid).gridTemplateColumns.split(' ');
+          if (resize.index >= 0 && resize.index < columns.length) {
+            columns[resize.index] = `${resize.width}px`;
+            grid.style.gridTemplateColumns = columns.join(' ');
+          }
+        });
+        event.preventDefault();
+        return;
+      }
       if (state.split) {
         const available = root.clientWidth;
         const width = Math.max(220, Math.min(available * .45, state.split.startWidth + event.clientX - state.split.startX));
@@ -274,6 +322,21 @@
     };
 
     const up = async event => {
+      if (state.capacitySplit) {
+        const resize = state.capacitySplit;
+        state.capacitySplit = null;
+        document.body.style.cursor = '';
+        await dotnet.invokeMethodAsync('SetCapacityPanelHeight', resize.height ?? resize.startHeight);
+        requestMetrics();
+        return;
+      }
+      if (state.columnSplit) {
+        const resize = state.columnSplit;
+        state.columnSplit = null;
+        document.body.style.cursor = '';
+        await dotnet.invokeMethodAsync('SetGridColumnWidth', resize.key, resize.width ?? resize.startWidth);
+        return;
+      }
       if (state.split) {
         const split = state.split;
         state.split = null;
@@ -309,6 +372,14 @@
     };
 
     const cancel = () => {
+      if (state.capacitySplit) {
+        state.capacitySplit = null;
+        document.body.style.cursor = '';
+      }
+      if (state.columnSplit) {
+        state.columnSplit = null;
+        document.body.style.cursor = '';
+      }
       if (!state.drag) return;
       const drag = state.drag;
       state.drag = null;

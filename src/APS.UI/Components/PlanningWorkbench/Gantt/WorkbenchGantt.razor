@@ -5,7 +5,7 @@
         <div class="flex flex-wrap gap-x-4 gap-y-1">
             <span><span class="text-muted">Visible </span><strong>@State.VisibleStartUtc.ToString("dd MMM HH:mm") → @State.VisibleEndUtc.ToString("dd MMM HH:mm")</strong></span>
             <span><span class="text-muted">Mode </span><strong>@ModeLabel(State.Mode)</strong></span>
-            <span><strong>@Scene.VisibleOperationCount</strong> mounted · <strong>@Scene.ResourceCount</strong> resources</span>
+            <span><strong>@Scene.VisibleOperationCount</strong> mounted · <strong>@Scene.ResourceCount</strong> of <strong>@Scene.TotalResourceCount</strong> resources shown</span>
         </div>
         <div class="hidden flex-wrap items-center gap-3 text-[10px] text-muted xl:flex" aria-label="Process legend">
             @foreach (var entry in ProcessLegend)
@@ -23,7 +23,7 @@
     <GanttSelectionSummary Scene="Scene" State="State" />
     <div class="min-h-0 flex-1 overflow-auto" data-gantt-scroll style="--aps-gantt-grid-width:@($"{State.Viewport.GridWidthPx:0}px");--aps-gantt-row-height:@($"{State.GanttRowHeightPx}px")">
         <div class="relative grid min-w-[1120px]" style="grid-template-columns:var(--aps-gantt-grid-width) minmax(760px, 1fr)">
-            <GanttResourceGrid Scene="Scene" RowHeightPx="State.GanttRowHeightPx" SelectedResourceIds="State.SelectedResourceIds" ResourceSelected="ResourceSelected" GroupToggled="ToggleResourceGroup" />
+            <GanttResourceGrid Scene="Scene" State="State" RowHeightPx="State.GanttRowHeightPx" SelectedResourceIds="State.SelectedResourceIds" ResourceSelected="ResourceSelected" GroupToggled="ToggleResourceGroup" GridPreferencesChanged="GridPreferencesChanged" />
             <div class="relative min-w-0 border-l border-border" data-gantt-timeline>
                 <GanttTimeScale Scene="Scene" State="State" ReferenceTimeUtc="Workbench.Plan.ReferenceTimeUtc" FrozenFenceEndUtc="FrozenFenceEndUtc" />
                 <GanttTimelineViewport Scene="Scene" State="State" Workbench="Workbench" FrozenFenceEndUtc="FrozenFenceEndUtc" KeyboardAnchorPlanningKey="@KeyboardAnchorPlanningKey" OperationSelected="OperationSelected" KeyboardNavigate="HandleKeyboardNavigation" ContextRequested="OpenContextMenu" />
@@ -77,6 +77,7 @@
     [Parameter] public EventCallback<ScheduleResourceLaneView> ResourceSelected { get; set; }
     [Parameter] public EventCallback<GanttCapacitySegmentModel> CapacitySegmentFocused { get; set; }
     [Parameter] public EventCallback<IReadOnlyList<string>> CollapsedGroupsChanged { get; set; }
+    [Parameter] public EventCallback GridPreferencesChanged { get; set; }
 
     private GanttScene Scene { get; set; } = default!;
     private GanttContextMenuRequest? operationContext;

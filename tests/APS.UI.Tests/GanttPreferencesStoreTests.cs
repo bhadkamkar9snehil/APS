@@ -17,6 +17,9 @@ public sealed class GanttPreferencesStoreTests
         Assert.True(preferences.ShowBaseline);
         Assert.False(preferences.ShowDependencies);
         Assert.NotEmpty(preferences.VisibleColumns);
+        Assert.Equal(GanttGridSortColumn.Canonical, preferences.SortColumn);
+        Assert.False(preferences.SortDescending);
+        Assert.Equal(112, preferences.ColumnWidths["resource"]);
         Assert.Equal(220, preferences.CapacityPanelHeightPx);
     }
 
@@ -24,7 +27,7 @@ public sealed class GanttPreferencesStoreTests
     public void Json_round_trip_clamps_unsafe_sizes_and_preserves_named_preferences()
     {
         var json = """
-            {"gridWidthPx":40,"density":"Compact","snapMode":"FiveMinutes","zoom":"ThreeDays","showBaseline":false,"showDependencies":true,"capacityPanelHeightPx":9000,"visibleColumns":["resource","load"],"collapsedGroups":["SMS/LRF"]}
+            {"gridWidthPx":40,"density":"Compact","snapMode":"FiveMinutes","zoom":"ThreeDays","showBaseline":false,"showDependencies":true,"capacityPanelHeightPx":9000,"visibleColumns":["resource","load"],"columnWidths":{"resource":500,"load":55},"sortColumn":"Load","sortDescending":true,"showNowMarker":false,"showFrozenFence":false,"collapsedGroups":["SMS/LRF"]}
             """;
 
         var preferences = GanttPreferencesStore.Parse(json, availableWidthPx: 1200);
@@ -38,6 +41,12 @@ public sealed class GanttPreferencesStoreTests
         Assert.True(roundTrip.ShowDependencies);
         Assert.Equal(600, roundTrip.CapacityPanelHeightPx);
         Assert.Equal(["resource", "load"], roundTrip.VisibleColumns);
+        Assert.Equal(240, roundTrip.ColumnWidths["resource"]);
+        Assert.Equal(55, roundTrip.ColumnWidths["load"]);
+        Assert.Equal(GanttGridSortColumn.Load, roundTrip.SortColumn);
+        Assert.True(roundTrip.SortDescending);
+        Assert.False(roundTrip.ShowNowMarker);
+        Assert.False(roundTrip.ShowFrozenFence);
         Assert.Equal(["SMS/LRF"], roundTrip.CollapsedGroups);
     }
 

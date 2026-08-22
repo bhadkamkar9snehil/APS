@@ -53,6 +53,8 @@ public sealed class PlanningWorkbenchState
     private readonly HashSet<string> collapsedResourceGroups = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> selectedPlanningKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Guid> selectedOperationResources = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<GanttGridColumn> visibleGridColumns = [.. GanttGridColumns.DefaultVisible];
+    private readonly Dictionary<GanttGridColumn, double> gridColumnWidths = GanttGridColumns.All.ToDictionary(x => x.Column, x => x.DefaultWidthPx);
 
     public GanttViewportState Viewport { get; } = new();
 
@@ -86,9 +88,18 @@ public sealed class PlanningWorkbenchState
     public bool CapacityPanelOpen { get; private set; }
     public bool OperationListOpen { get; private set; }
     public bool ShortcutPanelOpen { get; private set; }
+    public bool GridColumnChooserOpen { get; private set; }
+    public bool ShowDueMarkers { get; private set; } = true;
+    public bool ShowNowMarker { get; private set; } = true;
+    public bool ShowReferenceMarker { get; private set; } = true;
+    public bool ShowFrozenFence { get; private set; } = true;
     public int CapacityPanelHeightPx { get; private set; } = 220;
     public GanttCapacityFocus? CapacityFocus { get; private set; }
     public IReadOnlySet<string> CollapsedResourceGroups => collapsedResourceGroups;
+    public IReadOnlySet<GanttGridColumn> VisibleGridColumns => visibleGridColumns;
+    public IReadOnlyDictionary<GanttGridColumn, double> GridColumnWidths => gridColumnWidths;
+    public GanttGridSortColumn GridSortColumn { get; private set; } = GanttGridSortColumn.Canonical;
+    public bool GridSortDescending { get; private set; }
     public int GanttRowHeightPx => Viewport.RowHeightPx + (BaselineMode == GanttBaselineMode.CompareSubrow ? 20 : 0);
     public bool IsReleasedPlan { get; private set; }
     public bool CanEditSchedule => !IsReleasedPlan || ScenarioIntent is PlanningScenarioIntent.New or PlanningScenarioIntent.Clone or PlanningScenarioIntent.Recovery;
@@ -245,6 +256,65 @@ public sealed class PlanningWorkbenchState
     public void ToggleOperationList() { OperationListOpen = !OperationListOpen; Notify(); }
     public void ToggleShortcutPanel() { ShortcutPanelOpen = !ShortcutPanelOpen; Notify(); }
     public void SetShortcutPanel(bool open) { ShortcutPanelOpen = open; Notify(); }
+    public void ToggleGridColumnChooser() { GridColumnChooserOpen = !GridColumnChooserOpen; Notify(); }
+    public void SetGridColumnChooser(bool open) { GridColumnChooserOpen = open; Notify(); }
+    public void SetMarkerVisibility(bool due, bool now, bool reference, bool frozen)
+    {
+        ShowDueMarkers = due;
+        ShowNowMarker = now;
+        ShowReferenceMarker = reference;
+        ShowFrozenFence = frozen;
+        Notify();
+    }
+    public void ToggleDueMarkers() { ShowDueMarkers = !ShowDueMarkers; Notify(); }
+    public void ToggleNowMarker() { ShowNowMarker = !ShowNowMarker; Notify(); }
+    public void ToggleReferenceMarker() { ShowReferenceMarker = !ShowReferenceMarker; Notify(); }
+    public void ToggleFrozenFence() { ShowFrozenFence = !ShowFrozenFence; Notify(); }
+    public void ToggleGridColumn(GanttGridColumn column)
+    {
+        if (column == GanttGridColumn.Resource) return;
+        if (!visibleGridColumns.Add(column)) visibleGridColumns.Remove(column);
+        Notify();
+    }
+    public void SetGridColumns(IEnumerable<GanttGridColumn>? columns)
+    {
+        visibleGridColumns.Clear();
+        visibleGridColumns.Add(GanttGridColumn.Resource);
+        if (columns is not null)
+            foreach (var column in columns) visibleGridColumns.Add(column);
+        Notify();
+    }
+    public void ResetGridColumns()
+    {
+        visibleGridColumns.Clear();
+        foreach (var column in GanttGridColumns.DefaultVisible) visibleGridColumns.Add(column);
+        foreach (var definition in GanttGridColumns.All) gridColumnWidths[definition.Column] = definition.DefaultWidthPx;
+        GridSortColumn = GanttGridSortColumn.Canonical;
+        GridSortDescending = false;
+        Notify();
+    }
+    public void SetGridColumnWidth(GanttGridColumn column, double widthPx)
+    {
+        gridColumnWidths[column] = ClampGridColumnWidth(column, widthPx);
+        Notify();
+    }
+    public void SetGridColumnWidths(IEnumerable<KeyValuePair<GanttGridColumn, double>>? widths)
+    {
+        foreach (var definition in GanttGridColumns.All) gridColumnWidths[definition.Column] = definition.DefaultWidthPx;
+        if (widths is not null)
+            foreach (var (column, width) in widths) gridColumnWidths[column] = ClampGridColumnWidth(column, width);
+        Notify();
+    }
+    public void SetGridSort(GanttGridSortColumn column, bool? descending = null)
+    {
+        if (GridSortColumn == column && descending is null) GridSortDescending = !GridSortDescending;
+        else
+        {
+            GridSortColumn = column;
+            GridSortDescending = descending ?? false;
+        }
+        Notify();
+    }
     public void ToggleResourceGroup(string groupKey)
     {
         if (string.IsNullOrWhiteSpace(groupKey)) return;
@@ -348,6 +418,12 @@ public sealed class PlanningWorkbenchState
         selectedPlanningKeys.Clear();
         selectedOperationResources.Clear();
         SelectedPlanningKey = null;
+    }
+
+    private static double ClampGridColumnWidth(GanttGridColumn column, double widthPx)
+    {
+        var definition = GanttGridColumns.Definition(column);
+        return Math.Clamp(widthPx, definition.MinimumWidthPx, definition.MaximumWidthPx);
     }
 
     public void SetMode(PlanningWorkbenchMode mode)

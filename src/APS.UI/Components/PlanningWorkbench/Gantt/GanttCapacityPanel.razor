@@ -1,4 +1,5 @@
-<section class="border-t border-border bg-surface shadow-raised" style="height:@($"{State.CapacityPanelHeightPx}px")" aria-label="Synchronized resource load">
+<section class="relative border-t border-border bg-surface shadow-raised" style="height:@($"{State.CapacityPanelHeightPx}px")" aria-label="Synchronized resource load">
+    <button type="button" class="absolute inset-x-0 -top-1 z-40 h-2 cursor-row-resize bg-transparent" data-gantt-capacity-resizer aria-label="Resize resource load panel" title="Drag to resize resource load"></button>
     <div class="grid h-full" style="grid-template-columns:var(--aps-gantt-grid-width) minmax(760px, 1fr)">
         <div class="border-r border-border bg-surface-raised">
             <div class="flex h-8 items-center justify-between border-b border-border px-3 text-[11px]">

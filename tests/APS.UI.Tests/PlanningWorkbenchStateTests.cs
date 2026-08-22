@@ -28,6 +28,24 @@ public sealed class PlanningWorkbenchStateTests
     }
 
     [Fact]
+    public void Grid_columns_sort_and_width_are_view_state_only_and_safely_bounded()
+    {
+        var state = new PlanningWorkbenchState();
+
+        state.ToggleGridColumn(GanttGridColumn.Exceptions);
+        state.ToggleGridColumn(GanttGridColumn.Resource);
+        state.SetGridColumnWidth(GanttGridColumn.Resource, 10_000);
+        state.SetGridSort(GanttGridSortColumn.Load);
+        state.SetGridSort(GanttGridSortColumn.Load);
+
+        Assert.Contains(GanttGridColumn.Resource, state.VisibleGridColumns);
+        Assert.Contains(GanttGridColumn.Exceptions, state.VisibleGridColumns);
+        Assert.Equal(240, state.GridColumnWidths[GanttGridColumn.Resource]);
+        Assert.Equal(GanttGridSortColumn.Load, state.GridSortColumn);
+        Assert.True(state.GridSortDescending);
+    }
+
+    [Fact]
     public void Released_plan_is_read_only_until_recovery_is_started()
     {
         var state = new PlanningWorkbenchState();

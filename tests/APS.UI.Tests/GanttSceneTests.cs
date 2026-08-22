@@ -69,6 +69,29 @@ public sealed class GanttSceneTests
     }
 
     [Fact]
+    public void Resource_sorting_is_local_to_authoritative_process_groups_and_filter_count_preserves_total()
+    {
+        var firstGroupLow = HierarchicalLane(1, "SMS", "MELT", "EAF") with { OccupiedHours = 2d };
+        var firstGroupHigh = HierarchicalLane(2, "SMS", "MELT", "EAF") with { OccupiedHours = 9d };
+        var secondGroup = HierarchicalLane(3, "SMS", "MELT", "LRF") with
+        {
+            ProcessStageId = Guid.Parse("44444444-4444-4444-4444-444444444444"),
+            ProcessStageName = "Ladle refining",
+            OccupiedHours = 5d
+        };
+        var state = State();
+        state.SetGridSort(GanttGridSortColumn.Busy, descending: true);
+
+        var sorted = GanttModels.BuildScene(Workbench([firstGroupLow, firstGroupHigh, secondGroup]), state);
+
+        Assert.Equal([firstGroupHigh.ResourceCode, firstGroupLow.ResourceCode, secondGroup.ResourceCode], sorted.Rows.Select(x => x.Lane.ResourceCode));
+        state.SetSearch(firstGroupLow.ResourceCode);
+        var filtered = GanttModels.BuildScene(Workbench([firstGroupLow, firstGroupHigh, secondGroup]), state);
+        Assert.Equal(1, filtered.ResourceCount);
+        Assert.Equal(3, filtered.TotalResourceCount);
+    }
+
+    [Fact]
     public void Resource_changed_baseline_stays_on_its_original_readonly_lane()
     {
         var currentLane = Lane(1, Start.AddHours(2));
@@ -357,7 +380,8 @@ public sealed class GanttSceneTests
         IReadOnlyCollection<ScheduleResourceLaneView> lanes,
         IReadOnlyCollection<PlanningBaselinePlacementView>? baselines = null,
         IReadOnlyCollection<PlanningOperationWorkbenchDetail>? details = null,
-        IReadOnlyCollection<PlanningDependencyLinkView>? dependencies = null)
+        IReadOnlyCollection<PlanningDependencyLinkView>? dependencies = null,
+        IReadOnlyCollection<PlanningWorkbenchException>? exceptions = null)
     {
         var plan = new PlanContextView(
             Guid.NewGuid(),
@@ -398,7 +422,7 @@ public sealed class GanttSceneTests
             material,
             null,
             new PlanningQueueView(0, 0, 0, 0, 0, 0, 0),
-            Array.Empty<PlanningWorkbenchException>(),
+            exceptions ?? Array.Empty<PlanningWorkbenchException>(),
             details ?? Array.Empty<PlanningOperationWorkbenchDetail>(),
             dependencies ?? Array.Empty<PlanningDependencyLinkView>(),
             Array.Empty<PlanningResourceCalendarIntervalView>(),

@@ -69,6 +69,24 @@
                     <button class="rounded-control border px-2 py-1 text-xs @(state.Zoom == zoom ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => SetZoomPreferenceAsync(zoom)">@ZoomLabel(zoom)</button>
                 }
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="() => state.Pan(0.75)">Later</button>
+                <details class="relative shrink-0">
+                    <summary class="cursor-pointer rounded-control border border-border px-2 py-1 text-xs">Fit range</summary>
+                    <div class="absolute left-0 top-full z-50 mt-1 w-64 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
+                        <div class="grid grid-cols-2 gap-1">
+                            <button class="rounded-control border border-border px-2 py-1 text-left text-xs" @onclick="FitAll">All schedule</button>
+                            <button class="rounded-control border border-border px-2 py-1 text-left text-xs" @onclick="FitVisibleResources">Visible resources</button>
+                            <button class="rounded-control border border-border px-2 py-1 text-left text-xs disabled:opacity-50" disabled="@(state.SelectedPlanningKeys.Count == 0)" @onclick="FitSelection">Selection</button>
+                            <button class="rounded-control border border-border px-2 py-1 text-left text-xs disabled:opacity-50" disabled="@(SelectedDetail?.CampaignNumber is null)" @onclick="FitCampaign">Campaign</button>
+                            <button class="rounded-control border border-border px-2 py-1 text-left text-xs disabled:opacity-50" disabled="@(SelectedDetail?.ProductionOrderNumbers.Count == 0)" @onclick="FitDemandChain">Demand chain</button>
+                        </div>
+                        <div class="mt-2 border-t border-border pt-2">
+                            <label class="block text-[9px] uppercase text-muted">Explicit UTC range</label>
+                            <input type="datetime-local" value="@fitStartText" @onchange="args => fitStartText = args.Value?.ToString() ?? fitStartText" class="mt-1 w-full rounded-control border border-border px-2 py-1 text-[10px]" />
+                            <input type="datetime-local" value="@fitEndText" @onchange="args => fitEndText = args.Value?.ToString() ?? fitEndText" class="mt-1 w-full rounded-control border border-border px-2 py-1 text-[10px]" />
+                            <button class="mt-1 w-full rounded-control bg-accent px-2 py-1 text-xs text-accent-foreground" @onclick="FitExplicitRange">Apply range</button>
+                        </div>
+                    </div>
+                </details>
                 <span class="mx-1 h-5 w-px bg-border"></span>
                 <div class="flex min-w-52 flex-1 gap-1 md:max-w-80">
                     <input value="@state.SearchText" @oninput="SearchChanged" class="min-w-0 flex-1 rounded-control border border-border bg-surface-raised px-3 py-1.5 text-xs" placeholder="Find order, campaign, grade or resource" />
@@ -93,6 +111,15 @@
                     <option value="CompareSubrow">Compare subrow</option>
                 </select>
                 <ToggleButton Active="state.ShowDependencies" Label="Selected chain" OnClick="ToggleDependenciesAsync" />
+                <details class="relative shrink-0">
+                    <summary class="cursor-pointer rounded-control border border-border px-2 py-1 text-xs">Markers</summary>
+                    <div class="absolute right-0 top-full z-50 mt-1 w-44 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
+                        <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@state.ShowDueMarkers" @onchange="ToggleDueMarkersAsync" />Due dates</label>
+                        <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@state.ShowNowMarker" @onchange="ToggleNowMarkerAsync" />Wall-clock now</label>
+                        <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@state.ShowReferenceMarker" @onchange="ToggleReferenceMarkerAsync" />Plan reference</label>
+                        <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@state.ShowFrozenFence" @onchange="ToggleFrozenFenceAsync" />Frozen fence</label>
+                    </div>
+                </details>
                 @if (workbench.BindingEvidence is { Count: > 0 })
                 {
                     <button type="button" class="rounded-control border border-border px-2 py-1 text-xs" @onclick="ToggleDependenciesAsync" title="Show the solver-derived binding evidence for the selected operation">Binding chain</button>
@@ -172,7 +199,8 @@
                                 OperationSelected="SelectOperation"
                                 ResourceSelected="SelectResource"
                                 CapacitySegmentFocused="FocusCapacitySegment"
-                                CollapsedGroupsChanged="CollapsedGroupsChangedAsync" />
+                                CollapsedGroupsChanged="CollapsedGroupsChangedAsync"
+                                GridPreferencesChanged="GridPreferencesChangedAsync" />
             </main>
 
             @if (Cockpit.InspectorOpen)
@@ -365,7 +393,7 @@
     private bool loading = true, acting, dragInitialized, messageIsError;
     private bool isFullscreen;
     private string? message, moveComment;
-    private string targetResourceText = "", targetStartText = "", moveReason = "PLANNER_SEQUENCE";
+    private string targetResourceText = "", targetStartText = "", moveReason = "PLANNER_SEQUENCE", fitStartText = "", fitEndText = "";
     private bool allowFrozenOverride;
     private decimal nominalHeatMt = 90m, maximumCampaignMt = 600m;
     private int frozenMinutes = 120, solverSeconds = 20;
@@ -420,7 +448,7 @@
     private async Task LoadAsync(Guid? planId = null, Guid? baselineId = null)
     {
         loading = true; dragInitialized = false; StateHasChanged();
-        try { workbench = await PlannerQuery.GetPlanningWorkbenchAsync(planId ?? WorkspaceState.CurrentPlanVersionId, baselineId ?? WorkspaceState.BaselinePlanVersionId); if (workbench is not null) { state.SetReleasedPlan(workbench.Plan.IsReleased); state.SetPlanWindow(workbench.Plan.HorizonStartUtc, workbench.Plan.HorizonEndUtc, workbench.Schedule.ScheduleStartUtc, workbench.Schedule.ScheduleEndUtc); WorkspaceState.SetPlan(workbench.Plan.PlanVersionId, workbench.Baseline?.PlanVersionId ?? workbench.Plan.ParentPlanVersionId); WorkspaceState.SetWindow(workbench.Plan.HorizonStartUtc, workbench.Plan.HorizonEndUtc); } }
+        try { workbench = await PlannerQuery.GetPlanningWorkbenchAsync(planId ?? WorkspaceState.CurrentPlanVersionId, baselineId ?? WorkspaceState.BaselinePlanVersionId); if (workbench is not null) { state.SetReleasedPlan(workbench.Plan.IsReleased); state.SetPlanWindow(workbench.Plan.HorizonStartUtc, workbench.Plan.HorizonEndUtc, workbench.Schedule.ScheduleStartUtc, workbench.Schedule.ScheduleEndUtc); fitStartText = state.VisibleStartUtc.ToString("yyyy-MM-ddTHH:mm"); fitEndText = state.VisibleEndUtc.ToString("yyyy-MM-ddTHH:mm"); WorkspaceState.SetPlan(workbench.Plan.PlanVersionId, workbench.Baseline?.PlanVersionId ?? workbench.Plan.ParentPlanVersionId); WorkspaceState.SetWindow(workbench.Plan.HorizonStartUtc, workbench.Plan.HorizonEndUtc); } }
         catch (Exception ex) { SetMessage(ex.Message, true); }
         finally { loading = false; }
     }
@@ -467,6 +495,40 @@
     }
     private void TargetStartChanged(ChangeEventArgs args) => targetStartText = args.Value?.ToString() ?? string.Empty;
 
+    private void FitAll() => state.SetZoom(PlanningWorkbenchZoom.Fit);
+    private void FitVisibleResources() => FitOperations((workbench?.Schedule.ResourceLanes ?? Array.Empty<ScheduleResourceLaneView>())
+        .Where(lane => string.IsNullOrWhiteSpace(state.SearchText) || Contains(lane.ResourceCode, state.SearchText) || Contains(lane.ResourceName, state.SearchText) || lane.Operations.Any(MatchesFitSearch))
+        .SelectMany(x => x.Operations));
+    private void FitSelection() => FitOperations((workbench?.Schedule.ResourceLanes ?? Array.Empty<ScheduleResourceLaneView>()).SelectMany(x => x.Operations).Where(x => state.SelectedPlanningKeys.Contains(x.PlanningKey)));
+    private void FitCampaign() { var campaign = SelectedDetail?.CampaignNumber; if (campaign is not null) FitOperations(OperationsForDetails(x => x.CampaignNumber == campaign)); }
+    private void FitDemandChain() { var orders = SelectedDetail?.ProductionOrderNumbers.ToHashSet(StringComparer.OrdinalIgnoreCase); if (orders is { Count: > 0 }) FitOperations(OperationsForDetails(x => x.ProductionOrderNumbers.Any(orders.Contains))); }
+    private void FitExplicitRange()
+    {
+        if (!DateTime.TryParse(fitStartText, null, System.Globalization.DateTimeStyles.AssumeUniversal, out var start) ||
+            !DateTime.TryParse(fitEndText, null, System.Globalization.DateTimeStyles.AssumeUniversal, out var end) || end <= start)
+        { SetMessage("Enter a valid explicit UTC range.", true); return; }
+        state.FocusRange(DateTime.SpecifyKind(start, DateTimeKind.Utc), DateTime.SpecifyKind(end, DateTimeKind.Utc));
+    }
+    private IEnumerable<ScheduledProcessOperationView> OperationsForDetails(Func<PlanningOperationWorkbenchDetail, bool> predicate)
+    {
+        var keys = (workbench?.OperationDetails ?? Array.Empty<PlanningOperationWorkbenchDetail>()).Where(predicate).Select(x => x.PlanningKey).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return (workbench?.Schedule.ResourceLanes ?? Array.Empty<ScheduleResourceLaneView>()).SelectMany(x => x.Operations).Where(x => keys.Contains(x.PlanningKey));
+    }
+    private void FitOperations(IEnumerable<ScheduledProcessOperationView> operations)
+    {
+        var items = operations.ToArray();
+        if (items.Length == 0) return;
+        var start = items.Min(x => x.StartUtc); var end = items.Max(x => x.EndUtc);
+        var padding = TimeSpan.FromMinutes(Math.Max(30, (end - start).TotalMinutes * .05));
+        state.FocusRange(start - padding, end + padding);
+    }
+    private bool MatchesFitSearch(ScheduledProcessOperationView operation)
+    {
+        if (Contains(operation.PlanningKey, state.SearchText) || Contains(operation.GradeCode, state.SearchText) || Contains(operation.CrossSectionCode, state.SearchText)) return true;
+        var detail = FindDetail(operation.PlanningKey);
+        return Contains(detail?.CampaignNumber, state.SearchText) || detail?.ProductionOrderNumbers.Any(x => Contains(x, state.SearchText)) == true;
+    }
+
     private async Task SetZoomPreferenceAsync(PlanningWorkbenchZoom zoom)
     {
         state.SetZoom(zoom);
@@ -501,6 +563,11 @@
         await SaveGanttPreferenceAsync("showDependencies", state.ShowDependencies);
     }
 
+    private async Task ToggleDueMarkersAsync() { state.ToggleDueMarkers(); await SaveGanttPreferenceAsync("showDueMarkers", state.ShowDueMarkers); }
+    private async Task ToggleNowMarkerAsync() { state.ToggleNowMarker(); await SaveGanttPreferenceAsync("showNowMarker", state.ShowNowMarker); }
+    private async Task ToggleReferenceMarkerAsync() { state.ToggleReferenceMarker(); await SaveGanttPreferenceAsync("showReferenceMarker", state.ShowReferenceMarker); }
+    private async Task ToggleFrozenFenceAsync() { state.ToggleFrozenFence(); await SaveGanttPreferenceAsync("showFrozenFence", state.ShowFrozenFence); }
+
     private async Task BaselineModeChangedAsync(ChangeEventArgs args)
     {
         if (!Enum.TryParse<GanttBaselineMode>(args.Value?.ToString(), out var mode)) return;
@@ -519,6 +586,16 @@
 
     private Task CollapsedGroupsChangedAsync(IReadOnlyList<string> groupKeys) =>
         SaveGanttPreferenceAsync("collapsedGroups", groupKeys).AsTask();
+
+    private async Task GridPreferencesChangedAsync()
+    {
+        await SaveGanttPreferenceAsync("visibleColumns", GanttGridColumns.All
+            .Where(x => state.VisibleGridColumns.Contains(x.Column)).Select(x => x.Key).ToArray());
+        await SaveGanttPreferenceAsync("columnWidths", GanttGridColumns.All
+            .ToDictionary(x => x.Key, x => state.GridColumnWidths[x.Column], StringComparer.OrdinalIgnoreCase));
+        await SaveGanttPreferenceAsync("sortColumn", state.GridSortColumn.ToString());
+        await SaveGanttPreferenceAsync("sortDescending", state.GridSortDescending);
+    }
 
     private ValueTask ToggleFullscreenAsync() => JS.InvokeVoidAsync("apsPlanningWorkbench.toggleFullscreen", workbenchRoot);
 
@@ -573,9 +650,34 @@
         state.SetLayerVisibility(preferences.ShowBaseline, preferences.ShowDependencies);
         state.SetBaselineMode(preferences.BaselineMode);
         state.SetCollapsedResourceGroups(preferences.CollapsedGroups);
+        state.SetGridColumns(preferences.VisibleColumns
+            .Select(key => GanttGridColumns.TryParse(key, out var column) ? (GanttGridColumn?)column : null)
+            .OfType<GanttGridColumn>());
+        state.SetGridColumnWidths(preferences.ColumnWidths
+            .Where(entry => GanttGridColumns.TryParse(entry.Key, out _))
+            .Select(entry => new KeyValuePair<GanttGridColumn, double>(
+                GanttGridColumns.All.Single(definition => definition.Key.Equals(entry.Key, StringComparison.OrdinalIgnoreCase)).Column,
+                entry.Value)));
+        state.SetGridSort(preferences.SortColumn, preferences.SortDescending);
+        state.SetMarkerVisibility(preferences.ShowDueMarkers, preferences.ShowNowMarker, preferences.ShowReferenceMarker, preferences.ShowFrozenFence);
         state.SetCapacityPanel(preferences.CapacityPanelOpen, preferences.CapacityPanelHeightPx);
         if (preferences.Zoom != state.Zoom) state.SetZoom(preferences.Zoom);
         StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task SetGridColumnWidth(string key, double widthPx)
+    {
+        if (!GanttGridColumns.TryParse(key, out var column)) return;
+        state.SetGridColumnWidth(column, widthPx);
+        await GridPreferencesChangedAsync();
+    }
+
+    [JSInvokable]
+    public async Task SetCapacityPanelHeight(double heightPx)
+    {
+        state.SetCapacityPanel(true, (int)Math.Round(heightPx));
+        await SaveGanttPreferenceAsync("capacityPanelHeightPx", state.CapacityPanelHeightPx);
     }
 
     private void SelectOperation(GanttOperationSelectionRequest request)

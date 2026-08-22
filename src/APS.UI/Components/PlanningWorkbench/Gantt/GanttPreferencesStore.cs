@@ -13,6 +13,13 @@ public sealed record GanttPreferences(
     GanttBaselineMode BaselineMode,
     bool ShowDependencies,
     IReadOnlyList<string> VisibleColumns,
+    IReadOnlyDictionary<string, double> ColumnWidths,
+    GanttGridSortColumn SortColumn,
+    bool SortDescending,
+    bool ShowDueMarkers,
+    bool ShowNowMarker,
+    bool ShowReferenceMarker,
+    bool ShowFrozenFence,
     IReadOnlyList<string> CollapsedGroups,
     int CapacityPanelHeightPx,
     bool CapacityPanelOpen)
@@ -26,6 +33,13 @@ public sealed record GanttPreferences(
         GanttBaselineMode.Ghost,
         false,
         ["resource", "state", "busy", "load", "operations", "next"],
+        GanttGridColumns.All.ToDictionary(x => x.Key, x => x.DefaultWidthPx, StringComparer.OrdinalIgnoreCase),
+        GanttGridSortColumn.Canonical,
+        false,
+        true,
+        true,
+        true,
+        true,
         Array.Empty<string>(),
         220,
         false);
@@ -65,6 +79,13 @@ public static class GanttPreferencesStore
             payload.BaselineMode ?? defaults.BaselineMode,
             payload.ShowDependencies ?? defaults.ShowDependencies,
             payload.VisibleColumns ?? defaults.VisibleColumns,
+            payload.ColumnWidths ?? defaults.ColumnWidths,
+            payload.SortColumn ?? defaults.SortColumn,
+            payload.SortDescending ?? defaults.SortDescending,
+            payload.ShowDueMarkers ?? defaults.ShowDueMarkers,
+            payload.ShowNowMarker ?? defaults.ShowNowMarker,
+            payload.ShowReferenceMarker ?? defaults.ShowReferenceMarker,
+            payload.ShowFrozenFence ?? defaults.ShowFrozenFence,
             payload.CollapsedGroups ?? defaults.CollapsedGroups,
             payload.CapacityPanelHeightPx ?? defaults.CapacityPanelHeightPx,
             payload.CapacityPanelOpen ?? defaults.CapacityPanelOpen);
@@ -72,10 +93,17 @@ public static class GanttPreferencesStore
         var columns = parsed.VisibleColumns is { Count: > 0 }
             ? parsed.VisibleColumns.Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
             : GanttPreferences.Default.VisibleColumns;
+        var widths = GanttGridColumns.All.ToDictionary(
+            definition => definition.Key,
+            definition => parsed.ColumnWidths.TryGetValue(definition.Key, out var width)
+                ? Math.Clamp(width, definition.MinimumWidthPx, definition.MaximumWidthPx)
+                : definition.DefaultWidthPx,
+            StringComparer.OrdinalIgnoreCase);
         return parsed with
         {
             GridWidthPx = Math.Clamp(parsed.GridWidthPx, 220d, maximumGridWidth),
             VisibleColumns = columns,
+            ColumnWidths = widths,
             CollapsedGroups = parsed.CollapsedGroups?.Distinct(StringComparer.OrdinalIgnoreCase).ToArray() ?? Array.Empty<string>(),
             CapacityPanelHeightPx = Math.Clamp(parsed.CapacityPanelHeightPx, 120, 600)
         };
@@ -91,6 +119,13 @@ public static class GanttPreferencesStore
         public GanttBaselineMode? BaselineMode { get; set; }
         public bool? ShowDependencies { get; set; }
         public IReadOnlyList<string>? VisibleColumns { get; set; }
+        public IReadOnlyDictionary<string, double>? ColumnWidths { get; set; }
+        public GanttGridSortColumn? SortColumn { get; set; }
+        public bool? SortDescending { get; set; }
+        public bool? ShowDueMarkers { get; set; }
+        public bool? ShowNowMarker { get; set; }
+        public bool? ShowReferenceMarker { get; set; }
+        public bool? ShowFrozenFence { get; set; }
         public IReadOnlyList<string>? CollapsedGroups { get; set; }
         public int? CapacityPanelHeightPx { get; set; }
         public bool? CapacityPanelOpen { get; set; }

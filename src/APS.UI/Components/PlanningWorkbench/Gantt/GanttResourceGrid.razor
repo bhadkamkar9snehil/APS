@@ -1,26 +1,38 @@
-<div class="min-w-0 bg-surface">
-    <div class="sticky top-0 z-30 grid h-14 items-end border-b border-border bg-surface-raised px-2 pb-1 shadow-soft"
-         style="grid-template-columns:minmax(112px,1fr) 42px 42px 38px 30px 48px">
-        <span class="aps-text-label">Resource</span><span class="text-[9px] text-muted">State</span><span class="text-[9px] text-muted">Busy</span><span class="text-[9px] text-muted">Load</span><span class="text-[9px] text-muted">Ops</span><span class="text-[9px] text-muted">Next</span>
-    </div>
-    <div>
-        @if (FirstMountedSceneIndex > 0)
+<div class="relative min-w-0 bg-surface">
+    <div class="sticky top-0 z-30 grid h-14 items-end border-b border-border bg-surface-raised px-2 pb-1 shadow-soft" data-gantt-grid style="grid-template-columns:@GridTemplate">
+        @foreach (var definition in VisibleDefinitions)
         {
-            <div aria-hidden="true" style="height:@($"{FirstMountedSceneIndex * RowHeightPx}px")"></div>
+            <div class="relative min-w-0">
+                <button type="button" class="w-full truncate text-left text-[9px] font-semibold uppercase tracking-wide @(IsSorted(definition) ? "text-accent" : "text-muted")" title="@SortTitle(definition)" @onclick="() => SortAsync(definition)">@definition.Label@SortGlyph(definition)</button>
+                <span class="absolute -right-1 top-0 h-full w-2 cursor-col-resize" role="separator" aria-orientation="vertical" aria-label="Resize @definition.Label column" data-gantt-column-resizer data-column-key="@definition.Key" data-column-min="@definition.MinimumWidthPx" data-column-max="@definition.MaximumWidthPx"></span>
+            </div>
         }
+        <button type="button" class="absolute right-1 top-1 rounded-control border border-border bg-surface px-1.5 py-0.5 text-[9px] text-secondary hover:bg-surface-hover" aria-expanded="@State.GridColumnChooserOpen" @onclick="State.ToggleGridColumnChooser">Columns</button>
+    </div>
+    @if (State.GridColumnChooserOpen)
+    {
+        <div class="absolute right-1 top-12 z-40 w-44 rounded-surface border border-border bg-surface-raised p-2 shadow-popover" role="dialog" aria-label="Resource grid columns">
+            <div class="mb-1 aps-text-label">Columns</div>
+            @foreach (var definition in GanttGridColumns.All)
+            {
+                <label class="flex items-center gap-2 rounded-control px-1 py-1 text-xs hover:bg-surface-hover">
+                    <input type="checkbox" checked="@State.VisibleGridColumns.Contains(definition.Column)" disabled="@(definition.Column == GanttGridColumn.Resource)" @onchange="() => ToggleColumnAsync(definition.Column)" />
+                    <span>@definition.Label</span>
+                </label>
+            }
+            <div class="mt-2 flex justify-between border-t border-border pt-2">
+                <button type="button" class="text-[10px] text-accent" @onclick="ResetColumnsAsync">Reset</button>
+                <button type="button" class="text-[10px] text-secondary" @onclick="() => State.SetGridColumnChooser(false)">Close</button>
+            </div>
+        </div>
+    }
+    <div>
+        @if (FirstMountedSceneIndex > 0) { <div aria-hidden="true" style="height:@($"{FirstMountedSceneIndex * RowHeightPx}px")"></div> }
         @foreach (var sceneIndex in MountedSceneIndices)
         {
             @if (GroupsByIndex.TryGetValue(sceneIndex, out var group))
             {
-                <button type="button"
-                        class="flex w-full items-center gap-2 border-b border-border bg-surface-inset px-2 text-left hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
-                        style="height:var(--aps-gantt-row-height);padding-left:@($"{8 + (int)group.Level * 14}px")"
-                        aria-expanded="@(!group.IsCollapsed)"
-                        data-gantt-grid-row
-                        data-scene-index="@group.SceneIndex"
-                        tabindex="@(group.SceneIndex == FirstMountedSceneIndex ? 0 : -1)"
-                        title="@(group.IsCollapsed ? $"Expand {group.Label}" : $"Collapse {group.Label}")"
-                        @onclick="() => GroupToggled.InvokeAsync(group)">
+                <button type="button" class="flex w-full items-center gap-2 border-b border-border bg-surface-inset px-2 text-left hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" style="height:var(--aps-gantt-row-height);padding-left:@($"{8 + (int)group.Level * 14}px")" aria-expanded="@(!group.IsCollapsed)" data-gantt-grid-row data-scene-index="@group.SceneIndex" tabindex="@(group.SceneIndex == FirstMountedSceneIndex ? 0 : -1)" title="@(group.IsCollapsed ? $"Expand {group.Label}" : $"Collapse {group.Label}")" @onclick="() => GroupToggled.InvokeAsync(group)">
                     <span aria-hidden="true" class="w-3 text-center text-xs text-accent">@(group.IsCollapsed ? "▸" : "▾")</span>
                     <span class="min-w-0 flex-1"><strong class="block truncate text-xs">@group.Code</strong><span class="block truncate text-[9px] text-muted">@group.Label</span></span>
                     <span class="aps-text-figure text-[10px] text-secondary">@group.ResourceCount</span>
@@ -28,57 +40,56 @@
             }
             else if (RowsByIndex.TryGetValue(sceneIndex, out var row))
             {
-                <button type="button"
-                        class="grid min-w-0 items-center border-b px-2 pl-8 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent @(SelectedResourceIds.Contains(row.Lane.ResourceId) ? "border-accent bg-accent-soft shadow-soft" : "border-border even:bg-surface-raised hover:bg-surface-hover")"
-                        style="grid-template-columns:minmax(112px,1fr) 42px 42px 38px 30px 48px;height:var(--aps-gantt-row-height)"
-                        aria-pressed="@SelectedResourceIds.Contains(row.Lane.ResourceId)"
-                        data-gantt-grid-row
-                        data-scene-index="@row.SceneIndex"
-                        tabindex="@(row.SceneIndex == FirstMountedSceneIndex ? 0 : -1)"
-                        title="@($"{row.Lane.PlantName} / {row.Lane.AreaName} / {row.Lane.ProcessStageName} / {row.Lane.ResourceName}")"
-                        @onclick="() => ResourceSelected.InvokeAsync(row.Lane)">
-                    <span class="min-w-0"><strong class="block truncate text-xs">@row.Lane.ResourceCode</strong><span class="block truncate text-[9px] text-muted">@HierarchyLabel(row.Lane)</span></span>
-                    <span class="truncate text-[9px] @OperatingStateClass(row.Lane.OperatingState)">@StateLabel(row.Lane.OperatingState)</span>
-                    <span class="aps-text-figure text-[10px]">@row.Lane.OccupiedHours.ToString("0.#")h</span>
-                    <span class="aps-text-figure text-[10px]">@row.VisibleUtilization.ToString("P0")</span>
-                    <span class="aps-text-figure text-[10px]">@row.Lane.Operations.Count</span>
-                    <span class="truncate text-[9px] text-secondary">@(row.NextOperation?.StartUtc.ToString("HH:mm") ?? "—")</span>
+                <button type="button" class="grid min-w-0 items-center border-b px-2 pl-8 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent @(SelectedResourceIds.Contains(row.Lane.ResourceId) ? "border-accent bg-accent-soft shadow-soft" : "border-border even:bg-surface-raised hover:bg-surface-hover")" style="grid-template-columns:@GridTemplate;height:var(--aps-gantt-row-height)" aria-pressed="@SelectedResourceIds.Contains(row.Lane.ResourceId)" data-gantt-grid data-gantt-grid-row data-scene-index="@row.SceneIndex" tabindex="@(row.SceneIndex == FirstMountedSceneIndex ? 0 : -1)" title="@($"{row.Lane.PlantName} / {row.Lane.AreaName} / {row.Lane.ProcessStageName} / {row.Lane.ResourceName}")" @onclick="() => ResourceSelected.InvokeAsync(row.Lane)">
+                    @foreach (var definition in VisibleDefinitions)
+                    {
+                        @switch (definition.Column)
+                        {
+                            case GanttGridColumn.Resource: <span class="min-w-0"><strong class="block truncate text-xs">@row.Lane.ResourceCode</strong><span class="block truncate text-[9px] text-muted">@HierarchyLabel(row.Lane)</span></span> break;
+                            case GanttGridColumn.State: <span class="truncate text-[9px] @OperatingStateClass(row.Lane.OperatingState)">@StateLabel(row.Lane.OperatingState)</span> break;
+                            case GanttGridColumn.Busy: <span class="aps-text-figure truncate text-[10px]">@row.Lane.OccupiedHours.ToString("0.#")h</span> break;
+                            case GanttGridColumn.Load: <span class="aps-text-figure truncate text-[10px]">@row.VisibleUtilization.ToString("P0")</span> break;
+                            case GanttGridColumn.Operations: <span class="aps-text-figure truncate text-[10px]">@row.Lane.Operations.Count</span> break;
+                            case GanttGridColumn.Next: <span class="truncate text-[9px] text-secondary">@(row.NextOperation?.StartUtc.ToString("HH:mm") ?? "—")</span> break;
+                            case GanttGridColumn.Exceptions: <span class="aps-text-figure truncate text-[10px] @(row.ExceptionCount > 0 ? "text-danger" : "text-muted")">@row.ExceptionCount</span> break;
+                        }
+                    }
                 </button>
             }
         }
-        @if (LastMountedSceneIndex >= 0 && LastMountedSceneIndex < Scene.TotalRowCount - 1)
-        {
-            <div aria-hidden="true" style="height:@($"{(Scene.TotalRowCount - LastMountedSceneIndex - 1) * RowHeightPx}px")"></div>
-        }
+        @if (LastMountedSceneIndex >= 0 && LastMountedSceneIndex < Scene.TotalRowCount - 1) { <div aria-hidden="true" style="height:@($"{(Scene.TotalRowCount - LastMountedSceneIndex - 1) * RowHeightPx}px")"></div> }
     </div>
 </div>
 
 @code {
     [Parameter, EditorRequired] public GanttScene Scene { get; set; } = default!;
+    [Parameter, EditorRequired] public PlanningWorkbenchState State { get; set; } = default!;
     [Parameter] public IReadOnlySet<Guid> SelectedResourceIds { get; set; } = new HashSet<Guid>();
     [Parameter] public EventCallback<ScheduleResourceLaneView> ResourceSelected { get; set; }
     [Parameter] public EventCallback<GanttResourceGroupModel> GroupToggled { get; set; }
+    [Parameter] public EventCallback GridPreferencesChanged { get; set; }
     [Parameter] public int RowHeightPx { get; set; } = 60;
-
     private IReadOnlyDictionary<int, GanttResourceGroupModel> GroupsByIndex { get; set; } = new Dictionary<int, GanttResourceGroupModel>();
     private IReadOnlyDictionary<int, GanttRowModel> RowsByIndex { get; set; } = new Dictionary<int, GanttRowModel>();
     private int[] MountedSceneIndices { get; set; } = [];
+    private GanttGridColumnDefinition[] VisibleDefinitions { get; set; } = [];
     private int FirstMountedSceneIndex => MountedSceneIndices.FirstOrDefault();
     private int LastMountedSceneIndex => MountedSceneIndices.LastOrDefault(-1);
-
+    private string GridTemplate => string.Join(" ", VisibleDefinitions.Select(x => $"minmax({x.MinimumWidthPx:0}px,{State.GridColumnWidths[x.Column]:0}px)"));
     protected override void OnParametersSet()
     {
         GroupsByIndex = Scene.ResourceGroups.ToDictionary(x => x.SceneIndex);
         RowsByIndex = Scene.Rows.ToDictionary(x => x.SceneIndex);
-        MountedSceneIndices = Scene.ResourceGroups.Select(x => x.SceneIndex)
-            .Concat(Scene.Rows.Select(x => x.SceneIndex))
-            .OrderBy(x => x)
-            .ToArray();
+        MountedSceneIndices = Scene.ResourceGroups.Select(x => x.SceneIndex).Concat(Scene.Rows.Select(x => x.SceneIndex)).OrderBy(x => x).ToArray();
+        VisibleDefinitions = GanttGridColumns.All.Where(x => State.VisibleGridColumns.Contains(x.Column)).ToArray();
     }
-
-    private static string HierarchyLabel(ScheduleResourceLaneView lane) =>
-        string.Join(" · ", new[] { lane.AreaCode, lane.ProcessStageCode }.Where(x => !string.IsNullOrWhiteSpace(x)));
+    private bool IsSorted(GanttGridColumnDefinition definition) => State.GridSortColumn.ToString().Equals(definition.Column.ToString(), StringComparison.Ordinal);
+    private string SortGlyph(GanttGridColumnDefinition definition) => IsSorted(definition) ? (State.GridSortDescending ? " ↓" : " ↑") : string.Empty;
+    private string SortTitle(GanttGridColumnDefinition definition) => $"Sort by {definition.Label}{(IsSorted(definition) ? State.GridSortDescending ? ", descending" : ", ascending" : string.Empty)}";
+    private async Task SortAsync(GanttGridColumnDefinition definition) { State.SetGridSort(Enum.Parse<GanttGridSortColumn>(definition.Column.ToString())); await GridPreferencesChanged.InvokeAsync(); }
+    private async Task ToggleColumnAsync(GanttGridColumn column) { State.ToggleGridColumn(column); await GridPreferencesChanged.InvokeAsync(); }
+    private async Task ResetColumnsAsync() { State.ResetGridColumns(); await GridPreferencesChanged.InvokeAsync(); }
+    private static string HierarchyLabel(ScheduleResourceLaneView lane) => string.Join(" · ", new[] { lane.AreaCode, lane.ProcessStageCode }.Where(x => !string.IsNullOrWhiteSpace(x)));
     private static string StateLabel(ResourceOperatingState value) => value == ResourceOperatingState.Available ? "Ready" : value.ToString();
-    private static string OperatingStateClass(ResourceOperatingState value) =>
-        value == ResourceOperatingState.Available ? "text-success" : "text-danger";
+    private static string OperatingStateClass(ResourceOperatingState value) => value == ResourceOperatingState.Available ? "text-success" : "text-danger";
 }
