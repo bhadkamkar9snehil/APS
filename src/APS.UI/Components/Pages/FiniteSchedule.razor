@@ -62,7 +62,7 @@
         </div>
 
         <header class="shrink-0 border-b border-border bg-surface px-4 py-2 shadow-soft">
-            <div class="flex flex-wrap items-center gap-2">
+            <div class="flex items-center gap-2 overflow-x-auto pb-0.5">
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="() => state.Pan(-0.75)">Earlier</button>
                 @foreach (var zoom in Enum.GetValues<PlanningWorkbenchZoom>())
                 {
@@ -99,6 +99,8 @@
                     <button type="button" disabled class="rounded-control border border-border px-2 py-1 text-xs text-muted opacity-60" title="Solver-derived slack and binding-cause evidence are not available in this plan read model">Binding chain unavailable</button>
                 }
                 <button type="button" class="rounded-control border px-2 py-1 text-xs @(state.CapacityPanelOpen ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="ToggleCapacityPanelAsync">@(state.CapacityPanelOpen ? "Hide load" : "Resource load")</button>
+                <button type="button" class="shrink-0 rounded-control border px-2 py-1 text-xs @(state.OperationListOpen ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => state.ToggleOperationList()">@(state.OperationListOpen ? "Hide list" : "Schedule list")</button>
+                <button type="button" class="shrink-0 rounded-control border border-border px-2 py-1 text-xs" @onclick="async () => await ToggleFullscreenAsync()">@(isFullscreen ? "Exit full screen" : "Full screen")</button>
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="Cockpit.ToggleQueue">@(Cockpit.QueueOpen ? "Hide queue" : "Demand queue")</button>
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="Cockpit.ToggleInspector">@(Cockpit.InspectorOpen ? "Hide inspector" : "Inspector")</button>
             </div>
@@ -336,6 +338,7 @@
     private ElementReference workbenchRoot;
     private DotNetObjectReference<FiniteSchedule>? selfReference;
     private bool loading = true, acting, dragInitialized, messageIsError;
+    private bool isFullscreen;
     private string? message, moveComment;
     private string targetResourceText = "", targetStartText = "", moveReason = "PLANNER_SEQUENCE";
     private bool allowFrozenOverride;
@@ -473,6 +476,15 @@
 
     private ValueTask SaveGanttPreferenceAsync(string key, object value) =>
         JS.InvokeVoidAsync("apsPlanningWorkbench.savePreference", key, value);
+
+    private ValueTask ToggleFullscreenAsync() => JS.InvokeVoidAsync("apsPlanningWorkbench.toggleFullscreen", workbenchRoot);
+
+    [JSInvokable]
+    public void FullscreenChanged(bool active)
+    {
+        isFullscreen = active;
+        StateHasChanged();
+    }
 
     [JSInvokable]
     public void UpdateViewportMetrics(double timelineWidthPx, double availableWidthPx)

@@ -76,6 +76,7 @@ public sealed class PlanningWorkbenchState
     public GanttBaselineMode BaselineMode { get; private set; } = GanttBaselineMode.Ghost;
     public bool ShowDependencies { get; private set; }
     public bool CapacityPanelOpen { get; private set; }
+    public bool OperationListOpen { get; private set; }
     public int CapacityPanelHeightPx { get; private set; } = 220;
     public GanttCapacityFocus? CapacityFocus { get; private set; }
     public int GanttRowHeightPx => Viewport.RowHeightPx + (BaselineMode == GanttBaselineMode.CompareSubrow ? 20 : 0);
@@ -174,6 +175,7 @@ public sealed class PlanningWorkbenchState
     public void ToggleBaseline() { ShowBaseline = !ShowBaseline; Notify(); }
     public void SetBaselineMode(GanttBaselineMode mode) { BaselineMode = mode; Notify(); }
     public void ToggleCapacityPanel() { CapacityPanelOpen = !CapacityPanelOpen; Notify(); }
+    public void ToggleOperationList() { OperationListOpen = !OperationListOpen; Notify(); }
     public void SetCapacityPanel(bool open, int heightPx)
     {
         CapacityPanelOpen = open;

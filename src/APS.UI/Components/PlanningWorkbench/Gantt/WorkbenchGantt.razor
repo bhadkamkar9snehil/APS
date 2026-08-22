@@ -58,6 +58,10 @@
                                    CopyId="CopyContextBusinessId"
                                    Close="CloseContextMenu" />
     }
+    @if (State.OperationListOpen)
+    {
+        <GanttOperationList Scene="Scene" State="State" OperationSelected="OperationSelected" Close="() => State.ToggleOperationList()" />
+    }
 </section>
 
 @code {

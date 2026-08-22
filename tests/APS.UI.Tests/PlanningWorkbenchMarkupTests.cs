@@ -179,6 +179,27 @@ public sealed class PlanningWorkbenchMarkupTests
     }
 
     [Fact]
+    public void Workbench_has_compact_fullscreen_chrome_and_a_synchronized_schedule_table()
+    {
+        var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+        var gantt = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/WorkbenchGantt.razor"));
+        var list = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttOperationList.razor"));
+        var script = File.ReadAllText(Repo.File("src/APS.UI/wwwroot/planning-workbench.js"));
+
+        Assert.Contains("overflow-x-auto", page);
+        Assert.DoesNotContain("flex flex-wrap items-center gap-2", page);
+        Assert.Contains("ToggleFullscreenAsync", page);
+        Assert.Contains("FullscreenChanged", page);
+        Assert.Contains("toggleFullscreen", script);
+        Assert.Contains("fullscreenchange", script);
+        Assert.Contains("GanttOperationList", gantt);
+        Assert.Contains("State.OperationListOpen", gantt);
+        Assert.Contains("<table", list);
+        Assert.Contains("Schedule operation list", list);
+        Assert.Contains("OperationSelected", list);
+    }
+
+    [Fact]
     public void Gantt_is_a_reusable_synchronized_control_not_page_local_markup()
     {
         var root = "src/APS.UI/Components/PlanningWorkbench/Gantt";

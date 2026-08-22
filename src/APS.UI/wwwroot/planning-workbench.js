@@ -286,6 +286,7 @@
       if (event.target.closest?.('.aps-operation') && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key))
         event.preventDefault();
     };
+    const fullscreenChanged = () => dotnet.invokeMethodAsync('FullscreenChanged', document.fullscreenElement === root);
 
     const wheel = event => {
       if (!event.ctrlKey || !event.target.closest('[data-gantt-timeline]')) return;
@@ -312,6 +313,7 @@
     root.addEventListener('keydown', operationKeydown);
     window.addEventListener('keydown', keydown);
     window.addEventListener('blur', cancel);
+    document.addEventListener('fullscreenchange', fullscreenChanged);
     dotnet.invokeMethodAsync('ApplyGanttPreferences', JSON.stringify(preferences()), root.clientWidth).then(requestMetrics);
     state.cleanup = () => {
       root.removeEventListener('pointerdown', down);
@@ -322,6 +324,7 @@
       root.removeEventListener('keydown', operationKeydown);
       window.removeEventListener('keydown', keydown);
       window.removeEventListener('blur', cancel);
+      document.removeEventListener('fullscreenchange', fullscreenChanged);
       if (scroller) scroller.removeEventListener('scroll', requestMetrics);
       resizeObserver.disconnect();
       if (state.metricsFrame) cancelAnimationFrame(state.metricsFrame);
@@ -343,5 +346,10 @@
   }
   function focusContextMenu() { document.querySelector('[data-gantt-context-menu] [role="menuitem"]')?.focus(); }
   function copyText(value) { return navigator.clipboard.writeText(value); }
-  window.apsPlanningWorkbench = { initialize, dispose, savePreference, focusOperation, focusContextMenu, copyText };
+  async function toggleFullscreen(root) {
+    if (document.fullscreenElement === root) await document.exitFullscreen();
+    else if (root?.requestFullscreen) await root.requestFullscreen();
+    else throw new Error('Fullscreen is not supported by this host.');
+  }
+  window.apsPlanningWorkbench = { initialize, dispose, savePreference, focusOperation, focusContextMenu, copyText, toggleFullscreen };
 })();

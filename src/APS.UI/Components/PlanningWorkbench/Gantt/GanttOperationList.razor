@@ -1,0 +1,35 @@
+<section class="absolute inset-x-4 bottom-4 top-16 z-[70] flex min-h-0 flex-col rounded-surface border border-border bg-surface shadow-popover" aria-label="Schedule operation list">
+    <div class="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
+        <div><strong class="text-xs">Schedule list</strong><span class="ml-2 text-[10px] text-muted">@Rows.Count mounted and time-visible operations</span></div>
+        <button type="button" class="rounded-control border border-border px-2 py-1 text-xs" @onclick="Close">Close list</button>
+    </div>
+    <div class="min-h-0 flex-1 overflow-auto">
+        <table class="w-full border-collapse text-left text-[11px]">
+            <thead class="sticky top-0 z-10 bg-surface-raised text-muted">
+                <tr><th class="px-3 py-2">Operation</th><th class="px-3 py-2">Resource</th><th class="px-3 py-2">Start UTC</th><th class="px-3 py-2">End UTC</th><th class="px-3 py-2">State</th><th class="px-3 py-2">Orders</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var model in Rows)
+                {
+                    <tr class="border-t border-border @(State.SelectedPlanningKey == model.Operation.PlanningKey ? "bg-accent-soft" : "")">
+                        <td class="px-3 py-1.5"><button type="button" class="font-semibold text-accent hover:underline" @onclick="() => OperationSelected.InvokeAsync(model.Operation)">@model.Operation.PlanningKey</button></td>
+                        <td class="px-3 py-1.5">@model.Operation.ResourceCode</td>
+                        <td class="px-3 py-1.5 aps-text-figure">@model.Operation.StartUtc.ToString("dd MMM HH:mm")</td>
+                        <td class="px-3 py-1.5 aps-text-figure">@model.Operation.EndUtc.ToString("dd MMM HH:mm")</td>
+                        <td class="px-3 py-1.5">@model.ExecutionStatus</td>
+                        <td class="max-w-64 truncate px-3 py-1.5">@(model.Detail is { ProductionOrderNumbers.Count: > 0 } ? string.Join(", ", model.Detail.ProductionOrderNumbers) : "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public GanttScene Scene { get; set; } = default!;
+    [Parameter, EditorRequired] public PlanningWorkbenchState State { get; set; } = default!;
+    [Parameter] public EventCallback<ScheduledProcessOperationView> OperationSelected { get; set; }
+    [Parameter] public EventCallback Close { get; set; }
+
+    private IReadOnlyList<GanttOperationModel> Rows => Scene.Rows.SelectMany(x => x.Operations).OrderBy(x => x.Operation.StartUtc).ThenBy(x => x.Operation.ResourceCode).ToArray();
+}
