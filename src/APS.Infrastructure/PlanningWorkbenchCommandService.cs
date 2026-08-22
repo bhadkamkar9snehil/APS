@@ -9,9 +9,18 @@ public sealed class PlanningWorkbenchCommandService(
     ApsDbContext db,
     IPlanningLifecycleService lifecycle) : IPlanningWorkbenchCommandService
 {
-    public async Task<PlanningProposalImpact> ValidateMoveAsync(
+    public Task<PlanningProposalImpact> ValidateMoveAsync(
         PlanningMoveProposal proposal,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        ValidateMoveCoreAsync(
+            proposal,
+            proposal.TimeFencePolicy ?? new PlanningTimeFencePolicy(),
+            cancellationToken);
+
+    private async Task<PlanningProposalImpact> ValidateMoveCoreAsync(
+        PlanningMoveProposal proposal,
+        PlanningTimeFencePolicy timeFencePolicy,
+        CancellationToken cancellationToken)
     {
         var state = await db.PlanVersionStates.AsNoTracking()
             .SingleOrDefaultAsync(x => x.PlanVersionId == proposal.BaselinePlanVersionId, cancellationToken)
@@ -21,10 +30,12 @@ public sealed class PlanningWorkbenchCommandService(
                 x => x.PlanVersionId == proposal.BaselinePlanVersionId && x.PlanningKey == proposal.PlanningKey,
                 cancellationToken)
             ?? throw new KeyNotFoundException($"Operation {proposal.PlanningKey} is not present in the selected plan.");
-        var source = await db.Resources.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == operation.ResourceId, cancellationToken);
-        var target = await db.Resources.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == proposal.TargetResourceId, cancellationToken)
+
+        var resources = await db.Resources.AsNoTracking()
+            .Where(x => x.Id == operation.ResourceId || x.Id == proposal.TargetResourceId)
+            .ToArrayAsync(cancellationToken);
+        var source = resources.FirstOrDefault(x => x.Id == operation.ResourceId);
+        var target = resources.FirstOrDefault(x => x.Id == proposal.TargetResourceId)
             ?? throw new KeyNotFoundException("The selected target resource no longer exists.");
 
         var duration = operation.EndUtc - operation.StartUtc;
@@ -78,7 +89,7 @@ public sealed class PlanningWorkbenchCommandService(
                 operation.PlanningKey));
         }
 
-        var frozenEnd = state.ReferenceTimeUtc.AddMinutes(new PlanningTimeFencePolicy().FrozenMinutes);
+        var frozenEnd = state.ReferenceTimeUtc.AddMinutes(timeFencePolicy.FrozenMinutes);
         if (!proposal.AllowFrozenOverride && operation.StartUtc <= frozenEnd)
         {
             findings.Add(Blocker(
@@ -197,7 +208,7 @@ public sealed class PlanningWorkbenchCommandService(
         PlanningMoveApplyRequest request,
         CancellationToken cancellationToken = default)
     {
-        var impact = await ValidateMoveAsync(request.Proposal, cancellationToken);
+        var impact = await ValidateMoveCoreAsync(request.Proposal, request.TimeFencePolicy, cancellationToken);
         if (!impact.CanApply)
         {
             throw new InvalidOperationException(
@@ -229,9 +240,18 @@ public sealed class PlanningWorkbenchCommandService(
         return new PlanningMoveApplyResult(impact, replan);
     }
 
-    public async Task<PlanningBulkMoveImpact> ValidateBulkMoveAsync(
+    public Task<PlanningBulkMoveImpact> ValidateBulkMoveAsync(
         PlanningBulkMoveProposal proposal,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        ValidateBulkMoveCoreAsync(
+            proposal,
+            proposal.TimeFencePolicy ?? new PlanningTimeFencePolicy(),
+            cancellationToken);
+
+    private async Task<PlanningBulkMoveImpact> ValidateBulkMoveCoreAsync(
+        PlanningBulkMoveProposal proposal,
+        PlanningTimeFencePolicy timeFencePolicy,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(proposal.Moves);
         var findings = new List<PlanningConstraintFinding>();
@@ -272,14 +292,18 @@ public sealed class PlanningWorkbenchCommandService(
         var impacts = new List<PlanningProposalImpact>();
         foreach (var move in validMoves)
         {
-            var impact = await ValidateMoveAsync(new PlanningMoveProposal(
-                proposal.BaselinePlanVersionId,
-                move.PlanningKey,
-                move.TargetResourceId,
-                move.TargetStartUtc,
-                proposal.ReasonCode,
-                proposal.Comment,
-                proposal.AllowFrozenOverride), cancellationToken);
+            var impact = await ValidateMoveCoreAsync(
+                new PlanningMoveProposal(
+                    proposal.BaselinePlanVersionId,
+                    move.PlanningKey,
+                    move.TargetResourceId,
+                    move.TargetStartUtc,
+                    proposal.ReasonCode,
+                    proposal.Comment,
+                    proposal.AllowFrozenOverride,
+                    timeFencePolicy),
+                timeFencePolicy,
+                cancellationToken);
             impacts.Add(impact);
         }
 
@@ -315,7 +339,7 @@ public sealed class PlanningWorkbenchCommandService(
         PlanningBulkMoveApplyRequest request,
         CancellationToken cancellationToken = default)
     {
-        var impact = await ValidateBulkMoveAsync(request.Proposal, cancellationToken);
+        var impact = await ValidateBulkMoveCoreAsync(request.Proposal, request.TimeFencePolicy, cancellationToken);
         if (!impact.CanApply)
         {
             throw new InvalidOperationException(
