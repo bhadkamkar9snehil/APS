@@ -76,12 +76,12 @@ else
                         <div class="flex flex-wrap gap-2">
                             @foreach (var op in selectedPlan.FeedAndRollingOperations.OrderBy(x => x.StartUtc))
                             {
-                                <button type="button" class="rounded border border-border px-3 py-2 text-left text-xs hover:bg-surface-hover" @onclick="() => SelectOperation(op)">
+                                <div class="rounded border border-border px-3 py-2 text-left text-xs">
                                     <div class="text-muted">@op.ProcessOperationType</div>
                                     <strong>@op.ResourceCode</strong>
                                     <div class="text-muted">@op.StartUtc.ToString("dd MMM HH:mm") &rarr; @op.EndUtc.ToString("HH:mm")</div>
                                     <div class="text-muted">@op.QuantityMt.ToString("0.##") MT</div>
-                                </button>
+                                </div>
                             }
                         </div>
                     }
@@ -109,7 +109,7 @@ else
                                 var firstStart = scheduledBlocks.Length == 0 ? (DateTime?)null : scheduledBlocks.Min(x => x.StartUtc);
                                 var lastEnd = scheduledBlocks.Length == 0 ? (DateTime?)null : scheduledBlocks.Max(x => x.EndUtc);
 
-                                <button type="button" class="rounded border px-3 py-2 text-left text-xs hover:bg-surface-hover @(route.IsInventoryDecouplingPoint ? "border-warning bg-warning-soft" : "border-border")" @onclick="() => SelectRouteOperation(route)">
+                                <div class="rounded border px-3 py-2 text-left text-xs @(route.IsInventoryDecouplingPoint ? "border-warning bg-warning-soft" : "border-border")">
                                     <div class="flex items-center justify-between">
                                         <span class="text-muted">@route.SequenceNumber.ToString("00") &middot; @route.ProcessOperationType</span>
                                         @if (route.IsInventoryDecouplingPoint) { <span class="rounded bg-warning-soft px-1 text-warning">BUFFER</span> }
@@ -124,7 +124,7 @@ else
                                     {
                                         <div class="text-muted">Not scheduled</div>
                                     }
-                                </button>
+                                </div>
                             }
                         </div>
                     }
@@ -145,7 +145,7 @@ else
                         <tbody>
                             @foreach (var allocation in selectedPlan.Allocations)
                             {
-                                <tr class="cursor-pointer border-b border-border last:border-0 hover:bg-surface-hover" @onclick="() => SelectProductionOrder(allocation)">
+                                <tr class="border-b border-border last:border-0">
                                     <td class="px-4 py-2"><strong>@allocation.ProductionOrderNumber</strong><div class="text-xs text-muted">@(allocation.SalesOrderNumber is null ? "Stock replenishment" : $"SO {allocation.SalesOrderNumber}")</div></td>
                                     <td class="px-4 py-2 text-right font-medium">@allocation.PlannedQuantityMt.ToString("0.##")</td>
                                     <td class="px-4 py-2 text-right">@allocation.ExistingIntermediateInventoryMt.ToString("0.##")</td>
@@ -201,7 +201,7 @@ else
                         <div class="grid grid-cols-6 gap-2">
                             @foreach (var unit in selectedPlan.PackagingUnits.Take(80))
                             {
-                                <button type="button" class="rounded border border-border p-2 text-left text-xs hover:bg-surface-hover" @onclick="() => SelectPackaging(unit)">
+                                <div class="rounded border border-border p-2 text-left text-xs">
                                     <div class="text-muted">@unit.PackagingUnitType</div>
                                     <strong>@(unit.PlannedIdentifier ?? $"#{unit.SequenceNumber:000}")</strong>
                                     <div class="text-muted">@unit.PlannedWeightMt.ToString("0.###") MT</div>
@@ -209,7 +209,7 @@ else
                                     {
                                         <div class="text-muted">@unit.PlannedPieceCount pcs &middot; @FormatLength(unit.CutLengthM)</div>
                                     }
-                                </button>
+                                </div>
                             }
                         </div>
                         @if (selectedPlan.PackagingUnits.Count > 80)
@@ -249,23 +249,7 @@ else
             _ = InvokeAsync(LoadAsync);
     }
 
-    private void SelectPlan(RollingPlanView plan)
-    {
-        selectedPlan = plan;
-        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Operation, plan.RollingPlanId, $"RP-{plan.SequenceNumber:00}"));
-    }
-
-    private void SelectOperation(ScheduledProcessOperationView operation) =>
-        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Operation, operation.OperationSnapshotId, operation.PlanningKey));
-
-    private void SelectRouteOperation(DownstreamRouteOperationView operation) =>
-        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Operation, operation.RouteOperationPlanId, $"{operation.ProcessOperationType}-{operation.SequenceNumber:00}"));
-
-    private void SelectProductionOrder(RollingAllocationView allocation) =>
-        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.ProductionOrder, allocation.ProductionOrderId, allocation.ProductionOrderNumber));
-
-    private void SelectPackaging(PlannedPackagingUnitView unit) =>
-        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.MaterialSupply, unit.PlannedPackagingUnitId, unit.PlannedIdentifier ?? $"{unit.PackagingUnitType}-{unit.SequenceNumber:000}"));
+    private void SelectPlan(RollingPlanView plan) => selectedPlan = plan;
 
     private static string FormatLength(decimal? length) => length.HasValue ? $"{length.Value:0.###} m" : "length —";
 

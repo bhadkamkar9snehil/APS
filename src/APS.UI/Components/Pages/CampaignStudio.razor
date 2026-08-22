@@ -93,7 +93,7 @@ else
                     <div class="grid grid-cols-3 gap-2">
                         @foreach (var heat in selectedCampaign.Heats.OrderBy(x => x.SequenceNumber))
                         {
-                            <button type="button" class="rounded border border-border p-2 text-left text-xs hover:bg-surface-hover" @onclick="() => SelectHeat(heat)">
+                            <div class="rounded border border-border p-2 text-left text-xs">
                                 <div class="flex items-center justify-between">
                                     <span class="text-muted">H@(heat.SequenceNumber.ToString("00"))</span>
                                     <strong>@heat.GradeCode</strong>
@@ -113,7 +113,7 @@ else
                                         }
                                     }
                                 </div>
-                            </button>
+                            </div>
                         }
                     </div>
                 </section>
@@ -133,7 +133,7 @@ else
                         <tbody>
                             @foreach (var allocation in selectedCampaign.Allocations)
                             {
-                                <tr class="cursor-pointer border-b border-border last:border-0 hover:bg-surface-hover" @onclick="() => SelectProductionOrder(allocation)">
+                                <tr class="border-b border-border last:border-0">
                                     <td class="px-4 py-2"><strong>@allocation.ProductionOrderNumber</strong><div class="text-xs text-muted">@(allocation.SalesOrderNumber is null ? "Stock replenishment" : $"SO {allocation.SalesOrderNumber}")</div></td>
                                     <td class="px-4 py-2"><span class="rounded px-1.5 py-0.5 text-xs @(allocation.DemandSource == DemandSourceType.MakeToOrder ? "bg-info-soft text-info" : "bg-surface-inset text-secondary")">@(allocation.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</span></td>
                                     <td class="px-4 py-2 text-right font-medium">@allocation.PlannedQuantityMt.ToString("0.##")</td>
@@ -177,25 +177,7 @@ else
         }
     }
 
-    private void SelectCampaign(CampaignView campaign)
-    {
-        selectedCampaign = campaign;
-        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Campaign, campaign.CampaignId, campaign.CampaignNumber));
-    }
-
-    private void SelectHeat(CampaignHeatView heat)
-    {
-        WorkspaceState.Select(new PlannerEntityRef(
-            PlannerEntityType.Heat,
-            heat.CampaignHeatId,
-            $"{selectedCampaign?.CampaignNumber}/H{heat.SequenceNumber:00}"));
-    }
-
-    private void SelectProductionOrder(CampaignAllocationView allocation) =>
-        WorkspaceState.Select(new PlannerEntityRef(
-            PlannerEntityType.ProductionOrder,
-            allocation.ProductionOrderId,
-            allocation.ProductionOrderNumber));
+    private void SelectCampaign(CampaignView campaign) => selectedCampaign = campaign;
 
     private static string FormatNullable(decimal? value) => value.HasValue ? value.Value.ToString("0.##") : "—";
     private static string HeatAllocationTitle(HeatAllocationView allocation) =>
