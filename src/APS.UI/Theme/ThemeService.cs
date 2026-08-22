@@ -5,24 +5,15 @@ namespace APS.UI.Theme;
 public sealed class ThemeService(IJSRuntime js) : IAsyncDisposable
 {
     private const string ApplyIdentifier = "apsTheme.apply";
-    private DotNetObjectReference<ThemeService>? selfReference;
+    private ThemePreference preference = ThemePreference.Default;
     private bool disposed;
-
-    public ThemePreference Preference { get; private set; } = ThemePreference.Default;
-    public string EffectiveTheme { get; private set; } = "light";
-    public event Action? Changed;
 
     public async Task InitializeAsync()
     {
         ThrowIfDisposed();
-        selfReference ??= DotNetObjectReference.Create(this);
-        var result = await js.InvokeAsync<ThemeInitializationResult?>("apsTheme.initialize", selfReference);
-        if (result is not null && IsValid(result.Preference))
-        {
-            Preference = result.Preference;
-            EffectiveTheme = result.EffectiveTheme == "dark" ? "dark" : "light";
-        }
-        Changed?.Invoke();
+        var loaded = await js.InvokeAsync<ThemePreference?>("apsTheme.initialize");
+        if (loaded is not null && IsValid(loaded))
+            preference = loaded;
     }
 
     public async Task SetModeAsync(ThemeMode mode)
@@ -31,20 +22,8 @@ public sealed class ThemeService(IJSRuntime js) : IAsyncDisposable
         if (!Enum.IsDefined(mode))
             throw new ArgumentOutOfRangeException(nameof(mode));
 
-        Preference = Preference with { Mode = mode };
-        await js.InvokeVoidAsync(ApplyIdentifier, Preference);
-        Changed?.Invoke();
-    }
-
-    [JSInvokable]
-    public Task OnSystemThemeChanged(bool dark)
-    {
-        if (disposed || Preference.Mode != ThemeMode.System)
-            return Task.CompletedTask;
-
-        EffectiveTheme = dark ? "dark" : "light";
-        Changed?.Invoke();
-        return Task.CompletedTask;
+        preference = preference with { Mode = mode };
+        await js.InvokeVoidAsync(ApplyIdentifier, preference);
     }
 
     public async ValueTask DisposeAsync()
@@ -63,17 +42,13 @@ public sealed class ThemeService(IJSRuntime js) : IAsyncDisposable
         catch (InvalidOperationException)
         {
         }
-        selfReference?.Dispose();
     }
 
-    private static bool IsValid(ThemePreference preference) =>
-        preference.Version == ThemePreference.CurrentVersion &&
-        Enum.IsDefined(preference.Mode) &&
-        Enum.IsDefined(preference.Accent.Kind) &&
-        (preference.Accent.Kind != ThemeAccentKind.Custom ||
-         ThemeColor.TryParseHex(preference.Accent.CustomHex, out _));
+    private static bool IsValid(ThemePreference value) =>
+        value.Version == ThemePreference.CurrentVersion &&
+        Enum.IsDefined(value.Mode) &&
+        Enum.IsDefined(value.Accent.Kind) &&
+        (value.Accent.Kind != ThemeAccentKind.Custom || ThemeColor.TryParseHex(value.Accent.CustomHex, out _));
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(disposed, this);
-
-    public sealed record ThemeInitializationResult(ThemePreference Preference, string EffectiveTheme);
 }
