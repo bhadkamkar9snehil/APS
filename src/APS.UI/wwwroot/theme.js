@@ -94,16 +94,11 @@
         return result;
     }
 
-    function reset() {
-        try { localStorage.removeItem(storageKey); } catch { }
-        return apply(defaultPreference);
-    }
-
     function dispose() {
         if (mediaHandler) media.removeEventListener("change", mediaHandler);
         mediaHandler = null;
         dotNetReference = null;
     }
 
-    window.apsTheme = { apply, bootstrap, dispose, initialize, load, reset };
+    window.apsTheme = { apply, bootstrap, dispose, initialize, load };
 })();
