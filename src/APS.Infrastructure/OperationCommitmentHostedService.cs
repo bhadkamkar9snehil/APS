@@ -23,7 +23,7 @@ public sealed class OperationCommitmentHostedService(
         {
             try
             {
-                using var scope = scopeFactory.CreateScope();
+                await using var scope = scopeFactory.CreateAsyncScope();
                 var db = scope.ServiceProvider.GetRequiredService<ApsDbContext>();
                 var execution = scope.ServiceProvider.GetRequiredService<IOperationExecutionService>();
                 var activePlanIds = await db.PlanVersionStates
