@@ -34,9 +34,6 @@ public sealed class LocalApplicationPaths
     /// </summary>
     public string LogFilePattern { get; }
 
-    public string GetLogPath(DateTime localDate) =>
-        Path.Combine(LogDirectory, $"{LogFilePrefix}{localDate:yyyyMMdd}.log");
-
     public void EnsureDirectories()
     {
         Directory.CreateDirectory(DataDirectory);
