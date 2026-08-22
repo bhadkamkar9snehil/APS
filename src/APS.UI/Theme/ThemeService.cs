@@ -36,40 +36,6 @@ public sealed class ThemeService(IJSRuntime js) : IAsyncDisposable
         Changed?.Invoke();
     }
 
-    public async Task SetPresetAsync(ThemeAccentKind kind)
-    {
-        ThrowIfDisposed();
-        if (!Enum.IsDefined(kind) || kind == ThemeAccentKind.Custom)
-            throw new ArgumentOutOfRangeException(nameof(kind));
-
-        Preference = Preference with { Accent = new ThemeAccent(kind) };
-        await js.InvokeVoidAsync(ApplyIdentifier, Preference);
-        Changed?.Invoke();
-    }
-
-    public async Task<bool> SetCustomAccentAsync(string? value)
-    {
-        ThrowIfDisposed();
-        if (!ThemeColor.TryParseHex(value, out var color))
-            return false;
-
-        Preference = Preference with
-        {
-            Accent = new ThemeAccent(ThemeAccentKind.Custom, color.ToHex())
-        };
-        await js.InvokeVoidAsync(ApplyIdentifier, Preference);
-        Changed?.Invoke();
-        return true;
-    }
-
-    public async Task ResetAsync()
-    {
-        ThrowIfDisposed();
-        Preference = ThemePreference.Default;
-        await js.InvokeVoidAsync("apsTheme.reset");
-        Changed?.Invoke();
-    }
-
     [JSInvokable]
     public Task OnSystemThemeChanged(bool dark)
     {
