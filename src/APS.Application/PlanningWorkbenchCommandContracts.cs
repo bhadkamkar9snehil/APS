@@ -20,7 +20,8 @@ public sealed record PlanningMoveProposal(
     DateTime TargetStartUtc,
     string ReasonCode,
     string? Comment = null,
-    bool AllowFrozenOverride = false);
+    bool AllowFrozenOverride = false,
+    PlanningTimeFencePolicy? TimeFencePolicy = null);
 
 public sealed record PlanningProposalImpact(
     bool CanApply,
@@ -55,7 +56,8 @@ public sealed record PlanningBulkMoveProposal(
     IReadOnlyCollection<PlanningBulkMoveItem> Moves,
     string ReasonCode,
     string? Comment = null,
-    bool AllowFrozenOverride = false);
+    bool AllowFrozenOverride = false,
+    PlanningTimeFencePolicy? TimeFencePolicy = null);
 
 public sealed record PlanningBulkMoveImpact(
     bool CanApply,
