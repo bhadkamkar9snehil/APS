@@ -62,6 +62,8 @@ public sealed record GanttOperationModel(
 {
     public OperationAssignmentCommitmentState? CommitmentState { get; init; }
     public int EligibleResourceCount { get; init; }
+    public DateTime? ActualStartUtc { get; init; }
+    public DateTime? ActualEndUtc { get; init; }
 }
 
 public enum GanttBaselineChange
@@ -362,7 +364,9 @@ public static class GanttModels
                     BaselineChange(operation, baselineByKey.GetValueOrDefault(operation.PlanningKey)))
                 {
                     CommitmentState = detail?.CommitmentState,
-                    EligibleResourceCount = eligibleResourceCount
+                    EligibleResourceCount = eligibleResourceCount,
+                    ActualStartUtc = detail?.ActualStartUtc,
+                    ActualEndUtc = detail?.ActualEndUtc
                 };
             })
             .ToArray();

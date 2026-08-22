@@ -113,22 +113,33 @@
 
     function activateDrag(drag) {
       drag.active = true;
-      drag.ghost = drag.block.cloneNode(true);
-      drag.ghost.removeAttribute('id');
-      drag.ghost.classList.add('aps-operation-ghost');
-      Object.assign(drag.ghost.style, {
-        position: 'fixed', left: `${drag.rect.left}px`, top: `${drag.rect.top}px`,
-        width: `${drag.rect.width}px`, height: `${drag.rect.height}px`, zIndex: '1000', pointerEvents: 'none'
+      drag.ghosts = drag.sourceBlocks.map(sourceBlock => {
+        const sourceRect = sourceBlock.getBoundingClientRect();
+        const ghost = sourceBlock.cloneNode(true);
+        ghost.removeAttribute('id');
+        ghost.classList.add('aps-operation-ghost');
+        Object.assign(ghost.style, {
+          position: 'fixed', left: `${sourceRect.left}px`, top: `${sourceRect.top}px`,
+          width: `${sourceRect.width}px`, height: `${sourceRect.height}px`, zIndex: '1000', pointerEvents: 'none'
+        });
+        document.body.appendChild(ghost);
+        return { ghost, sourceRect, anchor: sourceBlock === drag.block };
       });
-      document.body.appendChild(drag.ghost);
-      drag.block.classList.add('aps-operation-source-dragging');
+      drag.ghost = drag.ghosts.find(item => item.anchor)?.ghost;
+      drag.sourceBlocks.forEach(block => block.classList.add('aps-operation-source-dragging'));
+      if (drag.bulk) {
+        const count = document.createElement('span');
+        count.className = 'aps-drag-count';
+        count.textContent = `${drag.selectionCount} operations`;
+        drag.ghost.appendChild(count);
+      }
       document.body.style.cursor = 'grabbing';
     }
 
     function cleanupDrag(drag) {
-      drag?.ghost?.remove();
+      drag?.ghosts?.forEach(item => item.ghost.remove());
       drag?.feedback?.remove();
-      drag?.block?.classList.remove('aps-operation-source-dragging');
+      drag?.sourceBlocks?.forEach(block => block.classList.remove('aps-operation-source-dragging'));
       document.body.style.cursor = '';
       clearLaneHighlight();
       clearGuide();
@@ -155,6 +166,11 @@
         return;
       }
       if (block.dataset.dragProtected === 'true') return;
+      const selectedBlocks = Array.from(root.querySelectorAll('.aps-operation[data-selected="true"]'));
+      const selectionSummary = root.querySelector('[data-gantt-selection-count]');
+      const selectionCount = Number(selectionSummary?.dataset.ganttSelectionCount || 0);
+      const bulk = block.dataset.selected === 'true' && selectionCount > 1;
+      if (bulk && selectionSummary?.dataset.ganttBulkMove !== 'true') return;
       const rect = block.getBoundingClientRect();
       state.drag = {
         block,
@@ -169,7 +185,10 @@
         durationMs: Number(block.dataset.durationMs),
         eligibleResources: new Set((block.dataset.eligibleResources || '').split(',').filter(Boolean)),
         snapMode: block.dataset.snapMode || 'FifteenMinutes',
-        frozen: block.dataset.frozen === 'true'
+        frozen: bulk ? selectedBlocks.some(item => item.dataset.frozen === 'true') : block.dataset.frozen === 'true',
+        bulk,
+        selectionCount,
+        sourceBlocks: bulk ? selectedBlocks : [block]
       };
       block.setPointerCapture?.(event.pointerId);
     };
@@ -197,16 +216,22 @@
         if (Math.abs(dx) + Math.abs(dy) < 4) return;
         activateDrag(state.drag);
       }
-      Object.assign(state.drag.ghost.style, {
-        left: `${event.clientX - state.drag.rect.width * state.drag.grabRatio}px`,
-        top: `${event.clientY - state.drag.grabY}px`
-      });
+      if (state.drag.bulk) {
+        state.drag.ghosts.forEach(item => { item.ghost.style.left = `${item.sourceRect.left + dx}px`; });
+      } else {
+        Object.assign(state.drag.ghost.style, {
+          left: `${event.clientX - state.drag.rect.width * state.drag.grabRatio}px`,
+          top: `${event.clientY - state.drag.grabY}px`
+        });
+      }
       event.preventDefault();
 
       const lane = currentLane(event.clientX, event.clientY);
       const grid = lane?.querySelector?.('.aps-time-grid');
       if (lane && grid) {
-        const eligible = state.drag.eligibleResources.has(lane.dataset.resourceId);
+        const eligible = state.drag.bulk
+          ? lane.dataset.resourceId === state.drag.block.dataset.sourceResourceId
+          : state.drag.eligibleResources.has(lane.dataset.resourceId);
         if (lane !== state.drag.lastLane) {
           clearLaneHighlight();
           lane.classList.add(eligible ? 'aps-lane-drop-eligible' : 'aps-lane-drop-ineligible');
@@ -228,14 +253,14 @@
           const start = new Date(snapped.candidate);
           const end = new Date(snapped.candidate + state.drag.durationMs);
           const deltaMinutes = Math.round((snapped.candidate - new Date(state.drag.block.dataset.operationStart).getTime()) / 60000);
-          setFeedback(state.drag, `${start.toISOString().slice(11,16)}–${end.toISOString().slice(11,16)} · ${deltaMinutes >= 0 ? '+' : ''}${deltaMinutes} min${state.drag.frozen ? ' · override required' : ''}`, state.drag.frozen ? 'warning' : 'eligible');
+          setFeedback(state.drag, `${state.drag.bulk ? `${state.drag.selectionCount} operations · ` : ''}${start.toISOString().slice(11,16)}–${end.toISOString().slice(11,16)} · ${deltaMinutes >= 0 ? '+' : ''}${deltaMinutes} min${state.drag.frozen ? ' · override required' : ''}`, state.drag.frozen ? 'warning' : 'eligible');
         } else if (eligible && snapped?.unavailable) {
           clearGuide();
           state.drag.lastCandidate = null;
           setFeedback(state.drag, 'Shift calendar unavailable for resource', 'ineligible');
         } else {
           clearGuide();
-          setFeedback(state.drag, 'Resource not eligible', 'ineligible');
+          setFeedback(state.drag, state.drag.bulk ? 'Bulk move is horizontal; keep the anchor on its source resource' : 'Resource not eligible', 'ineligible');
         }
       } else {
         clearLaneHighlight();
@@ -273,10 +298,14 @@
 
       const lane = currentLane(event.clientX, event.clientY);
       const grid = lane?.querySelector?.('.aps-time-grid');
-      if (!lane || !grid || !drag.eligibleResources.has(lane.dataset.resourceId)) return;
+      const eligible = lane && (drag.bulk
+        ? lane.dataset.resourceId === drag.block.dataset.sourceResourceId
+        : drag.eligibleResources.has(lane.dataset.resourceId));
+      if (!lane || !grid || !eligible) return;
       const snapped = snap(grid, event.clientX, drag);
       if (!snapped || snapped.unavailable) return;
-      await dotnet.invokeMethodAsync('StageDraggedMove', drag.planningKey, lane.dataset.resourceId, snapped.iso);
+      if (drag.bulk) await dotnet.invokeMethodAsync('StageDraggedBulkMove', drag.planningKey, snapped.iso);
+      else await dotnet.invokeMethodAsync('StageDraggedMove', drag.planningKey, lane.dataset.resourceId, snapped.iso);
     };
 
     const cancel = () => {
@@ -286,10 +315,47 @@
       cleanupDrag(drag);
     };
 
-    const keydown = event => { if (event.key === 'Escape') cancel(); };
+    const keydown = event => {
+      if (event.key !== 'Escape' || !state.drag) return;
+      cancel();
+      event.preventDefault();
+      event.stopPropagation();
+    };
     const operationKeydown = event => {
-      if (event.target.closest?.('.aps-operation') && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key))
+      if (event.target.closest?.('.aps-operation') && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown', ' ', 'Spacebar'].includes(event.key))
         event.preventDefault();
+      const editable = event.target.matches?.('input,textarea,select,[contenteditable="true"]');
+      if (editable) return;
+      if ((event.ctrlKey || event.metaKey) && (event.key.toLowerCase() === 'z' || event.key.toLowerCase() === 'y')) {
+        event.preventDefault();
+        const redo = event.key.toLowerCase() === 'y' || event.shiftKey;
+        dotnet.invokeMethodAsync(redo ? 'RedoShortcut' : 'UndoShortcut');
+        return;
+      }
+      if (event.altKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+        event.preventDefault();
+        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
+          dotnet.invokeMethodAsync('PanViewport', event.key === 'ArrowLeft' ? -0.5 : 0.5);
+        else
+          scrollVertical(root, event.key === 'ArrowUp' ? -1 : 1);
+      }
+    };
+    const gridKeydown = event => {
+      const current = event.target.closest?.('[data-gantt-grid-row]');
+      if (!current || !['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(event.key)) return;
+      const rows = Array.from(root.querySelectorAll('[data-gantt-grid-row]'));
+      const index = rows.indexOf(current);
+      if (index < 0) return;
+      const targetIndex = event.key === 'Home' ? 0
+        : event.key === 'End' ? rows.length - 1
+          : Math.max(0, Math.min(rows.length - 1, index + (event.key === 'ArrowUp' ? -1 : 1)));
+      event.preventDefault();
+      rows[targetIndex]?.focus();
+    };
+    const gridFocus = event => {
+      const focused = event.target.closest?.('[data-gantt-grid-row]');
+      if (!focused) return;
+      root.querySelectorAll('[data-gantt-grid-row]').forEach(row => { row.tabIndex = row === focused ? 0 : -1; });
     };
     const fullscreenChanged = () => dotnet.invokeMethodAsync('FullscreenChanged', document.fullscreenElement === root);
 
@@ -316,7 +382,9 @@
     root.addEventListener('pointercancel', cancel);
     root.addEventListener('wheel', wheel, { passive: false });
     root.addEventListener('keydown', operationKeydown);
-    window.addEventListener('keydown', keydown);
+    root.addEventListener('keydown', gridKeydown);
+    root.addEventListener('focusin', gridFocus);
+    window.addEventListener('keydown', keydown, true);
     window.addEventListener('blur', cancel);
     document.addEventListener('fullscreenchange', fullscreenChanged);
     dotnet.invokeMethodAsync('ApplyGanttPreferences', JSON.stringify(preferences()), root.clientWidth).then(requestMetrics);
@@ -327,7 +395,9 @@
       root.removeEventListener('pointercancel', cancel);
       root.removeEventListener('wheel', wheel);
       root.removeEventListener('keydown', operationKeydown);
-      window.removeEventListener('keydown', keydown);
+      root.removeEventListener('keydown', gridKeydown);
+      root.removeEventListener('focusin', gridFocus);
+      window.removeEventListener('keydown', keydown, true);
       window.removeEventListener('blur', cancel);
       document.removeEventListener('fullscreenchange', fullscreenChanged);
       if (scroller) scroller.removeEventListener('scroll', requestMetrics);
@@ -356,5 +426,12 @@
     else if (root?.requestFullscreen) await root.requestFullscreen();
     else throw new Error('Fullscreen is not supported by this host.');
   }
-  window.apsPlanningWorkbench = { initialize, dispose, savePreference, focusOperation, focusContextMenu, copyText, toggleFullscreen };
+  function scrollVertical(root, direction) {
+    const scroller = root?.querySelector?.('[data-gantt-scroll]');
+    const timeline = root?.querySelector?.('[data-gantt-timeline]');
+    if (!scroller || !timeline) return;
+    const rowHeight = parseFloat(getComputedStyle(timeline).getPropertyValue('--aps-gantt-row-height')) || 60;
+    scroller.scrollBy({ top: Math.sign(direction) * rowHeight * 5, behavior: 'auto' });
+  }
+  window.apsPlanningWorkbench = { initialize, dispose, savePreference, focusOperation, focusContextMenu, copyText, toggleFullscreen, scrollVertical };
 })();

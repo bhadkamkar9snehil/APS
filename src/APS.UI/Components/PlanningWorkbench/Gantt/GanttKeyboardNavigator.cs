@@ -1,3 +1,5 @@
+using APS.Application;
+
 namespace APS.UI.Components.PlanningWorkbench.Gantt;
 
 public enum GanttKeyboardDirection
@@ -5,11 +7,19 @@ public enum GanttKeyboardDirection
     Left,
     Right,
     Up,
-    Down
+    Down,
+    Home,
+    End,
+    PageUp,
+    PageDown
 }
 
 public sealed record GanttKeyboardNavigationRequest(string PlanningKey, GanttKeyboardDirection Direction);
 public sealed record GanttContextMenuRequest(string PlanningKey, double ClientX, double ClientY, bool FromKeyboard);
+public sealed record GanttOperationSelectionRequest(
+    ScheduledProcessOperationView Operation,
+    bool Toggle,
+    bool Extend);
 
 public static class GanttKeyboardNavigator
 {
@@ -27,9 +37,19 @@ public static class GanttKeyboardNavigator
             return operationIndex > 0 ? ordered[operationIndex - 1].Operation.PlanningKey : currentPlanningKey;
         if (direction == GanttKeyboardDirection.Right)
             return operationIndex < ordered.Length - 1 ? ordered[operationIndex + 1].Operation.PlanningKey : currentPlanningKey;
+        if (direction == GanttKeyboardDirection.Home) return ordered[0].Operation.PlanningKey;
+        if (direction == GanttKeyboardDirection.End) return ordered[^1].Operation.PlanningKey;
 
-        var targetRowIndex = direction == GanttKeyboardDirection.Up ? currentRowIndex - 1 : currentRowIndex + 1;
-        if (targetRowIndex < 0 || targetRowIndex >= rows.Length || rows[targetRowIndex].Operations.Count == 0)
+        var targetRowIndex = direction switch
+        {
+            GanttKeyboardDirection.Up => currentRowIndex - 1,
+            GanttKeyboardDirection.Down => currentRowIndex + 1,
+            GanttKeyboardDirection.PageUp => currentRowIndex - 5,
+            GanttKeyboardDirection.PageDown => currentRowIndex + 5,
+            _ => currentRowIndex
+        };
+        targetRowIndex = Math.Clamp(targetRowIndex, 0, rows.Length - 1);
+        if (rows[targetRowIndex].Operations.Count == 0)
             return currentPlanningKey;
         var currentStart = ordered[operationIndex].Operation.StartUtc;
         return rows[targetRowIndex].Operations

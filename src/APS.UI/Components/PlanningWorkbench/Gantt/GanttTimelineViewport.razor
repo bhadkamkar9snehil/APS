@@ -31,7 +31,7 @@
     [Parameter, EditorRequired] public PlanningWorkbenchView Workbench { get; set; } = default!;
     [Parameter] public DateTime FrozenFenceEndUtc { get; set; }
     [Parameter] public string KeyboardAnchorPlanningKey { get; set; } = string.Empty;
-    [Parameter] public EventCallback<ScheduledProcessOperationView> OperationSelected { get; set; }
+    [Parameter] public EventCallback<GanttOperationSelectionRequest> OperationSelected { get; set; }
     [Parameter] public EventCallback<GanttKeyboardNavigationRequest> KeyboardNavigate { get; set; }
     [Parameter] public EventCallback<GanttContextMenuRequest> ContextRequested { get; set; }
 

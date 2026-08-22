@@ -20,9 +20,10 @@
             <strong>Binding:</strong> @string.Join(" · ", SelectedBindings.Select(x => $"{x.Cause}: {x.Description}"))
         </div>
     }
+    <GanttSelectionSummary Scene="Scene" State="State" />
     <div class="min-h-0 flex-1 overflow-auto" data-gantt-scroll style="--aps-gantt-grid-width:@($"{State.Viewport.GridWidthPx:0}px");--aps-gantt-row-height:@($"{State.GanttRowHeightPx}px")">
         <div class="relative grid min-w-[1120px]" style="grid-template-columns:var(--aps-gantt-grid-width) minmax(760px, 1fr)">
-            <GanttResourceGrid Scene="Scene" RowHeightPx="State.GanttRowHeightPx" SelectedResourceId="State.SelectedResourceId" ResourceSelected="ResourceSelected" GroupToggled="ToggleResourceGroup" />
+            <GanttResourceGrid Scene="Scene" RowHeightPx="State.GanttRowHeightPx" SelectedResourceIds="State.SelectedResourceIds" ResourceSelected="ResourceSelected" GroupToggled="ToggleResourceGroup" />
             <div class="relative min-w-0 border-l border-border" data-gantt-timeline>
                 <GanttTimeScale Scene="Scene" State="State" ReferenceTimeUtc="Workbench.Plan.ReferenceTimeUtc" FrozenFenceEndUtc="FrozenFenceEndUtc" />
                 <GanttTimelineViewport Scene="Scene" State="State" Workbench="Workbench" FrozenFenceEndUtc="FrozenFenceEndUtc" KeyboardAnchorPlanningKey="@KeyboardAnchorPlanningKey" OperationSelected="OperationSelected" KeyboardNavigate="HandleKeyboardNavigation" ContextRequested="OpenContextMenu" />
@@ -62,13 +63,17 @@
     {
         <GanttOperationList Scene="Scene" State="State" OperationSelected="OperationSelected" Close="() => State.ToggleOperationList()" />
     }
+    @if (State.ShortcutPanelOpen)
+    {
+        <GanttShortcutPanel Close="() => State.SetShortcutPanel(false)" />
+    }
 </section>
 
 @code {
     [Parameter, EditorRequired] public PlanningWorkbenchView Workbench { get; set; } = default!;
     [Parameter, EditorRequired] public PlanningWorkbenchState State { get; set; } = default!;
     [Parameter] public DateTime FrozenFenceEndUtc { get; set; }
-    [Parameter] public EventCallback<ScheduledProcessOperationView> OperationSelected { get; set; }
+    [Parameter] public EventCallback<GanttOperationSelectionRequest> OperationSelected { get; set; }
     [Parameter] public EventCallback<ScheduleResourceLaneView> ResourceSelected { get; set; }
     [Parameter] public EventCallback<GanttCapacitySegmentModel> CapacitySegmentFocused { get; set; }
     [Parameter] public EventCallback<IReadOnlyList<string>> CollapsedGroupsChanged { get; set; }
@@ -96,7 +101,7 @@
         var targetKey = GanttKeyboardNavigator.Next(Scene, request.PlanningKey, request.Direction);
         if (targetKey is null || !Scene.OperationsByKey.TryGetValue(targetKey, out var operation)) return;
         pendingFocusPlanningKey = targetKey;
-        await OperationSelected.InvokeAsync(operation);
+        await OperationSelected.InvokeAsync(new GanttOperationSelectionRequest(operation, false, false));
     }
 
     private async Task OpenContextMenu(GanttContextMenuRequest request)
@@ -104,7 +109,8 @@
         if (!Scene.OperationsByKey.TryGetValue(request.PlanningKey, out var operation)) return;
         operationContext = request;
         focusContextAfterRender = true;
-        await OperationSelected.InvokeAsync(operation);
+        if (!State.SelectedPlanningKeys.Contains(request.PlanningKey))
+            await OperationSelected.InvokeAsync(new GanttOperationSelectionRequest(operation, false, false));
         StateHasChanged();
     }
 
@@ -125,7 +131,7 @@
     private async Task InspectContextOperation()
     {
         if (operationContext is not null && Scene.OperationsByKey.TryGetValue(operationContext.PlanningKey, out var operation))
-            await OperationSelected.InvokeAsync(operation);
+            await OperationSelected.InvokeAsync(new GanttOperationSelectionRequest(operation, false, false));
         CloseContextMenu();
     }
 

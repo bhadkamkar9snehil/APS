@@ -340,6 +340,12 @@ html, body, #app { min-height: 100%; }
 }
 
 .aps-operation-source-dragging { opacity: .42; }
+.aps-drag-count {
+  position: absolute; right: 3px; bottom: 3px;
+  border: 1px solid rgba(255, 255, 255, .65); border-radius: 2px;
+  background: rgba(0, 0, 0, .62); color: #fff;
+  padding: 1px 3px; font-size: 8px; font-weight: 700; line-height: 1.2;
+}
 
 /* The lane currently under the pointer during a drag - shown before drop, not only after, so the
    planner sees where a move will land while they still have the chance to change their mind. */
@@ -356,7 +362,7 @@ html, body, #app { min-height: 100%; }
   outline-offset: -1px;
 }
 
-/* A thin line at the 15-minute grid point the drag will snap to, so the drop position is predictable
+/* A thin line at the active adaptive/fixed snap point, so the drop position is predictable
    before release rather than a surprise after it. */
 .aps-snap-guide {
   position: absolute; top: 0; bottom: 0; width: 2px;

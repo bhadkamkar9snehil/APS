@@ -11,8 +11,8 @@
             <tbody>
                 @foreach (var model in Rows)
                 {
-                    <tr class="border-t border-border @(State.SelectedPlanningKey == model.Operation.PlanningKey ? "bg-accent-soft" : "")">
-                        <td class="px-3 py-1.5"><button type="button" class="font-semibold text-accent hover:underline" @onclick="() => OperationSelected.InvokeAsync(model.Operation)">@model.Operation.PlanningKey</button></td>
+                    <tr class="border-t border-border @(State.SelectedPlanningKeys.Contains(model.Operation.PlanningKey) ? "bg-accent-soft" : "")">
+                        <td class="px-3 py-1.5"><button type="button" class="font-semibold text-accent hover:underline" @onclick="args => Select(model.Operation, args)">@model.Operation.PlanningKey</button></td>
                         <td class="px-3 py-1.5">@model.Operation.ResourceCode</td>
                         <td class="px-3 py-1.5 aps-text-figure">@model.Operation.StartUtc.ToString("dd MMM HH:mm")</td>
                         <td class="px-3 py-1.5 aps-text-figure">@model.Operation.EndUtc.ToString("dd MMM HH:mm")</td>
@@ -28,8 +28,10 @@
 @code {
     [Parameter, EditorRequired] public GanttScene Scene { get; set; } = default!;
     [Parameter, EditorRequired] public PlanningWorkbenchState State { get; set; } = default!;
-    [Parameter] public EventCallback<ScheduledProcessOperationView> OperationSelected { get; set; }
+    [Parameter] public EventCallback<GanttOperationSelectionRequest> OperationSelected { get; set; }
     [Parameter] public EventCallback Close { get; set; }
 
     private IReadOnlyList<GanttOperationModel> Rows => Scene.Rows.SelectMany(x => x.Operations).OrderBy(x => x.Operation.StartUtc).ThenBy(x => x.Operation.ResourceCode).ToArray();
+    private Task Select(ScheduledProcessOperationView operation, MouseEventArgs args) => OperationSelected.InvokeAsync(
+        new GanttOperationSelectionRequest(operation, args.CtrlKey || args.MetaKey, args.ShiftKey));
 }

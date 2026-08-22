@@ -28,6 +28,20 @@ public sealed class GanttKeyboardNavigatorTests
         Assert.Equal("A", GanttKeyboardNavigator.Next(scene, "A", GanttKeyboardDirection.Up));
     }
 
+    [Fact]
+    public void Home_end_and_page_navigation_have_deterministic_mounted_row_semantics()
+    {
+        var rows = Enumerable.Range(0, 8)
+            .Select(index => Row(index, ($"A{index}", 1), ($"B{index}", 6)))
+            .ToArray();
+        var scene = Scene(rows);
+
+        Assert.Equal("A3", GanttKeyboardNavigator.Next(scene, "B3", GanttKeyboardDirection.Home));
+        Assert.Equal("B3", GanttKeyboardNavigator.Next(scene, "A3", GanttKeyboardDirection.End));
+        Assert.Equal("B7", GanttKeyboardNavigator.Next(scene, "B2", GanttKeyboardDirection.PageDown));
+        Assert.Equal("B0", GanttKeyboardNavigator.Next(scene, "B4", GanttKeyboardDirection.PageUp));
+    }
+
     private static GanttRowModel Row(int index, params (string key, int hour)[] entries)
     {
         var resourceId = Guid.NewGuid();

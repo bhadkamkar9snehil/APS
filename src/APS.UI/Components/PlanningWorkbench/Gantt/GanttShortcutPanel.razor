@@ -1,0 +1,22 @@
+<section class="absolute bottom-4 right-4 top-16 z-[75] w-[25rem] max-w-[calc(100%_-_2rem)] overflow-auto rounded-surface border border-border bg-surface p-3 shadow-popover"
+         aria-label="Gantt keyboard shortcuts">
+    <div class="flex items-center justify-between border-b border-border pb-2"><strong class="text-xs">Gantt shortcuts</strong><button type="button" class="rounded-control border border-border px-2 py-1 text-xs" @onclick="Close">Close</button></div>
+    <dl class="mt-2 grid grid-cols-[8.5rem_1fr] gap-x-3 gap-y-2 text-[11px]">
+        <dt><kbd>Tab / Shift+Tab</kbd></dt><dd>Enter or leave the Gantt control.</dd>
+        <dt><kbd>Arrow keys</kbd></dt><dd>Nearest operation by lane/time; resource-grid focus moves row-to-row.</dd>
+        <dt><kbd>PageUp / PageDown</kbd></dt><dd>Jump five mounted resource rows.</dd>
+        <dt><kbd>Home / End</kbd></dt><dd>First or last operation in the focused lane.</dd>
+        <dt><kbd>Space</kbd></dt><dd>Toggle the focused operation in the selection.</dd>
+        <dt><kbd>Enter</kbd></dt><dd>Select and inspect the focused operation.</dd>
+        <dt><kbd>Shift+F10</kbd></dt><dd>Open the operation context menu.</dd>
+        <dt><kbd>Alt+Left / Right</kbd></dt><dd>Pan the visible time window.</dd>
+        <dt><kbd>Alt+Up / Down</kbd></dt><dd>Scroll five resource rows.</dd>
+        <dt><kbd>Ctrl/Cmd+Z</kbd></dt><dd>Navigate to the previous persisted Plan Version.</dd>
+        <dt><kbd>Ctrl/Cmd+Shift+Z or Y</kbd></dt><dd>Navigate to the reapplied child Plan Version.</dd>
+        <dt><kbd>Escape</kbd></dt><dd>Cancel drag, then proposal, panel focus, or selection in priority order.</dd>
+    </dl>
+</section>
+
+@code {
+    [Parameter] public EventCallback Close { get; set; }
+}

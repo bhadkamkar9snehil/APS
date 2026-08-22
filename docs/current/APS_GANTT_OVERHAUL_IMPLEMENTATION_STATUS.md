@@ -18,14 +18,16 @@ Branch: `codex/gantt-workbench-overhaul`
 | Scheduling layers | Complete | Baseline, calendar, campaign, dependency, marker/fence, execution and proposal layers are explicit components on the shared coordinate system. Focused dependencies retain geometry across row virtualization and expose type, category, minimum/current lag and headroom. |
 | Binding chain semantics | Safe extension point | `PlanningBindingEvidenceView` carries solver/read-model causes and slack. The UI states `Binding chain unavailable` when evidence is absent; no pixel-adjacency critical-path heuristic remains. |
 | Synchronized resource load | Complete | Collapsible capacity region uses the same time axis, aggregates at hour/shift/day scale, exposes processing/downtime/overload, focuses the selected resource/time range and marks contributing operations with a non-color `L` cue. |
-| Keyboard and assistive access | Complete for the delivered surface | Exactly one mounted operation is a roving Tab stop; arrow keys navigate by lane/time; Shift+F10/context-menu key opens the real operation menu; a synchronized schedule table supports dense textual review; semantic labels, reduced motion and focus-visible rules remain active. |
+| Keyboard and assistive access | Complete for P1 mappings | The resource grid and operation field each expose one roving Tab entry rather than every row/bar. Arrow, Home/End and Page keys navigate internally; Space toggles selection; Alt+arrows pan/scroll; Ctrl/Cmd undo/redo uses persisted history; Shift+F10 opens the real menu. An in-product shortcut panel documents the exact mappings and the synchronized schedule table shares selection. |
+| Multi-selection and atomic move | Complete | Ctrl/Cmd-click toggles operations; Shift-click selects an unambiguous visible sequence within one resource lane; the compact summary reports occupied time, resources, campaign/order context and eligibility. Horizontal multi-drag renders all mounted proposal ghosts, preserves every relative offset/resource assignment, validates all items together, rejects duplicates/internal disjunctive overlap, and sends one override collection through one persisted child Plan-Version replan. |
 | Compact shell | Complete | The control toolbar remains one horizontally scrollable row, schedule list/capacity/queue/inspector are overlays or collapsible regions, and Fullscreen API state is synchronized back to .NET. |
 | Planner inspector | Complete for returned facts | Plan, actuals, lineage, baseline delta, scheduling mode/eligibility/commitment/routing, binding evidence, material pools and PO reservations are shown only from the workbench read model. |
+| Execution geometry | Complete for returned facts | Execution/Recovery modes render returned actual start/end as an explicit `A` segment on the shared timeline; an open running segment ends at planning reference time and no actual is inferred when the read model returns none. |
 
 ## Verification completed
 
-- `dotnet test tests/APS.UI.Tests/APS.UI.Tests.csproj --no-restore`: 126 passed.
-- `dotnet test tests/APS.Planning.Tests/APS.Planning.Tests.csproj --no-restore`: 160 passed.
+- `dotnet test tests/APS.UI.Tests/APS.UI.Tests.csproj --no-restore`: 132 passed.
+- `dotnet test tests/APS.Planning.Tests/APS.Planning.Tests.csproj --no-restore`: 163 passed.
 - `dotnet build APS.slnx --no-restore`: succeeded with 0 warnings and 0 errors.
 - The hierarchical 10,000-operation performance gate measured 3.2 ms warmed scene construction, 336 mounted operation models and 14/126 mounted display rows.
 - Latest service-host SSR against the existing database returned 105 operation buttons, exactly one operation Tab stop, eight authoritative hierarchy group toggles for eight resources, Compare Subrow/Schedule List/Fullscreen controls, truthful `Binding chain unavailable`, and `Shift unavailable` because the visible eight lanes return no calendar boundary.
@@ -38,5 +40,4 @@ Branch: `codex/gantt-workbench-overhaul`
 - The active plan has calendar facts but no shift boundary inside the visible eight resource lanes/window. Shift snap is disabled as `Shift unavailable`; target-resource drops also fail clearly if a boundary is absent. No boundary is fabricated and no free-placement fallback is used.
 - Genuine binding-chain visualization remains disabled unless solver/read-model `PlanningBindingEvidenceView` records are supplied.
 - Capacity exposes only categories supported by the current read model: processing, unavailable/downtime and overload. Setup/changeover/idle are not invented.
-- The canonical command service exposes one validated move at a time, not an atomic bulk-move contract. Multi-selection/bulk apply is not presented as working.
 - Pin/unpin, scoped repair and operation-to-material trace commands remain visible but disabled in the context menu with the missing authoritative contract stated explicitly.

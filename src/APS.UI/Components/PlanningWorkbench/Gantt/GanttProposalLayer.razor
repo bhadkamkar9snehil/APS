@@ -7,6 +7,17 @@
         <span class="px-1 text-[10px] font-semibold text-accent">Proposed · @State.StagedMove.TargetStartUtc.ToString("HH:mm")</span>
     </div>
 }
+@foreach (var move in State.StagedBulkMove?.Moves.Where(x => x.TargetResourceId == Row.Lane.ResourceId) ?? [])
+{
+    @if (Scene.OperationsByKey.TryGetValue(move.PlanningKey, out var bulkSource))
+    {
+        <div class="pointer-events-none absolute z-20 rounded-control border-2 border-accent bg-accent-soft/70 @(State.BaselineMode == GanttBaselineMode.CompareSubrow ? "top-2 bottom-6" : "inset-y-2")"
+             style="left:@GanttModels.Percent(State, move.TargetStartUtc)%;width:@GanttModels.WidthPercent(State, move.TargetStartUtc, move.TargetStartUtc + (bulkSource.EndUtc - bulkSource.StartUtc))%"
+             title="Atomic proposal · @move.PlanningKey · @move.TargetStartUtc.ToString("dd MMM HH:mm")">
+            <span class="px-1 text-[10px] font-semibold text-accent">Atomic · @move.TargetStartUtc.ToString("HH:mm")</span>
+        </div>
+    }
+}
 
 @code {
     [Parameter, EditorRequired] public GanttRowModel Row { get; set; } = default!;

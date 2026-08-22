@@ -94,6 +94,130 @@ public sealed class PlanningWorkbenchCommandTests
         }
     }
 
+    [Fact]
+    public async Task Bulk_move_validates_every_item_and_replans_once_with_all_overrides()
+    {
+        var (db, planId, first, target) = await SeedAsync();
+        await using (db)
+        {
+            var second = new PlanOperationSnapshot
+            {
+                PlanVersionId = planId,
+                PlanningKey = "HEAT:CMP-00001:H02:EAF",
+                SourceEntityId = Guid.NewGuid(),
+                OperationType = PlanOperationType.Eaf,
+                ProcessOperationType = ProcessOperationType.Eaf,
+                ResourceId = first.ResourceId,
+                StartUtc = first.StartUtc.AddHours(1),
+                EndUtc = first.EndUtc.AddHours(1),
+                QuantityMt = 72m,
+                GradeCode = "SAE1008",
+                CrossSectionCode = "BLT-150SQ"
+            };
+            var source = await db.Resources.SingleAsync(x => x.Id == first.ResourceId);
+            db.PlanOperationSnapshots.Add(second);
+            db.PlanOperationResourceOptionSnapshots.AddRange(
+                Option(planId, second, source, true),
+                Option(planId, second, target, false));
+            await db.SaveChangesAsync();
+            var lifecycle = new RecordingLifecycle();
+            var service = new PlanningWorkbenchCommandService(db, lifecycle);
+            var proposal = new PlanningBulkMoveProposal(
+                planId,
+                [
+                    new PlanningBulkMoveItem(first.PlanningKey, target.Id, first.StartUtc.AddHours(4)),
+                    new PlanningBulkMoveItem(second.PlanningKey, target.Id, second.StartUtc.AddHours(4))
+                ],
+                "PLANNER_SEQUENCE");
+
+            var impact = await service.ValidateBulkMoveAsync(proposal);
+            var applied = await service.ApplyBulkMoveAsync(new PlanningBulkMoveApplyRequest(
+                proposal,
+                PlanningRequest(first.StartUtc),
+                new PlanningTimeFencePolicy()));
+
+            Assert.True(impact.CanApply);
+            Assert.Equal(2, impact.Items.Count);
+            Assert.Equal(2, applied.Impact.Items.Count);
+            Assert.Equal(1, lifecycle.ReplanCalls);
+            Assert.Equal(planId, lifecycle.BaselinePlanVersionId);
+            Assert.Equal(2, lifecycle.Request!.ScheduleOverrides!.Count);
+            Assert.Equal(
+                [first.PlanningKey, second.PlanningKey],
+                lifecycle.Request.ScheduleOverrides.Select(x => x.PlanningKey));
+        }
+    }
+
+    [Fact]
+    public async Task Bulk_move_rejects_duplicate_operations_before_any_replan()
+    {
+        var (db, planId, operation, target) = await SeedAsync();
+        await using (db)
+        {
+            var lifecycle = new RecordingLifecycle();
+            var service = new PlanningWorkbenchCommandService(db, lifecycle);
+            var proposal = new PlanningBulkMoveProposal(
+                planId,
+                [
+                    new PlanningBulkMoveItem(operation.PlanningKey, target.Id, operation.StartUtc.AddHours(3)),
+                    new PlanningBulkMoveItem(operation.PlanningKey, target.Id, operation.StartUtc.AddHours(4))
+                ],
+                "PLANNER_SEQUENCE");
+
+            var impact = await service.ValidateBulkMoveAsync(proposal);
+
+            Assert.False(impact.CanApply);
+            Assert.Contains(impact.Findings, x => x.Code == "BULK_DUPLICATE_OPERATION");
+            await Assert.ThrowsAsync<InvalidOperationException>(() => service.ApplyBulkMoveAsync(
+                new PlanningBulkMoveApplyRequest(
+                    proposal,
+                    PlanningRequest(operation.StartUtc),
+                    new PlanningTimeFencePolicy())));
+            Assert.Equal(0, lifecycle.ReplanCalls);
+        }
+    }
+
+    [Fact]
+    public async Task Bulk_move_rejects_internal_overlap_on_a_disjunctive_target()
+    {
+        var (db, planId, first, target) = await SeedAsync();
+        await using (db)
+        {
+            var second = new PlanOperationSnapshot
+            {
+                PlanVersionId = planId,
+                PlanningKey = "HEAT:CMP-00001:H02:EAF",
+                SourceEntityId = Guid.NewGuid(),
+                OperationType = PlanOperationType.Eaf,
+                ProcessOperationType = ProcessOperationType.Eaf,
+                ResourceId = first.ResourceId,
+                StartUtc = first.StartUtc.AddHours(1),
+                EndUtc = first.EndUtc.AddHours(1),
+                QuantityMt = 72m,
+                GradeCode = "SAE1008",
+                CrossSectionCode = "BLT-150SQ"
+            };
+            var source = await db.Resources.SingleAsync(x => x.Id == first.ResourceId);
+            db.PlanOperationSnapshots.Add(second);
+            db.PlanOperationResourceOptionSnapshots.AddRange(
+                Option(planId, second, source, true),
+                Option(planId, second, target, false));
+            await db.SaveChangesAsync();
+            var service = new PlanningWorkbenchCommandService(db, new UnusedLifecycle());
+
+            var impact = await service.ValidateBulkMoveAsync(new PlanningBulkMoveProposal(
+                planId,
+                [
+                    new PlanningBulkMoveItem(first.PlanningKey, target.Id, first.StartUtc.AddHours(4)),
+                    new PlanningBulkMoveItem(second.PlanningKey, target.Id, first.StartUtc.AddHours(4.5))
+                ],
+                "PLANNER_SEQUENCE"));
+
+            Assert.False(impact.CanApply);
+            Assert.Contains(impact.Findings, x => x.Code == "BULK_TARGET_CONFLICT");
+        }
+    }
+
     private static async Task<(ApsDbContext Db, Guid PlanId, PlanOperationSnapshot Operation, Resource Target)> SeedAsync()
     {
         var options = new DbContextOptionsBuilder<ApsDbContext>()
@@ -151,6 +275,13 @@ public sealed class PlanningWorkbenchCommandTests
         SchedulingMode = ResourceSchedulingMode.Disjunctive
     };
 
+    private static PlanningCalculationRequest PlanningRequest(DateTime start) => new(
+        new PlanningDemandSelection(),
+        new CampaignPlanningPolicy(70m, 60m, 80m, 700m, 800m),
+        new ProductionStructurePlanningPolicy(),
+        start,
+        start.AddDays(2));
+
     private static PlanOperationResourceOptionSnapshot Option(
         Guid planId,
         PlanOperationSnapshot operation,
@@ -179,5 +310,28 @@ public sealed class PlanningWorkbenchCommandTests
             PlanningRecalculationRequest request,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class RecordingLifecycle : IPlanningLifecycleService
+    {
+        public int ReplanCalls { get; private set; }
+        public Guid? BaselinePlanVersionId { get; private set; }
+        public PlanningRecalculationRequest? Request { get; private set; }
+
+        public Task<PersistedPlanningRunResult> CalculateAsync(
+            PlanningCalculationRequest request,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task<PersistedPlanningRunResult> ReplanAsync(
+            Guid baselinePlanVersionId,
+            PlanningRecalculationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            ReplanCalls++;
+            BaselinePlanVersionId = baselinePlanVersionId;
+            Request = request;
+            return Task.FromResult<PersistedPlanningRunResult>(null!);
+        }
     }
 }

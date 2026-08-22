@@ -48,6 +48,21 @@ public static class GanttDragGeometry
             : new GanttDropDecision(true, false, "ELIGIBLE", "Eligible move target.");
     }
 
+    public static IReadOnlyList<PlanningBulkMoveItem> BulkMoveItems(
+        IReadOnlyCollection<ScheduledProcessOperationView> operations,
+        string anchorPlanningKey,
+        DateTime targetAnchorStartUtc)
+    {
+        if (operations.Count < 2) throw new ArgumentException("A bulk move requires at least two operations.", nameof(operations));
+        var anchor = operations.SingleOrDefault(x => x.PlanningKey.Equals(anchorPlanningKey, StringComparison.OrdinalIgnoreCase))
+            ?? throw new ArgumentException("The bulk-move anchor is not present in the selection.", nameof(anchorPlanningKey));
+        var delta = AsUtc(targetAnchorStartUtc) - AsUtc(anchor.StartUtc);
+        return operations.Select(operation => new PlanningBulkMoveItem(
+            operation.PlanningKey,
+            operation.ResourceId,
+            AsUtc(operation.StartUtc) + delta)).ToArray();
+    }
+
     private static DateTime Snap(
         DateTime timestampUtc,
         GanttSnapMode mode,

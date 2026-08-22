@@ -114,6 +114,28 @@ public sealed class GanttDragGeometryTests
         Assert.Equal("FROZEN_OVERRIDE_REQUIRED", decision.Code);
     }
 
+    [Fact]
+    public void Bulk_horizontal_move_preserves_every_relative_offset_and_resource_assignment()
+    {
+        var first = Operation();
+        var second = Operation() with
+        {
+            PlanningKey = "OP-02",
+            ResourceId = Guid.NewGuid(),
+            StartUtc = first.StartUtc.AddHours(2),
+            EndUtc = first.EndUtc.AddHours(2)
+        };
+
+        var moves = GanttDragGeometry.BulkMoveItems([first, second], first.PlanningKey, first.StartUtc.AddHours(5));
+
+        Assert.Equal(2, moves.Count);
+        Assert.Equal(first.StartUtc.AddHours(5), moves[0].TargetStartUtc);
+        Assert.Equal(second.StartUtc.AddHours(5), moves[1].TargetStartUtc);
+        Assert.Equal(first.ResourceId, moves[0].TargetResourceId);
+        Assert.Equal(second.ResourceId, moves[1].TargetResourceId);
+        Assert.Equal(second.StartUtc - first.StartUtc, moves[1].TargetStartUtc - moves[0].TargetStartUtc);
+    }
+
     private static ScheduledProcessOperationView Operation() => new(
         Guid.NewGuid(), "OP-01", Guid.NewGuid(), ProcessOperationType.Eaf, Guid.NewGuid(), "EAF-01", "EAF 01",
         ProcessUnitType.Eaf, ResourceOperatingState.Available, Start, Start.AddMinutes(100), 70m, "SAE1008", "BLT-150");

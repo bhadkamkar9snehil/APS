@@ -155,4 +155,14 @@ public sealed class UnavailablePlanningWorkbenchCommandService : IPlanningWorkbe
         PlanningMoveApplyRequest request,
         CancellationToken cancellationToken = default) =>
         throw ProductionUnavailable.Exception();
+
+    public Task<PlanningBulkMoveImpact> ValidateBulkMoveAsync(
+        PlanningBulkMoveProposal proposal,
+        CancellationToken cancellationToken = default) =>
+        throw ProductionUnavailable.Exception();
+
+    public Task<PlanningBulkMoveApplyResult> ApplyBulkMoveAsync(
+        PlanningBulkMoveApplyRequest request,
+        CancellationToken cancellationToken = default) =>
+        throw ProductionUnavailable.Exception();
 }

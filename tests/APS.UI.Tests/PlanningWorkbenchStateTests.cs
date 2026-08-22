@@ -1,3 +1,4 @@
+using APS.Application;
 using APS.UI.State;
 
 namespace APS.UI.Tests;
@@ -12,6 +13,18 @@ public sealed class PlanningWorkbenchStateTests
         Assert.Equal(PlanningWorkbenchMode.Plan, state.Mode);
         Assert.Equal(PlanningScenarioIntent.Existing, state.ScenarioIntent);
         Assert.False(state.ShowDependencies);
+    }
+
+    [Fact]
+    public void Shortcut_panel_is_transient_workbench_state()
+    {
+        var state = new PlanningWorkbenchState();
+
+        state.ToggleShortcutPanel();
+        Assert.True(state.ShortcutPanelOpen);
+
+        state.SetShortcutPanel(false);
+        Assert.False(state.ShortcutPanelOpen);
     }
 
     [Fact]
@@ -117,6 +130,52 @@ public sealed class PlanningWorkbenchStateTests
         state.SelectResource(firstResource);
         Assert.Equal(firstResource, state.SelectedResourceId);
         Assert.Null(state.SelectedPlanningKey);
+    }
+
+    [Fact]
+    public void Ctrl_style_selection_toggles_operations_without_losing_the_primary_focus()
+    {
+        var state = new PlanningWorkbenchState();
+        var firstResource = Guid.NewGuid();
+        var secondResource = Guid.NewGuid();
+        state.SelectOperation("OP-1", firstResource);
+
+        state.ToggleOperationSelection("OP-2", secondResource);
+
+        Assert.Equal(2, state.SelectedPlanningKeys.Count);
+        Assert.Equal("OP-2", state.SelectedPlanningKey);
+        Assert.Equal(2, state.SelectedResourceIds.Count);
+
+        state.ToggleOperationSelection("OP-2", secondResource);
+
+        Assert.Single(state.SelectedPlanningKeys);
+        Assert.Equal("OP-1", state.SelectedPlanningKey);
+        Assert.Equal(firstResource, state.SelectedResourceId);
+    }
+
+    [Fact]
+    public void Contiguous_selection_replaces_the_set_and_bulk_proposal_is_one_staged_unit()
+    {
+        var state = new PlanningWorkbenchState();
+        var resource = Guid.NewGuid();
+        state.SelectOperationRange(
+            [("OP-1", resource), ("OP-2", resource), ("OP-3", resource)],
+            "OP-3");
+        var proposal = new PlanningBulkMoveProposal(
+            Guid.NewGuid(),
+            [
+                new PlanningBulkMoveItem("OP-1", resource, DateTime.UtcNow),
+                new PlanningBulkMoveItem("OP-2", resource, DateTime.UtcNow.AddHours(1)),
+                new PlanningBulkMoveItem("OP-3", resource, DateTime.UtcNow.AddHours(2))
+            ],
+            "TEST");
+
+        state.StageBulkMove(proposal);
+
+        Assert.Equal(3, state.SelectedPlanningKeys.Count);
+        Assert.Equal("OP-3", state.SelectedPlanningKey);
+        Assert.Same(proposal, state.StagedBulkMove);
+        Assert.Null(state.StagedMove);
     }
 
     [Fact]

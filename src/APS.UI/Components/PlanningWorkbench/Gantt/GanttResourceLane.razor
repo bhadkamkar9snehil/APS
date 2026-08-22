@@ -1,4 +1,4 @@
-<div class="aps-gantt-lane aps-time-grid relative overflow-hidden border-b border-border @(State.SelectedResourceId == Row.Lane.ResourceId ? "bg-accent-soft shadow-soft" : "even:bg-surface-raised")"
+<div class="aps-gantt-lane aps-time-grid relative overflow-hidden border-b border-border @(State.SelectedResourceIds.Contains(Row.Lane.ResourceId) ? "bg-accent-soft shadow-soft" : "even:bg-surface-raised")"
      data-resource-id="@Row.Lane.ResourceId"
      data-window-start="@State.VisibleStartUtc.ToString("O")"
      data-window-end="@State.VisibleEndUtc.ToString("O")"
@@ -7,11 +7,12 @@
     <GanttCalendarLayer Row="Row" State="State" />
     <GanttBaselineLayer Row="Row" State="State" />
     <GanttCampaignLayer Row="Row" State="State" SelectedCampaign="SelectedCampaign" />
+    <GanttExecutionLayer Row="Row" State="State" ReferenceTimeUtc="Workbench.Plan.ReferenceTimeUtc" />
     @foreach (var operation in Row.Operations)
     {
         <GanttOperationBlock Model="operation"
                              State="State"
-                             Selected="@(State.SelectedPlanningKey == operation.Operation.PlanningKey)"
+                             Selected="@(State.SelectedPlanningKeys.Contains(operation.Operation.PlanningKey))"
                              CanEdit="State.CanEditSchedule"
                              IsFrozen="@(operation.Operation.StartUtc <= FrozenFenceEndUtc)"
                              CapacityFocused="@IsCapacityFocused(operation.Operation)"
@@ -30,7 +31,7 @@
     [Parameter, EditorRequired] public PlanningWorkbenchView Workbench { get; set; } = default!;
     [Parameter] public DateTime FrozenFenceEndUtc { get; set; }
     [Parameter] public string KeyboardAnchorPlanningKey { get; set; } = string.Empty;
-    [Parameter] public EventCallback<ScheduledProcessOperationView> OperationSelected { get; set; }
+    [Parameter] public EventCallback<GanttOperationSelectionRequest> OperationSelected { get; set; }
     [Parameter] public EventCallback<GanttKeyboardNavigationRequest> KeyboardNavigate { get; set; }
     [Parameter] public EventCallback<GanttContextMenuRequest> ContextRequested { get; set; }
 

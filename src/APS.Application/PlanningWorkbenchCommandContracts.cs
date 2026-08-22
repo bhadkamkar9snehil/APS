@@ -45,6 +45,33 @@ public sealed record PlanningMoveApplyResult(
     PlanningProposalImpact Impact,
     PersistedPlanningRunResult Replan);
 
+public sealed record PlanningBulkMoveItem(
+    string PlanningKey,
+    Guid TargetResourceId,
+    DateTime TargetStartUtc);
+
+public sealed record PlanningBulkMoveProposal(
+    Guid BaselinePlanVersionId,
+    IReadOnlyCollection<PlanningBulkMoveItem> Moves,
+    string ReasonCode,
+    string? Comment = null,
+    bool AllowFrozenOverride = false);
+
+public sealed record PlanningBulkMoveImpact(
+    bool CanApply,
+    IReadOnlyCollection<PlanningProposalImpact> Items,
+    IReadOnlyCollection<PlanningConstraintFinding> Findings);
+
+public sealed record PlanningBulkMoveApplyRequest(
+    PlanningBulkMoveProposal Proposal,
+    PlanningCalculationRequest Planning,
+    PlanningTimeFencePolicy TimeFencePolicy,
+    RepairScopePolicy? RepairScope = null);
+
+public sealed record PlanningBulkMoveApplyResult(
+    PlanningBulkMoveImpact Impact,
+    PersistedPlanningRunResult Replan);
+
 public interface IPlanningWorkbenchCommandService
 {
     Task<PlanningProposalImpact> ValidateMoveAsync(
@@ -53,5 +80,13 @@ public interface IPlanningWorkbenchCommandService
 
     Task<PlanningMoveApplyResult> ApplyMoveAsync(
         PlanningMoveApplyRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<PlanningBulkMoveImpact> ValidateBulkMoveAsync(
+        PlanningBulkMoveProposal proposal,
+        CancellationToken cancellationToken = default);
+
+    Task<PlanningBulkMoveApplyResult> ApplyBulkMoveAsync(
+        PlanningBulkMoveApplyRequest request,
         CancellationToken cancellationToken = default);
 }

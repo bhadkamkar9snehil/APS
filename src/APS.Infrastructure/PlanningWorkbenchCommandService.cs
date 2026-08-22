@@ -229,6 +229,125 @@ public sealed class PlanningWorkbenchCommandService(
         return new PlanningMoveApplyResult(impact, replan);
     }
 
+    public async Task<PlanningBulkMoveImpact> ValidateBulkMoveAsync(
+        PlanningBulkMoveProposal proposal,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(proposal.Moves);
+        var findings = new List<PlanningConstraintFinding>();
+        if (proposal.Moves.Count < 2)
+        {
+            findings.Add(new PlanningConstraintFinding(
+                "BULK_REQUIRES_MULTIPLE_OPERATIONS",
+                PlanningConstraintSeverity.Blocker,
+                "An atomic bulk move requires at least two operations."));
+        }
+
+        if (proposal.Moves.Any(x => string.IsNullOrWhiteSpace(x.PlanningKey)))
+        {
+            findings.Add(new PlanningConstraintFinding(
+                "BULK_INVALID_OPERATION_KEY",
+                PlanningConstraintSeverity.Blocker,
+                "Every atomic bulk-move item requires a planning key."));
+        }
+
+        var duplicateKeys = proposal.Moves
+            .Where(x => !string.IsNullOrWhiteSpace(x.PlanningKey))
+            .GroupBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
+            .Where(x => x.Count() > 1)
+            .Select(x => x.Key)
+            .ToArray();
+        if (duplicateKeys.Length > 0)
+        {
+            findings.Add(new PlanningConstraintFinding(
+                "BULK_DUPLICATE_OPERATION",
+                PlanningConstraintSeverity.Blocker,
+                $"Each operation may appear once in an atomic bulk move. Duplicate: {string.Join(", ", duplicateKeys)}."));
+        }
+
+        var validMoves = proposal.Moves
+            .Where(x => !string.IsNullOrWhiteSpace(x.PlanningKey))
+            .DistinctBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var impacts = new List<PlanningProposalImpact>();
+        foreach (var move in validMoves)
+        {
+            var impact = await ValidateMoveAsync(new PlanningMoveProposal(
+                proposal.BaselinePlanVersionId,
+                move.PlanningKey,
+                move.TargetResourceId,
+                move.TargetStartUtc,
+                proposal.ReasonCode,
+                proposal.Comment,
+                proposal.AllowFrozenOverride), cancellationToken);
+            impacts.Add(impact);
+        }
+
+        var targetResourceIds = validMoves.Select(x => x.TargetResourceId).Distinct().ToArray();
+        var targetModes = await db.Resources.AsNoTracking()
+            .Where(x => targetResourceIds.Contains(x.Id))
+            .ToDictionaryAsync(x => x.Id, x => x.SchedulingMode, cancellationToken);
+        foreach (var targetGroup in validMoves.GroupBy(x => x.TargetResourceId))
+        {
+            if (targetModes.GetValueOrDefault(targetGroup.Key) != ResourceSchedulingMode.Disjunctive) continue;
+            var ordered = targetGroup.Select(impactFor).OrderBy(x => x.TargetStartUtc).ToArray();
+            for (var index = 1; index < ordered.Length; index++)
+            {
+                if (ordered[index].TargetStartUtc >= ordered[index - 1].TargetEndUtc) continue;
+                findings.Add(new PlanningConstraintFinding(
+                    "BULK_TARGET_CONFLICT",
+                    PlanningConstraintSeverity.Blocker,
+                    $"Atomic move items {ordered[index - 1].PlanningKey} and {ordered[index].PlanningKey} overlap on {ordered[index].TargetResourceCode}."));
+            }
+        }
+
+        findings.AddRange(impacts.SelectMany(x => x.Findings));
+        return new PlanningBulkMoveImpact(
+            impacts.Count == proposal.Moves.Count && findings.All(x => x.Severity != PlanningConstraintSeverity.Blocker),
+            impacts,
+            findings);
+
+        PlanningProposalImpact impactFor(PlanningBulkMoveItem move) => impacts.Single(x =>
+            x.PlanningKey.Equals(move.PlanningKey, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public async Task<PlanningBulkMoveApplyResult> ApplyBulkMoveAsync(
+        PlanningBulkMoveApplyRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var impact = await ValidateBulkMoveAsync(request.Proposal, cancellationToken);
+        if (!impact.CanApply)
+        {
+            throw new InvalidOperationException(
+                string.Join(" ", impact.Findings
+                    .Where(x => x.Severity == PlanningConstraintSeverity.Blocker)
+                    .Select(x => x.Message)
+                    .Distinct(StringComparer.Ordinal)));
+        }
+
+        var baselineState = await db.PlanVersionStates.AsNoTracking()
+            .SingleAsync(x => x.PlanVersionId == request.Proposal.BaselinePlanVersionId, cancellationToken);
+        var scheduleOverrides = request.Proposal.Moves.Select(move => new OperationScheduleOverride(
+            move.PlanningKey,
+            move.TargetResourceId,
+            move.TargetStartUtc,
+            request.Proposal.ReasonCode,
+            request.Proposal.Comment)).ToArray();
+        var replan = await lifecycle.ReplanAsync(
+            request.Proposal.BaselinePlanVersionId,
+            new PlanningRecalculationRequest(
+                request.Planning,
+                request.TimeFencePolicy,
+                ReferenceTimeUtc: baselineState.ReferenceTimeUtc,
+                Trigger: PlanTriggerType.OperationalRedispatch,
+                Reason: $"Planner atomic bulk move ({scheduleOverrides.Length} operations): {request.Proposal.ReasonCode}",
+                ScheduleOverrides: scheduleOverrides,
+                RepairScope: request.RepairScope),
+            cancellationToken);
+
+        return new PlanningBulkMoveApplyResult(impact, replan);
+    }
+
     private static PlanningConstraintFinding Blocker(
         string code,
         string message,

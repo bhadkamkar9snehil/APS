@@ -1,5 +1,5 @@
 <button type="button"
-        class="aps-operation aps-op-card absolute z-10 overflow-hidden rounded-control border px-1.5 py-1 text-left text-[10px] leading-tight @VerticalClass @ProcessClass(Model.Operation.ProcessOperationType) @ExecutionClass(Model.ExecutionStatus) @BaselineClass(Model.BaselineChange) @(CapacityFocused ? "aps-operation--capacity-focus" : "") @(Selected ? "border-accent ring-2 ring-accent" : "border-transparent hover:border-primary") @(State.StagedMove?.PlanningKey == Model.Operation.PlanningKey ? "opacity-55" : "")"
+        class="aps-operation aps-op-card absolute z-10 overflow-hidden rounded-control border px-1.5 py-1 text-left text-[10px] leading-tight @VerticalClass @ProcessClass(Model.Operation.ProcessOperationType) @ExecutionClass(Model.ExecutionStatus) @BaselineClass(Model.BaselineChange) @(CapacityFocused ? "aps-operation--capacity-focus" : "") @(Selected ? "border-accent ring-2 ring-accent" : "border-transparent hover:border-primary") @(IsStagedSource ? "opacity-55" : "")"
         style="left:calc(@Model.LeftPercent% + 1px);width:calc(@Model.WidthPercent% - 2px)"
         data-planning-key="@Model.Operation.PlanningKey"
         data-source-resource-id="@Model.Operation.ResourceId"
@@ -11,13 +11,14 @@
         data-frozen="@(IsFrozen.ToString().ToLowerInvariant())"
         data-snap-mode="@State.Viewport.SnapMode"
         data-baseline-change="@Model.BaselineChange"
+        data-selected="@(Selected.ToString().ToLowerInvariant())"
         tabindex="@TabIndex"
         aria-label="@Model.AccessibleName"
         title="@Model.AccessibleName"
         @onkeydown="HandleKeyDown"
         @oncontextmenu="HandleContextMenu"
         @oncontextmenu:preventDefault
-        @onclick="() => OperationSelected.InvokeAsync(Model.Operation)">
+        @onclick="HandleSelection">
     @if (Model.LogicalWidthPx >= 68)
     {
         <span class="flex items-start justify-between gap-1">
@@ -51,7 +52,10 @@
     {
         <span class="flex items-baseline justify-between gap-1 text-inverted/70"><span class="truncate">@Model.Operation.GradeCode</span><span>@Model.ExecutionStatus</span></span>
     }
-    <GanttExecutionLayer Model="Model" />
+    @if (Model.ExecutionStatus == OperationExecutionStatus.Running)
+    {
+        <span class="aps-op-card__progress" style="--aps-op-progress:@Model.RunningProgressPercent%" title="Running progress at planning reference time"></span>
+    }
 </button>
 
 @code {
@@ -62,7 +66,7 @@
     [Parameter] public bool IsFrozen { get; set; }
     [Parameter] public bool CapacityFocused { get; set; }
     [Parameter] public int TabIndex { get; set; } = -1;
-    [Parameter] public EventCallback<ScheduledProcessOperationView> OperationSelected { get; set; }
+    [Parameter] public EventCallback<GanttOperationSelectionRequest> OperationSelected { get; set; }
     [Parameter] public EventCallback<GanttKeyboardNavigationRequest> KeyboardNavigate { get; set; }
     [Parameter] public EventCallback<GanttContextMenuRequest> ContextRequested { get; set; }
 
@@ -70,6 +74,8 @@
         .Append(Model.Operation.ResourceId)
         .Distinct());
     private string VerticalClass => State.BaselineMode == GanttBaselineMode.CompareSubrow ? "top-2 bottom-6" : "inset-y-2";
+    private bool IsStagedSource => State.StagedMove?.PlanningKey.Equals(Model.Operation.PlanningKey, StringComparison.OrdinalIgnoreCase) == true ||
+        State.StagedBulkMove?.Moves.Any(x => x.PlanningKey.Equals(Model.Operation.PlanningKey, StringComparison.OrdinalIgnoreCase)) == true;
 
     private static string ProcessClass(ProcessOperationType type) => type switch
     {
@@ -113,16 +119,25 @@
     };
     private Task HandleContextMenu(MouseEventArgs args) => ContextRequested.InvokeAsync(
         new GanttContextMenuRequest(Model.Operation.PlanningKey, args.ClientX, args.ClientY, false));
+    private Task HandleSelection(MouseEventArgs args) => OperationSelected.InvokeAsync(
+        new GanttOperationSelectionRequest(Model.Operation, args.CtrlKey || args.MetaKey, args.ShiftKey));
     private Task HandleKeyDown(KeyboardEventArgs args)
     {
         if ((args.ShiftKey && args.Key == "F10") || args.Key == "ContextMenu")
             return ContextRequested.InvokeAsync(new GanttContextMenuRequest(Model.Operation.PlanningKey, 0, 0, true));
+        if (args.Key is " " or "Spacebar")
+            return OperationSelected.InvokeAsync(new GanttOperationSelectionRequest(Model.Operation, true, false));
+        if (args.AltKey) return Task.CompletedTask;
         var direction = args.Key switch
         {
             "ArrowLeft" => GanttKeyboardDirection.Left,
             "ArrowRight" => GanttKeyboardDirection.Right,
             "ArrowUp" => GanttKeyboardDirection.Up,
             "ArrowDown" => GanttKeyboardDirection.Down,
+            "Home" => GanttKeyboardDirection.Home,
+            "End" => GanttKeyboardDirection.End,
+            "PageUp" => GanttKeyboardDirection.PageUp,
+            "PageDown" => GanttKeyboardDirection.PageDown,
             _ => (GanttKeyboardDirection?)null
         };
         return direction is { } value

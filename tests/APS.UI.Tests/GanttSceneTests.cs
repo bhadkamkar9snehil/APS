@@ -193,6 +193,34 @@ public sealed class GanttSceneTests
     }
 
     [Fact]
+    public void Operation_model_preserves_returned_actual_geometry_without_inference()
+    {
+        var lane = Lane(9, Start.AddHours(3));
+        var operation = lane.Operations.Single();
+        var actualStart = operation.StartUtc.AddMinutes(12);
+        var actualEnd = operation.EndUtc.AddMinutes(18);
+        var detail = new PlanningOperationWorkbenchDetail(
+            operation.OperationSnapshotId,
+            operation.PlanningKey,
+            operation.SourceEntityId,
+            OperationAssignmentCommitmentState.Completed,
+            OperationExecutionStatus.Completed,
+            actualStart,
+            actualEnd,
+            operation.QuantityMt,
+            Array.Empty<string>(),
+            Array.Empty<PlanningOperationResourceOptionView>(),
+            null,
+            null,
+            Array.Empty<string>());
+
+        var model = Assert.Single(Assert.Single(GanttModels.BuildScene(Workbench([lane], details: [detail]), State()).Rows).Operations);
+
+        Assert.Equal(actualStart, model.ActualStartUtc);
+        Assert.Equal(actualEnd, model.ActualEndUtc);
+    }
+
+    [Fact]
     public void Focused_dependency_geometry_survives_row_virtualization_and_preserves_lag_semantics()
     {
         var lanes = new[] { Lane(0, Start.AddHours(1)), Lane(1, Start.AddHours(2)), Lane(2, Start.AddHours(3)) };

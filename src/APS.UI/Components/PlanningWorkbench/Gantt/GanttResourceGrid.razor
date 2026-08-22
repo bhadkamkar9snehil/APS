@@ -16,6 +16,9 @@
                         class="flex w-full items-center gap-2 border-b border-border bg-surface-inset px-2 text-left hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
                         style="height:var(--aps-gantt-row-height);padding-left:@($"{8 + (int)group.Level * 14}px")"
                         aria-expanded="@(!group.IsCollapsed)"
+                        data-gantt-grid-row
+                        data-scene-index="@group.SceneIndex"
+                        tabindex="@(group.SceneIndex == FirstMountedSceneIndex ? 0 : -1)"
                         title="@(group.IsCollapsed ? $"Expand {group.Label}" : $"Collapse {group.Label}")"
                         @onclick="() => GroupToggled.InvokeAsync(group)">
                     <span aria-hidden="true" class="w-3 text-center text-xs text-accent">@(group.IsCollapsed ? "▸" : "▾")</span>
@@ -26,9 +29,12 @@
             else if (RowsByIndex.TryGetValue(sceneIndex, out var row))
             {
                 <button type="button"
-                        class="grid min-w-0 items-center border-b px-2 pl-8 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent @(SelectedResourceId == row.Lane.ResourceId ? "border-accent bg-accent-soft shadow-soft" : "border-border even:bg-surface-raised hover:bg-surface-hover")"
+                        class="grid min-w-0 items-center border-b px-2 pl-8 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent @(SelectedResourceIds.Contains(row.Lane.ResourceId) ? "border-accent bg-accent-soft shadow-soft" : "border-border even:bg-surface-raised hover:bg-surface-hover")"
                         style="grid-template-columns:minmax(112px,1fr) 42px 42px 38px 30px 48px;height:var(--aps-gantt-row-height)"
-                        aria-pressed="@(SelectedResourceId == row.Lane.ResourceId)"
+                        aria-pressed="@SelectedResourceIds.Contains(row.Lane.ResourceId)"
+                        data-gantt-grid-row
+                        data-scene-index="@row.SceneIndex"
+                        tabindex="@(row.SceneIndex == FirstMountedSceneIndex ? 0 : -1)"
                         title="@($"{row.Lane.PlantName} / {row.Lane.AreaName} / {row.Lane.ProcessStageName} / {row.Lane.ResourceName}")"
                         @onclick="() => ResourceSelected.InvokeAsync(row.Lane)">
                     <span class="min-w-0"><strong class="block truncate text-xs">@row.Lane.ResourceCode</strong><span class="block truncate text-[9px] text-muted">@HierarchyLabel(row.Lane)</span></span>
@@ -49,7 +55,7 @@
 
 @code {
     [Parameter, EditorRequired] public GanttScene Scene { get; set; } = default!;
-    [Parameter] public Guid? SelectedResourceId { get; set; }
+    [Parameter] public IReadOnlySet<Guid> SelectedResourceIds { get; set; } = new HashSet<Guid>();
     [Parameter] public EventCallback<ScheduleResourceLaneView> ResourceSelected { get; set; }
     [Parameter] public EventCallback<GanttResourceGroupModel> GroupToggled { get; set; }
     [Parameter] public int RowHeightPx { get; set; } = 60;
