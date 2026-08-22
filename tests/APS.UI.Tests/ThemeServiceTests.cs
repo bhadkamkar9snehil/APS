@@ -6,14 +6,14 @@ namespace APS.UI.Tests;
 public sealed class ThemeServiceTests
 {
     [Fact]
-    public async Task Valid_mode_is_applied_through_the_browser_theme_contract()
+    public async Task Valid_mode_is_sent_to_the_browser_theme_contract()
     {
         var js = new RecordingJsRuntime();
         await using var service = new ThemeService(js);
 
         await service.SetModeAsync(ThemeMode.Dark);
 
-        Assert.Equal("apsTheme.apply", js.Invocations.Single());
+        Assert.Equal("apsTheme.setMode", js.Invocations.Single());
     }
 
     [Fact]
