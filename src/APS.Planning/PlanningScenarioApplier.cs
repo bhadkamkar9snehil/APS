@@ -2,12 +2,21 @@ using APS.Domain;
 
 namespace APS.Planning;
 
-internal sealed record ScenarioAppliedPlantState(
+/// <summary>
+/// Effective plant state after applying an operating scenario to the configured resource,
+/// capability and calendar masters for one planning horizon.
+/// </summary>
+public sealed record ScenarioAppliedPlantState(
     IReadOnlyCollection<Resource> Resources,
     IReadOnlyCollection<ResourceCapability> Capabilities,
     IReadOnlyCollection<ResourceCalendar> Calendars);
 
-internal static class PlanningScenarioApplier
+/// <summary>
+/// Applies an operating-state scenario to plant masters exactly as the planning engine sees them.
+/// Persistence/read-model code may use this same pure transformation when it must snapshot the
+/// effective plant rather than the mutable configured masters.
+/// </summary>
+public static class PlanningScenarioApplier
 {
     public static ScenarioAppliedPlantState Apply(
         IReadOnlyCollection<Resource> resources,
