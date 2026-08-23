@@ -1,1241 +1,610 @@
 # APS Backend Visibility and Control Contract
 
-Status: **canonical backend-to-UI exposure contract**
+**Status:** canonical backend-to-UI exposure contract  
+**Owner/completeness gate:** #36  
+**Re-baselined:** 23-Aug-2026 against current `main`
 
-Scope: backend groundwork only. This document does not specify visual design. It defines **everything the backend must make inspectable, queryable and controllable** so the future UI never has to reverse-engineer planner state.
+This document defines what the backend must make intentionally inspectable/queryable/controllable so the production UI never has to reverse-engineer planning truth.
+
+It is a **target completeness contract**, not a claim that every field below is already implemented. Current implementation state is in [`current/APS_CURRENT_STATE_2026-08-23.md`](current/APS_CURRENT_STATE_2026-08-23.md).
 
 Principle:
 
-> If APS computes, selects, rejects, reserves, commits, releases, executes or diagnoses something meaningful, that fact must have an intentional read path. If the planner is allowed to change it, that lever must have an intentional command/master contract.
+> If APS computes, selects, rejects, reserves, commits, approves, releases, executes or diagnoses a meaningful fact, that fact needs an intentional typed read path. If a planner may change it, the lever needs an intentional validated command/master contract.
 
 ---
 
-# 1. Global plan context
+# 1. Global Plan Version context
 
-## Read information
+## Read
 
-- current authoritative Plan Version
-- Plan Version number/ID
-- parent/baseline Plan Version
-- scenario ID/name
-- planning horizon start/end
-- planning reason / trigger
-- created by / created at
-- solver status
-- plan lifecycle state
-- release state/time
-- superseded state
-- feasibility/trust/degraded-mode indicators
-- objective score and objective component breakdown
-- plan warnings
-- plan diagnostics count by severity/domain
-- master-data version/effective snapshot references
-- planning assumptions/fallback flags
+- Plan Version ID/number;
+- parent/baseline Plan Version;
+- scenario ID/name;
+- planning horizon/reference time;
+- trigger/reason;
+- created time/actor where available;
+- solver status/objective;
+- lifecycle status;
+- active/superseded state;
+- Approved/released state/time;
+- release readiness;
+- readiness findings by stable code;
+- warnings/diagnostics summary;
+- effective planning-assumption/snapshot basis;
+- compatibility fallback flags for older Plan Versions.
 
-## Controls/levers
+## Commands
 
-- calculate plan
-- replan from current execution/inventory
-- create child scenario
-- compare plans
-- accept/review plan
-- release plan
-- supersede plan
-- cancel pending run
-- set frozen/slushy/liquid policy
-- select baseline for replan
+- calculate;
+- replan/child Plan Version;
+- compare;
+- get persisted readiness;
+- approve;
+- release;
+- scenario run where supported;
+- frozen/time-fence/repair controls through validated planning commands.
+
+The UI must not invent a second lifecycle state machine. Current persisted lifecycle includes:
+
+```text
+Draft -> Feasible -> Approved -> Released
+```
+
+with Failed/Superseded where applicable.
 
 ---
 
 # 2. Demand / Sales Orders / Production Orders
 
-## Read tables/views
+## Sales Order/customer-demand read
 
-### Sales Orders
-- SO number
-- item number
-- customer
-- material
-- grade
-- section/product
-- ordered quantity
-- open quantity
-- due date
-- priority/service class
-- order status
-- MTO/MTS classification where relevant
-- special requirement reference
-- coverage status
-- lateness/risk status
+- SO/item;
+- customer;
+- material/product;
+- grade/specification;
+- final section/product form;
+- ordered/open quantity;
+- customer required date;
+- confirmed date where authoritative;
+- priority/service class;
+- special requirement/profile reference;
+- qualified FG coverage;
+- manufacturing requirement;
+- projected service/completion state.
 
-### Production Orders
-- PO number
-- demand source: MTO/MTS
-- source SO/item(s)
-- material
-- grade/family/sequence class
-- caster section
-- final section
-- route
-- planned quantity
-- remaining quantity
-- due date
-- priority
-- status
-- target stock / projected stock for MTS
-- stock-policy reference
+## Production Order read
 
-### Demand allocations
-- SO -> PO quantity allocation
-- PO -> Campaign allocation
-- PO -> Heat allocation
-- PO -> Work Order allocation
-- PO -> material reservation/supply allocation
+- PO identity;
+- MTO/MTS source;
+- source SO/item;
+- material/grade/section/route;
+- planned/remaining quantity;
+- FG allocated quantity;
+- required date and its semantic basis;
+- priority/status;
+- Campaign/heat/rolling/route/WO allocations;
+- expected completion/service status;
+- release-readiness contribution.
 
-## Read diagnostics
+## Required explainability
 
-- why PO is uncovered
-- why PO is split
-- why PO was not grouped with another PO
-- customer requirement conflict
-- material shortfall/late supply
-- route/resource infeasibility
+- why demand is fully/partially/uncovered;
+- how qualified FG coverage reduced manufacturing need;
+- why a PO exists or was reconciled;
+- why demand was split/segregated;
+- which persisted production allocations serve the PO;
+- why service is late/missing/incomplete.
 
-## Controls/levers
+### Date-model note
 
-- planner priority override where policy permits
-- due-date/service scenario override
-- MTS min/target/max policy maintenance
-- draft split/merge/grouping preference
-- hard lock/pegging where permitted
-- customer requirement correction via master/order integration workflow
+The current production path still uses a generic `RequiredDate` in important places. The target read model should explicitly distinguish customer-required, confirmed and production-required-by semantics where the source/model supports them. UI must not guess this distinction.
 
 ---
 
-# 3. Customer/SAP requirement snapshot
+# 3. Customer/grade/order requirement resolution
 
-## Read information
+Expose effective requirements and their sources:
 
-- customer/customer group
-- SO/item
-- requirement source/version
-- grade/material default requirement
-- customer override
-- effective resolved requirement
-- chemistry min/max/target by element
-- VD required/optional/forbidden
-- LRF/secondary metallurgy requirement
-- RHF required/bypass policy
-- TMT/process requirement
-- allowed/preferred/forbidden route
-- allowed/preferred/forbidden resources
-- superheat/casting-temperature envelope
-- cut length
-- bundle/coil target/min/max
-- segregation/mixing rule
-- inspection/testing requirement
-- marking/packing reference
+- grade/material defaults;
+- customer/order narrowing;
+- chemistry/process requirements;
+- required/optional/forbidden treatment steps;
+- route/resource restrictions;
+- thermal envelopes;
+- segregation/mixing rules;
+- packaging/inspection requirements;
+- hard versus soft;
+- exact master/rule source;
+- overridden/inherited value where useful.
 
-## Explainability
-
-For every effective value expose:
-
-- value
-- source: grade / material / customer / SO / policy
-- whether hard/soft
-- overridden value if narrowed
+Do not make UI infer precedence from raw master rows.
 
 ---
 
-# 4. BOM and material-requirement graph
+# 4. BOM/material requirement graph
 
-## BOM master read views
+For each persisted/planned requirement expose:
 
-- BOM code
-- version
-- status
-- effective from/to
-- output material/specification
-- plant/site selector
-- route selector
-- grade/family selector
-- product-family selector
-- component material
-- flow type: INPUT / BYPRODUCT / COPRODUCT / WASTE
-- quantity per output
-- UOM
-- yield
-- scrap/loss
-- source/location/quality restriction
-- precedence/effective-selection basis
+- requirement ID / parent/root;
+- SO/PO root lineage;
+- material/specification/UOM;
+- gross/net/covered/shortfall quantity;
+- required-at time and timing basis;
+- selected BOM/version/path;
+- yield/loss assumptions;
+- internally manufacturable state;
+- supplying upstream requirement/operation when internal;
+- planning status;
+- explanation/diagnostic source.
 
-## Exploded Plan Version requirement tree
+Statuses may include current domain values such as:
 
-For every requirement node:
+- AvailableNow;
+- PlannedAvailable;
+- SupplyActionRequired where the lower-level planner emits it;
+- Shortfall;
+- LateSupply;
+- Unsourced;
+- NotManufacturableHere;
+- CycleBlocked.
 
-- requirement ID
-- parent requirement ID
-- root SO/PO
-- full path
-- BOM level derived, never authoritative master input
-- material/specification
-- UOM
-- gross requirement
-- covered quantity
-- net requirement
-- required-at time
-- timing basis
-- location
-- quality/customer qualification
-- selected BOM/version
-- quantity-per/output
-- yield/scrap assumption
-- byproduct/co-product output
-- planning status
+### Production-scope rule
 
-## Required material statuses
+Current production APS is manufacturing-only. The read surface must **not** present speculative BUY/TRANSFER/MANUAL actions as production-authoritative recommendations while `PlanningLifecycleService` rejects those controls.
 
-- AvailableNow
-- PlannedAvailable
-- SupplyActionRequired
-- Shortfall
-- LateSupply
-- Unsourced
-
-## Controls/levers
-
-- BOM CRUD/versioning
-- effective-date activation
-- planner source override where allowed
-- approve/reject manual supply assumption
-- choose approved sourcing alternative
-- re-run material explosion
+If domain compatibility/demo types still contain those action values, UI must distinguish them from production authority.
 
 ---
 
-# 5. Inventory and supply
+# 5. Inventory and authoritative supply
 
-## Inventory table
+## Inventory read
 
-- material/spec
-- grade
-- section/product form
-- lot ID when known
-- quantity
-- reserved quantity
-- available quantity
-- projected available quantity
-- UOM
-- location
-- stage: FG / CastIntermediate / OtherIntermediate / RawMaterial
-- quality state
-- available-from time
-- heat/source/certificate reference
-- customer restriction
+- material/spec/grade/section;
+- lot/piece identity where known;
+- quantity/reserved/available/projected available;
+- UOM;
+- location/stage;
+- quality state;
+- available-from time;
+- source/heat/certificate;
+- customer qualification/restriction;
+- thermal state where available.
 
-## Supply table
+## Supply read
 
-Supply source types:
+Production-authoritative supply can include:
 
-- ExistingInventory
-- InternalCastActual
-- InternalCastCommitted
-- InternalCastPlanned
-- ExternalFirm
-- ExternalPlannedBuy
-- TransferPlanned
-- ManualPlanned
-- InTransit
+- existing qualified inventory;
+- actual internal output;
+- committed/released internal future output;
+- APS-planned internal output;
+- authoritative external/in-transit incoming material already known to the integration/state model.
 
 Expose:
 
-- source ID/reference
-- material/spec
-- quantity
-- reserved quantity
-- expected receipt
-- location
-- supplier/source location
-- quality/certificate state
-- thermal state
-- commitment state
-- Plan Version ownership
+- source type/reference;
+- material/spec/quantity;
+- availability/receipt time;
+- location/source;
+- commitment/confidence state;
+- quality/certificate state;
+- thermal state;
+- Plan Version/execution ownership where applicable.
 
-## Supply requirement/actions table
-
-- requirement ID
-- PO/root-demand ID
-- material/spec
-- need quantity
-- need time
-- selected action: MAKE/BUY/TRANSFER/MANUAL/UNSOURCED
-- selected planned quantity
-- MOQ/order multiple
-- projected excess
-- expected receipt
-- lead time
-- source/supplier/location
-- service feasibility
-- penalty/preference
-- selected reason
-
-## Sourcing alternatives table
-
-For every alternative:
-
-- action type
-- source rule
-- allowed/rejected
-- rejection reason
-- required lead time
-- expected availability
-- quantity/lot size
-- cost/preference penalty
-- route feasibility
-- material/quality feasibility
+Do not fabricate a supplier/PO/transfer recommendation merely because a material requirement is uncovered.
 
 ---
 
 # 6. Material reservations and time-phased ledger
 
-## Reservation table
+## Reservation
 
-- reservation ID
-- Plan Version
-- requirement ID
-- PO/Campaign/operation
-- supply source
-- material/spec
-- quantity
-- UOM
-- reserved-at
-- available-at
-- status
-- lot-level identity where available
+- reservation ID;
+- Plan Version;
+- requirement/root demand;
+- PO/Campaign/operation;
+- supply source;
+- material/spec;
+- quantity/UOM;
+- reserved/available time;
+- status;
+- lot-level identity where known.
 
-## Time-phased material events
+## Time-phased event
 
-- pool/material key
-- event time
-- event type
-- source/consumer
-- receipt quantity
-- consumption quantity
-- running projected balance
-- requirement/reservation ID
-- source type
-- confidence/commitment state
+- material pool key;
+- event time;
+- receipt/consumption type;
+- source/consumer;
+- quantity;
+- projected balance;
+- requirement/reservation;
+- source type/commitment.
 
-## Required views
+Required views:
 
-- ledger by material
-- ledger by PO
-- ledger by campaign
-- ledger by rolling plan
-- supply-to-demand pegging
-- shortages by need time
-- future committed production
-- projected excess
-- zero-balance/material-risk windows
+- material ledger;
+- PO/Campaign/operation coverage;
+- supply-to-demand pegging;
+- shortage-by-need-time;
+- committed/planned internal future supply;
+- zero-balance/risk windows.
+
+Current stock must never become the implicit end of the planning horizon.
 
 ---
 
-# 7. Campaign planning
+# 7. Campaign / grade sequence / heat structure
 
-## Campaign table
+## Campaign read
 
-- campaign ID/number
-- status
-- route
-- caster section
-- required date/window
-- total rolling quantity
-- existing/intermediate supplied quantity
-- fresh steel quantity
-- external/planned supplied quantity
-- MTO quantity
-- MTS quantity
-- customer/segregation class
-- grade/sequence composition
-- heat count
-- campaign objective score
+- Campaign identity/status;
+- route/section;
+- quantity composition;
+- MTO/MTS composition;
+- PO allocation quantities;
+- grade sequence;
+- heat structure/count;
+- earliest/latest allocation service dates;
+- selected candidate/objective evidence where persisted;
+- transition/service/downstream/stability score components where available.
 
-## Campaign allocations
+## Candidate/rejection visibility
 
-- campaign -> PO
-- quantity
-- intermediate quantity
-- fresh steel quantity
-- supply-source composition
+Expose selected and rejected alternatives as #19/#36 mature:
 
-## Candidate campaigns
+- membership;
+- hard incompatibility;
+- transition reason;
+- furnace/heat feasibility;
+- downstream feasibility;
+- customer segregation;
+- service impact;
+- stability impact;
+- selected/rejected reason.
 
-For selected and rejected alternatives expose:
-
-- candidate ID
-- PO membership
-- quantity
-- grade sequence
-- proposed heat structure
-- service score
-- transition score
-- heat-utilization score
-- setup/campaign-count score
-- MTS deviation score
-- downstream feasibility score
-- stability score
-- selected/rejected
-- rejection reason
-
-## Planner levers
-
-- max/min campaign quantity policy
-- MTO/MTS mixing policy
-- grade-mixing policy
-- customer segregation
-- objective weights
-- proposed manual grouping/split constraint
-- freeze specific campaign membership
+Manual UI changes must become validated planning constraints/replans rather than direct entity mutation.
 
 ---
 
-# 8. Grade sequence and transitions
+# 8. Routes, operations and physical resources
 
-## Grade sequence view
+## Route
 
-- campaign
-- sequence position
-- grade
-- grade family
-- sequence class
-- casting class
-- quantity
-- heat count
+- route identity/version;
+- ordered operations;
+- optional/skipped decision and reason;
+- input/output material/section;
+- yield;
+- queue/transfer bounds;
+- inventory/decoupling semantics;
+- release WO mapping.
 
-## Transition evaluation
+## Resource
 
-For every adjacent pair:
+- physical ResourceId/code/name;
+- process/unit type;
+- operating state;
+- scheduling mode;
+- capacity basis/nominal capacity/factor;
+- calendar/unavailable/derated intervals;
+- capabilities;
+- flow links.
 
-- from grade/section/product family
-- to grade/section/product family
-- effective rule source
-- allowed/forbidden
-- transition time
-- penalty
-- sequence-break requirement
-- resource scope
-- exact/class/family/default precedence source
-
-## Controls/master levers
-
-- transition rules
-- grade-family/class membership
-- resource-specific override
-- section/product-family transition rule
+No read/API should collapse same-type resources into a single pseudo-resource.
 
 ---
 
-# 9. Heat structure and heat allocation
-
-## Heat table
-
-- heat ID
-- campaign
-- sequence number
-- grade
-- furnace input quantity
-- expected usable cast output
-- min/nominal/max feasible envelope
-- capacity basis/resource class
-- required process route
-- customer/quality requirement summary
-- planned/actual state
-
-## Heat -> PO allocation
-
-- heat
-- PO
-- output quantity
-- steelmaking input quantity
-- customer segregation
-
-## Heat sizing explanation
-
-- eligible furnace/capacity classes
-- selected heat count
-- target utilization
-- residual/partial-heat reason
-- yield assumption
-- rejected heat structures/reasons
-
----
-
-# 10. Plant topology and resource master
-
-## Plant hierarchy
-
-- Plant
-- Area
-- Process Stage
-- Physical Resource
-
-## Resource fields
-
-- ResourceId/code/name
-- ProcessUnitType
-- ResourceType
-- active/state
-- scheduling mode
-- capacity basis/value
-- min/nominal/max heat size where relevant
-- throughput/rate
-- strand count
-- location
-- operating mode
-- derating
-- preferred/forbidden flags
-
-## Resource capability table
-
-- resource
-- process operation
-- route
-- grade/family/class
-- input section/family
-- output section/family
-- product family
-- capability class
-- throughput
-- min/max quantity
-- temperature capability
-- preferred/penalty
-
-## Calendar/outage table
-
-- resource
-- interval
-- availability state
-- maintenance/breakdown
-- derating
-- reason/source
-
-## Plant flow links
-
-- from resource/stage
-- to resource/stage
-- transfer time
-- min/max queue
-- hot-transfer flag
-- buffer/decoupling semantics
-- temperature-loss model/reference
-- enabled/disabled
-
----
-
-# 11. Manufacturing routes
-
-## Route view
-
-- route code/version
-- material/product applicability
-- grade applicability
-- plant
-- active state
-
-## Route operations
-
-- sequence
-- ProcessOperationType
-- required/optional/forbidden condition
-- input material/section
-- output material/section
-- yield
-- queue/transfer bounds
-- decoupling point
-- finite-scheduled flag
-- release WO mapping type
-
-## Route-resource capability
-
-- operation
-- eligible resource
-- capability basis
-- duration/rate
-- preference
-- exclusions
-
-## Controls
-
-- route CRUD/version/effective date
-- optional-operation condition
-- finite-scheduling scope
-- resource qualification
-
----
-
-# 12. Resource assignment / late-binding dispatch
-
-## For every scheduled operation expose
-
-- PlanningKey
-- source entity
-- operation type
-- eligible-resource alternatives
-- planned resource
-- selected penalty
-- commitment state
-- committed resource
-- actual resource
-- commitment policy
-- commitment trigger
-- dispatch acknowledgement state
-- off-plan deviation flag
-
-## Resource alternative table
-
-- operation
-- resource
-- eligible true/false
-- eligibility basis
-- exclusion reason
-- duration
-- preference penalty
-- pair-flow feasibility
-- thermal feasibility
-- calendar availability at plan time
-
-## Dispatch revision history
-
-- revision ID
-- old resource
-- new resource
-- reason
-- requested by/source
-- revalidation result
-- child Plan Version
-- timestamp
-
-## Controls
-
-- request local redispatch
-- acknowledge/commit assignment
-- force broad replan
-- override resource only when policy/permissions allow
-
----
-
-# 13. Steelmaking operation train
-
-For each heat:
-
-- primary steelmaking operation: EAF/BOF/IF/etc.
-- LF/LRF/secondary metallurgy
-- VD/RH/AOD/VOD or configured treatment
-- CCM
-
-For each operation expose:
-
-- planned resource
-- resource alternatives
-- planned start/end
-- actual start/end
-- planned/actual quantity
-- predecessor/successor
-- min/max queue
-- transfer time
-- thermal requirement
-- commitment/execution status
-- delay variance
-- resource variance
-
----
-
-# 14. Thermal / superheat
-
-## Master data
-
-- grade liquidus/reference temperature
-- target/min/max superheat
-- casting-temperature range
-- operation entry range
-- operation exit range
-- resource heating/correction capability
-- transfer/holding loss model
-- billet thermal-state classes
-- RHF entry/discharge temperature
-- RM minimum feed temperature
-
-## Plan facts
-
-For each constrained transition expose:
-
-- estimated upstream exit temp/range
-- transfer duration
-- heat-loss assumption
-- predicted downstream arrival temp/range
-- hard minimum/maximum
-- preferred range
-- max feasible wait
-- risk margin
-- correction/reheat requirement
-- assumption source
-
----
-
-# 15. CCM / casting / strand output
-
-## CCM master
-
-- strand count
-- formats
-- casting speed/range
-- grade/casting-class eligibility
-- tundish/sequence capacity/life
-- sequence-break setup
-- section-transition rules
-- crop/yield
-
-## Cast sequence
-
-- logical sequence ID
-- selected physical CCM
-- eligible CCMs
-- tundish/sequence identity
-- ordered heats
-- grade/section transitions
-- planned start/end
-- break reason
-
-## Strand output
-
-- heat
-- CCM
-- strand number
-- output quantity
-- billet format
-- expected pieces/cut length when modeled
-- expected receipt time
-
----
-
-# 16. RHF / rolling / downstream production
-
-## Rolling plan
-
-- rolling-plan ID
-- PO/Campaign allocations
-- billet source composition
-- grade
-- input section
-- output section
-- quantity
-- selected RM / alternatives
-- planned start/end
-
-## Feed mode
-
-- direct hot charge
-- internal billet inventory
-- committed future billet
-- external billet
-- planned purchase/transfer
-- RHF required/bypassed
-
-## RHF
-
-- selected/shared resource
-- scheduling mode
-- charge/occupancy quantity
-- residence time
-- discharge temperature
-- downstream RM
-
-## Downstream route
-
-- TMT
-- cooling
-- cutting
-- bundling
-- coiling
-- finishing
-
-For every route operation expose:
-
-- upstream plan
-- input/output material
-- input/output section
-- quantity
-- selected/eligible resource
-- queue window
-- inventory-decoupling flag
-- planned/actual timing
-
----
-
-# 17. Packaging / planned physical units
-
-## Planned bundle/coil outputs
-
-- PO
-- material/product
-- total planned quantity
-- target/min/max unit weight
-- cut length
-- piece weight
-- expected pieces
-- expected bundle/coil count
-- remainder handling
-- customer packaging rule
-- mixing/segregation rule
-
-## Actual material units
-
-- actual lot/unit ID
-- bundle/coil number
-- actual weight
-- piece count
-- quality state
-- parent lot(s)
-- producing operation/WO
-- SO/PO allocation
-
----
-
-# 18. Finite schedule
-
-## Operation schedule table
-
-- task ID
-- PlanningKey
-- operation type
-- source entity
-- physical resource
-- start/end
-- duration
-- setup/changeover
-- priority
-- due date
-- tardiness
-- assignment penalty
-- time-fence state
-- commitment state
-
-## Dependency table
-
-- predecessor
-- successor
-- min lag
-- max lag
-- resource-pair restriction
-- material dependency
-- thermal/queue basis
-
-## Per-resource sequence
-
-- physical resource
-- sequence position
-- predecessor/successor
-- transition time/penalty
-- calendar blocks
-
-## Capacity semantics
-
-- resource scheduling mode
-- cumulative demand if applicable
-- capacity limit
-- scheduled occupancy
-
----
-
-# 19. Capacity and bottlenecks
-
-## Rough-cut capacity
-
-- physical resource
-- available hours/capacity
-- demand hours
-- process/setup/changeover
-- utilization
-- overload
-- basis = rough-cut
-
-## Finite scheduled occupancy
-
-- physical resource
-- scheduled intervals
-- available calendar
-- utilization/occupancy
-- idle/starved intervals
-- overload impossible by solver but capacity bottleneck evidence
-- basis = finite schedule
-
-Never combine rough-cut and finite occupancy into one unlabeled KPI.
-
----
-
-# 20. Plan Version compare
-
-## Operation deltas
-
-- added
-- removed
-- moved start/end
-- resource changed
-- commitment changed
-- quantity changed
-
-## Campaign/heat deltas
-
-- campaign membership
-- allocation quantity
-- grade sequence
-- heat count/size
-- source path
-
-## Material deltas
-
-- reservation changed
-- source changed
-- MAKE/BUY/TRANSFER changed
-- expected receipt changed
-- shortage/late status changed
-
-## Service deltas
-
-- PO lateness
-- due-date risk
-- uncovered demand
-
-## Explain reason
-
-- execution actual
-- outage
-- supply delay
-- campaign optimization
-- resource redispatch
-- master/scenario change
-
----
-
-# 21. Scenario planning
-
-## Scenario master
-
-- scenario ID/name
-- baseline plan
-- resource overrides
-- outage intervals
-- derating
-- capability/quality restriction
-- material/inventory/supply override
-- sourcing policy override
-
-## Scenario results
-
-- resulting Plan Version
-- feasibility
-- service delta
-- campaign delta
-- material delta
-- resource/capacity delta
-- external supply delta
-
----
-
-# 22. CTP / promise
-
-## Request
-
-- customer/material/grade/section
-- quantity
-- requested date
-- location
-- special requirements
-
-## Alternatives
-
-- stock-only
-- join existing campaign
-- new campaign
-- later achievable date
-- split delivery
-- approved expedite/source option
-
-## Promise basis
-
-- material source
-- campaign/heat
-- resource/capacity
-- frozen-plan impact
-- inventory trust
-- solver status
-- blocker/reason
-
-CTP must use the same canonical planning kernel, not a hidden independent planner.
-
----
-
-# 23. Work Orders / release
-
-## Work Order table
-
-- WO number
-- type
-- campaign
-- material
-- grade
-- section
-- planned quantity
-- resource when WO grain maps to one resource
-- planned start/end
-- status
-- external execution ID
-
-## WO allocations
-
-- WO -> PO
-- quantity
-- PO -> SO/item
-
-## WO process operations
-
-- PlanningKey
-- ProcessOperationType
-- planned resource
-- actual resource
-- planned/actual start/end
-- planned/actual quantity
-- status
-
----
-
-# 24. Execution history
-
-## Operation events
-
-- event ID/source
-- operation/PlanningKey
-- prior/new status
-- actual resource
-- actual start/end
-- actual quantity
-- reason/comment
-- source: Manual / MES API / reconciliation
-- received time
-- idempotency key
-
-## Heat/casting actuals
-
-- heat
-- EAF/LRF/VD/CCM actuals
-- temperature data when available
-- strand output
-- produced billet lots
-
-## Replan impact
-
-- completed/fixed
-- running/fixed resource/start
-- held
-- remaining quantity
-- affected downstream operations
-
----
-
-# 25. Material genealogy / traceability
-
-## Commercial lineage
+# 9. Late-bound resource assignment / commitment / redispatch
+
+#16 remains the current primary backend completion owner.
+
+For every finite operation the target read contract is:
+
+- operation/planning key;
+- eligible physical resources;
+- excluded candidates and reason;
+- duration/throughput/preference basis per candidate;
+- planned resource;
+- commitment state/policy;
+- committed resource;
+- actual resource;
+- off-plan actual flag;
+- redispatch/local-repair revision history;
+- child Plan Version/reason;
+- revalidation/impact evidence.
+
+Target lifecycle:
 
 ```text
-SO/item -> PO -> Campaign allocation -> Heat/WO allocation
+Eligible Resources
+ -> Planned Resource
+ -> Commitment State
+ -> Committed Resource
+ -> Actual Resource
 ```
 
-## Physical lineage
+UI must not infer eligibility from equipment type or mutate `ResourceId` directly.
+
+---
+
+# 10. Thermal visibility
+
+## Liquid steel
+
+Expose effective thermal constraints and resource-pair/queue evidence required by the configured liquid-steel route.
+
+## Billet thermal — #56 implemented
+
+For each billet/downstream feed decision expose, where persisted/readable:
+
+- source thermal basis: planned/actual/categorical/unknown;
+- source exit/available state;
+- rolling-entry minimum/target requirement;
+- transfer/wait/buffer duration;
+- loss/holding rule;
+- predicted temperature/state;
+- actual measured temperature/state when authoritative;
+- hot-direct/hot-buffered/reheat-required outcome;
+- reason direct hot charge was rejected;
+- whether reheating came from thermal state or independent route/order policy;
+- rejected hot paths/warnings.
+
+Do not present #56 as a future-only concept.
+
+---
+
+# 11. Finite schedule / Gantt contract
+
+Expose each scheduled operation with:
+
+- stable PlanningKey;
+- source entity/route operation;
+- physical resource;
+- start/end/duration;
+- eligible resources;
+- commitment/execution state;
+- predecessor/successor dependencies;
+- min/max lags where applicable;
+- calendar/frozen/time-fence state;
+- baseline delta;
+- Campaign/heat/PO/material lineage;
+- binding/slack evidence where authoritative;
+- diagnostics/warnings.
+
+Resource/capacity read models must distinguish:
+
+- disjunctive versus cumulative scheduling mode;
+- nominal/effective capacity;
+- calendar/operating-state derating;
+- solved occupancy;
+- historical persisted assumption versus current live master.
+
+UI geometry is not planner truth.
+
+---
+
+# 12. Plan Version baseline/comparison
+
+Current operation comparison foundation exists. Target complete comparison includes:
+
+- added/removed/moved/resource-changed operations;
+- service changes;
+- Campaign/heat composition;
+- material requirements/reservations/shortfalls;
+- capacity/occupancy differences;
+- scenario/effective assumption changes;
+- diagnostic changes;
+- attribution to scenario versus changed demand/master input where determinable.
+
+#57 owns the broader persisted comparison expansion; do not build a separate UI-only comparer.
+
+---
+
+# 13. Release readiness / approval / release
+
+Expose:
+
+- Plan Version current lifecycle status;
+- IsActive;
+- IsReleaseReady;
+- stable readiness findings with entity references;
+- material evidence missing/unresolved states;
+- supply evidence missing/non-firm/late states where relevant;
+- MTO service completion missing/incomplete/late findings;
+- approval result/time if stored;
+- released state/time;
+- Work Orders/operations created from release.
+
+Commands:
+
+- GetReadiness;
+- Approve;
+- Release.
+
+The UI must not parse exception prose to decide whether a plan is releasable.
+
+---
+
+# 14. Execution / Work Orders / actuals
+
+Expose:
+
+- released Work Order and operation mapping;
+- PO/SO allocations;
+- planned resource/time/quantity;
+- committed resource/state;
+- actual resource/start/end/quantity;
+- status history/provenance;
+- source-system event/idempotency identity;
+- variance;
+- produced/consumed material facts where implemented.
+
+Running/completed actuals are physical truth and must not rewrite historical planned assignment.
+
+#18 remains the completion owner for full downstream transformation/genealogy.
+
+---
+
+# 15. Commercial lineage and physical genealogy
+
+Keep them separate but traversable.
+
+### Commercial
 
 ```text
-Heat
- -> CastSequence
- -> Strand
- -> Billet lot/piece
- -> RHF/RM consumption
- -> Rolled lot
- -> TMT/cut/bundle or coil
- -> FG lot
- -> inventory allocation
- -> SO/delivery
+SO/item -> PO -> Campaign/Heat/WO/operation allocation
 ```
 
-## Required queries
+### Physical
 
-- upstream ancestors recursively
-- downstream descendants recursively
-- material transformation quantity/yield
-- external-source ancestry
-- quality/certificate state
-- commercial demand allocation
+```text
+source material/heat -> cast/strand -> billet -> downstream transformation -> FG unit
+```
 
----
-
-# 26. Diagnostics / explainability
-
-## Diagnostic table
-
-- issue code
-- severity
-- hard/soft
-- domain category
-- message
-- affected entity type/ID
-- Plan Version
-- evidence/reference
-- suggested action
-- advisory/non-authoritative flag
-
-## Categories
-
-- MasterData
-- Demand
-- Campaign
-- Heat
-- Route
-- Resource
-- Sequence
-- Thermal
-- Material
-- Capacity
-- FrozenPlan
-- Execution
-- Integration
-
-## Explainability views
-
-- Why was this campaign formed?
-- Why was this heat size selected?
-- Why was this resource selected?
-- Why was this alternative rejected?
-- Why is this material late/short?
-- Why is this PO infeasible?
-- What minimum safe change could restore feasibility?
+Target read API must support forward/backward recursive traversal with quantity/provenance where meaningful, including externally sourced billet with no internal heat parent.
 
 ---
 
-# 27. Master-data catalogs and levers
+# 16. Diagnostics / explainability
 
-Every master must support list/detail/effective-value/validation/impact read contracts.
+#19 target model should expose:
 
-Catalogs:
+- stable code/category;
+- severity;
+- hard/soft;
+- source stage/service;
+- affected entity references;
+- evidence values;
+- consequence;
+- advisory restoration/minimum-relaxation guidance;
+- objective/penalty component evidence for feasible plans where available.
 
-- Plants
-- Areas
-- Process stages
-- Resources
-- Resource capabilities
-- Resource calendars
-- Resource scheduling mode/capacity
-- Flow links
-- Manufacturing routes
-- Route operations
-- Route-resource capabilities
-- Grades
-- Grade families
-- sequence classes
-- casting classes
-- chemistry requirements
-- process requirements
-- customer/order requirement profiles
-- CrossSections
-- MaterialSpecifications
-- PackagingSpecifications
-- TransitionRules
-- ThermalProfiles
-- AssignmentCommitmentPolicies
-- SourcingRules
-- BOM headers/versions/components
-- StockPolicies
-- Scenarios/overrides
+UI must not infer domain cause from generic `Infeasible` or parse prose.
 
 ---
 
-# 28. Backend operational logs
+# 17. Scenario / CTP / capacity
 
-Operational logs are separate from plan facts.
+## Scenario
 
-Query/operational support should be able to correlate:
+Expose scenario identity/overrides, resulting Plan Version and comparison against baseline from canonical persisted facts.
 
-- TraceId
-- RequestId
-- PlanningRunId
-- PlanVersionId
-- ScenarioId
-- ProductionOrderId
-- CampaignId
-- HeatId
-- PlanningKey
-- ResourceId
-- WorkOrderId
-- MaterialRequirementId
-- MaterialLotId
-- ExternalEventId
+## CTP
 
-Standard application logging remains `ILogger<T>` with Serilog host configuration.
+Expose request/result using the same canonical demand/material/route/resource/thermal rules as normal planning. Include promise basis, earliest date and blocker/evidence.
+
+## Capacity
+
+Keep separate:
+
+- rough-cut estimate;
+- finite scheduled occupancy.
+
+#43/#57 remain backend owners for convergence/completeness.
 
 ---
 
-# 29. Required command inventory
+# 18. Master data / effective values
 
-The backend command surface should intentionally include:
+Typed list/detail/effective-value/validation reads are required for planning-affecting masters, including:
 
-## Planning
-- calculate
-- replan
-- scenario run
-- compare
-- release
+- Plant/Area/Stage/Resource;
+- resource scheduling/capacity;
+- capabilities/calendars/flow links;
+- routes/route operations/resource capabilities;
+- grade/chemistry/process/thermal requirements;
+- material/section/packaging;
+- transition/effective rules;
+- BOM;
+- scenarios/overrides;
+- planning commitment/resource-assignment policy as introduced.
 
-## Resource/dispatch
-- request redispatch/local repair
-- acknowledge assignment
-- commit assignment
-- broad replan request
+#39 owns wiring completeness; #60 owns validated operational authoring for the newer planning-critical masters; #41 owns application-boundary validation conventions.
 
-## Material
-- approve manual supply
-- choose/override source where policy permits
-- update external ETA/confirmation
-- release/cancel reservation
-
-## Execution
-- update WO
-- update process operation
-- update heat/casting actual
-- record material transformation/output
-
-## Masters
-- CRUD/version/activate/deactivate with validation and impact checks
-
-## Planning policy
-- freeze/slushy/liquid horizon
-- campaign policy
-- stock policy
-- source policy
-- objective weights
-- assignment commitment policy
-
-No command may mutate a solver decision without revalidation where feasibility is affected.
+UI must not use direct `DbContext` access to compensate for missing commands.
 
 ---
 
-# 30. Visibility completion criterion
+# 19. UI command-safety contract
 
-A backend capability is UI-ready only when:
+Every state-changing command must be:
 
-- its authoritative data source is known;
-- its IDs are stable;
-- it has a typed read model;
-- it has filtering/drill-through references;
-- its hard/soft/reason metadata is available;
-- its supported lever has a typed command/master contract;
-- historical Plan Version meaning is preserved;
-- no UI-side planning calculation is required;
-- no core screen needs to deserialize opaque JSON;
-- no meaningful backend fact is accessible only through database inspection.
+- explicit;
+- validated;
+- auditable;
+- tied to a Plan Version/current entity identity;
+- concurrency/stale-state aware where applicable;
+- incapable of silently weakening hard physical/customer/metallurgy constraints.
+
+Examples:
+
+- calculate/replan;
+- move/bulk-move proposal apply;
+- resource commitment/redispatch;
+- approve/release;
+- execution update;
+- master-data save/retire;
+- scenario run;
+- CTP request.
+
+No production command exists for speculative procurement/transfer recommendation under the current manufacturing-only product boundary.
+
+---
+
+# 20. Persistence visibility rule
+
+Core planner facts needed for filtering, drilldown, comparison and historical interpretation should be relational snapshots/typed projections where practical.
+
+JSON may remain immutable backup/detail, but no core planner screen should require:
+
+- direct SQL inspection;
+- deserializing opaque internal blobs in UI;
+- joining live mutable masters to reinterpret a historical decision when the effective assumption should have been snapshotted;
+- re-running planner logic just to explain an existing Plan Version.
+
+Recent historical-capacity hardening is the model: persisted scheduling/calendar assumptions are used where available and compatibility fallback is explicit for older Plan Versions.
+
+---
+
+# 21. Current completion state versus target
+
+Already materially exposed/implemented on `main`:
+
+- current/recent Plan Version and planner workbench context;
+- demand/supply/Campaign/steelmaking/rolling/schedule workspaces;
+- finite Gantt/read-model facts;
+- Plan Version comparison foundation;
+- Work Orders/execution/read foundations;
+- material/inventory views;
+- Plan Version readiness/approval/release application lifecycle;
+- historical capacity assumptions;
+- substantial master-data UI/read foundations.
+
+Still incomplete as a **visibility-completeness program**:
+
+- full #16 alternatives/commitment/redispatch/exclusion evidence;
+- #18 complete physical transformation/genealogy;
+- #19 normalized diagnostics/restoration evidence;
+- #57 rich service/material/Campaign/capacity/diagnostic compare;
+- #43 CTP/scenario/capacity convergence;
+- #60 validated operational master authoring;
+- all remaining facts required by the production UI without opaque JSON or UI-side reconstruction.
+
+Therefore #36 remains open even though the production UI already exists.
+
+---
+
+# 22. Completion criteria for #36
+
+Close only when:
+
+- every meaningful backend planning/execution fact has an intentional typed read contract or is explicitly documented internal-only;
+- every planner-controlled lever has a validated command/master contract;
+- current and historical Plan Versions can be rendered/explained without mutable-master drift;
+- UI does not recompute material balance, resource eligibility, route decisions, thermal outcomes, readiness or diagnostics;
+- no core screen must deserialize opaque JSON or inspect SQL directly;
+- CTP/scenario/capacity/compare/execution consume the same canonical truth rather than parallel view-specific logic;
+- the contract inventory is updated with concrete application/API ownership.
