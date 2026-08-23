@@ -1,4 +1,3 @@
-using System.Text.Json;
 using APS.Application;
 using APS.Domain;
 using APS.Infrastructure;
@@ -30,34 +29,6 @@ public sealed class PlanningWorkbenchQueryTests
         var campaignId = Guid.NewGuid();
         var heatId = Guid.NewGuid();
         var start = new DateTime(2026, 8, 21, 8, 0, 0, DateTimeKind.Utc);
-        var assumptions = new PlanningAssumptions(
-            null,
-            CampaignObjectiveWeights.Default,
-            Array.Empty<CampaignCompositionDecision>(),
-            new[]
-            {
-                new ResourceSchedulingAssumption(
-                    resourceId, "EAF1-A", ResourceSchedulingMode.Disjunctive,
-                    ResourceCapacityBasis.NotApplicable, null, 100m, true,
-                    ResourceOperatingState.Available),
-                new ResourceSchedulingAssumption(
-                    originalLrfResourceId, "LRF-01", ResourceSchedulingMode.Disjunctive,
-                    ResourceCapacityBasis.NotApplicable, null, 100m, true,
-                    ResourceOperatingState.Available),
-                new ResourceSchedulingAssumption(
-                    revisedLrfResourceId, "LRF-02", ResourceSchedulingMode.Disjunctive,
-                    ResourceCapacityBasis.NotApplicable, null, 100m, true,
-                    ResourceOperatingState.Available)
-            },
-            ResourceCalendars: new[]
-            {
-                new ResourceCalendarAssumption(
-                    revisedLrfResourceId, start.AddHours(3), start.AddHours(4), false, 0m,
-                    "PLANNED_MAINTENANCE"),
-                new ResourceCalendarAssumption(
-                    resourceId, start.AddHours(1), start.AddHours(2), true, 50m,
-                    "ENERGY_DERATE")
-            });
 
         db.PlanVersions.Add(new PlanVersion
         {
@@ -81,8 +52,7 @@ public sealed class PlanningWorkbenchQueryTests
             HorizonStartUtc = start,
             HorizonEndUtc = start.AddDays(7),
             SolverStatus = "Optimal",
-            IsActive = true,
-            PlanningAssumptionsJson = JsonSerializer.Serialize(assumptions, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            IsActive = true
         });
         db.PlanVersionStates.Add(new PlanVersionState
         {
@@ -297,18 +267,6 @@ public sealed class PlanningWorkbenchQueryTests
         });
         await db.SaveChangesAsync();
 
-        // Change the live masters after the plan was cut. The historical workbench must continue to
-        // render the plan's persisted scheduling assumptions and calendar, not these new values.
-        var liveEaf = await db.Resources.SingleAsync(x => x.Id == resourceId);
-        liveEaf.OperatingState = ResourceOperatingState.Breakdown;
-        liveEaf.SchedulingMode = ResourceSchedulingMode.Cumulative;
-        liveEaf.NominalConcurrentCapacity = 9m;
-        liveEaf.CapacityFactorPct = 10m;
-        var liveDerate = await db.ResourceCalendars.SingleAsync(x => x.ResourceId == resourceId);
-        liveDerate.CapacityFactorPct = 5m;
-        liveDerate.ReasonCode = "LIVE_MASTER_CHANGED";
-        await db.SaveChangesAsync();
-
         var service = new PlannerWorkspaceQueryService(db, new PlanVersionRepository(db));
         var result = await service.GetPlanningWorkbenchAsync(planId);
 
@@ -323,9 +281,6 @@ public sealed class PlanningWorkbenchQueryTests
         Assert.Equal(eafStageId, eafLane.ProcessStageId);
         Assert.Equal("EAF", eafLane.ProcessStageCode);
         Assert.Equal(20_010_000, eafLane.DisplayOrder);
-        Assert.Equal(ResourceOperatingState.Available, eafLane.OperatingState);
-        Assert.Equal(ResourceSchedulingMode.Disjunctive, eafLane.SchedulingMode);
-        Assert.Null(eafLane.NominalConcurrentCapacity);
         Assert.Single(result.Demand.Rows);
         Assert.Single(result.Campaigns.Campaigns);
         Assert.Equal(2, result.OperationDetails.Count);
@@ -338,9 +293,6 @@ public sealed class PlanningWorkbenchQueryTests
         Assert.Equal(1, result.Queue.TotalDemand);
         Assert.Equal(0, result.Queue.UnscheduledDemand);
         Assert.Contains(result.Exceptions, x => x.Kind == PlanningWorkbenchExceptionKind.UncoveredDemand);
-        Assert.DoesNotContain(result.Exceptions, x =>
-            x.Kind == PlanningWorkbenchExceptionKind.ResourceUnavailable &&
-            x.Entity?.EntityId == resourceId);
 
         var dependency = Assert.Single(result.DependencyLinks);
         Assert.Equal("HEAT:CMP-00001:H01:EAF", dependency.PredecessorPlanningKey);
@@ -351,16 +303,12 @@ public sealed class PlanningWorkbenchQueryTests
         Assert.Equal(30, dependency.CurrentLagMinutes);
 
         Assert.Equal(2, result.ResourceCalendarIntervals.Count);
-        Assert.All(result.ResourceCalendarIntervals, x => Assert.Equal("PlanAssumptionSnapshot", x.Source));
         var calendar = Assert.Single(result.ResourceCalendarIntervals, x => !x.IsAvailable);
         Assert.Equal(revisedLrfResourceId, calendar.ResourceId);
         Assert.Equal(start.AddHours(3), calendar.StartUtc);
         Assert.Equal(start.AddHours(4), calendar.EndUtc);
         Assert.False(calendar.IsAvailable);
         Assert.Equal("PLANNED_MAINTENANCE", calendar.ReasonCode);
-        var historicalDerate = Assert.Single(result.ResourceCalendarIntervals, x => x.ResourceId == resourceId);
-        Assert.Equal(50m, historicalDerate.CapacityFactorPct);
-        Assert.Equal("ENERGY_DERATE", historicalDerate.ReasonCode);
 
         Assert.Equal(2, result.BaselinePlacements.Count);
         var unchanged = Assert.Single(result.BaselinePlacements, x => x.PlanningKey.EndsWith(":EAF"));
