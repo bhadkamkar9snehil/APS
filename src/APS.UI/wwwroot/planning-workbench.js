@@ -373,21 +373,34 @@
 
     const cancel = () => {
       if (state.capacitySplit) {
+        state.capacitySplit.panel.style.height = `${state.capacitySplit.startHeight}px`;
         state.capacitySplit = null;
-        document.body.style.cursor = '';
       }
       if (state.columnSplit) {
+        const resize = state.columnSplit;
+        root.querySelectorAll('[data-gantt-grid]').forEach(grid => {
+          const columns = getComputedStyle(grid).gridTemplateColumns.split(' ');
+          if (resize.index >= 0 && resize.index < columns.length) {
+            columns[resize.index] = `${resize.startWidth}px`;
+            grid.style.gridTemplateColumns = columns.join(' ');
+          }
+        });
         state.columnSplit = null;
-        document.body.style.cursor = '';
       }
-      if (!state.drag) return;
+      if (state.split) {
+        state.split.host.style.setProperty('--aps-gantt-grid-width', `${state.split.startWidth}px`);
+        state.split = null;
+      }
+      state.pan = null;
       const drag = state.drag;
       state.drag = null;
-      cleanupDrag(drag);
+      if (drag) cleanupDrag(drag);
+      else document.body.style.cursor = '';
     };
 
     const keydown = event => {
-      if (event.key !== 'Escape' || !state.drag) return;
+      const hasGesture = state.drag || state.pan || state.split || state.columnSplit || state.capacitySplit;
+      if (event.key !== 'Escape' || !hasGesture) return;
       cancel();
       event.preventDefault();
       event.stopPropagation();
@@ -460,6 +473,7 @@
     document.addEventListener('fullscreenchange', fullscreenChanged);
     dotnet.invokeMethodAsync('ApplyGanttPreferences', JSON.stringify(preferences()), root.clientWidth).then(requestMetrics);
     state.cleanup = () => {
+      cancel();
       root.removeEventListener('pointerdown', down);
       root.removeEventListener('pointermove', move);
       root.removeEventListener('pointerup', up);
