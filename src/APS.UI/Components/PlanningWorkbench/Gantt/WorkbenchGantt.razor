@@ -59,7 +59,7 @@
                                    Fit="FitContextOperation"
                                    CompareBaseline="CompareContextBaseline"
                                    Move="InspectContextOperation"
-                                   FindAlternate="InspectContextOperation"
+                                   FindAlternate="FindAlternateContextOperation"
                                    TraceDemand="TraceContextDemand"
                                    TraceCampaign="TraceContextCampaign"
                                    CopyId="CopyContextBusinessId"
@@ -135,10 +135,16 @@
         }
     }
 
-    private async Task InspectContextOperation()
+    private Task InspectContextOperation() => InspectContextOperation(focusElementId: null);
+
+    // "Find alternate resource" opens the same inspector as "Move or reassign" but also focuses the
+    // eligible-resource picker, since that is specifically what the planner asked for.
+    private Task FindAlternateContextOperation() => InspectContextOperation(GanttElementIds.MoveTargetResource);
+
+    private async Task InspectContextOperation(string? focusElementId)
     {
         if (operationContext is not null && Scene.OperationsByKey.TryGetValue(operationContext.PlanningKey, out var operation))
-            await OperationSelected.InvokeAsync(new GanttOperationSelectionRequest(operation, false, false));
+            await OperationSelected.InvokeAsync(new GanttOperationSelectionRequest(operation, false, false, focusElementId));
         CloseContextMenu();
     }
 

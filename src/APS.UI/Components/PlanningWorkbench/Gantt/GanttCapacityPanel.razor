@@ -44,7 +44,13 @@
     [Parameter, EditorRequired] public GanttScene Scene { get; set; } = default!;
     [Parameter] public EventCallback<GanttCapacitySegmentModel> SegmentFocused { get; set; }
 
-    private IReadOnlyList<GanttCapacitySegmentModel> Segments => GanttCapacityModels.Build(Workbench.CapacityBuckets, State);
+    private IReadOnlyList<GanttCapacitySegmentModel> Segments { get; set; } = Array.Empty<GanttCapacitySegmentModel>();
+
+    // Computed once per parameter set rather than as a plain expression-bodied property: the markup and
+    // CapacityBasisLabel both read Segments, and Build() re-runs a GroupBy/Sum aggregation over every
+    // capacity bucket, so a live property would redo that work 3+ times per render.
+    protected override void OnParametersSet() => Segments = GanttCapacityModels.Build(Workbench.CapacityBuckets, State);
+
     private string ScaleLabel => GanttCapacityModels.ScaleFor(State).ToString();
     private string CapacityBasisLabel => Segments.Select(x => x.Basis).Distinct().ToArray() switch
     {

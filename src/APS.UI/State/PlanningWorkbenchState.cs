@@ -18,6 +18,8 @@ public enum PlanningScenarioIntent
     Recovery
 }
 
+public sealed record PlanRedoResult(Guid PlanId, Guid BaselinePlanId);
+
 public enum PlanningWorkbenchZoom
 {
     Detail,
@@ -398,12 +400,12 @@ public sealed class PlanningWorkbenchState
         return entry.PreviousPlanId;
     }
 
-    public Guid? RedoPlan()
+    public PlanRedoResult? RedoPlan()
     {
         if (!redo.TryPop(out var entry)) return null;
         undo.Push(entry);
         Notify();
-        return entry.NewPlanId;
+        return new PlanRedoResult(entry.NewPlanId, entry.PreviousPlanId);
     }
 
     private void ClearMove(bool notify)

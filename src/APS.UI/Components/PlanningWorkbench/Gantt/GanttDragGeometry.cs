@@ -63,40 +63,15 @@ public static class GanttDragGeometry
             AsUtc(operation.StartUtc) + delta)).ToArray();
     }
 
+    // GanttViewportState (the State layer, which also owns GanttSnapMode) is the single source of truth
+    // for snap-mode rounding - delegating here keeps the client-visible drag guide and the
+    // server-confirmed snap from ever drifting apart, without this Components-layer class depending on
+    // its own duplicate copy of the algorithm.
     private static DateTime Snap(
         DateTime timestampUtc,
         GanttSnapMode mode,
-        IReadOnlyCollection<DateTime> shiftBoundariesUtc)
-    {
-        if (mode == GanttSnapMode.Free) return timestampUtc;
-        if (mode == GanttSnapMode.ShiftBoundary)
-        {
-            if (shiftBoundariesUtc.Count == 0) return timestampUtc;
-            return shiftBoundariesUtc
-                .Select(AsUtc)
-                .OrderBy(x => Math.Abs(x.Ticks - timestampUtc.Ticks))
-                .ThenBy(x => x)
-                .First();
-        }
-
-        var increment = mode switch
-        {
-            GanttSnapMode.Hour => TimeSpan.FromHours(1),
-            GanttSnapMode.ThirtyMinutes => TimeSpan.FromMinutes(30),
-            GanttSnapMode.FifteenMinutes => TimeSpan.FromMinutes(15),
-            GanttSnapMode.FiveMinutes => TimeSpan.FromMinutes(5),
-            _ => TimeSpan.Zero
-        };
-        if (increment <= TimeSpan.Zero) return timestampUtc;
-        var dayStart = timestampUtc.Date;
-        var steps = decimal.Round(
-            (decimal)(timestampUtc.Ticks - dayStart.Ticks) / increment.Ticks,
-            0,
-            MidpointRounding.AwayFromZero);
-        return new DateTime(
-            dayStart.Ticks + decimal.ToInt64(steps * increment.Ticks),
-            DateTimeKind.Utc);
-    }
+        IReadOnlyCollection<DateTime> shiftBoundariesUtc) =>
+        GanttViewportState.SnapTimestamp(timestampUtc, mode, shiftBoundariesUtc);
 
     private static DateTime AsUtc(DateTime value) => value.Kind switch
     {

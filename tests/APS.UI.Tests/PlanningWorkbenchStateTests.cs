@@ -258,7 +258,7 @@ public sealed class PlanningWorkbenchStateTests
         Assert.Equal(baseline, state.UndoPlan());
         Assert.True(state.CanRedo);
         Assert.Equal("Move HEAT-104 · LRF-01 → LRF-02 · +45 min", state.RedoDescription);
-        Assert.Equal(child, state.RedoPlan());
+        Assert.Equal(new PlanRedoResult(child, baseline), state.RedoPlan());
     }
 
     [Fact]

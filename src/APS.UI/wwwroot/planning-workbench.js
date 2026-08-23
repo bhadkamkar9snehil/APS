@@ -167,7 +167,11 @@
           startX: event.clientX,
           startWidth: columnResizer.parentElement.getBoundingClientRect().width,
           min: Number(columnResizer.dataset.columnMin) || 28,
-          max: Number(columnResizer.dataset.columnMax) || 240
+          max: Number(columnResizer.dataset.columnMax) || 240,
+          // Every [data-gantt-grid] row (header + each resource row) is rendered from the same
+          // server-side GridTemplate, so this one read is representative of all of them - reading
+          // it again per grid per pointermove would force a synchronous layout on every row.
+          columns: (header ? getComputedStyle(header).gridTemplateColumns : '').split(' ')
         };
         columnResizer.setPointerCapture?.(event.pointerId);
         document.body.style.cursor = 'col-resize';
@@ -232,13 +236,11 @@
       if (state.columnSplit) {
         const resize = state.columnSplit;
         resize.width = Math.max(resize.min, Math.min(resize.max, resize.startWidth + event.clientX - resize.startX));
-        root.querySelectorAll('[data-gantt-grid]').forEach(grid => {
-          const columns = getComputedStyle(grid).gridTemplateColumns.split(' ');
-          if (resize.index >= 0 && resize.index < columns.length) {
-            columns[resize.index] = `${resize.width}px`;
-            grid.style.gridTemplateColumns = columns.join(' ');
-          }
-        });
+        if (resize.index >= 0 && resize.index < resize.columns.length) {
+          resize.columns[resize.index] = `${resize.width}px`;
+          const template = resize.columns.join(' ');
+          root.querySelectorAll('[data-gantt-grid]').forEach(grid => { grid.style.gridTemplateColumns = template; });
+        }
         event.preventDefault();
         return;
       }
@@ -378,13 +380,11 @@
       }
       if (state.columnSplit) {
         const resize = state.columnSplit;
-        root.querySelectorAll('[data-gantt-grid]').forEach(grid => {
-          const columns = getComputedStyle(grid).gridTemplateColumns.split(' ');
-          if (resize.index >= 0 && resize.index < columns.length) {
-            columns[resize.index] = `${resize.startWidth}px`;
-            grid.style.gridTemplateColumns = columns.join(' ');
-          }
-        });
+        if (resize.index >= 0 && resize.index < resize.columns.length) {
+          resize.columns[resize.index] = `${resize.startWidth}px`;
+          const template = resize.columns.join(' ');
+          root.querySelectorAll('[data-gantt-grid]').forEach(grid => { grid.style.gridTemplateColumns = template; });
+        }
         state.columnSplit = null;
       }
       if (state.split) {
@@ -505,6 +505,7 @@
     document.querySelector(`.aps-operation[data-planning-key="${escaped}"]`)?.focus();
   }
   function focusContextMenu() { document.querySelector('[data-gantt-context-menu] [role="menuitem"]')?.focus(); }
+  function focusElementById(id) { document.getElementById(id)?.focus(); }
   function copyText(value) { return navigator.clipboard.writeText(value); }
   async function toggleFullscreen(root) {
     if (document.fullscreenElement === root) await document.exitFullscreen();
@@ -518,5 +519,5 @@
     const rowHeight = parseFloat(getComputedStyle(timeline).getPropertyValue('--aps-gantt-row-height')) || 60;
     scroller.scrollBy({ top: Math.sign(direction) * rowHeight * 5, behavior: 'auto' });
   }
-  window.apsPlanningWorkbench = { initialize, dispose, savePreference, focusOperation, focusContextMenu, copyText, toggleFullscreen, scrollVertical };
+  window.apsPlanningWorkbench = { initialize, dispose, savePreference, focusOperation, focusContextMenu, focusElementById, copyText, toggleFullscreen, scrollVertical };
 })();

@@ -19,7 +19,18 @@ public sealed record GanttContextMenuRequest(string PlanningKey, double ClientX,
 public sealed record GanttOperationSelectionRequest(
     ScheduledProcessOperationView Operation,
     bool Toggle,
-    bool Extend);
+    bool Extend,
+    string? FocusElementId = null);
+
+/// <summary>
+/// Element ids a <see cref="GanttOperationSelectionRequest"/> can ask the host page to focus after the
+/// inspector opens, shared between the Gantt component that requests the focus and the page component
+/// that owns the actual DOM element.
+/// </summary>
+public static class GanttElementIds
+{
+    public const string MoveTargetResource = "aps-move-target-resource";
+}
 
 public static class GanttKeyboardNavigator
 {

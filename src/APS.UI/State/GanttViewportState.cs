@@ -110,17 +110,28 @@ public sealed class GanttViewportState
     public DateTime Snap(
         DateTime timestampUtc,
         GanttSnapMode mode,
-        IReadOnlyCollection<DateTime>? shiftBoundariesUtc = null)
+        IReadOnlyCollection<DateTime>? shiftBoundariesUtc = null) =>
+        SnapTimestamp(AsUtc(timestampUtc), mode, shiftBoundariesUtc ?? Array.Empty<DateTime>());
+
+    /// <summary>
+    /// The single source of truth for snap-mode rounding. <c>GanttDragGeometry</c> (the Components layer)
+    /// calls in here rather than keeping its own copy, so the client-visible drag guide and the
+    /// server-confirmed snap can never drift apart. <paramref name="timestampUtc"/> must already be
+    /// UTC-normalized by the caller.
+    /// </summary>
+    public static DateTime SnapTimestamp(
+        DateTime timestampUtc,
+        GanttSnapMode mode,
+        IReadOnlyCollection<DateTime> shiftBoundariesUtc)
     {
-        var timestamp = AsUtc(timestampUtc);
-        if (mode == GanttSnapMode.Free) return timestamp;
+        if (mode == GanttSnapMode.Free) return timestampUtc;
 
         if (mode == GanttSnapMode.ShiftBoundary)
         {
-            if (shiftBoundariesUtc is null || shiftBoundariesUtc.Count == 0) return timestamp;
+            if (shiftBoundariesUtc.Count == 0) return timestampUtc;
             return shiftBoundariesUtc
                 .Select(AsUtc)
-                .OrderBy(boundary => Math.Abs(boundary.Ticks - timestamp.Ticks))
+                .OrderBy(boundary => Math.Abs(boundary.Ticks - timestampUtc.Ticks))
                 .ThenBy(boundary => boundary)
                 .First();
         }
@@ -133,10 +144,10 @@ public sealed class GanttViewportState
             GanttSnapMode.FiveMinutes => TimeSpan.FromMinutes(5),
             _ => TimeSpan.Zero
         };
-        if (increment <= TimeSpan.Zero) return timestamp;
+        if (increment <= TimeSpan.Zero) return timestampUtc;
 
-        var dayStart = timestamp.Date;
-        var elapsedTicks = timestamp.Ticks - dayStart.Ticks;
+        var dayStart = timestampUtc.Date;
+        var elapsedTicks = timestampUtc.Ticks - dayStart.Ticks;
         var snappedSteps = decimal.Round(
             (decimal)elapsedTicks / increment.Ticks,
             0,

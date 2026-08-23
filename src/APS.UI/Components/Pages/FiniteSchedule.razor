@@ -320,7 +320,7 @@
                                 {
                                     <div class="mt-3 rounded-control bg-surface-inset p-3 aps-text-body text-secondary">@MoveRestrictionMessage</div>
                                 }
-                                <label class="mt-3 block aps-text-label">Eligible resource<select @bind="targetResourceText" disabled="@(!CanMoveSelectedOperation)" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-2 aps-text-body disabled:opacity-50">@foreach (var option in EligibleResources(operation, detail)) { <option value="@option.ResourceId">@option.ResourceCode · @option.ResourceName</option> }</select></label>
+                                <label class="mt-3 block aps-text-label">Eligible resource<select id="@GanttElementIds.MoveTargetResource" @bind="targetResourceText" disabled="@(!CanMoveSelectedOperation)" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-2 aps-text-body disabled:opacity-50">@foreach (var option in EligibleResources(operation, detail)) { <option value="@option.ResourceId">@option.ResourceCode · @option.ResourceName</option> }</select></label>
                                 <label class="mt-2 block aps-text-label">Target start (UTC)<input type="datetime-local" value="@targetStartText" @onchange="TargetStartChanged" disabled="@(!CanMoveSelectedOperation)" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-2 aps-text-body disabled:opacity-50" /></label>
                                 <label class="mt-2 block aps-text-label">Reason<select @bind="moveReason" disabled="@(!CanMoveSelectedOperation)" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-2 aps-text-body disabled:opacity-50"><option value="PLANNER_SEQUENCE">Sequence optimization</option><option value="RESOURCE_BALANCE">Resource balancing</option><option value="CUSTOMER_PRIORITY">Customer priority</option><option value="BREAKDOWN_RECOVERY">Breakdown recovery</option><option value="MATERIAL_AVAILABILITY">Material availability</option></select></label>
                                 <label class="mt-2 block aps-text-label">Planner note<textarea @bind="moveComment" rows="2" disabled="@(!CanMoveSelectedOperation)" class="mt-1 w-full resize-none rounded-control border border-border bg-surface-raised px-2 py-2 aps-text-body disabled:opacity-50" placeholder="Why this change is needed"></textarea></label>
@@ -392,6 +392,7 @@
     private ElementReference workbenchRoot;
     private DotNetObjectReference<FiniteSchedule>? selfReference;
     private bool loading = true, acting, dragInitialized, messageIsError;
+    private string? pendingFocusElementId;
     private bool isFullscreen;
     private string? message, moveComment;
     private string targetResourceText = "", targetStartText = "", moveReason = "PLANNER_SEQUENCE", fitStartText = "", fitEndText = "";
@@ -444,7 +445,20 @@
     private DateTime FrozenFenceEndUtc => workbench?.Plan.ReferenceTimeUtc.AddMinutes(frozenMinutes) ?? DateTime.MinValue;
 
     protected override async Task OnInitializedAsync() { WorkspaceState.Changed += OnWorkspaceChanged; state.Changed += OnStateChanged; Cockpit.Changed += OnStateChanged; Cockpit.CommandRequested += OnCockpitCommandRequested; await LoadAsync(); }
-    protected override async Task OnAfterRenderAsync(bool firstRender) { if (workbench is null || dragInitialized) return; selfReference ??= DotNetObjectReference.Create(this); await JS.InvokeVoidAsync("apsPlanningWorkbench.initialize", workbenchRoot, selfReference); dragInitialized = true; }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (workbench is not null && !dragInitialized)
+        {
+            selfReference ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("apsPlanningWorkbench.initialize", workbenchRoot, selfReference);
+            dragInitialized = true;
+        }
+        if (pendingFocusElementId is { } elementId)
+        {
+            pendingFocusElementId = null;
+            await JS.InvokeVoidAsync("apsPlanningWorkbench.focusElementById", elementId);
+        }
+    }
 
     private async Task LoadAsync(Guid? planId = null, Guid? baselineId = null)
     {
@@ -704,6 +718,7 @@
             return;
         }
         SyncPrimaryOperation(primary);
+        if (request.FocusElementId is { } elementId) pendingFocusElementId = elementId;
     }
 
     private void SelectOperationOnly(ScheduledProcessOperationView operation) =>
@@ -862,7 +877,7 @@
 
     private async Task ReleaseAsync() { if (workbench is null) return; acting = true; try { var release = await ReleaseService.ReleaseAsync(workbench.Plan.PlanVersionId); SetMessage($"Plan released as {release.WorkOrders.Count} work orders.", false); await LoadAsync(workbench.Plan.PlanVersionId, workbench.Baseline?.PlanVersionId); } catch (Exception ex) { SetMessage(ex.Message, true); } finally { acting = false; } }
     private async Task UndoAsync() { var planId = state.UndoPlan(); if (!planId.HasValue) return; await LoadAsync(planId.Value, null); SetMessage("Showing the previous Plan Version. No planning data was deleted.", false); }
-    private async Task RedoAsync() { var planId = state.RedoPlan(); if (!planId.HasValue) return; await LoadAsync(planId.Value, WorkspaceState.CurrentPlanVersionId); SetMessage("Showing the reapplied child Plan Version.", false); }
+    private async Task RedoAsync() { if (state.RedoPlan() is not { } redo) return; await LoadAsync(redo.PlanId, redo.BaselinePlanId); SetMessage("Showing the reapplied child Plan Version.", false); }
 
     private PlanningMoveProposal? BuildProposal()
     {
