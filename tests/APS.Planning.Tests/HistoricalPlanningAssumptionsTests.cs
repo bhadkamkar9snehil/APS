@@ -159,6 +159,6 @@ public sealed class HistoricalPlanningAssumptionsTests
         Assert.Equal(beforeCalendars, afterCalendars);
         Assert.DoesNotContain(after.Exceptions, x =>
             x.Kind == PlanningWorkbenchExceptionKind.ResourceUnavailable &&
-            x.Entity?.Id == resourceId);
+            x.Entity?.EntityId == resourceId);
     }
 }
