@@ -16,7 +16,8 @@ public sealed class PlanReleaseRepository(ApsDbContext db) : IPlanReleaseReposit
 
         if (version.IsReleased)
         {
-            return release;
+            throw new InvalidOperationException(
+                $"Plan version {version.VersionNumber} is already released. Reload the persisted release through IPersistedPlanReleaseService instead of replaying a caller-supplied payload.");
         }
 
         var state = await db.PlanVersionStates
