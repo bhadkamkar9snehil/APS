@@ -130,11 +130,16 @@ public sealed partial class PlannerWorkspaceQueryService
         var plan = await ResolvePlanAsync(planVersionId, cancellationToken);
         if (plan is null) return null;
 
+        var assumptions = await GetPlanningAssumptionsAsync(plan.PlanVersionId, cancellationToken);
+        var resourceAssumptions = assumptions?.ResourceScheduling
+            .GroupBy(x => x.ResourceId)
+            .ToDictionary(x => x.Key, x => x.Last())
+            ?? new Dictionary<Guid, ResourceSchedulingAssumption>();
         var operationRows = await db.PlanOperationSnapshots.AsNoTracking()
             .Where(x => x.PlanVersionId == plan.PlanVersionId)
             .OrderBy(x => x.StartUtc)
             .ToListAsync(cancellationToken);
-        var operationViews = await BuildOperationViewsAsync(operationRows, cancellationToken);
+        var operationViews = await BuildOperationViewsAsync(operationRows, cancellationToken, resourceAssumptions);
 
         var laneResourceIds = operationViews.Select(x => x.ResourceId).Distinct().ToArray();
         var laneResources = laneResourceIds.Length == 0
@@ -182,6 +187,7 @@ public sealed partial class PlannerWorkspaceQueryService
                 var ordered = group.OrderBy(x => x.StartUtc).ToArray();
                 var resource = ordered[0];
                 laneResources.TryGetValue(group.Key, out var master);
+                resourceAssumptions.TryGetValue(group.Key, out var resourceAssumption);
                 ProcessStage? stage = null;
                 PlantArea? area = null;
                 Plant? plant = null;
@@ -203,13 +209,13 @@ public sealed partial class PlannerWorkspaceQueryService
                     resource.ResourceCode,
                     resource.ResourceName,
                     resource.ProcessUnitType,
-                    resource.ResourceOperatingState,
+                    resourceAssumption?.OperatingState ?? resource.ResourceOperatingState,
                     Math.Round(ordered.Sum(x => Math.Max(0d, (x.EndUtc - x.StartUtc).TotalHours)), 2),
                     ordered,
-                    master?.SchedulingMode ?? ResourceSchedulingMode.Disjunctive,
+                    resourceAssumption?.SchedulingMode ?? master?.SchedulingMode ?? ResourceSchedulingMode.Disjunctive,
                     Math.Round(ResourceCapacityModel.OccupiedHours(spans), 2),
                     ResourceCapacityModel.PeakConcurrency(spans),
-                    master?.NominalConcurrentCapacity,
+                    resourceAssumption?.NominalConcurrentCapacity ?? master?.NominalConcurrentCapacity,
                     plant?.Id,
                     plant?.Code,
                     plant?.Name,
@@ -240,7 +246,8 @@ public sealed partial class PlannerWorkspaceQueryService
 
     private async Task<IReadOnlyCollection<ScheduledProcessOperationView>> BuildOperationViewsAsync(
         IReadOnlyCollection<PlanOperationSnapshot> operations,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<Guid, ResourceSchedulingAssumption>? resourceAssumptions = null)
     {
         if (operations.Count == 0) return Array.Empty<ScheduledProcessOperationView>();
         var resourceIds = operations.Select(x => x.ResourceId).Distinct().ToArray();
@@ -251,16 +258,17 @@ public sealed partial class PlannerWorkspaceQueryService
         return operations.Select(operation =>
         {
             resources.TryGetValue(operation.ResourceId, out var resource);
+            resourceAssumptions?.TryGetValue(operation.ResourceId, out var resourceAssumption);
             return new ScheduledProcessOperationView(
                 operation.Id,
                 operation.PlanningKey,
                 operation.SourceEntityId,
                 operation.ProcessOperationType,
                 operation.ResourceId,
-                resource?.Code ?? operation.ResourceId.ToString("N")[..8],
-                resource?.Name ?? "Unknown resource",
+                resourceAssumption?.ResourceCode ?? resource?.Code ?? operation.ResourceId.ToString("N")[..8],
+                resource?.Name ?? resourceAssumption?.ResourceCode ?? "Unknown resource",
                 resource?.ProcessUnitType ?? ProcessUnitType.Unknown,
-                resource?.OperatingState ?? ResourceOperatingState.Disabled,
+                resourceAssumption?.OperatingState ?? resource?.OperatingState ?? ResourceOperatingState.Disabled,
                 operation.StartUtc,
                 operation.EndUtc,
                 operation.QuantityMt,
