@@ -82,7 +82,7 @@ public sealed class HistoricalPlanningAssumptionsTests
             PlantId = plantId,
             Code = "RHF",
             Name = "Reheating Furnace",
-            ProcessOperationType = ProcessOperationType.Reheating,
+            ProcessOperationType = ProcessOperationType.Reheat,
             SequenceNumber = 10
         });
         var resource = new Resource
@@ -116,8 +116,8 @@ public sealed class HistoricalPlanningAssumptionsTests
             PlanVersionId = planId,
             PlanningKey = "PO:WO-100:RHF",
             SourceEntityId = Guid.NewGuid(),
-            OperationType = PlanOperationType.Rolling,
-            ProcessOperationType = ProcessOperationType.Reheating,
+            OperationType = PlanOperationType.Reheating,
+            ProcessOperationType = ProcessOperationType.Reheat,
             ResourceId = resourceId,
             StartUtc = start,
             EndUtc = start.AddHours(1),
