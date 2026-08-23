@@ -330,7 +330,7 @@ public sealed partial class PlannerWorkspaceQueryService
                 .Select(x => Math.Clamp(x.CapacityFactorPct!.Value, 0m, 100m) / 100m)
                 .DefaultIfEmpty(1m)
                 .Min();
-            available += segmentMinutes * (double)Math.Min(resourceFactor, calendarFactor);
+            available += segmentMinutes * (double)(resourceFactor * calendarFactor);
         }
 
         return (available, unavailable);
