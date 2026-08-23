@@ -24,7 +24,7 @@ public sealed class PersistedPlanReleaseService(
             ?? throw new KeyNotFoundException($"Plan Version {planVersionId} was not found.");
         var state = await db.PlanVersionStates.AsNoTracking()
             .SingleAsync(x => x.PlanVersionId == planVersionId, cancellationToken);
-        return EvaluateReadiness(version, state);
+        return await EvaluateReadinessAsync(version, state, cancellationToken);
     }
 
     public async Task<PlanReleaseReadiness> ApproveAsync(
@@ -38,9 +38,9 @@ public sealed class PersistedPlanReleaseService(
             .SingleAsync(x => x.PlanVersionId == planVersionId, cancellationToken);
 
         if (version.IsReleased || state.Status == PlanVersionStatus.Released)
-            return EvaluateReadiness(version, state);
+            return await EvaluateReadinessAsync(version, state, cancellationToken);
         if (state.Status == PlanVersionStatus.Approved)
-            return EvaluateReadiness(version, state);
+            return await EvaluateReadinessAsync(version, state, cancellationToken);
         if (state.Status != PlanVersionStatus.Feasible)
             throw new InvalidOperationException(
                 $"Plan Version {version.VersionNumber} is {state.Status}; only a feasible persisted plan can be approved.");
@@ -48,7 +48,7 @@ public sealed class PersistedPlanReleaseService(
             throw new InvalidOperationException(
                 $"Plan Version {version.VersionNumber} is no longer active and cannot be approved. Replan from the current baseline instead.");
 
-        var readiness = EvaluateReadiness(version, state);
+        var readiness = await EvaluateReadinessAsync(version, state, cancellationToken);
         if (!readiness.IsReleaseReady)
             throw new InvalidOperationException(ReadinessError(version.VersionNumber, readiness.Findings));
 
@@ -76,7 +76,7 @@ public sealed class PersistedPlanReleaseService(
             throw new InvalidOperationException(
                 $"Plan Version {version.VersionNumber} is {state.Status} and active={state.IsActive}; an active approved Plan Version is required before release.");
 
-        var readiness = EvaluateReadiness(version, state);
+        var readiness = await EvaluateReadinessAsync(version, state, cancellationToken);
         if (!readiness.IsReleaseReady)
             throw new InvalidOperationException(ReadinessError(version.VersionNumber, readiness.Findings));
 
@@ -158,7 +158,27 @@ public sealed class PersistedPlanReleaseService(
             cancellationToken);
     }
 
-    private static PlanReleaseReadiness EvaluateReadiness(PlanVersion version, PlanVersionState state)
+    private async Task<PlanReleaseReadiness> EvaluateReadinessAsync(
+        PlanVersion version,
+        PlanVersionState state,
+        CancellationToken cancellationToken)
+    {
+        var persisted = EvaluatePersistedReadiness(version, state);
+        var serviceFindings = await PersistedPlanServiceReadiness.EvaluateAsync(
+            db,
+            version.Id,
+            cancellationToken);
+        if (serviceFindings.Count == 0) return persisted;
+
+        var findings = persisted.Findings.Concat(serviceFindings).ToArray();
+        return persisted with
+        {
+            IsReleaseReady = findings.Length == 0,
+            Findings = findings
+        };
+    }
+
+    private static PlanReleaseReadiness EvaluatePersistedReadiness(PlanVersion version, PlanVersionState state)
     {
         var findings = new List<PlanReleaseReadinessFinding>();
         if (state.Status is not (PlanVersionStatus.Feasible or PlanVersionStatus.Approved or PlanVersionStatus.Released))

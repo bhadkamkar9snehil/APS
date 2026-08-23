@@ -169,7 +169,7 @@ public sealed class CanonicalBackendBoundaryTests
         db.PlanVersionStates.Add(new PlanVersionState
         {
             PlanVersionId = planVersionId,
-            Status = PlanVersionStatus.Feasible,
+            Status = PlanVersionStatus.Approved,
             ReferenceTimeUtc = start.AddHours(-1),
             HorizonStartUtc = start,
             HorizonEndUtc = start.AddDays(1),
@@ -248,7 +248,7 @@ public sealed class CanonicalBackendBoundaryTests
         db.PlanVersionStates.Add(new PlanVersionState
         {
             PlanVersionId = planVersionId,
-            Status = PlanVersionStatus.Feasible,
+            Status = PlanVersionStatus.Approved,
             ReferenceTimeUtc = start.AddHours(-1),
             HorizonStartUtc = start,
             HorizonEndUtc = start.AddDays(1),
