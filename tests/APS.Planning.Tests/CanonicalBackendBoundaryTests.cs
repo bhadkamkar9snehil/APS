@@ -169,11 +169,13 @@ public sealed class CanonicalBackendBoundaryTests
         db.PlanVersionStates.Add(new PlanVersionState
         {
             PlanVersionId = planVersionId,
-            Status = PlanVersionStatus.Feasible,
+            Status = PlanVersionStatus.Approved,
             ReferenceTimeUtc = start.AddHours(-1),
             HorizonStartUtc = start,
             HorizonEndUtc = start.AddDays(1),
-            IsActive = true
+            IsActive = true,
+            MaterialRequirementsJson = "[]",
+            MaterialSupplyRequirementsJson = "[]"
         });
         db.PlanProductionOrderSnapshots.Add(NewPoSnapshot(planVersionId, poId));
         db.PlanRollingPlanSnapshots.Add(new PlanRollingPlanSnapshot
@@ -245,11 +247,13 @@ public sealed class CanonicalBackendBoundaryTests
         db.PlanVersionStates.Add(new PlanVersionState
         {
             PlanVersionId = planVersionId,
-            Status = PlanVersionStatus.Feasible,
+            Status = PlanVersionStatus.Approved,
             ReferenceTimeUtc = start.AddHours(-1),
             HorizonStartUtc = start,
             HorizonEndUtc = start.AddDays(1),
-            IsActive = true
+            IsActive = true,
+            MaterialRequirementsJson = "[]",
+            MaterialSupplyRequirementsJson = "[]"
         });
         db.PlanProductionOrderSnapshots.Add(NewPoSnapshot(planVersionId, poId));
         db.PlanRouteOperationSnapshots.Add(new PlanRouteOperationSnapshot
