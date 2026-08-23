@@ -1,0 +1,110 @@
+trigger:
+  batch: true
+  branches:
+    include:
+      - '*'
+
+pr:
+  autoCancel: true
+  branches:
+    include:
+      - '*'
+
+variables:
+  buildConfiguration: Release
+  testResultsDirectory: '$(Agent.TempDirectory)\APS\TestResults'
+  publishDirectory: '$(Agent.TempDirectory)\APS\DesktopPublish'
+  diagnosticsDirectory: '$(Agent.TempDirectory)\APS\Diagnostics'
+
+jobs:
+  - job: windows_ci
+    displayName: APS Windows build, tests & desktop publish
+    timeoutInMinutes: 45
+    workspace:
+      clean: all
+    pool:
+      name: Default
+      demands:
+        - Agent.Name -equals EOS
+
+    steps:
+      - checkout: self
+        clean: true
+        fetchDepth: 0
+        persistCredentials: false
+
+      - powershell: |
+          Write-Host "Repository: $(Build.Repository.Name)"
+          Write-Host "Branch:     $(Build.SourceBranch)"
+          Write-Host "Commit:     $(Build.SourceVersion)"
+          Write-Host "Agent:      $(Agent.Name) / $(Agent.MachineName)"
+          git --version
+
+          foreach ($path in @(
+            "$(testResultsDirectory)",
+            "$(publishDirectory)",
+            "$(diagnosticsDirectory)"
+          )) {
+            if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Recurse -Force }
+            New-Item -ItemType Directory -Force -Path $path | Out-Null
+          }
+
+          $files = @(Get-ChildItem ./build -Filter '*.ps1' -File -Recurse)
+          if ($files.Count -eq 0) { throw 'No APS PowerShell build scripts were found to validate.' }
+          $failures = [System.Collections.Generic.List[string]]::new()
+          foreach ($file in $files) {
+            $tokens = $null
+            $parseErrors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$parseErrors)
+            foreach ($parseError in @($parseErrors)) {
+              $failures.Add("$($file.FullName):$($parseError.Extent.StartLineNumber): $($parseError.Message)")
+            }
+          }
+          if ($failures.Count -gt 0) {
+            foreach ($failure in $failures) { Write-Host "##vso[task.logissue type=error]$failure" }
+            throw "APS PowerShell validation failed with $($failures.Count) error(s)."
+          }
+          Write-Host "PowerShell validation passed for $($files.Count) APS build script(s)."
+        displayName: Windows agent, clean-output & PowerShell preflight
+
+      - task: UseDotNet@2
+        displayName: Use .NET SDK from global.json
+        inputs:
+          packageType: sdk
+          useGlobalJson: true
+          workingDirectory: $(Build.SourcesDirectory)
+
+      - powershell: |
+          ./build/verify.ps1 `
+            -Configuration "$(buildConfiguration)" `
+            -ResultsDirectory "$(testResultsDirectory)" `
+            -PublishDirectory "$(publishDirectory)" `
+            -DiagnosticsDirectory "$(diagnosticsDirectory)"
+        displayName: Build solution, run tests and publish-smoke desktop
+
+      - task: PublishTestResults@2
+        displayName: Publish APS test results
+        condition: succeededOrFailed()
+        inputs:
+          testResultsFormat: VSTest
+          testResultsFiles: '*.trx'
+          searchFolder: '$(testResultsDirectory)'
+          mergeTestResults: true
+          failTaskOnFailedTests: true
+          testRunTitle: 'APS Windows tests · $(Build.SourceBranchName)'
+
+      - task: PublishPipelineArtifact@1
+        displayName: Publish APS desktop smoke artifact
+        condition: always()
+        inputs:
+          targetPath: '$(publishDirectory)'
+          artifact: aps-desktop-publish
+          publishLocation: pipeline
+
+      - task: PublishPipelineArtifact@1
+        displayName: Publish APS build diagnostics
+        condition: always()
+        inputs:
+          targetPath: '$(diagnosticsDirectory)'
+          artifact: aps-build-diagnostics
+          publishLocation: pipeline
