@@ -1,5 +1,6 @@
 using APS.Application;
 using APS.Domain;
+using APS.Planning;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 
@@ -237,7 +238,7 @@ public sealed partial class PlannerWorkspaceQueryService
             var capacityBasis = resourceAssumption?.CapacityBasis ?? ResourceCapacityBasis.NotApplicable;
             var nominalConcurrentCapacity = resourceAssumption?.NominalConcurrentCapacity ?? lane.NominalConcurrentCapacity;
             var operatingState = resourceAssumption?.OperatingState ?? lane.OperatingState;
-            var baseFactor = Math.Clamp(resourceAssumption?.CapacityFactorPct ?? 100m, 0m, 100m) / 100m;
+            var resourceFactorPct = Math.Clamp(resourceAssumption?.CapacityFactorPct ?? 100m, 0m, 100m);
 
             for (var start = bucketStart; start < plan.HorizonEndUtc; start = start.AddHours(1))
             {
@@ -248,7 +249,9 @@ public sealed partial class PlannerWorkspaceQueryService
                     effectiveStart,
                     end,
                     operatingState,
-                    baseFactor,
+                    schedulingMode,
+                    nominalConcurrentCapacity,
+                    resourceFactorPct,
                     laneCalendars ?? Array.Empty<PlanningResourceCalendarIntervalView>());
                 var unavailableMinutes = capacityWindow.UnavailableMinutes;
                 var availableClockMinutes = capacityWindow.AvailableMinutes;
@@ -288,7 +291,9 @@ public sealed partial class PlannerWorkspaceQueryService
         DateTime rangeStart,
         DateTime rangeEnd,
         ResourceOperatingState operatingState,
-        decimal resourceFactor,
+        ResourceSchedulingMode schedulingMode,
+        decimal? nominalConcurrentCapacity,
+        decimal resourceFactorPct,
         IReadOnlyCollection<PlanningResourceCalendarIntervalView> calendars)
     {
         var wallClockMinutes = (rangeEnd - rangeStart).TotalMinutes;
@@ -319,18 +324,36 @@ public sealed partial class PlannerWorkspaceQueryService
             var active = overlapping
                 .Where(x => x.StartUtc < segmentEnd && x.EndUtc > segmentStart)
                 .ToArray();
-            if (active.Any(x => !x.IsAvailable))
+
+            if (schedulingMode != ResourceSchedulingMode.Cumulative)
             {
-                unavailable += segmentMinutes;
+                if (active.Any(x => !x.IsAvailable)) unavailable += segmentMinutes;
+                else available += segmentMinutes;
                 continue;
             }
 
-            var calendarFactor = active
-                .Where(x => x.IsAvailable && x.CapacityFactorPct.HasValue)
-                .Select(x => Math.Clamp(x.CapacityFactorPct!.Value, 0m, 100m) / 100m)
-                .DefaultIfEmpty(1m)
-                .Min();
-            available += segmentMinutes * (double)(resourceFactor * calendarFactor);
+            var nominal = Math.Max(0m, nominalConcurrentCapacity ?? 0m);
+            if (nominal <= 0m) continue;
+            var fullCapacity = ResourceCapacityModel.EffectiveCapacityUnits(nominal, resourceFactorPct);
+            if (fullCapacity <= 0) continue;
+
+            var blockedCapacity = 0L;
+            var hardOutage = false;
+            foreach (var calendar in active)
+            {
+                var remainingCapacity = calendar.IsAvailable
+                    ? ResourceCapacityModel.EffectiveCapacityUnits(
+                        nominal,
+                        resourceFactorPct * (calendar.CapacityFactorPct ?? 100m) / 100m)
+                    : 0L;
+                blockedCapacity += fullCapacity - Math.Clamp(remainingCapacity, 0L, fullCapacity);
+                hardOutage |= !calendar.IsAvailable;
+            }
+
+            var remaining = Math.Max(0L, fullCapacity - blockedCapacity);
+            available += segmentMinutes * remaining /
+                         ((double)nominal * ResourceCapacityModel.CapacityScale);
+            if (hardOutage) unavailable += segmentMinutes;
         }
 
         return (available, unavailable);
@@ -341,11 +364,9 @@ public sealed partial class PlannerWorkspaceQueryService
         ResourceOperatingState.CapacityDerated or
         ResourceOperatingState.QualityRestricted;
 
-    private static decimal CapacityDemand(ResourceCapacityBasis capacityBasis, decimal quantityMt) => capacityBasis switch
-    {
-        ResourceCapacityBasis.MassEquivalentMt => Math.Max(0m, quantityMt),
-        _ => 1m
-    };
+    private static decimal CapacityDemand(ResourceCapacityBasis capacityBasis, decimal quantityMt) =>
+        ResourceCapacityModel.DemandUnits(capacityBasis, quantityMt, explicitDemand: null) /
+        (decimal)ResourceCapacityModel.CapacityScale;
 
     private static PlanningCapacityBasis CapacityBasis(ResourceCapacityBasis capacityBasis) => capacityBasis switch
     {
