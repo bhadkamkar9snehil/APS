@@ -24,7 +24,8 @@ public sealed class PlanningWorkbenchCommandService(
     private static PlanningProposalImpact ValidateMove(
         PlanningMoveProposal proposal,
         PlanningTimeFencePolicy timeFencePolicy,
-        MoveValidationContext context)
+        MoveValidationContext context,
+        IReadOnlySet<string>? ignoredBaselinePlanningKeys = null)
     {
         var operation = context.OperationsByPlanningKey.GetValueOrDefault(proposal.PlanningKey)
             ?? throw new KeyNotFoundException($"Operation {proposal.PlanningKey} is not present in the selected plan.");
@@ -110,6 +111,7 @@ public sealed class PlanningWorkbenchCommandService(
         {
             var overlap = targetOperations
                 .Where(x => x.Id != operation.Id &&
+                            (ignoredBaselinePlanningKeys is null || !ignoredBaselinePlanningKeys.Contains(x.PlanningKey)) &&
                             x.StartUtc < targetEnd &&
                             x.EndUtc > proposal.TargetStartUtc)
                 .FirstOrDefault();
@@ -137,6 +139,7 @@ public sealed class PlanningWorkbenchCommandService(
         if (context.PredecessorKeysByPlanningKey.TryGetValue(operation.PlanningKey, out var predecessorKeys))
         {
             predecessorConflict = predecessorKeys
+                .Where(key => ignoredBaselinePlanningKeys is null || !ignoredBaselinePlanningKeys.Contains(key))
                 .Select(key => context.OperationsByPlanningKey.GetValueOrDefault(key))
                 .Where(x => x is not null && x.EndUtc > proposal.TargetStartUtc)
                 .OrderByDescending(x => x!.EndUtc)
@@ -162,7 +165,9 @@ public sealed class PlanningWorkbenchCommandService(
         }
 
         var affectedSuccessorCount = context.SuccessorsByPredecessorKey.TryGetValue(operation.PlanningKey, out var successors)
-            ? successors.Count(x => x.StartUtc < targetEnd)
+            ? successors.Count(x =>
+                (ignoredBaselinePlanningKeys is null || !ignoredBaselinePlanningKeys.Contains(x.PlanningKey)) &&
+                x.StartUtc < targetEnd)
             : 0;
         if (affectedSuccessorCount > 0)
         {
@@ -329,6 +334,9 @@ public sealed class PlanningWorkbenchCommandService(
         MoveValidationContext context)
     {
         var findings = new List<PlanningConstraintFinding>(prepared.Findings);
+        var movedKeys = prepared.Moves
+            .Select(x => x.PlanningKey)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var impacts = prepared.Moves
             .Select(move => ValidateMove(
                 new PlanningMoveProposal(
@@ -341,7 +349,8 @@ public sealed class PlanningWorkbenchCommandService(
                     proposal.AllowFrozenOverride,
                     timeFencePolicy),
                 timeFencePolicy,
-                context))
+                context,
+                movedKeys))
             .ToArray();
         var impactByPlanningKey = impacts.ToDictionary(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase);
 
@@ -364,6 +373,29 @@ public sealed class PlanningWorkbenchCommandService(
                     "BULK_TARGET_CONFLICT",
                     PlanningConstraintSeverity.Blocker,
                     $"Atomic move items {ordered[index - 1].PlanningKey} and {ordered[index].PlanningKey} overlap on {ordered[index].TargetResourceCode}."));
+            }
+        }
+
+        foreach (var move in prepared.Moves)
+        {
+            if (!context.PredecessorKeysByPlanningKey.TryGetValue(move.PlanningKey, out var predecessorKeys)) continue;
+            var successor = impactByPlanningKey[move.PlanningKey];
+            foreach (var predecessorKey in predecessorKeys.Where(movedKeys.Contains))
+            {
+                if (!impactByPlanningKey.TryGetValue(predecessorKey, out var predecessor) ||
+                    predecessor.TargetEndUtc <= successor.TargetStartUtc)
+                {
+                    continue;
+                }
+
+                findings.Add(new PlanningConstraintFinding(
+                    "BULK_PREDECESSOR_CONFLICT",
+                    PlanningConstraintSeverity.Blocker,
+                    $"Atomic move item {move.PlanningKey} starts before moved predecessor {predecessorKey} finishes.",
+                    new PlannerEntityRef(
+                        PlannerEntityType.Operation,
+                        context.OperationsByPlanningKey[move.PlanningKey].Id,
+                        move.PlanningKey)));
             }
         }
 
