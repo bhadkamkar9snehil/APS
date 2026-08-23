@@ -6,7 +6,8 @@ public enum PlanVersionStatus
     Feasible = 2,
     Released = 3,
     Superseded = 4,
-    Failed = 5
+    Failed = 5,
+    Approved = 6
 }
 
 public enum PlanTriggerType
