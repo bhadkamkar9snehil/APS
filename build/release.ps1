@@ -3,15 +3,17 @@
     Builds, tests, and packages APS Planner (APS.DesktopHost) as a Velopack installer release.
 
 .DESCRIPTION
-    This is the project's release pipeline, run manually instead of a hosted CI service (the
-    repository's explicit policy is not to use GitHub Actions/CI for APS verification). It does,
-    in order:
+    This is the project's explicit release-packaging path. Continuous verification runs on the
+    shared self-hosted Windows Azure DevOps agent, but release packaging remains manual so a normal
+    feature branch or CI run cannot accidentally manufacture a distributable release.
+
+    The release script does, in order:
 
       1. dotnet test    — runs every test project registered in APS.slnx and stops on any failure.
-      2. dotnet publish  — publishes APS.DesktopHost for win-x64, self-contained, with
-                            PublishReadyToRun (already set in the csproj).
-      3. vpk pack        — wraps that publish output into a Velopack release: a Setup.exe installer
-                            plus update metadata, written to build/Releases/<version>/.
+      2. dotnet publish — publishes APS.DesktopHost for win-x64, self-contained, with
+                           PublishReadyToRun (already set in the csproj).
+      3. vpk pack       — wraps that publish output into a Velopack release: a Setup.exe installer
+                           plus update metadata, written to build/Releases/<version>/.
 
 .PARAMETER Version
     Release version (e.g. "1.2.0"). If omitted, the script reads <Version> from
