@@ -1,50 +1,201 @@
-# APS Gantt Workbench Overhaul — Implementation Status
+# APS Gantt Workbench Overhaul — Current Implementation Status
 
-Date: 2026-08-22  
-Branch: `codex/gantt-workbench-overhaul`
+**Re-baselined:** 23-Aug-2026  
+**Canonical branch:** `main`  
+**Baseline:** `71e456d2fe124173cdd1f0bfeac82e18f53dc45f`  
+**Historical implementation branch:** `codex/gantt-workbench-overhaul` — fully contained by `main`
 
-## Delivered
+The Gantt overhaul is integrated. This document describes the **current consolidated implementation**, not the component/file layout that existed on the original overhaul branch.
 
-| Area | Status | Evidence |
+---
+
+## 1. Important clarification: Ponytail cleanup consolidated layers; it did not remove the Gantt behavior
+
+After the overhaul, Ponytail cleanup removed several small Razor wrapper/layer components:
+
+- `GanttBaselineLayer.razor`
+- `GanttCalendarLayer.razor`
+- `GanttCampaignLayer.razor`
+- `GanttDependencyLayer.razor`
+- `GanttExecutionLayer.razor`
+- `GanttMarkerLayer.razor`
+- `GanttProposalLayer.razor`
+
+Those filenames disappearing is **not evidence that the corresponding behavior disappeared**.
+
+The current rendering path intentionally owns more of the synchronized lane scene directly. In particular, `GanttResourceLane.razor` still renders or participates in:
+
+| Behavior | Current ownership/evidence |
+|---|---|
+| timeline/grid ticks | synchronized scene + resource lane |
+| wall-clock Now marker | resource lane |
+| planning reference marker | resource lane |
+| frozen horizon/fence | resource lane |
+| unavailable calendar intervals | resource lane using workbench calendar facts |
+| baseline overlays | resource lane / baseline models |
+| campaign spans | resource lane / scene campaign spans |
+| execution actual segments | resource lane in Execution/Recovery modes |
+| operation blocks | `GanttOperationBlock` within lane |
+| staged single move | resource lane proposal rendering |
+| staged atomic bulk move | resource lane proposal rendering |
+| dependency visualization/focus | current synchronized Gantt scene/timeline path |
+
+The cleanup reduced component indirection and file count. It should be judged by behavior and tests, not by counting deleted components.
+
+The same principle applies elsewhere in the UI: obsolete theme/layout/update wrappers were removed where current canonical services/components already owned the remaining behavior.
+
+---
+
+## 2. Integrated workbench capabilities
+
+| Area | Current status | Notes |
 |---|---|---|
-| Authoritative viewport | Complete | One UTC tick-precise viewport owns zoom, pan, fit/reset, clipping, snap, row density, grid width and mounted row range. |
-| Resource hierarchy | Complete | Plant, area, process-stage and resource metadata now produce real synchronized group rows. Groups collapse without row drift and persist stable hierarchy keys as local UI preferences; absent hierarchy levels are not fabricated. Resource focus uses one workbench-state owner and treats the full grid row and timeline lane consistently. |
-| Resource grid contract | Complete | Resource is permanently visible; state, busy time, load, operation count, next start and exception count are configurable columns with clamped drag-resizable widths. Visibility, widths and sort direction persist locally. Sorting is confined to each authoritative process-stage group and never changes schedule or solver order. Filtered views report shown versus total resources and warn when they hide a critical resource/operation exception. |
-| Calendar and capacity truth | Complete | Resource-specific availability intervals and capacity buckets come from the planning read model; missing operations are never treated as downtime. |
-| Reusable synchronized Gantt | Complete | Resource grid, dual-tier time scale and timeline are componentized and share one geometry. |
-| Operation semantics | Complete for returned facts | Blocks adapt content to width and expose execution, single-source/alternate-resource count, commitment and baseline-change cues through text/glyphs as well as color; accessible names carry the same canonical facts. |
-| Tooltip and high contrast | Complete for returned facts | Hover/focus text carries business ID, process, resource, exact planned geometry, quantity, grade/section, campaign/heat, linked orders/due dates, commitment/execution, eligibility, solver binding/slack and returned warning summaries. Forced-colors rules use distinct outline/border patterns for selection, frozen, running, completed, held and baseline-change states. |
-| Navigation and performance | Complete | Pointer-anchored zoom, empty-space pan, persistent splitter, `ResizeObserver`, animation-frame coalescing and row/time virtualization are implemented. A hierarchical 10,000-operation workload mounted 336 operation models and built the warmed scene in 3.2 ms. |
-| Fit and marker management | Complete | Fit-all, visible-resource, selection, campaign, demand-chain and explicit UTC range actions use the authoritative viewport. Due dates, wall-clock Now, plan reference and frozen fence are distinct switchable categories; no current time is inferred from the plan reference. |
-| Proposal drag lifecycle | Complete with released-plan runtime boundary verified | Source remains fixed, a ghost carries the proposal, grab offset is preserved, eligible lanes are explicit, Escape/pointer cancel/blur clean up, and running/completed work is rejected in both UI geometry and the authoritative command service. Shift snap uses target-resource calendar boundaries and explicitly rejects a target/window with no boundary. The live released baseline correctly disables all move inputs and directs the planner to create a planning or recovery scenario. |
-| Baseline comparison | Complete | Unchanged, time moved, resource changed, added and removed states are classified. All-baseline, changed-only and expanded compare-subrow modes share synchronized row geometry. Original baseline resources remain visible when assignments change. |
-| Scheduling layers | Complete | Baseline, calendar, campaign, dependency, marker/fence, execution and proposal layers are explicit components on the shared coordinate system. Focused dependencies retain geometry across row virtualization and expose type, category, minimum/current lag and headroom. |
-| Binding chain semantics | Safe extension point | `PlanningBindingEvidenceView` carries solver/read-model causes and slack. The UI states `Binding chain unavailable` when evidence is absent; no pixel-adjacency critical-path heuristic remains. |
-| Synchronized resource load | Complete | Collapsible capacity region uses the same time axis, aggregates at hour/shift/day scale, exposes processing/downtime/overload, focuses the selected resource/time range and marks contributing operations with a non-color `L` cue. Its persisted height is directly drag-resizable. |
-| Keyboard and assistive access | Complete for P1 mappings | The resource grid and operation field each expose one roving Tab entry rather than every row/bar. Arrow, Home/End and Page keys navigate internally; Space toggles selection; Alt+arrows pan/scroll; Ctrl/Cmd undo/redo uses persisted history; Shift+F10 opens the real menu. An in-product shortcut panel documents the exact mappings and the synchronized schedule table shares selection. |
-| Multi-selection and atomic move | Complete | Ctrl/Cmd-click toggles operations; Shift-click selects an unambiguous visible sequence within one resource lane; the compact summary reports occupied time, resources, campaign/order context and eligibility. Horizontal multi-drag renders all mounted proposal ghosts, preserves every relative offset/resource assignment, validates all items together, rejects duplicates/internal disjunctive overlap, and sends one override collection through one persisted child Plan-Version replan. |
-| Compact shell | Complete | The control toolbar remains one horizontally scrollable row, schedule list/capacity/queue/inspector are overlays or collapsible regions, and Fullscreen API state is synchronized back to .NET. |
-| Planner inspector | Complete for returned facts | Plan, actuals, lineage, baseline delta, scheduling mode/eligibility/commitment/routing, binding evidence, material pools and PO reservations are shown only from the workbench read model. |
-| Execution geometry | Complete for returned facts | Execution/Recovery modes render returned actual start/end as an explicit `A` segment on the shared timeline; an open running segment ends at planning reference time and no actual is inferred when the read model returns none. |
+| Authoritative UTC viewport | Implemented | One synchronized viewport owns visible UTC range, zoom, pan, fit/reset, clipping and mounted time/row geometry. |
+| Resource hierarchy | Implemented | Plant/area/process/resource hierarchy, collapse and synchronized resource rows. |
+| Resource grid | Implemented | Resource remains visible; configurable/sortable/resizable supporting columns stay synchronized with timeline rows. |
+| Calendar truth | Implemented | Resource-specific unavailable intervals come from planning/read-model facts; absence of work is not treated as downtime. |
+| Capacity truth | Implemented/hardened | Capacity view consumes persisted assumptions for historical plans and uses compounded solver-aligned derating semantics. |
+| Operation blocks | Implemented | Width-adaptive operation content, selection, execution/commitment/baseline cues and accessible business facts. |
+| Navigation | Implemented | Zoom/pan/fit, splitters, virtualization, keyboard navigation and synchronized selection. |
+| Marker categories | Implemented | Wall-clock Now, Plan Version reference and frozen-fence markers are distinct concepts. |
+| Proposal drag lifecycle | Implemented/hardened | Source remains fixed while proposal is staged; cancel/blur cleanup is regression-tested; released plans remain non-editable. |
+| Cross-resource move | Implemented | Candidate target uses eligible resource semantics and authoritative move validation. |
+| Multi-selection | Implemented | Ctrl/Cmd toggling, Shift range where unambiguous, summary/context and atomic proposal behavior. |
+| Atomic bulk move | Implemented/hardened | Final proposed positions are validated together; moved members are not falsely blocked by one another's old slots. |
+| Time-fence enforcement | Implemented/hardened | Preview/apply use authoritative request/proposal policy and consistent reference time; frozen work is protected. |
+| Baseline comparison | Implemented | Unchanged/moved/resource-changed/added/removed baseline semantics and compare modes. |
+| Campaign visualization | Implemented | Campaign spans align to the shared timeline geometry. |
+| Dependencies | Implemented for returned facts | Focused dependencies use shared scene geometry; do not infer a fake critical path from pixel adjacency. |
+| Execution overlay | Implemented for returned actuals | Planned versus actual segment is explicit in execution/recovery modes. |
+| Resource load/capacity region | Implemented | Shares the same time axis and supports resource/time focus. |
+| Inspector | Implemented | Operation/business/lineage/eligibility/material/baseline facts are shown from read models rather than UI reconstruction. |
+| Analysis dock | Implemented foundation | Overview, Exceptions, Capacity, Delivery, Material, Compare, Execution and Traceability views exist; deeper views link to owning workspaces where appropriate. |
+| Released-baseline safety | Implemented | Released execution baseline blocks edit/move actions and directs planning changes through new scenario/replan paths. |
 
-## Verification completed
+---
 
-- `node --check src/APS.UI/wwwroot/planning-workbench.js`: passed.
-- `dotnet test tests/APS.UI.Tests/APS.UI.Tests.csproj --no-restore`: 135 passed.
-- `dotnet test tests/APS.Planning.Tests/APS.Planning.Tests.csproj --no-restore`: 163 passed.
-- `dotnet build APS.slnx --no-restore`: succeeded with 0 warnings and 0 errors.
-- The hierarchical 10,000-operation performance gate measured 3.2 ms warmed scene construction, 336 mounted operation models and 14/126 mounted display rows.
-- Latest service-host SSR against the existing database returned the 105-operation field, exactly one operation Tab stop, 16 mounted hierarchy/grid rows, configurable-column and fit-range controls, shown/total resource truth, dense canonical tooltip text, and truthful `Binding chain unavailable` and `Shift unavailable` states.
-- `/`, `/api/health`, `_content/APS.UI/planning-workbench.js` and `_content/APS.UI/tailwind.css` returned HTTP 200.
-- `%LOCALAPPDATA%\APS-Data\Data\aps.db` returned SQLite `pragma quick_check` = `ok` after the real-data render.
-- The rebuilt Debug desktop host launched as PID 33956 with one responding native `APS Planner` window, showing the authoritative scenario `20260820-121206-A4E854`, 105 operations and 8 resources.
-- Direct Windows app inspection at 1536 × 816 verified light and dark rendering, operation selection and inspector, Shift+F10 context actions, released-baseline protections, resource-load heatmap, schedule-list overlay, demand queue, shortcut help, and Overview/Capacity analysis-dock states.
-- The live audit found and corrected resource-grid header overflow: header and row tracks now consume the same 320 px grid width, compact `HRS`/`%`/`#` labels remain distinguishable, every column has a visible divider, and full sort names remain exposed through accessible labels/tooltips. The corrected header was rechecked in both themes in the rebuilt desktop host.
+## 3. Atomic move correctness now on `main`
 
-## Explicit boundaries and follow-up inputs
+The post-overhaul hardening corrected a key semantic requirement: a bulk move is validated as **one proposed final schedule**, not as N independent moves against stale baseline placements.
 
-- The loaded scenario is a released execution baseline. Direct runtime inspection therefore covered the read-only move boundary rather than creating a persisted recovery Plan Version merely for a drag demonstration. Editable-scenario drag behavior remains covered by component/state/command tests; no production planning state was fabricated or mutated during visual QA.
-- The active plan has calendar facts but no shift boundary inside the visible eight resource lanes/window. Shift snap is disabled as `Shift unavailable`; target-resource drops also fail clearly if a boundary is absent. No boundary is fabricated and no free-placement fallback is used.
-- Genuine binding-chain visualization remains disabled unless solver/read-model `PlanningBindingEvidenceView` records are supplied.
-- Capacity exposes only categories supported by the current read model: processing, unavailable/downtime and overload. Setup/changeover/idle are not invented.
-- Pin/unpin, scoped repair and operation-to-material trace commands remain visible but disabled in the context menu with the missing authoritative contract stated explicitly.
+Regression coverage protects at least these cases:
+
+1. A moves into B's old slot while B moves away -> no false collision;
+2. two selected operations overlap in their proposed final positions -> blocker;
+3. moved predecessor/successor that preserve ordering -> no false precedence blocker;
+4. predecessor proposed after successor start -> precedence violation;
+5. selected move collides with non-selected/frozen work -> blocker;
+6. database query count does not grow linearly with the number of moved items on the batched validation path.
+
+This closes the earlier “atomic bulk move proposed-state” gap in the old audit backlog.
+
+---
+
+## 4. Historical capacity correctness now on `main`
+
+Historical workbench capacity is no longer allowed to drift with mutable current resource/calendar masters when the Plan Version persisted its assumptions.
+
+Current behavior/tests protect:
+
+- persisted resource scheduling mode;
+- persisted capacity basis / nominal capacity / capacity factor;
+- persisted operating state;
+- persisted calendar intervals;
+- compounded resource/calendar derating aligned with solver semantics;
+- explicit compatibility fallback for older Plan Versions lacking the newer assumption snapshot.
+
+This is important for plan comparison/audit: opening an old Plan Version must not silently reinterpret its capacity using today's master data.
+
+---
+
+## 5. Pointer cancellation and interaction cleanup
+
+`pointercancel` and window blur are treated as cancellation, not commit.
+
+Regression coverage checks rollback/cleanup of:
+
+- capacity splitter state;
+- resource-grid column splitter state;
+- main splitter state;
+- pan state;
+- operation drag state;
+- proposal ghost/feedback;
+- cursor/highlight/snap guide/autoscroll state.
+
+The cancellation path must not invoke .NET move/bulk-move commit callbacks.
+
+---
+
+## 6. Current component architecture
+
+The current architecture favors fewer behavior-owning components rather than one Razor file per visual layer.
+
+Key ownership includes:
+
+- `GanttTimelineViewport.razor` — synchronized timeline/viewport composition;
+- `GanttResourceLane.razor` — lane scene and several aligned overlays after Ponytail consolidation;
+- `GanttOperationBlock.razor` — operation block semantics/interactions;
+- Gantt scene/model/state classes — geometry, viewport, selection, hierarchy, baseline/capacity/dependency models;
+- `planning-workbench.js` — browser-specific pointer/pan/drag/fullscreen/resize behavior;
+- `WorkbenchAnalysisDock.razor` — analysis navigation/summary foundation.
+
+The design objective is **clear ownership with shared geometry**, not maximum component count and not one monolithic file at any cost. Future refactors should split only where there is real behavioral ownership/testability benefit.
+
+---
+
+## 7. Current verification evidence
+
+Latest recorded Windows evidence for `main` at `71e456d2fe124173cdd1f0bfeac82e18f53dc45f`:
+
+- Release build: **0 warnings, 0 errors**;
+- tests: **336/336 passed**;
+  - Architecture 9;
+  - Infrastructure 12;
+  - Planning 182;
+  - UI 133;
+- self-contained `win-x64` `APS.DesktopHost.exe` publish produced;
+- SQLite `PRAGMA quick_check`: `ok`;
+- live published desktop loaded the released execution baseline;
+- **105 operations and 8 resources** rendered;
+- Gantt, operation inspector, resource-load and capacity views exercised;
+- released-baseline editing correctly blocked;
+- final desktop process remained open and responsive.
+
+The repository Windows verifier is [`../../build/verify.ps1`](../../build/verify.ps1); see [`../windows-ci.md`](../windows-ci.md).
+
+The earlier overhaul-branch figures (for example 135 UI tests / 163 Planning tests and PID-specific QA notes) remain valid historical evidence for that branch at that time, but they are no longer the current suite/status authority.
+
+---
+
+## 8. Known current follow-ups
+
+### Wall-clock Now progression
+
+`GanttResourceLane` currently captures `DateTime.UtcNow` for the component instance. A planner left open for a long time can therefore display a stale wall-clock marker until the component is recreated/re-rendered by another state change. A dedicated clock/update mechanism is still desirable.
+
+### Open execution segment progression
+
+For an operation with `ActualStartUtc` and no `ActualEndUtc`, the current overlay ends at the **Plan Version reference time**. That is stable historical interpretation but not a continuously advancing live-running segment. Execution UI semantics should eventually distinguish “historical plan reference” from “live now” explicitly.
+
+### Binding/critical-chain evidence
+
+The UI must not fabricate critical/binding chains from visual adjacency. Genuine binding visualization depends on authoritative persisted/read-model evidence. Where that evidence is absent, the UI should say so.
+
+### Disabled commands without backend authority
+
+Pin/unpin, scoped repair, material trace or similar commands must remain disabled/linked to an owning workspace until an authoritative backend command/read contract exists. UI affordances must not mutate planning truth locally.
+
+### Systematic browser/visual regression
+
+The current baseline has received live Windows desktop verification, but #31 still owns a repeatable browser/visual regression harness for pointer geometry, long-open-session timing, fullscreen/localStorage, responsive workstation layouts and end-to-end flows.
+
+---
+
+## 9. Documents to use with this status
+
+- [`../APS_GANTT_WORKBENCH_OVERHAUL_REQUIREMENTS.md`](../APS_GANTT_WORKBENCH_OVERHAUL_REQUIREMENTS.md) — target/requirements authority;
+- [`../reference/APS_GANTT_DHTMLX_BEHAVIORAL_BENCHMARK.md`](../reference/APS_GANTT_DHTMLX_BEHAVIORAL_BENCHMARK.md) — DHTMLX behavioral reference, not a dependency;
+- [`APS_GANTT_IMPLEMENTATION_RECONNAISSANCE.md`](APS_GANTT_IMPLEMENTATION_RECONNAISSANCE.md) — **historical pre-overhaul reconnaissance**, not current implementation status;
+- [`APS_CURRENT_STATE_2026-08-23.md`](APS_CURRENT_STATE_2026-08-23.md) — overall APS current-state authority.
+
+Do not use the historical branch name or deleted standalone layer filenames to infer that integrated `main` lacks those behaviors.
