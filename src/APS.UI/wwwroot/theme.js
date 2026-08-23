@@ -4,7 +4,6 @@
     const modeNames = ["system", "light", "dark"];
     const accentNames = ["amber", "violet", "forest", "brick", "plum", "olive", "custom"];
     const media = window.matchMedia("(prefers-color-scheme: dark)");
-    let dotNetReference = null;
     let mediaHandler = null;
 
     function validHex(value) {
@@ -47,8 +46,7 @@
         const channels = [1, 3, 5].map(index => parseInt(hex.slice(index, index + 2), 16) / 255);
         const linear = channels.map(value => value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4));
         const luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
-        const darkLuminance = 0.0069;
-        const darkContrast = (luminance + 0.05) / (darkLuminance + 0.05);
+        const darkContrast = (luminance + 0.05) / 0.0569;
         const lightContrast = 1.05 / (luminance + 0.05);
         return darkContrast >= lightContrast ? "#171411" : "#FFFFFF";
     }
@@ -57,11 +55,10 @@
         const preference = normalize(value);
         const root = document.documentElement;
         const effectiveTheme = resolveTheme(preference.mode);
-        const accentName = accentNames[preference.accent.kind];
 
         root.dataset.theme = effectiveTheme;
         root.dataset.themeMode = modeNames[preference.mode];
-        root.dataset.accent = accentName;
+        root.dataset.accent = accentNames[preference.accent.kind];
         root.style.colorScheme = effectiveTheme;
 
         if (preference.accent.kind === 6) {
@@ -73,37 +70,31 @@
         }
 
         try { localStorage.setItem(storageKey, JSON.stringify(preference)); } catch { }
-        return { preference, effectiveTheme };
+        return preference;
     }
 
     function bootstrap() {
         apply(load());
     }
 
-    async function initialize(reference) {
+    function initialize() {
         dispose();
-        dotNetReference = reference;
-        const result = apply(load());
-        mediaHandler = async event => {
-            const preference = load();
-            if (preference.mode !== 0) return;
-            apply(preference);
-            try { await dotNetReference?.invokeMethodAsync("OnSystemThemeChanged", event.matches); } catch { }
+        apply(load());
+        mediaHandler = () => {
+            const current = load();
+            if (current.mode === 0) apply(current);
         };
         media.addEventListener("change", mediaHandler);
-        return result;
     }
 
-    function reset() {
-        try { localStorage.removeItem(storageKey); } catch { }
-        return apply(defaultPreference);
+    function setMode(mode) {
+        apply({ ...load(), mode });
     }
 
     function dispose() {
         if (mediaHandler) media.removeEventListener("change", mediaHandler);
         mediaHandler = null;
-        dotNetReference = null;
     }
 
-    window.apsTheme = { apply, bootstrap, dispose, initialize, load, reset };
+    window.apsTheme = { apply, bootstrap, dispose, initialize, load, setMode };
 })();

@@ -12,37 +12,33 @@
     @if (Expanded)
     {
         <div class="h-[30vh] min-h-40 overflow-auto border-t border-border bg-surface-raised p-3">
-            @switch (View)
+            @if (View == PlannerAnalysisView.ControlOverview)
             {
-                case PlannerAnalysisView.ControlOverview:
-                    <div class="grid gap-3 lg:grid-cols-4">
-                        <SummaryCard Label="Plan health" Value="@(CriticalCount == 0 ? "Ready" : $"{CriticalCount} critical")" Detail="@($"{WarningCount} warnings across the active scenario")" />
-                        <SummaryCard Label="Delivery exposure" Value="@($"{LateDemand} late")" Detail="Orders projected beyond their required date" />
-                        <SummaryCard Label="Planning focus" Value="Review exceptions" Detail="Open the queue or select an operation to investigate" />
-                        <SummaryCard Label="Next decision" Value="Validate or iterate" Detail="Compare consequences before releasing the scenario" />
+                <div class="grid gap-3 lg:grid-cols-4">
+                    @foreach (var card in OverviewCards)
+                    {
+                        <article class="rounded-surface border border-border bg-surface p-3 shadow-soft">
+                            <span class="text-[10px] font-semibold uppercase tracking-wide text-muted">@card.Label</span>
+                            <strong class="mt-1 block text-base">@card.Value</strong>
+                            <p class="mt-1 text-xs text-secondary">@card.Detail</p>
+                        </article>
+                    }
+                </div>
+            }
+            else
+            {
+                var panel = CurrentPanel;
+                <div class="flex min-h-32 items-start justify-between gap-6 rounded-surface border border-border bg-surface p-4 shadow-soft">
+                    <div>
+                        <h3 class="text-sm font-semibold">@panel.Title</h3>
+                        <p class="mt-1 max-w-2xl text-xs text-secondary">@panel.Detail</p>
+                        <div class="mt-4 flex gap-6 text-xs"><strong>@panel.Primary</strong><span class="text-muted">@panel.Secondary</span></div>
                     </div>
-                    break;
-                case PlannerAnalysisView.Exceptions:
-                    <AnalysisMessage Title="Exceptions" Detail="Constraint failures and warnings for the visible scenario." Primary="@($"{CriticalCount} critical")" Secondary="@($"{WarningCount} warnings")" />
-                    break;
-                case PlannerAnalysisView.Capacity:
-                    <AnalysisMessage Title="Capacity" Detail="Resource load, idle windows, and bottleneck exposure stay aligned with the visible Gantt window." Primary="Inspect loaded lanes" Secondary="Use the resource rows above" />
-                    break;
-                case PlannerAnalysisView.Delivery:
-                    <AnalysisMessage Title="Delivery" Detail="Demand-at-risk and due-date consequences of the current sequence." Primary="@($"{LateDemand} late orders")" Secondary="Open Demand queue to focus an order" />
-                    break;
-                case PlannerAnalysisView.Material:
-                    <AnalysisMessage Title="Material" Detail="Supply, reservations, and time-phased material balance for the selected chain." Primary="Material consequences" Secondary="Open detailed material flow only when needed" Href="/plan/material-flow" LinkLabel="Open material details" />
-                    break;
-                case PlannerAnalysisView.ScenarioComparison:
-                    <AnalysisMessage Title="Scenario comparison" Detail="Compare the working scenario against its released baseline before committing it." Primary="Baseline versus working plan" Secondary="Schedule, delivery, and capacity deltas" Href="/decide/compare" LinkLabel="Open full comparison" />
-                    break;
-                case PlannerAnalysisView.Execution:
-                    <AnalysisMessage Title="Execution monitor" Detail="Planned versus actual timing, held work, and recovery triggers." Primary="Execution status" Secondary="Select an operation above for actual timestamps" Href="/operate/work-orders" LinkLabel="Open work orders" />
-                    break;
-                case PlannerAnalysisView.Traceability:
-                    <AnalysisMessage Title="Traceability" Detail="Commercial demand, campaign, heat, material, and work-order lineage for the selected item." Primary="Selected-object genealogy" Secondary="Select an operation or demand item first" Href="/operate/traceability" LinkLabel="Open traceability details" />
-                    break;
+                    @if (panel.Href is not null)
+                    {
+                        <NavLink href="@panel.Href" class="shrink-0 rounded-control border border-border-strong px-3 py-2 text-xs hover:bg-surface-hover">@panel.LinkLabel</NavLink>
+                    }
+                </div>
             }
         </div>
     }
@@ -69,10 +65,38 @@
         (PlannerAnalysisView.Traceability, "Traceability")
     ];
 
+    private (string Label, string Value, string Detail)[] OverviewCards =>
+    [
+        ("Plan health", CriticalCount == 0 ? "Ready" : $"{CriticalCount} critical", $"{WarningCount} warnings across the active scenario"),
+        ("Delivery exposure", $"{LateDemand} late", "Orders projected beyond their required date"),
+        ("Planning focus", "Review exceptions", "Open the queue or select an operation to investigate"),
+        ("Next decision", "Validate or iterate", "Compare consequences before releasing the scenario")
+    ];
+
+    private AnalysisPanel CurrentPanel => View switch
+    {
+        PlannerAnalysisView.Exceptions => new("Exceptions", "Constraint failures and warnings for the visible scenario.", $"{CriticalCount} critical", $"{WarningCount} warnings"),
+        PlannerAnalysisView.Capacity => new("Capacity", "Resource load, idle windows, and bottleneck exposure stay aligned with the visible Gantt window.", "Inspect loaded lanes", "Use the resource rows above"),
+        PlannerAnalysisView.Delivery => new("Delivery", "Demand-at-risk and due-date consequences of the current sequence.", $"{LateDemand} late orders", "Open Demand queue to focus an order"),
+        PlannerAnalysisView.Material => new("Material", "Supply, reservations, and time-phased material balance for the selected chain.", "Material consequences", "Open detailed material flow only when needed", "/plan/material-flow", "Open material details"),
+        PlannerAnalysisView.ScenarioComparison => new("Scenario comparison", "Compare the working scenario against its released baseline before committing it.", "Baseline versus working plan", "Schedule, delivery, and capacity deltas", "/decide/compare", "Open full comparison"),
+        PlannerAnalysisView.Execution => new("Execution monitor", "Planned versus actual timing, held work, and recovery triggers.", "Execution status", "Select an operation above for actual timestamps", "/operate/work-orders", "Open work orders"),
+        PlannerAnalysisView.Traceability => new("Traceability", "Commercial demand, campaign, heat, material, and work-order lineage for the selected item.", "Selected-object genealogy", "Select an operation or demand item first", "/operate/traceability", "Open traceability details"),
+        _ => throw new InvalidOperationException($"{View} does not use an analysis message panel.")
+    };
+
     private async Task SelectAsync(PlannerAnalysisView view)
     {
         if (!Expanded && view == View)
             await Toggle.InvokeAsync();
         await ViewChanged.InvokeAsync(view);
     }
+
+    private sealed record AnalysisPanel(
+        string Title,
+        string Detail,
+        string Primary,
+        string Secondary,
+        string? Href = null,
+        string LinkLabel = "Open details");
 }

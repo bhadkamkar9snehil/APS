@@ -328,11 +328,13 @@ public sealed class PlanningWorkbenchQueryTests
         Assert.Equal(1m, processingBucket.OccupancyRatio);
         Assert.Equal(PlanningCapacityBasis.MachineTime, processingBucket.Basis);
 
-        var deratedBucket = Assert.Single(result.CapacityBuckets, x =>
+        var calendarFactorBucket = Assert.Single(result.CapacityBuckets, x =>
             x.ResourceId == resourceId && x.StartUtc == start.AddHours(1));
-        Assert.Equal(30, deratedBucket.AvailableMinutes);
-        Assert.Equal(0, deratedBucket.ProcessingMinutes);
-        Assert.Equal(0, deratedBucket.UnavailableMinutes);
+        // A unary/disjunctive resource remains one available machine-hour. Capacity factors scale
+        // cumulative capacity units; they do not manufacture fractional clock time for unary machines.
+        Assert.Equal(60, calendarFactorBucket.AvailableMinutes);
+        Assert.Equal(0, calendarFactorBucket.ProcessingMinutes);
+        Assert.Equal(0, calendarFactorBucket.UnavailableMinutes);
 
         var maintenanceBucket = Assert.Single(result.CapacityBuckets, x =>
             x.ResourceId == revisedLrfResourceId && x.StartUtc == start.AddHours(3));

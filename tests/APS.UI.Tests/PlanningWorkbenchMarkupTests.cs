@@ -89,22 +89,21 @@ public sealed class PlanningWorkbenchMarkupTests
     }
 
     [Fact]
-    public void Dependency_layer_is_focused_on_the_selected_chain()
+    public void Dependency_rendering_is_focused_on_the_selected_chain()
     {
         var gantt = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttTimelineViewport.razor"));
-        var layer = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttDependencyLayer.razor"));
 
-        Assert.Contains("GanttDependencyLayer", gantt);
-        Assert.Contains("State.SelectedPlanningKey", layer);
-        Assert.DoesNotContain("@foreach (var edge in DependencyLines())", gantt);
-        Assert.Contains("edge.Type", layer);
-        Assert.Contains("edge.CurrentLagMinutes", layer);
-        Assert.Contains("edge.HeadroomMinutes", layer);
-        Assert.Contains("<title>", layer);
+        Assert.Contains("State.ShowDependencies && State.SelectedPlanningKey is not null", gantt);
+        Assert.Contains("Scene.DependencyLines", gantt);
+        Assert.Contains("edge.Type", gantt);
+        Assert.Contains("edge.CurrentLagMinutes", gantt);
+        Assert.Contains("edge.HeadroomMinutes", gantt);
+        Assert.Contains("<title>", gantt);
+        Assert.DoesNotContain("GanttDependencyLayer", gantt);
     }
 
     [Fact]
-    public void Planning_layers_are_explicit_and_binding_chain_is_truthfully_disabled_without_evidence()
+    public void Planning_layers_keep_their_behavior_without_render_only_component_boundaries()
     {
         var root = "src/APS.UI/Components/PlanningWorkbench/Gantt";
         foreach (var file in new[]
@@ -114,9 +113,21 @@ public sealed class PlanningWorkbenchMarkupTests
                      "GanttCampaignLayer.razor",
                      "GanttDependencyLayer.razor",
                      "GanttMarkerLayer.razor",
-                     "GanttExecutionLayer.razor"
+                     "GanttExecutionLayer.razor",
+                     "GanttProposalLayer.razor"
                  })
-            Assert.True(File.Exists(Repo.File($"{root}/{file}")), $"Missing explicit planning layer: {file}");
+            Assert.False(File.Exists(Repo.File($"{root}/{file}")), $"Render-only component should stay inlined: {file}");
+
+        var lane = File.ReadAllText(Repo.File($"{root}/GanttResourceLane.razor"));
+        var viewport = File.ReadAllText(Repo.File($"{root}/GanttTimelineViewport.razor"));
+        Assert.Contains("State.ShowBaseline", lane);
+        Assert.Contains("Row.CalendarIntervals", lane);
+        Assert.Contains("Row.CampaignSpans", lane);
+        Assert.Contains("ActualStartUtc", lane);
+        Assert.Contains("State.ShowNowMarker", lane);
+        Assert.Contains("State.StagedMove", lane);
+        Assert.Contains("State.StagedBulkMove", lane);
+        Assert.Contains("Scene.DependencyLines", viewport);
 
         var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
         Assert.Contains("Binding chain unavailable", page);
@@ -146,12 +157,12 @@ public sealed class PlanningWorkbenchMarkupTests
     {
         var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
         var gantt = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/WorkbenchGantt.razor"));
-        var baseline = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttBaselineLayer.razor"));
+        var lane = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttResourceLane.razor"));
         var block = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttOperationBlock.razor"));
 
         Assert.Contains("CompareSubrow", page);
         Assert.Contains("State.GanttRowHeightPx", gantt);
-        Assert.Contains("CompareSubrow", baseline);
+        Assert.Contains("CompareSubrow", lane);
         Assert.Contains("VerticalClass", block);
     }
 
@@ -264,7 +275,9 @@ public sealed class PlanningWorkbenchMarkupTests
         Assert.DoesNotContain("state.drag.block.style", script);
         Assert.Contains("data-eligible-resources", block);
         Assert.Contains("data-drag-protected", block);
-        Assert.Contains("<GanttProposalLayer", lane);
+        Assert.Contains("State.StagedMove", lane);
+        Assert.Contains("State.StagedBulkMove", lane);
+        Assert.DoesNotContain("GanttProposalLayer", lane);
         Assert.Contains("string targetStartUtc", page);
     }
 
@@ -287,5 +300,4 @@ public sealed class PlanningWorkbenchMarkupTests
         Assert.Contains("snapped.unavailable", script);
         Assert.Contains("state.Viewport.SnapMode,\n            targetShiftBoundaries", page.Replace("\r\n", "\n"));
     }
-
 }

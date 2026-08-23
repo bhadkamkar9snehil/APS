@@ -143,7 +143,7 @@ public sealed class DemandReconciliationQueryCountTests
             CommandEventData eventData,
             InterceptionResult<DbDataReader> result)
         {
-            Interlocked.Increment(ref readerCommands);
+            if (IsSelect(command)) Interlocked.Increment(ref readerCommands);
             return result;
         }
 
@@ -153,8 +153,11 @@ public sealed class DemandReconciliationQueryCountTests
             InterceptionResult<DbDataReader> result,
             CancellationToken cancellationToken = default)
         {
-            Interlocked.Increment(ref readerCommands);
+            if (IsSelect(command)) Interlocked.Increment(ref readerCommands);
             return ValueTask.FromResult(result);
         }
+
+        private static bool IsSelect(DbCommand command) =>
+            command.CommandText.TrimStart().StartsWith("SELECT", StringComparison.OrdinalIgnoreCase);
     }
 }

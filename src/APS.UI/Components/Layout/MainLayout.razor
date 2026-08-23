@@ -8,32 +8,19 @@
 <div class="flex h-screen w-screen flex-col overflow-hidden bg-canvas text-sm text-primary">
     <DesktopMenuBar />
     <main class="min-h-0 flex-1 bg-canvas @(IsWorkbench ? "overflow-hidden" : "overflow-y-auto p-6")">
-        @if (backendUnavailable)
-        {
-            <div class="aps-page border border-dashed border-border-strong p-8 text-center">
-                <strong class="aps-text-heading">Production planner workspace is unavailable</strong>
-                <p class="mt-1 aps-text-body text-secondary">@backendUnavailableMessage</p>
-            </div>
-        }
-        else
-        {
-            <ErrorBoundary>
-                <ChildContent>@Body</ChildContent>
-                <ErrorContent Context="ex">
-                    <div class="rounded-surface border border-danger bg-danger-soft p-8 text-center">
-                        <strong class="text-danger">This page couldn't load</strong>
-                        <p class="mt-1 text-sm text-danger">@ex.Message</p>
-                    </div>
-                </ErrorContent>
-            </ErrorBoundary>
-        }
+        <ErrorBoundary>
+            <ChildContent>@Body</ChildContent>
+            <ErrorContent Context="ex">
+                <div class="rounded-surface border border-danger bg-danger-soft p-8 text-center">
+                    <strong class="text-danger">This page couldn't load</strong>
+                    <p class="mt-1 text-sm text-danger">@ex.Message</p>
+                </div>
+            </ErrorContent>
+        </ErrorBoundary>
     </main>
 </div>
 
 @code {
-    private bool backendUnavailable;
-    private string? backendUnavailableMessage;
-
     private bool IsWorkbench
     {
         get
@@ -45,32 +32,18 @@
 
     protected override async Task OnInitializedAsync()
     {
-        Theme.Changed += OnThemeChanged;
         Navigation.LocationChanged += OnLocationChanged;
-        try
-        {
-            var currentPlan = await PlannerQuery.GetCurrentPlanAsync();
-            if (currentPlan is not null)
-                WorkspaceState.SetPlan(currentPlan.PlanVersionId, currentPlan.ParentPlanVersionId);
-        }
-        catch (InvalidOperationException ex)
-        {
-            backendUnavailable = true;
-            backendUnavailableMessage = ex.Message;
-        }
+        var currentPlan = await PlannerQuery.GetCurrentPlanAsync();
+        if (currentPlan is not null)
+            WorkspaceState.SetPlan(currentPlan.PlanVersionId, currentPlan.ParentPlanVersionId);
     }
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs args) => _ = InvokeAsync(StateHasChanged);
-    private void OnThemeChanged() => _ = InvokeAsync(StateHasChanged);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender) await Theme.InitializeAsync();
     }
 
-    public void Dispose()
-    {
-        Theme.Changed -= OnThemeChanged;
-        Navigation.LocationChanged -= OnLocationChanged;
-    }
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
 }

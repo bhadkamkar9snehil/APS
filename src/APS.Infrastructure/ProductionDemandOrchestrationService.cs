@@ -502,10 +502,14 @@ public sealed class ProductionDemandOrchestrationService(
         profile.InspectionRequirementCode = Normalize(requirement.InspectionRequirementCode);
         profile.QualificationFingerprint = SalesOrderRequirementFingerprint.Compute(input, requirement);
 
-        profile.ChemistryOverrides.Clear();
+        foreach (var existing in profile.ChemistryOverrides.ToArray())
+        {
+            profile.ChemistryOverrides.Remove(existing);
+            db.SalesOrderChemistryRequirements.Remove(existing);
+        }
         foreach (var chemistry in requirement.ChemistryOverrides ?? Array.Empty<SalesOrderChemistryRequirementInput>())
         {
-            profile.ChemistryOverrides.Add(new SalesOrderChemistryRequirement
+            var row = new SalesOrderChemistryRequirement
             {
                 SalesOrderRequirementProfileId = profile.Id,
                 SalesOrderRequirementProfile = profile,
@@ -513,13 +517,19 @@ public sealed class ProductionDemandOrchestrationService(
                 MinimumPct = chemistry.MinimumPct,
                 TargetPct = chemistry.TargetPct,
                 MaximumPct = chemistry.MaximumPct
-            });
+            };
+            profile.ChemistryOverrides.Add(row);
+            db.SalesOrderChemistryRequirements.Add(row);
         }
 
-        profile.ProcessOverrides.Clear();
+        foreach (var existing in profile.ProcessOverrides.ToArray())
+        {
+            profile.ProcessOverrides.Remove(existing);
+            db.SalesOrderProcessRequirements.Remove(existing);
+        }
         foreach (var process in requirement.ProcessOverrides ?? Array.Empty<SalesOrderProcessRequirementInput>())
         {
-            profile.ProcessOverrides.Add(new SalesOrderProcessRequirement
+            var row = new SalesOrderProcessRequirement
             {
                 SalesOrderRequirementProfileId = profile.Id,
                 SalesOrderRequirementProfile = profile,
@@ -528,7 +538,9 @@ public sealed class ProductionDemandOrchestrationService(
                 CapabilityClassCode = Normalize(process.CapabilityClassCode),
                 RequiredResourceId = process.RequiredResourceId,
                 MaximumQueueMinutes = process.MaximumQueueMinutes
-            });
+            };
+            profile.ProcessOverrides.Add(row);
+            db.SalesOrderProcessRequirements.Add(row);
         }
 
         return profile;

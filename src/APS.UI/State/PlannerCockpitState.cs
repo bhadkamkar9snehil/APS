@@ -26,7 +26,6 @@ public sealed class PlannerCockpitState
 
     public void ToggleQueue() => SetDrawer(QueueOpen ? PlannerCockpitDrawer.None : PlannerCockpitDrawer.Queue);
     public void ToggleInspector() => SetDrawer(InspectorOpen ? PlannerCockpitDrawer.None : PlannerCockpitDrawer.Inspector);
-    public void OpenQueue() => SetDrawer(PlannerCockpitDrawer.Queue);
     public void OpenInspector() => SetDrawer(PlannerCockpitDrawer.Inspector);
     public void CloseTransientPanels() => SetDrawer(PlannerCockpitDrawer.None);
 

@@ -17,8 +17,9 @@ public sealed class PlannerWorkspaceState
         Changed?.Invoke();
     }
 
-    // Temporary compatibility shims for the finite-schedule page. They deliberately carry no shared state;
-    // schedule viewport and focused entity are page-local concerns.
+    // Temporary compatibility shims for FiniteSchedule. The workbench owns viewport and focused-entity
+    // state locally; these can disappear together when the remaining legacy calls are removed there.
     public void SetWindow(DateTime? _, DateTime? __) { }
     public void Select(PlannerEntityRef _) { }
+    public void ClearSelection() { }
 }
