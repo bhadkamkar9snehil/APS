@@ -173,7 +173,9 @@ public sealed class CanonicalBackendBoundaryTests
             ReferenceTimeUtc = start.AddHours(-1),
             HorizonStartUtc = start,
             HorizonEndUtc = start.AddDays(1),
-            IsActive = true
+            IsActive = true,
+            MaterialRequirementsJson = "[]",
+            MaterialSupplyRequirementsJson = "[]"
         });
         db.PlanProductionOrderSnapshots.Add(NewPoSnapshot(planVersionId, poId));
         db.PlanRollingPlanSnapshots.Add(new PlanRollingPlanSnapshot
@@ -217,6 +219,7 @@ public sealed class CanonicalBackendBoundaryTests
         await db.SaveChangesAsync();
 
         var service = new PersistedPlanReleaseService(db, new PlanReleaseRepository(db));
+        await service.ApproveAsync(planVersionId);
         var first = await service.ReleaseAsync(planVersionId);
         var second = await service.ReleaseAsync(planVersionId);
 
@@ -249,7 +252,9 @@ public sealed class CanonicalBackendBoundaryTests
             ReferenceTimeUtc = start.AddHours(-1),
             HorizonStartUtc = start,
             HorizonEndUtc = start.AddDays(1),
-            IsActive = true
+            IsActive = true,
+            MaterialRequirementsJson = "[]",
+            MaterialSupplyRequirementsJson = "[]"
         });
         db.PlanProductionOrderSnapshots.Add(NewPoSnapshot(planVersionId, poId));
         db.PlanRouteOperationSnapshots.Add(new PlanRouteOperationSnapshot
@@ -293,7 +298,9 @@ public sealed class CanonicalBackendBoundaryTests
         });
         await db.SaveChangesAsync();
 
-        var release = await new PersistedPlanReleaseService(db, new PlanReleaseRepository(db)).ReleaseAsync(planVersionId);
+        var service = new PersistedPlanReleaseService(db, new PlanReleaseRepository(db));
+        await service.ApproveAsync(planVersionId);
+        var release = await service.ReleaseAsync(planVersionId);
 
         var workOrder = Assert.Single(release.WorkOrders);
         Assert.Equal(WorkOrderType.Finishing, workOrder.WorkOrderType);

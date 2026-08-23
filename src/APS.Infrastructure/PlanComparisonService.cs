@@ -24,6 +24,15 @@ public sealed class PlanComparisonService(ApsDbContext db) : IPlanComparisonServ
         var rows = await db.PlanOperationSnapshots
             .AsNoTracking()
             .Where(x => x.PlanVersionId == baselinePlanVersionId || x.PlanVersionId == newPlanVersionId)
+            .Select(x => new
+            {
+                x.PlanVersionId,
+                x.PlanningKey,
+                x.OperationType,
+                x.ResourceId,
+                x.StartUtc,
+                x.EndUtc
+            })
             .ToListAsync(cancellationToken);
 
         var baseline = rows

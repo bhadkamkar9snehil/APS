@@ -1,12 +1,12 @@
-<section class="mt-4 rounded-control border border-border bg-surface-raised p-3">
-    <h2 class="text-xs font-semibold">Planning controls</h2>
+<section class="aps-page mt-3 p-3">
+    <h2 class="aps-text-heading">Planning controls</h2>
     <div class="mt-3 grid grid-cols-2 gap-2">
-        <label class="text-[10px] text-muted">Heat size MT<input type="number" step="1" value="@NominalHeatMt" @onchange="HeatChanged" class="mt-1 w-full rounded-control border border-border px-2 py-1.5 text-xs" /></label>
-        <label class="text-[10px] text-muted">Campaign max MT<input type="number" step="10" value="@MaximumCampaignMt" @onchange="CampaignChanged" class="mt-1 w-full rounded-control border border-border px-2 py-1.5 text-xs" /></label>
-        <label class="text-[10px] text-muted">Frozen minutes<input type="number" step="15" value="@FrozenMinutes" @onchange="FrozenChanged" class="mt-1 w-full rounded-control border border-border px-2 py-1.5 text-xs" /></label>
-        <label class="text-[10px] text-muted">Solver seconds<input type="number" step="5" value="@SolverSeconds" @onchange="SolverChanged" class="mt-1 w-full rounded-control border border-border px-2 py-1.5 text-xs" /></label>
+        <label class="aps-text-label">Heat size MT<input type="number" step="1" value="@NominalHeatMt" @onchange="HeatChanged" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-1.5 aps-text-body" /></label>
+        <label class="aps-text-label">Campaign max MT<input type="number" step="10" value="@MaximumCampaignMt" @onchange="CampaignChanged" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-1.5 aps-text-body" /></label>
+        <label class="aps-text-label">Frozen minutes<input type="number" step="15" value="@FrozenMinutes" @onchange="FrozenChanged" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-1.5 aps-text-body" /></label>
+        <label class="aps-text-label">Solver seconds<input type="number" step="5" value="@SolverSeconds" @onchange="SolverChanged" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-1.5 aps-text-body" /></label>
     </div>
-    <button type="button" class="mt-3 w-full rounded-control border border-border-strong px-3 py-2 text-xs font-medium hover:bg-surface-hover" @onclick="OnRecalculate" disabled="@Disabled">Recalculate with controls</button>
+    <button type="button" class="mt-3 w-full rounded-control border border-border-strong px-3 py-2 aps-text-heading hover:bg-surface-hover disabled:opacity-40" @onclick="OnRecalculate" disabled="@Disabled">Recalculate with controls</button>
 </section>
 
 @code {

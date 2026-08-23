@@ -51,11 +51,112 @@ public sealed record PlanningOperationWorkbenchDetail(
     Guid SourceEntityId,
     OperationAssignmentCommitmentState CommitmentState,
     OperationExecutionStatus ExecutionStatus,
+    DateTime? ActualStartUtc,
+    DateTime? ActualEndUtc,
+    decimal ActualQuantityMt,
     IReadOnlyCollection<string> PredecessorPlanningKeys,
     IReadOnlyCollection<PlanningOperationResourceOptionView> ResourceOptions,
     string? CampaignNumber,
     int? HeatSequenceNumber,
     IReadOnlyCollection<string> ProductionOrderNumbers);
+
+public enum PlanningDependencyType
+{
+    FinishStart = 1
+}
+
+public enum PlanningDependencyCategory
+{
+    Routing = 1
+}
+
+public sealed record PlanningDependencyLinkView(
+    Guid PredecessorOperationSnapshotId,
+    string PredecessorPlanningKey,
+    Guid SuccessorOperationSnapshotId,
+    string SuccessorPlanningKey,
+    PlanningDependencyType Type,
+    PlanningDependencyCategory Category,
+    int? MinimumLagMinutes,
+    int CurrentLagMinutes);
+
+public sealed record PlanningResourceCalendarIntervalView(
+    Guid ResourceId,
+    DateTime StartUtc,
+    DateTime EndUtc,
+    bool IsAvailable,
+    decimal? CapacityFactorPct,
+    string? ReasonCode,
+    string Source);
+
+public sealed record PlanningBaselinePlacementView(
+    Guid BaselinePlanVersionId,
+    Guid OperationSnapshotId,
+    string PlanningKey,
+    Guid ResourceId,
+    string ResourceCode,
+    string ResourceName,
+    ProcessUnitType ProcessUnitType,
+    ResourceOperatingState OperatingState,
+    ResourceSchedulingMode SchedulingMode,
+    DateTime StartUtc,
+    DateTime EndUtc,
+    ProcessOperationType ProcessOperationType,
+    string GradeCode,
+    string CrossSectionCode,
+    Guid? PlantId,
+    string? PlantCode,
+    string? PlantName,
+    Guid? AreaId,
+    string? AreaCode,
+    string? AreaName,
+    Guid? ProcessStageId,
+    string? ProcessStageCode,
+    string? ProcessStageName,
+    int DisplayOrder);
+
+public enum PlanningBindingCause
+{
+    PredecessorTiming = 1,
+    ResourceSequence = 2,
+    CampaignSequence = 3,
+    QueueWindow = 4,
+    ThermalWindow = 5,
+    MaterialAvailability = 6,
+    FrozenFence = 7,
+    DueDatePressure = 8,
+    SingleEligibleResource = 9
+}
+
+/// <summary>
+/// Solver/read-model evidence for a genuine finite-capacity binding chain. The UI must not
+/// synthesize this evidence from rendered positions or visual adjacency.
+/// </summary>
+public sealed record PlanningBindingEvidenceView(
+    string PlanningKey,
+    PlanningBindingCause Cause,
+    int? TotalSlackMinutes,
+    string EvidenceCode,
+    string Description);
+
+public enum PlanningCapacityBasis
+{
+    MachineTime = 1,
+    Slots = 2,
+    MassEquivalentMt = 3,
+    Positions = 4
+}
+
+public sealed record PlanningCapacityBucketView(
+    Guid ResourceId,
+    DateTime StartUtc,
+    DateTime EndUtc,
+    double AvailableMinutes,
+    double ProcessingMinutes,
+    double UnavailableMinutes,
+    decimal OccupancyRatio,
+    PlanningCapacityBasis Basis,
+    ResourceSchedulingMode SchedulingMode);
 
 public sealed record PlanningWorkbenchView(
     PlanContextView Plan,
@@ -67,4 +168,9 @@ public sealed record PlanningWorkbenchView(
     PlanComparisonWorkspaceView? Comparison,
     PlanningQueueView Queue,
     IReadOnlyCollection<PlanningWorkbenchException> Exceptions,
-    IReadOnlyCollection<PlanningOperationWorkbenchDetail> OperationDetails);
+    IReadOnlyCollection<PlanningOperationWorkbenchDetail> OperationDetails,
+    IReadOnlyCollection<PlanningDependencyLinkView> DependencyLinks,
+    IReadOnlyCollection<PlanningResourceCalendarIntervalView> ResourceCalendarIntervals,
+    IReadOnlyCollection<PlanningBaselinePlacementView> BaselinePlacements,
+    IReadOnlyCollection<PlanningCapacityBucketView> CapacityBuckets,
+    IReadOnlyCollection<PlanningBindingEvidenceView>? BindingEvidence = null);

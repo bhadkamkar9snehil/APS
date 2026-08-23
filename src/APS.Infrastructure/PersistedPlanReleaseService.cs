@@ -1,3 +1,4 @@
+using System.Text.Json;
 using APS.Application;
 using APS.Domain;
 using Microsoft.EntityFrameworkCore;
@@ -12,6 +13,50 @@ public sealed class PersistedPlanReleaseService(
     ApsDbContext db,
     IPlanReleaseRepository releaseRepository) : IPersistedPlanReleaseService
 {
+    private static readonly JsonSerializerOptions SnapshotJsonOptions = new(JsonSerializerDefaults.Web);
+
+    public async Task<PlanReleaseReadiness> GetReadinessAsync(
+        Guid planVersionId,
+        CancellationToken cancellationToken = default)
+    {
+        var version = await db.PlanVersions.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == planVersionId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Plan Version {planVersionId} was not found.");
+        var state = await db.PlanVersionStates.AsNoTracking()
+            .SingleAsync(x => x.PlanVersionId == planVersionId, cancellationToken);
+        return EvaluateReadiness(version, state);
+    }
+
+    public async Task<PlanReleaseReadiness> ApproveAsync(
+        Guid planVersionId,
+        CancellationToken cancellationToken = default)
+    {
+        var version = await db.PlanVersions.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == planVersionId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Plan Version {planVersionId} was not found.");
+        var state = await db.PlanVersionStates
+            .SingleAsync(x => x.PlanVersionId == planVersionId, cancellationToken);
+
+        if (version.IsReleased || state.Status == PlanVersionStatus.Released)
+            return EvaluateReadiness(version, state);
+        if (state.Status == PlanVersionStatus.Approved)
+            return EvaluateReadiness(version, state);
+        if (state.Status != PlanVersionStatus.Feasible)
+            throw new InvalidOperationException(
+                $"Plan Version {version.VersionNumber} is {state.Status}; only a feasible persisted plan can be approved.");
+        if (!state.IsActive)
+            throw new InvalidOperationException(
+                $"Plan Version {version.VersionNumber} is no longer active and cannot be approved. Replan from the current baseline instead.");
+
+        var readiness = EvaluateReadiness(version, state);
+        if (!readiness.IsReleaseReady)
+            throw new InvalidOperationException(ReadinessError(version.VersionNumber, readiness.Findings));
+
+        state.Status = PlanVersionStatus.Approved;
+        await db.SaveChangesAsync(cancellationToken);
+        return readiness with { Status = PlanVersionStatus.Approved };
+    }
+
     public async Task<PlanRelease> ReleaseAsync(
         Guid planVersionId,
         CancellationToken cancellationToken = default)
@@ -27,9 +72,13 @@ public sealed class PersistedPlanReleaseService(
         var state = await db.PlanVersionStates
             .AsNoTracking()
             .SingleAsync(x => x.PlanVersionId == planVersionId, cancellationToken);
-        if (state.Status != PlanVersionStatus.Feasible)
+        if (state.Status != PlanVersionStatus.Approved || !state.IsActive)
             throw new InvalidOperationException(
-                $"Plan Version {version.VersionNumber} is {state.Status}; only a feasible persisted plan can be released.");
+                $"Plan Version {version.VersionNumber} is {state.Status} and active={state.IsActive}; an active approved Plan Version is required before release.");
+
+        var readiness = EvaluateReadiness(version, state);
+        if (!readiness.IsReleaseReady)
+            throw new InvalidOperationException(ReadinessError(version.VersionNumber, readiness.Findings));
 
         var productionOrders = await db.PlanProductionOrderSnapshots.AsNoTracking()
             .Where(x => x.PlanVersionId == planVersionId)
@@ -108,6 +157,124 @@ public sealed class PersistedPlanReleaseService(
             new PlanRelease(planVersionId, workOrders, scheduledOperations),
             cancellationToken);
     }
+
+    private static PlanReleaseReadiness EvaluateReadiness(PlanVersion version, PlanVersionState state)
+    {
+        var findings = new List<PlanReleaseReadinessFinding>();
+        if (state.Status is not (PlanVersionStatus.Feasible or PlanVersionStatus.Approved or PlanVersionStatus.Released))
+        {
+            findings.Add(new PlanReleaseReadinessFinding(
+                "PLAN_STATUS_NOT_APPROVABLE",
+                $"Plan status {state.Status} is not eligible for approval or release."));
+        }
+        if (!state.IsActive && state.Status != PlanVersionStatus.Released)
+        {
+            findings.Add(new PlanReleaseReadinessFinding(
+                "PLAN_NOT_ACTIVE",
+                "This Plan Version is no longer active. Replan or select the current active Plan Version before approval/release."));
+        }
+
+        if (string.IsNullOrWhiteSpace(state.MaterialRequirementsJson))
+        {
+            findings.Add(new PlanReleaseReadinessFinding(
+                "MATERIAL_EVIDENCE_MISSING",
+                "The Plan Version has no persisted material-requirement evidence. Recalculate the plan before approval."));
+        }
+        else
+        {
+            foreach (var requirement in Deserialize<MaterialRequirement>(state.MaterialRequirementsJson))
+            {
+                var code = requirement.Status switch
+                {
+                    MaterialRequirementStatus.SupplyActionRequired => "MATERIAL_SUPPLY_ACTION_REQUIRED",
+                    MaterialRequirementStatus.Shortfall => "MATERIAL_SHORTFALL",
+                    MaterialRequirementStatus.LateSupply => "MATERIAL_LATE_SUPPLY",
+                    MaterialRequirementStatus.Unsourced => "MATERIAL_UNSOURCED",
+                    MaterialRequirementStatus.NotManufacturableHere => "MATERIAL_NOT_MANUFACTURABLE_HERE",
+                    MaterialRequirementStatus.CycleBlocked => "MATERIAL_CYCLE_BLOCKED",
+                    _ => null
+                };
+                if (code is null) continue;
+
+                var quantity = requirement.ShortfallQuantity > 0m
+                    ? requirement.ShortfallQuantity
+                    : requirement.ShortfallQuantityMt > 0m
+                        ? requirement.ShortfallQuantityMt
+                        : requirement.NetRequirementQuantity > 0m
+                            ? requirement.NetRequirementQuantity
+                            : requirement.RequiredQuantityMt;
+                findings.Add(new PlanReleaseReadinessFinding(
+                    code,
+                    $"{requirement.MaterialCode} is {requirement.Status} for {quantity:0.####} {requirement.MaterialUom}; {requirement.Explanation ?? "material supply is not release-ready"}.",
+                    requirement.Id));
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(state.MaterialSupplyRequirementsJson))
+        {
+            findings.Add(new PlanReleaseReadinessFinding(
+                "SUPPLY_EVIDENCE_MISSING",
+                "The Plan Version has no persisted supply-action evidence. Recalculate the plan before approval."));
+        }
+        else
+        {
+            foreach (var supply in Deserialize<MaterialSupplyRequirement>(state.MaterialSupplyRequirementsJson))
+            {
+                if (supply.ActionType == MaterialSupplyActionType.Unsourced)
+                {
+                    findings.Add(new PlanReleaseReadinessFinding(
+                        "SUPPLY_ACTION_UNSOURCED",
+                        $"{supply.MaterialCode} has an unsourced supply action for {supply.QuantityMt:0.####} MT.",
+                        supply.MaterialRequirementId));
+                    continue;
+                }
+
+                if (supply.ActionType is not (MaterialSupplyActionType.Buy or MaterialSupplyActionType.Transfer or MaterialSupplyActionType.Manual))
+                    continue;
+
+                if (!supply.IsFirm)
+                {
+                    findings.Add(new PlanReleaseReadinessFinding(
+                        "EXTERNAL_SUPPLY_NOT_FIRM",
+                        $"{supply.ActionType} supply for {supply.MaterialCode} is planned but not firm.",
+                        supply.MaterialRequirementId));
+                    continue;
+                }
+
+                if (!supply.ExpectedReceiptUtc.HasValue)
+                {
+                    findings.Add(new PlanReleaseReadinessFinding(
+                        "EXTERNAL_SUPPLY_DATE_MISSING",
+                        $"Firm {supply.ActionType} supply for {supply.MaterialCode} has no expected receipt time.",
+                        supply.MaterialRequirementId));
+                    continue;
+                }
+
+                if (supply.ExpectedReceiptUtc.Value > supply.RequiredReceiptUtc)
+                {
+                    findings.Add(new PlanReleaseReadinessFinding(
+                        "EXTERNAL_SUPPLY_LATE",
+                        $"Firm {supply.ActionType} supply for {supply.MaterialCode} is expected at {supply.ExpectedReceiptUtc:O}, after required receipt {supply.RequiredReceiptUtc:O}.",
+                        supply.MaterialRequirementId));
+                }
+            }
+        }
+
+        return new PlanReleaseReadiness(
+            version.Id,
+            version.VersionNumber,
+            state.Status,
+            findings.Count == 0,
+            findings);
+    }
+
+    private static T[] Deserialize<T>(string json) =>
+        JsonSerializer.Deserialize<T[]>(json, SnapshotJsonOptions) ?? Array.Empty<T>();
+
+    private static string ReadinessError(
+        string versionNumber,
+        IReadOnlyCollection<PlanReleaseReadinessFinding> findings) =>
+        $"Plan Version {versionNumber} is not release-ready: {string.Join("; ", findings.Select(x => $"{x.Code}: {x.Message}"))}";
 
     private async Task<PlanRelease> LoadExistingReleaseAsync(
         Guid planVersionId,

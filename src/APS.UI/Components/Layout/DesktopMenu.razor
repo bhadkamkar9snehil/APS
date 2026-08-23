@@ -1,0 +1,19 @@
+<div class="relative" @onkeydown="HandleKeyDown">
+    <button type="button" class="rounded-control px-2.5 py-1 text-xs font-medium text-secondary hover:bg-surface-hover hover:text-primary"
+            aria-haspopup="menu" aria-expanded="@open" @onclick="Toggle">@Label</button>
+    @if (open)
+    {
+        <button type="button" class="fixed inset-0 z-40 cursor-default" aria-label="Close @Label menu" @onclick="Close"></button>
+        <div class="absolute left-0 top-full z-50 mt-1 min-w-56 rounded-surface border border-border bg-surface-raised p-1 shadow-raised"
+             role="menu" aria-label="@Label menu" @onclick="Close">@ChildContent</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    private bool open;
+    private void Toggle() => open = !open;
+    private void Close() => open = false;
+    private void HandleKeyDown(KeyboardEventArgs args) { if (args.Key == "Escape") Close(); }
+}

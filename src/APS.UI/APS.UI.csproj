@@ -4,6 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <SupportedPlatform Include="browser" />
+    <TailwindSource Include="$(MSBuildProjectDirectory)\Components\**\*.razor" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\APS.Domain\APS.Domain.csproj" />
@@ -45,19 +46,15 @@
   <Target Name="EnsureTailwindCli" BeforeTargets="CompileTailwindCss" Condition="!Exists('$(TailwindCliPath)')">
     <Error Condition="'$(TailwindOs)' == ''"
            Text="Unsupported OS for the Tailwind standalone CLI. Tailwind publishes Windows, macOS and Linux builds; see APS.UI.csproj." />
-    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(TailwindCliPath)'))" />
-
-    <!-- curl is present on macOS and Linux; PowerShell is the portable fetch on Windows. -->
-    <Exec Condition="'$(TailwindOs)' != 'windows'"
-          Command="curl -sSL --fail -o &quot;$(TailwindCliPath)&quot; &quot;$(TailwindCliUrl)&quot;" />
+    <DownloadFile SourceUrl="$(TailwindCliUrl)"
+                  DestinationFolder="$([System.IO.Path]::GetDirectoryName('$(TailwindCliPath)'))"
+                  DestinationFileName="$(TailwindAsset)" />
     <Exec Condition="'$(TailwindOs)' != 'windows'"
           Command="chmod +x &quot;$(TailwindCliPath)&quot;" />
-    <Exec Condition="'$(TailwindOs)' == 'windows'"
-          Command="powershell -NoProfile -ExecutionPolicy Bypass -Command &quot;Invoke-WebRequest -Uri '$(TailwindCliUrl)' -OutFile '$(TailwindCliPath)'&quot;" />
   </Target>
 
   <Target Name="CompileTailwindCss" BeforeTargets="Build;Publish"
-          Inputs="$(TailwindInputCss)" Outputs="$(TailwindOutputCss)">
+          Inputs="$(TailwindInputCss);@(TailwindSource)" Outputs="$(TailwindOutputCss)">
     <Exec Command="&quot;$(TailwindCliPath)&quot; -i &quot;$(TailwindInputCss)&quot; -o &quot;$(TailwindOutputCss)&quot; --minify" />
   </Target>
 </Project>

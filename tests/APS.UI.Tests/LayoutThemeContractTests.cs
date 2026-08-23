@@ -5,7 +5,7 @@ public sealed class LayoutThemeContractTests
     [Fact]
     public void Main_layout_uses_icon_and_single_APS_brand()
     {
-        var razor = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/MainLayout.razor"));
+        var razor = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/DesktopMenuBar.razor"));
 
         Assert.Contains("app-icon.png", razor);
         Assert.Contains(">APS<", razor);
@@ -14,22 +14,35 @@ public sealed class LayoutThemeContractTests
     }
 
     [Fact]
-    public void Appearance_popover_exposes_all_modes_accents_and_reset()
+    public void Desktop_menu_exposes_supported_appearance_modes()
     {
-        var razor = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/AppearancePopover.razor"));
+        var menu = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/DesktopMenuBar.razor"));
 
-        foreach (var label in new[] { "System", "Light", "Dark", "Amber", "Violet", "Forest", "Brick", "Plum", "Olive", "Custom", "Reset" })
-            Assert.Contains(label, razor);
+        foreach (var label in new[] { "System appearance", "Light appearance", "Dark appearance" })
+            Assert.Contains(label, menu);
+        Assert.DoesNotContain("AppearancePopover", menu);
     }
 
     [Fact]
-    public void Active_navigation_uses_complete_surface_selection()
+    public void Desktop_menu_links_use_framework_navigation()
     {
-        var razor = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/NavItem.razor"));
+        var link = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/MenuLink.razor"));
 
-        Assert.Contains("bg-accent-soft", razor);
-        Assert.Contains("outline", razor);
-        Assert.DoesNotContain("border-l", razor);
+        Assert.Contains("<NavLink", link);
+        Assert.DoesNotContain("border-l", link);
+    }
+
+    [Fact]
+    public void Desktop_update_menu_tracks_background_state_and_can_apply_prepared_updates()
+    {
+        var menu = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/DesktopMenuBar.razor"));
+
+        Assert.Contains("Updates.Changed += OnUpdatesChanged", menu);
+        Assert.Contains("UpdatePhase.Available", menu);
+        Assert.Contains("UpdatePhase.Downloading", menu);
+        Assert.Contains("UpdatePhase.ReadyToRestart", menu);
+        Assert.Contains("RestartAndApply", menu);
+        Assert.Contains("Updates.Changed -= OnUpdatesChanged", menu);
     }
 
     [Fact]
@@ -42,5 +55,32 @@ public sealed class LayoutThemeContractTests
         Assert.Contains("DwmwaTextColor", chrome);
         Assert.Contains("GraphiteCaption", chrome);
         Assert.Contains("NativeWindowTheme.Apply", window);
+    }
+
+    [Fact]
+    public void Planning_workbench_is_the_default_planner_landing_screen()
+    {
+        var workbench = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+        var controlTower = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/Home.razor"));
+        var menu = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/DesktopMenuBar.razor"));
+
+        Assert.Contains("@page \"/\"", workbench);
+        Assert.Contains("@page \"/control-tower\"", controlTower);
+        Assert.Contains("Href=\"/\" Label=\"Planning Workbench\"", menu);
+        Assert.Contains("Label=\"Control overview\"", menu);
+    }
+
+    [Fact]
+    public void Tailwind_rebuild_tracks_Razor_sources_and_contains_workbench_geometry()
+    {
+        var project = File.ReadAllText(Repo.File("src/APS.UI/APS.UI.csproj"));
+        var input = File.ReadAllText(Repo.File("src/APS.UI/wwwroot/tailwind-input.css"));
+
+        Assert.Contains("TailwindSource", project);
+        Assert.Contains("@(TailwindSource)", project);
+        Assert.Contains("Inputs=\"$(TailwindInputCss);@(TailwindSource)\"", project);
+        Assert.Contains("Outputs=\"$(TailwindOutputCss)\"", project);
+        Assert.Contains(".aps-gantt-lane", input);
+        Assert.Contains("--aps-gantt-row-height", input);
     }
 }

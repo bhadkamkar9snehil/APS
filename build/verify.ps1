@@ -64,22 +64,28 @@ try {
         throw "APS solution build failed with exit code $buildExitCode."
     }
 
-    Invoke-Checked -Label 'Run planning tests' -Command {
-        dotnet test tests/APS.Planning.Tests/APS.Planning.Tests.csproj `
-            --configuration $Configuration `
-            --no-build `
-            --no-restore `
-            --logger "trx;LogFileName=planning.trx" `
-            --results-directory $results
+    [xml]$solutionXml = Get-Content -LiteralPath 'APS.slnx' -Raw
+    $testProjects = @(
+        $solutionXml.Solution.Project |
+            ForEach-Object { [string]$_.Path } |
+            Where-Object { $_ -match '^tests[\\/].+\.csproj$' }
+    )
+
+    if ($testProjects.Count -eq 0) {
+        throw 'APS.slnx contains no registered test projects.'
     }
 
-    Invoke-Checked -Label 'Run UI tests' -Command {
-        dotnet test tests/APS.UI.Tests/APS.UI.Tests.csproj `
-            --configuration $Configuration `
-            --no-build `
-            --no-restore `
-            --logger "trx;LogFileName=ui.trx" `
-            --results-directory $results
+    Write-Host "Registered test projects: $($testProjects.Count)"
+    foreach ($testProject in $testProjects) {
+        $testName = [System.IO.Path]::GetFileNameWithoutExtension($testProject)
+        Invoke-Checked -Label "Run $testName" -Command {
+            dotnet test $testProject `
+                --configuration $Configuration `
+                --no-build `
+                --no-restore `
+                --logger "trx;LogFileName=$testName.trx" `
+                --results-directory $results
+        }
     }
 
     Invoke-Checked -Label 'Publish Windows desktop smoke artifact' -Command {

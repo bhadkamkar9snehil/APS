@@ -1,0 +1,207 @@
+@inject IJSRuntime JS
+
+<section class="relative flex h-full min-h-0 flex-col" aria-label="Finite-capacity schedule">
+    <div class="flex shrink-0 items-center justify-between border-b border-border bg-surface-raised px-3 py-2 text-xs">
+        <div class="flex flex-wrap gap-x-4 gap-y-1">
+            <span><span class="text-muted">Visible </span><strong>@State.VisibleStartUtc.ToString("dd MMM HH:mm") → @State.VisibleEndUtc.ToString("dd MMM HH:mm")</strong></span>
+            <span><span class="text-muted">Mode </span><strong>@ModeLabel(State.Mode)</strong></span>
+            <span><strong>@Scene.VisibleOperationCount</strong> mounted · <strong>@Scene.ResourceCount</strong> of <strong>@Scene.TotalResourceCount</strong> resources shown</span>
+        </div>
+        <div class="hidden flex-wrap items-center gap-3 text-[10px] text-muted xl:flex" aria-label="Process legend">
+            @foreach (var entry in ProcessLegend)
+            {
+                <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full @entry.ColorClass"></span>@entry.Label</span>
+            }
+        </div>
+    </div>
+    @if (Scene.HiddenCriticalExceptionCount > 0)
+    {
+        <div class="shrink-0 border-b border-danger bg-danger-soft px-3 py-1 text-[10px] font-semibold text-danger" role="status">
+            @Scene.HiddenCriticalExceptionCount critical exception@(Scene.HiddenCriticalExceptionCount == 1 ? " is" : "s are") outside the filtered resource view.
+        </div>
+    }
+    @if (SelectedBindings.Count > 0)
+    {
+        <div class="shrink-0 border-b border-border bg-warning-soft px-3 py-1.5 text-[11px]" aria-label="Selected operation binding evidence">
+            <strong>Binding:</strong> @string.Join(" · ", SelectedBindings.Select(x => $"{x.Cause}: {x.Description}"))
+        </div>
+    }
+    <GanttSelectionSummary Scene="Scene" State="State" />
+    <div class="min-h-0 flex-1 overflow-auto" data-gantt-scroll style="--aps-gantt-grid-width:@($"{State.Viewport.GridWidthPx:0}px");--aps-gantt-row-height:@($"{State.GanttRowHeightPx}px")">
+        <div class="relative grid min-w-[1120px]" style="grid-template-columns:var(--aps-gantt-grid-width) minmax(760px, 1fr)">
+            <GanttResourceGrid Scene="Scene" State="State" RowHeightPx="State.GanttRowHeightPx" SelectedResourceIds="State.SelectedResourceIds" ResourceSelected="ResourceSelected" GroupToggled="ToggleResourceGroup" GridPreferencesChanged="GridPreferencesChanged" />
+            <div class="relative min-w-0 border-l border-border" data-gantt-timeline>
+                <GanttTimeScale Scene="Scene" State="State" ReferenceTimeUtc="Workbench.Plan.ReferenceTimeUtc" FrozenFenceEndUtc="FrozenFenceEndUtc" />
+                <GanttTimelineViewport Scene="Scene" State="State" Workbench="Workbench" FrozenFenceEndUtc="FrozenFenceEndUtc" KeyboardAnchorPlanningKey="@KeyboardAnchorPlanningKey" OperationSelected="OperationSelected" KeyboardNavigate="HandleKeyboardNavigation" ContextRequested="OpenContextMenu" />
+            </div>
+            <button type="button" class="aps-gantt-splitter" data-gantt-splitter aria-label="Resize resource grid" title="Drag to resize resource grid"></button>
+        </div>
+        @if (State.CapacityPanelOpen)
+        {
+            <div class="sticky bottom-0 z-30 min-w-[1120px]">
+                <GanttCapacityPanel Workbench="Workbench" State="State" Scene="Scene" SegmentFocused="CapacitySegmentFocused" />
+            </div>
+        }
+    </div>
+    @if (operationContext is not null)
+    {
+        <GanttOperationContextMenu PlanningKey="operationContext.PlanningKey"
+                                   ClientX="operationContext.ClientX"
+                                   ClientY="operationContext.ClientY"
+                                   FromKeyboard="operationContext.FromKeyboard"
+                                   CanCompare="@ContextHasBaseline"
+                                   CanMove="@ContextCanMove"
+                                   HasAlternateResource="@ContextHasAlternateResource"
+                                   CanTraceDemand="@(ContextDetail?.ProductionOrderNumbers.Count > 0)"
+                                   CanTraceCampaign="@(!string.IsNullOrWhiteSpace(ContextDetail?.CampaignNumber))"
+                                   Inspect="InspectContextOperation"
+                                   ShowChain="ShowContextChain"
+                                   Fit="FitContextOperation"
+                                   CompareBaseline="CompareContextBaseline"
+                                   Move="InspectContextOperation"
+                                   FindAlternate="InspectContextOperation"
+                                   TraceDemand="TraceContextDemand"
+                                   TraceCampaign="TraceContextCampaign"
+                                   CopyId="CopyContextBusinessId"
+                                   Close="CloseContextMenu" />
+    }
+    @if (State.OperationListOpen)
+    {
+        <GanttOperationList Scene="Scene" State="State" OperationSelected="OperationSelected" Close="() => State.ToggleOperationList()" />
+    }
+    @if (State.ShortcutPanelOpen)
+    {
+        <GanttShortcutPanel Close="() => State.SetShortcutPanel(false)" />
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public PlanningWorkbenchView Workbench { get; set; } = default!;
+    [Parameter, EditorRequired] public PlanningWorkbenchState State { get; set; } = default!;
+    [Parameter] public DateTime FrozenFenceEndUtc { get; set; }
+    [Parameter] public EventCallback<GanttOperationSelectionRequest> OperationSelected { get; set; }
+    [Parameter] public EventCallback<ScheduleResourceLaneView> ResourceSelected { get; set; }
+    [Parameter] public EventCallback<GanttCapacitySegmentModel> CapacitySegmentFocused { get; set; }
+    [Parameter] public EventCallback<IReadOnlyList<string>> CollapsedGroupsChanged { get; set; }
+    [Parameter] public EventCallback GridPreferencesChanged { get; set; }
+
+    private GanttScene Scene { get; set; } = default!;
+    private GanttContextMenuRequest? operationContext;
+    private string? pendingFocusPlanningKey;
+    private bool focusContextAfterRender;
+
+    protected override void OnParametersSet() => Scene = GanttModels.BuildScene(Workbench, State);
+    private IReadOnlyList<PlanningBindingEvidenceView> SelectedBindings => State.SelectedPlanningKey is null
+        ? Array.Empty<PlanningBindingEvidenceView>()
+        : Scene.BindingEvidence.Where(x => x.PlanningKey.Equals(State.SelectedPlanningKey, StringComparison.OrdinalIgnoreCase)).ToArray();
+    private ScheduledProcessOperationView? ContextOperation => operationContext is not null && Scene.OperationsByKey.TryGetValue(operationContext.PlanningKey, out var operation) ? operation : null;
+    private PlanningOperationWorkbenchDetail? ContextDetail => operationContext is not null && Scene.DetailsByKey.TryGetValue(operationContext.PlanningKey, out var detail) ? detail : null;
+    private bool ContextHasBaseline => operationContext is not null && Workbench.BaselinePlacements.Any(x => x.PlanningKey.Equals(operationContext.PlanningKey, StringComparison.OrdinalIgnoreCase));
+    private bool ContextHasAlternateResource => ContextDetail?.ResourceOptions.Select(x => x.ResourceId).Append(ContextOperation?.ResourceId ?? Guid.Empty).Where(x => x != Guid.Empty).Distinct().Count() > 1;
+    private bool ContextCanMove => ContextOperation is not null && State.CanEditSchedule && ContextDetail?.ExecutionStatus is not (OperationExecutionStatus.Running or OperationExecutionStatus.Completed);
+    private string KeyboardAnchorPlanningKey => Scene.Rows.SelectMany(x => x.Operations).Any(x => x.Operation.PlanningKey.Equals(State.SelectedPlanningKey ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+        ? State.SelectedPlanningKey!
+        : Scene.Rows.SelectMany(x => x.Operations).Select(x => x.Operation.PlanningKey).FirstOrDefault() ?? string.Empty;
+
+    private async Task HandleKeyboardNavigation(GanttKeyboardNavigationRequest request)
+    {
+        var targetKey = GanttKeyboardNavigator.Next(Scene, request.PlanningKey, request.Direction);
+        if (targetKey is null || !Scene.OperationsByKey.TryGetValue(targetKey, out var operation)) return;
+        pendingFocusPlanningKey = targetKey;
+        await OperationSelected.InvokeAsync(new GanttOperationSelectionRequest(operation, false, false));
+    }
+
+    private async Task OpenContextMenu(GanttContextMenuRequest request)
+    {
+        if (!Scene.OperationsByKey.TryGetValue(request.PlanningKey, out var operation)) return;
+        operationContext = request;
+        focusContextAfterRender = true;
+        if (!State.SelectedPlanningKeys.Contains(request.PlanningKey))
+            await OperationSelected.InvokeAsync(new GanttOperationSelectionRequest(operation, false, false));
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (pendingFocusPlanningKey is { } planningKey)
+        {
+            pendingFocusPlanningKey = null;
+            await JS.InvokeVoidAsync("apsPlanningWorkbench.focusOperation", planningKey);
+        }
+        if (focusContextAfterRender)
+        {
+            focusContextAfterRender = false;
+            await JS.InvokeVoidAsync("apsPlanningWorkbench.focusContextMenu");
+        }
+    }
+
+    private async Task InspectContextOperation()
+    {
+        if (operationContext is not null && Scene.OperationsByKey.TryGetValue(operationContext.PlanningKey, out var operation))
+            await OperationSelected.InvokeAsync(new GanttOperationSelectionRequest(operation, false, false));
+        CloseContextMenu();
+    }
+
+    private void ShowContextChain()
+    {
+        if (!State.ShowDependencies) State.ToggleDependencies();
+        CloseContextMenu();
+    }
+
+    private void FitContextOperation()
+    {
+        if (operationContext is not null && Scene.OperationsByKey.TryGetValue(operationContext.PlanningKey, out var operation))
+        {
+            var duration = operation.EndUtc - operation.StartUtc;
+            var padding = duration > TimeSpan.Zero ? duration : TimeSpan.FromHours(1);
+            State.FitRange(operation.StartUtc - padding, operation.EndUtc + padding);
+        }
+        CloseContextMenu();
+    }
+
+    private void CompareContextBaseline()
+    {
+        if (!State.ShowBaseline) State.ToggleBaseline();
+        State.SetBaselineMode(GanttBaselineMode.ChangedOnly);
+        CloseContextMenu();
+    }
+
+    private void TraceContextDemand()
+    {
+        var order = ContextDetail?.ProductionOrderNumbers.FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(order)) State.SetSearch(order);
+        CloseContextMenu();
+    }
+
+    private void TraceContextCampaign()
+    {
+        if (!string.IsNullOrWhiteSpace(ContextDetail?.CampaignNumber)) State.SetSearch(ContextDetail.CampaignNumber);
+        CloseContextMenu();
+    }
+
+    private async Task CopyContextBusinessId()
+    {
+        if (operationContext is not null) await JS.InvokeVoidAsync("apsPlanningWorkbench.copyText", operationContext.PlanningKey);
+        CloseContextMenu();
+    }
+
+    private void CloseContextMenu() => operationContext = null;
+    private async Task ToggleResourceGroup(GanttResourceGroupModel group)
+    {
+        State.ToggleResourceGroup(group.Key);
+        await CollapsedGroupsChanged.InvokeAsync(State.CollapsedResourceGroups.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray());
+    }
+    private static string ModeLabel(PlanningWorkbenchMode value) => value switch
+    {
+        PlanningWorkbenchMode.Campaigns => "Campaigns",
+        PlanningWorkbenchMode.Execution => "Execution",
+        PlanningWorkbenchMode.Recovery => "Recovery",
+        _ => "Plan"
+    };
+    private static readonly (string Label, string ColorClass)[] ProcessLegend =
+    [
+        ("EAF", "bg-process-eaf"), ("LRF", "bg-process-lrf"), ("VD", "bg-process-vd"),
+        ("Cast", "bg-process-casting"), ("Reheat", "bg-process-reheat"), ("Hot roll", "bg-process-hot-roll"),
+        ("Cold roll", "bg-process-cold-roll"), ("Finish", "bg-process-finishing")
+    ];
+}

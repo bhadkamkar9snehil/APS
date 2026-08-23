@@ -9,11 +9,14 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Velopack;
+using Velopack.Sources;
 
 namespace APS.DesktopHost;
 
 public partial class App : System.Windows.Application
 {
+    private const string UpdateRepositoryUrl = "https://github.com/bhadkamkar9snehil/APS";
     private readonly IHost _host;
     private readonly LocalApplicationPaths _paths;
     private readonly ILogger<App> _log;
@@ -29,14 +32,14 @@ public partial class App : System.Windows.Application
             {
                 services.AddWpfBlazorWebView();
                 services.AddApsInfrastructure(context.Configuration);
-                services.AddSingleton<IUpdateBackend>(_ => new VelopackUpdateBackend(UpdateSettings.RepositoryUrl));
                 services.AddSingleton<VelopackUpdateService>(sp => new VelopackUpdateService(
-                    sp.GetRequiredService<IUpdateBackend>(),
+                    new UpdateManager(new GithubSource(UpdateRepositoryUrl, accessToken: null, prerelease: false)),
                     () => Dispatcher.BeginInvoke(new Action(() => Shutdown())),
                     sp.GetRequiredService<ILogger<VelopackUpdateService>>()));
                 services.AddSingleton<IUpdateService>(sp => sp.GetRequiredService<VelopackUpdateService>());
                 services.AddHostedService<UpdateCheckWorker>();
                 services.AddSingleton<PlannerWorkspaceState>();
+                services.AddScoped<PlannerCockpitState>();
                 services.AddScoped<ThemeService>();
                 services.AddSingleton<MainWindow>();
             })

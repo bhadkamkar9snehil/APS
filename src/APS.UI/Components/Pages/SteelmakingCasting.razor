@@ -106,12 +106,12 @@ else
                             @for (var i = 0; i < orderedOps.Length; i++)
                             {
                                 var operation = orderedOps[i];
-                                <button type="button" class="rounded border border-border px-3 py-2 text-left text-xs hover:bg-surface-hover" @onclick="() => SelectOperation(operation)">
+                                <div class="rounded border border-border px-3 py-2 text-left text-xs">
                                     <div class="text-muted">@operation.ProcessOperationType</div>
                                     <strong>@operation.ResourceCode</strong>
                                     <div class="text-muted">@operation.StartUtc.ToString("dd MMM HH:mm") &rarr; @operation.EndUtc.ToString("HH:mm")</div>
                                     <div class="text-muted">@Duration(operation)</div>
-                                </button>
+                                </div>
                                 @if (i < orderedOps.Length - 1)
                                 {
                                     <div class="flex flex-col items-center text-xs text-muted">
@@ -135,12 +135,12 @@ else
                         <div class="grid grid-cols-4 gap-2">
                             @foreach (var strandGroup in selectedHeat.StrandOutputs.GroupBy(x => x.StrandNumber).OrderBy(x => x.Key))
                             {
-                                <button type="button" class="rounded border border-border p-2 text-left text-xs hover:bg-surface-hover" @onclick="() => SelectStrand(strandGroup.First())">
+                                <div class="rounded border border-border p-2 text-left text-xs">
                                     <div class="text-muted">STRAND <strong class="text-primary">@strandGroup.Key</strong></div>
                                     <div class="mt-1 text-sm font-semibold">@strandGroup.Sum(x => x.QuantityMt).ToString("0.##") MT</div>
                                     <div class="text-muted">@strandGroup.First().CrossSectionCode</div>
                                     <div class="text-muted">available @Available(strandGroup.Max(x => x.AvailableOnUtc))</div>
-                                </button>
+                                </div>
                             }
                         </div>
                     }
@@ -193,7 +193,6 @@ else
         heatActualQuantity = null;
         heatActualComment = null;
         heatActualError = null;
-        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Heat, heat.CampaignHeatId, $"{heat.CampaignNumber}/H{heat.HeatSequenceNumber:00}"));
     }
 
     private async Task SaveHeatActualAsync(string planningKey)
@@ -221,12 +220,6 @@ else
             StateHasChanged();
         }
     }
-
-    private void SelectOperation(ScheduledProcessOperationView operation) =>
-        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.Operation, operation.OperationSnapshotId, operation.PlanningKey));
-
-    private void SelectStrand(StrandOutputView strand) =>
-        WorkspaceState.Select(new PlannerEntityRef(PlannerEntityType.MaterialSupply, strand.MaterialUnitSnapshotId, strand.PlanningKey));
 
     private static ScheduledProcessOperationView? CastOperation(HeatProcessView heat) =>
         heat.Operations.FirstOrDefault(x => x.ProcessOperationType == ProcessOperationType.Ccm);

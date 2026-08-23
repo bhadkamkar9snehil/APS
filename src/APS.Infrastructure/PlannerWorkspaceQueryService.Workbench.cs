@@ -1,5 +1,6 @@
 using APS.Application;
 using APS.Domain;
+using APS.Planning;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 
@@ -7,6 +8,8 @@ namespace APS.Infrastructure;
 
 public sealed partial class PlannerWorkspaceQueryService
 {
+    private static readonly JsonSerializerOptions PlanningSnapshotJsonOptions = new(JsonSerializerDefaults.Web);
+
     public async Task<PlanningWorkbenchView?> GetPlanningWorkbenchAsync(
         Guid? planVersionId = null,
         Guid? baselinePlanVersionId = null,
@@ -22,8 +25,10 @@ public sealed partial class PlannerWorkspaceQueryService
         var schedule = await GetFiniteScheduleAsync(plan.PlanVersionId, cancellationToken);
         var material = await GetMaterialFlowAsync(plan.PlanVersionId, cancellationToken);
         if (demand is null || campaigns is null || schedule is null || material is null) return null;
+        var assumptions = await GetPlanningAssumptionsAsync(plan.PlanVersionId, cancellationToken);
 
         PlanContextView? baseline = null;
+        FiniteScheduleWorkspaceView? baselineSchedule = null;
         PlanComparisonWorkspaceView? comparison = null;
         var effectiveBaselineId = baselinePlanVersionId ?? plan.ParentPlanVersionId;
         if (effectiveBaselineId.HasValue && effectiveBaselineId.Value != plan.PlanVersionId)
@@ -31,6 +36,7 @@ public sealed partial class PlannerWorkspaceQueryService
             baseline = await GetPlanContextAsync(effectiveBaselineId.Value, cancellationToken);
             if (baseline is not null)
             {
+                baselineSchedule = await GetFiniteScheduleAsync(effectiveBaselineId.Value, cancellationToken);
                 comparison = await GetPlanComparisonAsync(
                     effectiveBaselineId.Value,
                     plan.PlanVersionId,
@@ -38,8 +44,14 @@ public sealed partial class PlannerWorkspaceQueryService
             }
         }
 
-        var exceptions = BuildExceptions(plan, demand, schedule, material);
+        var exceptions = BuildExceptions(plan, demand, schedule, material, assumptions);
         var operationDetails = await BuildOperationDetailsAsync(plan.PlanVersionId, campaigns, cancellationToken);
+        var dependencyLinks = BuildDependencyLinks(schedule, operationDetails);
+        var calendarIntervals = await BuildCalendarIntervalsAsync(plan, schedule, assumptions, cancellationToken);
+        var baselinePlacements = baselineSchedule is null
+            ? Array.Empty<PlanningBaselinePlacementView>()
+            : BuildBaselinePlacements(baselineSchedule);
+        var capacityBuckets = BuildCapacityBuckets(plan, schedule, calendarIntervals, assumptions);
         var lateDemand = demand.Rows.Count(row => row.RequiredDate < schedule.ScheduleEndUtc);
         var queue = new PlanningQueueView(
             demand.Rows.Count,
@@ -62,7 +74,344 @@ public sealed partial class PlannerWorkspaceQueryService
             comparison,
             queue,
             exceptions,
-            operationDetails);
+            operationDetails,
+            dependencyLinks,
+            calendarIntervals,
+            baselinePlacements,
+            capacityBuckets);
+    }
+
+    private async Task<PlanningAssumptions?> GetPlanningAssumptionsAsync(
+        Guid planVersionId,
+        CancellationToken cancellationToken)
+    {
+        var json = await db.PlanVersionStates.AsNoTracking()
+            .Where(x => x.PlanVersionId == planVersionId)
+            .Select(x => x.PlanningAssumptionsJson)
+            .SingleOrDefaultAsync(cancellationToken);
+        return string.IsNullOrWhiteSpace(json)
+            ? null
+            : JsonSerializer.Deserialize<PlanningAssumptions>(json, PlanningSnapshotJsonOptions);
+    }
+
+    private static IReadOnlyCollection<PlanningDependencyLinkView> BuildDependencyLinks(
+        FiniteScheduleWorkspaceView schedule,
+        IReadOnlyCollection<PlanningOperationWorkbenchDetail> details)
+    {
+        var operations = schedule.ResourceLanes
+            .SelectMany(x => x.Operations)
+            .ToDictionary(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase);
+        var result = new List<PlanningDependencyLinkView>();
+        foreach (var successorDetail in details)
+        {
+            if (!operations.TryGetValue(successorDetail.PlanningKey, out var successor)) continue;
+            foreach (var predecessorKey in successorDetail.PredecessorPlanningKeys.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (!operations.TryGetValue(predecessorKey, out var predecessor)) continue;
+                result.Add(new PlanningDependencyLinkView(
+                    predecessor.OperationSnapshotId,
+                    predecessor.PlanningKey,
+                    successor.OperationSnapshotId,
+                    successor.PlanningKey,
+                    PlanningDependencyType.FinishStart,
+                    PlanningDependencyCategory.Routing,
+                    null,
+                    (int)Math.Round((successor.StartUtc - predecessor.EndUtc).TotalMinutes)));
+            }
+        }
+
+        return result
+            .OrderBy(x => x.SuccessorPlanningKey, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.PredecessorPlanningKey, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private async Task<IReadOnlyCollection<PlanningResourceCalendarIntervalView>> BuildCalendarIntervalsAsync(
+        PlanContextView plan,
+        FiniteScheduleWorkspaceView schedule,
+        PlanningAssumptions? assumptions,
+        CancellationToken cancellationToken)
+    {
+        var resourceIds = schedule.ResourceLanes.Select(x => x.ResourceId).ToHashSet();
+        if (resourceIds.Count == 0) return Array.Empty<PlanningResourceCalendarIntervalView>();
+
+        // New plan versions carry the effective calendar that was supplied to the solver. An empty
+        // snapshot is meaningful (the run had no calendar overrides), so only null means the plan
+        // predates calendar snapshotting and needs the explicit compatibility fallback below.
+        if (assumptions?.ResourceCalendars is { } snapshotCalendars)
+        {
+            return snapshotCalendars
+                .Where(x => resourceIds.Contains(x.ResourceId) &&
+                            x.EndUtc > plan.HorizonStartUtc &&
+                            x.StartUtc < plan.HorizonEndUtc)
+                .OrderBy(x => x.ResourceId)
+                .ThenBy(x => x.StartUtc)
+                .Select(x => new PlanningResourceCalendarIntervalView(
+                    x.ResourceId,
+                    x.StartUtc,
+                    x.EndUtc,
+                    x.IsAvailable,
+                    x.CapacityFactorPct,
+                    x.ReasonCode,
+                    "PlanAssumptionSnapshot"))
+                .ToArray();
+        }
+
+        return await db.ResourceCalendars.AsNoTracking()
+            .Where(x => resourceIds.Contains(x.ResourceId) &&
+                        x.End > plan.HorizonStartUtc &&
+                        x.Start < plan.HorizonEndUtc)
+            .OrderBy(x => x.ResourceId)
+            .ThenBy(x => x.Start)
+            .Select(x => new PlanningResourceCalendarIntervalView(
+                x.ResourceId,
+                x.Start,
+                x.End,
+                x.IsAvailable,
+                x.CapacityFactorPct,
+                x.ReasonCode,
+                "LiveCompatibilityFallback"))
+            .ToArrayAsync(cancellationToken);
+    }
+
+    private static IReadOnlyCollection<PlanningBaselinePlacementView> BuildBaselinePlacements(
+        FiniteScheduleWorkspaceView baselineSchedule) =>
+        baselineSchedule.ResourceLanes
+            .SelectMany(lane => lane.Operations.Select(operation => new PlanningBaselinePlacementView(
+                baselineSchedule.Plan.PlanVersionId,
+                operation.OperationSnapshotId,
+                operation.PlanningKey,
+                lane.ResourceId,
+                lane.ResourceCode,
+                lane.ResourceName,
+                lane.ProcessUnitType,
+                lane.OperatingState,
+                lane.SchedulingMode,
+                operation.StartUtc,
+                operation.EndUtc,
+                operation.ProcessOperationType,
+                operation.GradeCode,
+                operation.CrossSectionCode,
+                lane.PlantId,
+                lane.PlantCode,
+                lane.PlantName,
+                lane.AreaId,
+                lane.AreaCode,
+                lane.AreaName,
+                lane.ProcessStageId,
+                lane.ProcessStageCode,
+                lane.ProcessStageName,
+                lane.DisplayOrder)))
+            .OrderBy(x => x.StartUtc)
+            .ThenBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static IReadOnlyCollection<PlanningCapacityBucketView> BuildCapacityBuckets(
+        PlanContextView plan,
+        FiniteScheduleWorkspaceView schedule,
+        IReadOnlyCollection<PlanningResourceCalendarIntervalView> calendars,
+        PlanningAssumptions? assumptions)
+    {
+        if (schedule.ResourceLanes.Count == 0) return Array.Empty<PlanningCapacityBucketView>();
+        var resourceAssumptions = assumptions?.ResourceScheduling
+            .GroupBy(x => x.ResourceId)
+            .ToDictionary(x => x.Key, x => x.Last())
+            ?? new Dictionary<Guid, ResourceSchedulingAssumption>();
+        var calendarsByResource = calendars
+            .GroupBy(x => x.ResourceId)
+            .ToDictionary(x => x.Key, x => x.ToArray());
+        var bucketStart = new DateTime(
+            plan.HorizonStartUtc.Year,
+            plan.HorizonStartUtc.Month,
+            plan.HorizonStartUtc.Day,
+            plan.HorizonStartUtc.Hour,
+            0,
+            0,
+            DateTimeKind.Utc);
+        var result = new List<PlanningCapacityBucketView>();
+
+        foreach (var lane in schedule.ResourceLanes)
+        {
+            resourceAssumptions.TryGetValue(lane.ResourceId, out var resourceAssumption);
+            calendarsByResource.TryGetValue(lane.ResourceId, out var laneCalendars);
+            var schedulingMode = resourceAssumption?.SchedulingMode ?? lane.SchedulingMode;
+            var capacityBasis = resourceAssumption?.CapacityBasis ?? ResourceCapacityBasis.NotApplicable;
+            var nominalConcurrentCapacity = resourceAssumption?.NominalConcurrentCapacity ?? lane.NominalConcurrentCapacity;
+            var operatingState = resourceAssumption?.OperatingState ?? lane.OperatingState;
+            var resourceFactorPct = Math.Clamp(resourceAssumption?.CapacityFactorPct ?? 100m, 0m, 100m);
+
+            for (var start = bucketStart; start < plan.HorizonEndUtc; start = start.AddHours(1))
+            {
+                var end = start.AddHours(1) < plan.HorizonEndUtc ? start.AddHours(1) : plan.HorizonEndUtc;
+                if (end <= plan.HorizonStartUtc) continue;
+                var effectiveStart = start < plan.HorizonStartUtc ? plan.HorizonStartUtc : start;
+                var capacityWindow = CapacityWindow(
+                    effectiveStart,
+                    end,
+                    operatingState,
+                    schedulingMode,
+                    nominalConcurrentCapacity,
+                    resourceFactorPct,
+                    laneCalendars ?? Array.Empty<PlanningResourceCalendarIntervalView>());
+                var unavailableMinutes = capacityWindow.UnavailableMinutes;
+                var availableClockMinutes = capacityWindow.AvailableMinutes;
+                var capacityMultiplier = schedulingMode == ResourceSchedulingMode.Cumulative
+                    ? (double)Math.Max(0m, nominalConcurrentCapacity ?? 0m)
+                    : 1d;
+                var availableMinutes = availableClockMinutes * capacityMultiplier;
+                var processingMinutes = schedulingMode == ResourceSchedulingMode.Cumulative
+                    ? lane.Operations.Sum(operation =>
+                        OverlapMinutes(operation.StartUtc, operation.EndUtc, effectiveStart, end) *
+                        (double)CapacityDemand(capacityBasis, operation.QuantityMt))
+                    : MergedOverlapMinutes(
+                        lane.Operations.Select(x => (x.StartUtc, x.EndUtc)),
+                        effectiveStart,
+                        end);
+                var occupancyRatio = availableMinutes > 0d
+                    ? (decimal)(processingMinutes / availableMinutes)
+                    : processingMinutes > 0d ? 1m : 0m;
+
+                result.Add(new PlanningCapacityBucketView(
+                    lane.ResourceId,
+                    effectiveStart,
+                    end,
+                    Math.Round(availableMinutes, 3),
+                    Math.Round(processingMinutes, 3),
+                    Math.Round(unavailableMinutes, 3),
+                    decimal.Round(occupancyRatio, 4),
+                    CapacityBasis(capacityBasis),
+                    schedulingMode));
+            }
+        }
+
+        return result;
+    }
+
+    private static (double AvailableMinutes, double UnavailableMinutes) CapacityWindow(
+        DateTime rangeStart,
+        DateTime rangeEnd,
+        ResourceOperatingState operatingState,
+        ResourceSchedulingMode schedulingMode,
+        decimal? nominalConcurrentCapacity,
+        decimal resourceFactorPct,
+        IReadOnlyCollection<PlanningResourceCalendarIntervalView> calendars)
+    {
+        var wallClockMinutes = (rangeEnd - rangeStart).TotalMinutes;
+        if (!IsSchedulableOperatingState(operatingState)) return (0d, wallClockMinutes);
+
+        var overlapping = calendars
+            .Where(x => x.EndUtc > rangeStart && x.StartUtc < rangeEnd)
+            .ToArray();
+        var boundaries = overlapping
+            .SelectMany(x => new[]
+            {
+                x.StartUtc > rangeStart ? x.StartUtc : rangeStart,
+                x.EndUtc < rangeEnd ? x.EndUtc : rangeEnd
+            })
+            .Append(rangeStart)
+            .Append(rangeEnd)
+            .Distinct()
+            .OrderBy(x => x)
+            .ToArray();
+        var available = 0d;
+        var unavailable = 0d;
+        for (var index = 0; index < boundaries.Length - 1; index++)
+        {
+            var segmentStart = boundaries[index];
+            var segmentEnd = boundaries[index + 1];
+            if (segmentEnd <= segmentStart) continue;
+            var segmentMinutes = (segmentEnd - segmentStart).TotalMinutes;
+            var active = overlapping
+                .Where(x => x.StartUtc < segmentEnd && x.EndUtc > segmentStart)
+                .ToArray();
+
+            if (schedulingMode != ResourceSchedulingMode.Cumulative)
+            {
+                if (active.Any(x => !x.IsAvailable)) unavailable += segmentMinutes;
+                else available += segmentMinutes;
+                continue;
+            }
+
+            var nominal = Math.Max(0m, nominalConcurrentCapacity ?? 0m);
+            if (nominal <= 0m) continue;
+            var fullCapacity = ResourceCapacityModel.EffectiveCapacityUnits(nominal, resourceFactorPct);
+            if (fullCapacity <= 0) continue;
+
+            var blockedCapacity = 0L;
+            var hardOutage = false;
+            foreach (var calendar in active)
+            {
+                var remainingCapacity = calendar.IsAvailable
+                    ? ResourceCapacityModel.EffectiveCapacityUnits(
+                        nominal,
+                        resourceFactorPct * (calendar.CapacityFactorPct ?? 100m) / 100m)
+                    : 0L;
+                blockedCapacity += fullCapacity - Math.Clamp(remainingCapacity, 0L, fullCapacity);
+                hardOutage |= !calendar.IsAvailable;
+            }
+
+            var remaining = Math.Max(0L, fullCapacity - blockedCapacity);
+            available += segmentMinutes * remaining /
+                         ((double)nominal * ResourceCapacityModel.CapacityScale);
+            if (hardOutage) unavailable += segmentMinutes;
+        }
+
+        return (available, unavailable);
+    }
+
+    private static bool IsSchedulableOperatingState(ResourceOperatingState state) => state is
+        ResourceOperatingState.Available or
+        ResourceOperatingState.CapacityDerated or
+        ResourceOperatingState.QualityRestricted;
+
+    private static decimal CapacityDemand(ResourceCapacityBasis capacityBasis, decimal quantityMt) =>
+        ResourceCapacityModel.DemandUnits(capacityBasis, quantityMt, explicitDemand: null) /
+        (decimal)ResourceCapacityModel.CapacityScale;
+
+    private static PlanningCapacityBasis CapacityBasis(ResourceCapacityBasis capacityBasis) => capacityBasis switch
+    {
+        ResourceCapacityBasis.Slots => PlanningCapacityBasis.Slots,
+        ResourceCapacityBasis.MassEquivalentMt => PlanningCapacityBasis.MassEquivalentMt,
+        ResourceCapacityBasis.Positions => PlanningCapacityBasis.Positions,
+        _ => PlanningCapacityBasis.MachineTime
+    };
+
+    private static double OverlapMinutes(DateTime start, DateTime end, DateTime rangeStart, DateTime rangeEnd)
+    {
+        var overlapStart = start > rangeStart ? start : rangeStart;
+        var overlapEnd = end < rangeEnd ? end : rangeEnd;
+        return overlapEnd > overlapStart ? (overlapEnd - overlapStart).TotalMinutes : 0d;
+    }
+
+    private static double MergedOverlapMinutes(
+        IEnumerable<(DateTime Start, DateTime End)> spans,
+        DateTime rangeStart,
+        DateTime rangeEnd)
+    {
+        var clipped = spans
+            .Select(x => (Start: x.Start > rangeStart ? x.Start : rangeStart,
+                          End: x.End < rangeEnd ? x.End : rangeEnd))
+            .Where(x => x.End > x.Start)
+            .OrderBy(x => x.Start)
+            .ToArray();
+        if (clipped.Length == 0) return 0d;
+
+        var total = TimeSpan.Zero;
+        var currentStart = clipped[0].Start;
+        var currentEnd = clipped[0].End;
+        foreach (var span in clipped.Skip(1))
+        {
+            if (span.Start <= currentEnd)
+            {
+                if (span.End > currentEnd) currentEnd = span.End;
+                continue;
+            }
+            total += currentEnd - currentStart;
+            currentStart = span.Start;
+            currentEnd = span.End;
+        }
+        total += currentEnd - currentStart;
+        return total.TotalMinutes;
     }
 
     private async Task<IReadOnlyCollection<PlanningOperationWorkbenchDetail>> BuildOperationDetailsAsync(
@@ -117,11 +466,18 @@ public sealed partial class PlannerWorkspaceQueryService
                 operation.SourceEntityId,
                 operation.AssignmentCommitmentState,
                 operation.ExecutionStatus,
+                operation.ActualStartUtc,
+                operation.ActualEndUtc,
+                operation.ActualQuantityMt,
                 DeserializeKeys(operation.PredecessorPlanningKeysJson),
                 resourceOptions ?? Array.Empty<PlanningOperationResourceOptionView>(),
                 heat?.Campaign.CampaignNumber,
                 heat?.Heat.SequenceNumber,
-                heat?.Campaign.Allocations
+                // Heat-scoped, not campaign-scoped (#UI-depth): a campaign pools every order sharing its
+                // grade/section/route across all its heats, so attributing every heat's operations to the
+                // whole campaign's order list makes distinct heats indistinguishable in the workbench -
+                // every block picks the same alphabetically-first order regardless of which heat it is.
+                heat?.Heat.Allocations
                     .Select(x => x.ProductionOrderNumber)
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
@@ -146,7 +502,8 @@ public sealed partial class PlannerWorkspaceQueryService
         PlanContextView plan,
         DemandSupplyView demand,
         FiniteScheduleWorkspaceView schedule,
-        MaterialFlowWorkspaceView material)
+        MaterialFlowWorkspaceView material,
+        PlanningAssumptions? assumptions)
     {
         var result = new List<PlanningWorkbenchException>();
 
@@ -183,13 +540,21 @@ public sealed partial class PlannerWorkspaceQueryService
                 new PlannerEntityRef(PlannerEntityType.SalesOrder, salesOrder.SalesOrderId, $"{salesOrder.SalesOrderNumber}/{salesOrder.SalesOrderItemNumber}")));
         }
 
-        foreach (var lane in schedule.ResourceLanes.Where(x => x.OperatingState != ResourceOperatingState.Available))
+        var resourceAssumptions = assumptions?.ResourceScheduling
+            .GroupBy(x => x.ResourceId)
+            .ToDictionary(x => x.Key, x => x.Last())
+            ?? new Dictionary<Guid, ResourceSchedulingAssumption>();
+        foreach (var lane in schedule.ResourceLanes)
         {
+            resourceAssumptions.TryGetValue(lane.ResourceId, out var resourceAssumption);
+            var operatingState = resourceAssumption?.OperatingState ?? lane.OperatingState;
+            if (IsSchedulableOperatingState(operatingState)) continue;
+
             result.Add(new PlanningWorkbenchException(
-                $"RESOURCE-{lane.ResourceCode}-{lane.OperatingState}",
+                $"RESOURCE-{lane.ResourceCode}-{operatingState}",
                 PlanningWorkbenchExceptionKind.ResourceUnavailable,
                 PlanningWorkbenchExceptionSeverity.Critical,
-                $"{lane.ResourceCode} is {lane.OperatingState}",
+                $"{lane.ResourceCode} is {operatingState}",
                 $"{lane.Operations.Count} scheduled operation(s) use this resource.",
                 new PlannerEntityRef(PlannerEntityType.Resource, lane.ResourceId, lane.ResourceCode)));
         }

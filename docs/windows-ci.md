@@ -23,13 +23,14 @@ A single self-hosted agent naturally serializes EOS and APS Windows jobs, preven
 
 `build/verify.ps1` is the authoritative non-release verification path. It performs:
 
-1. `dotnet restore APS.slnx`
-2. full Release build of `APS.slnx`
-3. `APS.Planning.Tests`
-4. `APS.UI.Tests`
-5. self-contained `win-x64` publish smoke test of `APS.DesktopHost`
+1. `dotnet restore APS.slnx`;
+2. a full Release build of `APS.slnx`;
+3. every project under `tests/` that is registered in `APS.slnx` (discovered from the solution file rather than hard-coded in CI);
+4. a self-contained `win-x64` publish smoke test of `APS.DesktopHost`.
 
 The pipeline publishes TRX test results, the desktop publish output, the compiler/build log, .NET SDK information and Git context.
+
+This solution-driven test discovery is intentional: adding a test project without registering it in `APS.slnx` is an architecture error, while registering it automatically brings it into Windows CI.
 
 ## SDK
 
@@ -37,13 +38,13 @@ The pipeline publishes TRX test results, the desktop publish output, the compile
 
 ## Release packaging is separate
 
-`build/release.ps1` remains an explicit release action. Continuous CI does not run `vpk pack` and therefore cannot accidentally create a distributable release from an arbitrary feature branch.
+`build/release.ps1` remains an explicit release action. Continuous CI does not run `vpk pack` and therefore cannot accidentally create a distributable release from an arbitrary feature branch. The release script runs `dotnet test APS.slnx`, so its test gate matches the complete solution rather than a hand-maintained subset.
 
 ## Building an arbitrary branch manually
 
 The EOS Azure DevOps project also owns a manual pipeline named **Windows Build Lab**. Select:
 
-- repository: `APS`
-- ref: any branch, tag, full Git ref, or commit SHA
+- repository: `APS`;
+- ref: any branch, tag, full Git ref, or commit SHA.
 
-The Build Lab clones that exact ref into a disposable temp workspace on the same Windows VM and runs the same build/test/publish-smoke contract. This is the fallback for long-lived branches that predate `azure-pipelines.yml` or for one-off commit verification.
+The Build Lab clones that exact ref into a disposable temp workspace on the same Windows VM. Current APS refs reuse `build/verify.ps1`; legacy refs that predate the verifier use the Build Lab fallback sequence. Refs with `global.json` use their own SDK pin, while older refs fall back to the known-good .NET `10.0.203` SDK.

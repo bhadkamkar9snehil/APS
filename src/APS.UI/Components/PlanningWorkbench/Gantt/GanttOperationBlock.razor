@@ -1,0 +1,148 @@
+<button type="button"
+        class="aps-operation aps-op-card absolute z-10 overflow-hidden rounded-control border px-1.5 py-1 text-left text-[10px] leading-tight @VerticalClass @ProcessClass(Model.Operation.ProcessOperationType) @ExecutionClass(Model.ExecutionStatus) @BaselineClass(Model.BaselineChange) @(CapacityFocused ? "aps-operation--capacity-focus" : "") @(Selected ? "border-accent ring-2 ring-accent" : "border-transparent hover:border-primary") @(IsStagedSource ? "opacity-55" : "")"
+        style="left:calc(@Model.LeftPercent% + 1px);width:calc(@Model.WidthPercent% - 2px)"
+        data-planning-key="@Model.Operation.PlanningKey"
+        data-source-resource-id="@Model.Operation.ResourceId"
+        data-operation-start="@Model.Operation.StartUtc.ToString("O")"
+        data-operation-end="@Model.Operation.EndUtc.ToString("O")"
+        data-duration-ms="@((long)(Model.Operation.EndUtc - Model.Operation.StartUtc).TotalMilliseconds)"
+        data-eligible-resources="@EligibleResourceIds"
+        data-drag-protected="@((!CanEdit || Model.ExecutionStatus is OperationExecutionStatus.Running or OperationExecutionStatus.Completed).ToString().ToLowerInvariant())"
+        data-frozen="@(IsFrozen.ToString().ToLowerInvariant())"
+        data-execution-status="@Model.ExecutionStatus"
+        data-snap-mode="@State.Viewport.SnapMode"
+        data-baseline-change="@Model.BaselineChange"
+        data-selected="@(Selected.ToString().ToLowerInvariant())"
+        tabindex="@TabIndex"
+        aria-label="@Model.AccessibleName"
+        title="@Model.AccessibleName"
+        @onkeydown="HandleKeyDown"
+        @oncontextmenu="HandleContextMenu"
+        @oncontextmenu:preventDefault
+        @onclick="HandleSelection">
+    @if (Model.LogicalWidthPx >= 68)
+    {
+        <span class="flex items-start justify-between gap-1">
+            <strong class="aps-truncate-start min-w-0 text-inverted">@Model.Label</strong>
+            <span class="flex shrink-0 items-center gap-0.5">
+                @if (Model.ExecutionStatus == OperationExecutionStatus.Running) { <span class="aps-pulse-dot h-1.5 w-1.5 rounded-full bg-inverted" title="Running"></span> }
+                else if (Model.ExecutionStatus == OperationExecutionStatus.Completed) { <span class="aps-op-card__badge text-inverted" title="Completed">&#10003;</span> }
+                @if (Model.IsSingleSourced) { <span class="aps-op-card__badge text-inverted" title="Only one eligible resource">!</span> }
+                else if (Model.EligibleResourceCount > 1) { <span class="aps-op-card__badge text-inverted" title="@($"{Model.EligibleResourceCount} eligible resources")">A@Model.EligibleResourceCount</span> }
+                @if (Model.CommitmentState is OperationAssignmentCommitmentState.Firm or OperationAssignmentCommitmentState.Committed)
+                {
+                    <span class="aps-op-card__badge text-inverted" title="@($"Assignment {Model.CommitmentState}")">@(Model.CommitmentState == OperationAssignmentCommitmentState.Firm ? "F" : "C")</span>
+                }
+                @if (Model.BaselineChange != GanttBaselineChange.Unchanged) { <span class="aps-op-card__badge text-inverted" title="@BaselineTitle(Model.BaselineChange)">@BaselineGlyph(Model.BaselineChange)</span> }
+                @if (CapacityFocused) { <span class="aps-op-card__badge text-inverted" title="Contributes to selected resource-load bucket">L</span> }
+            </span>
+        </span>
+    }
+    else if (Model.LogicalWidthPx >= 28)
+    {
+        <strong class="truncate text-center text-[9px] text-inverted">@Model.CompactLabel</strong>
+    }
+    @if (Model.LogicalWidthPx >= 82)
+    {
+        <span class="flex items-baseline justify-between gap-1 text-inverted/85">
+            <span class="min-w-0 truncate">@Model.Operation.StartUtc.ToString("HH:mm")–@Model.Operation.EndUtc.ToString("HH:mm")</span>
+            <span class="shrink-0 font-semibold">@Model.Operation.QuantityMt.ToString("0.#") MT</span>
+        </span>
+    }
+    @if (Model.LogicalWidthPx >= 145)
+    {
+        <span class="flex items-baseline justify-between gap-1 text-inverted/70"><span class="truncate">@Model.Operation.GradeCode</span><span>@Model.ExecutionStatus</span></span>
+    }
+    @if (Model.ExecutionStatus == OperationExecutionStatus.Running)
+    {
+        <span class="aps-op-card__progress" style="--aps-op-progress:@Model.RunningProgressPercent%" title="Running progress at planning reference time"></span>
+    }
+</button>
+
+@code {
+    [Parameter, EditorRequired] public GanttOperationModel Model { get; set; } = default!;
+    [Parameter, EditorRequired] public PlanningWorkbenchState State { get; set; } = default!;
+    [Parameter] public bool Selected { get; set; }
+    [Parameter] public bool CanEdit { get; set; }
+    [Parameter] public bool IsFrozen { get; set; }
+    [Parameter] public bool CapacityFocused { get; set; }
+    [Parameter] public int TabIndex { get; set; } = -1;
+    [Parameter] public EventCallback<GanttOperationSelectionRequest> OperationSelected { get; set; }
+    [Parameter] public EventCallback<GanttKeyboardNavigationRequest> KeyboardNavigate { get; set; }
+    [Parameter] public EventCallback<GanttContextMenuRequest> ContextRequested { get; set; }
+
+    private string EligibleResourceIds => string.Join(",", (Model.Detail?.ResourceOptions.Select(x => x.ResourceId) ?? [])
+        .Append(Model.Operation.ResourceId)
+        .Distinct());
+    private string VerticalClass => State.BaselineMode == GanttBaselineMode.CompareSubrow ? "top-2 bottom-6" : "inset-y-2";
+    private bool IsStagedSource => State.StagedMove?.PlanningKey.Equals(Model.Operation.PlanningKey, StringComparison.OrdinalIgnoreCase) == true ||
+        State.StagedBulkMove?.Moves.Any(x => x.PlanningKey.Equals(Model.Operation.PlanningKey, StringComparison.OrdinalIgnoreCase)) == true;
+
+    private static string ProcessClass(ProcessOperationType type) => type switch
+    {
+        ProcessOperationType.Eaf => "bg-process-eaf",
+        ProcessOperationType.Lrf => "bg-process-lrf",
+        ProcessOperationType.Vd => "bg-process-vd",
+        ProcessOperationType.Ccm => "bg-process-casting",
+        ProcessOperationType.Reheat => "bg-process-reheat",
+        ProcessOperationType.HotRoll => "bg-process-hot-roll",
+        ProcessOperationType.ColdRoll => "bg-process-cold-roll",
+        _ => "bg-process-finishing"
+    };
+    private static string ExecutionClass(OperationExecutionStatus value) => value switch
+    {
+        OperationExecutionStatus.Running => "outline outline-2 outline-warning",
+        OperationExecutionStatus.Held => "outline outline-2 outline-danger",
+        OperationExecutionStatus.Completed => "opacity-65",
+        OperationExecutionStatus.Ready => "outline outline-1 outline-success",
+        _ => ""
+    };
+    private static string BaselineClass(GanttBaselineChange value) => value switch
+    {
+        GanttBaselineChange.TimeMoved => "aps-operation--baseline-moved",
+        GanttBaselineChange.ResourceChanged => "aps-operation--baseline-resource-changed",
+        GanttBaselineChange.Added => "aps-operation--baseline-added",
+        _ => ""
+    };
+    private static string BaselineGlyph(GanttBaselineChange value) => value switch
+    {
+        GanttBaselineChange.TimeMoved => "Δ",
+        GanttBaselineChange.ResourceChanged => "R",
+        GanttBaselineChange.Added => "+",
+        _ => ""
+    };
+    private static string BaselineTitle(GanttBaselineChange value) => value switch
+    {
+        GanttBaselineChange.TimeMoved => "Timing changed from baseline",
+        GanttBaselineChange.ResourceChanged => "Resource changed from baseline",
+        GanttBaselineChange.Added => "Added since baseline",
+        _ => "Unchanged from baseline"
+    };
+    private Task HandleContextMenu(MouseEventArgs args) => ContextRequested.InvokeAsync(
+        new GanttContextMenuRequest(Model.Operation.PlanningKey, args.ClientX, args.ClientY, false));
+    private Task HandleSelection(MouseEventArgs args) => OperationSelected.InvokeAsync(
+        new GanttOperationSelectionRequest(Model.Operation, args.CtrlKey || args.MetaKey, args.ShiftKey));
+    private Task HandleKeyDown(KeyboardEventArgs args)
+    {
+        if ((args.ShiftKey && args.Key == "F10") || args.Key == "ContextMenu")
+            return ContextRequested.InvokeAsync(new GanttContextMenuRequest(Model.Operation.PlanningKey, 0, 0, true));
+        if (args.Key is " " or "Spacebar")
+            return OperationSelected.InvokeAsync(new GanttOperationSelectionRequest(Model.Operation, true, false));
+        if (args.AltKey) return Task.CompletedTask;
+        var direction = args.Key switch
+        {
+            "ArrowLeft" => GanttKeyboardDirection.Left,
+            "ArrowRight" => GanttKeyboardDirection.Right,
+            "ArrowUp" => GanttKeyboardDirection.Up,
+            "ArrowDown" => GanttKeyboardDirection.Down,
+            "Home" => GanttKeyboardDirection.Home,
+            "End" => GanttKeyboardDirection.End,
+            "PageUp" => GanttKeyboardDirection.PageUp,
+            "PageDown" => GanttKeyboardDirection.PageDown,
+            _ => (GanttKeyboardDirection?)null
+        };
+        return direction is { } value
+            ? KeyboardNavigate.InvokeAsync(new GanttKeyboardNavigationRequest(Model.Operation.PlanningKey, value))
+            : Task.CompletedTask;
+    }
+}

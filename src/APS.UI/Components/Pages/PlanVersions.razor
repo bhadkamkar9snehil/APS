@@ -7,7 +7,7 @@
 <PageTitle>Plan Versions - APS</PageTitle>
 
 <h1 class="mb-1 text-lg font-semibold">Plan Versions</h1>
-<p class="mb-6 text-sm text-secondary">Plan Version history, and the Calculate / Replan / Release actions that create and progress them.</p>
+<p class="mb-6 text-sm text-secondary">Plan Version history, and the Calculate / Replan / Approve / Release actions that create and progress them.</p>
 
 <div class="grid grid-cols-[1fr_360px] gap-4">
     <section class="rounded border border-border bg-surface-raised">
@@ -25,7 +25,7 @@
             <Table Headers="@(new[] {"Version", "Status", "Trigger", "Created", "Horizon", ""})">
                 @foreach (var plan in plans)
                 {
-                    <tr class="cursor-pointer border-b border-border last:border-0 hover:bg-surface-hover @(selectedPlanId == plan.PlanVersionId ? "bg-accent-soft" : "")" @onclick="() => SelectPlan(plan.PlanVersionId)">
+                    <tr class="cursor-pointer border-b border-border last:border-0 hover:bg-surface-hover @(selectedPlanId == plan.PlanVersionId ? "bg-accent-soft" : "")" @onclick="() => SelectPlanAsync(plan.PlanVersionId)">
                         <td class="px-3 py-1.5"><strong>@plan.VersionNumber</strong></td>
                         <td class="px-3 py-1.5"><span class="rounded px-1.5 py-0.5 text-xs @StatusClass(plan.Status)">@plan.Status</span></td>
                         <td class="px-3 py-1.5">@plan.Trigger</td>
@@ -74,11 +74,40 @@
                 {
                     <p class="mb-2 text-xs text-success">@actionSuccess</p>
                 }
+
+                @if (readiness is not null)
+                {
+                    <div class="mb-3 rounded border border-border bg-surface-inset p-2 text-xs">
+                        <div class="flex items-center justify-between gap-2">
+                            <span class="font-semibold">Release readiness</span>
+                            <span class="font-semibold @(readiness.IsReleaseReady ? "text-success" : "text-danger")">
+                                @(readiness.IsReleaseReady ? "READY" : "BLOCKED")
+                            </span>
+                        </div>
+                        @if (readiness.Findings.Count > 0)
+                        {
+                            <div class="mt-2 space-y-1 text-secondary">
+                                @foreach (var finding in readiness.Findings.Take(6))
+                                {
+                                    <p><strong>@finding.Code:</strong> @finding.Message</p>
+                                }
+                                @if (readiness.Findings.Count > 6)
+                                {
+                                    <p>+ @(readiness.Findings.Count - 6) more blocking finding(s)</p>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+
                 <div class="flex flex-col gap-2">
                     <button type="button" class="rounded border border-border-strong px-3 py-1.5 text-sm disabled:opacity-50" disabled="@acting" @onclick="() => ReplanAsync(selected)">
                         Replan from this baseline
                     </button>
-                    <button type="button" class="rounded border border-border-strong px-3 py-1.5 text-sm disabled:opacity-50" disabled="@acting" @onclick="() => ReleaseAsync(selected)">
+                    <button type="button" class="rounded border border-border-strong px-3 py-1.5 text-sm disabled:opacity-50" disabled="@(acting || readiness is null || readiness.Status != PlanVersionStatus.Feasible || !readiness.IsReleaseReady)" @onclick="() => ApproveAsync(selected)">
+                        Approve
+                    </button>
+                    <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground disabled:opacity-50" disabled="@(acting || readiness?.Status != PlanVersionStatus.Approved)" @onclick="() => ReleaseAsync(selected)">
                         Release
                     </button>
                 </div>
@@ -91,6 +120,7 @@
     private IReadOnlyCollection<PlanVersionListItemView> plans = Array.Empty<PlanVersionListItemView>();
     private bool loading = true;
     private Guid? selectedPlanId;
+    private PlanReleaseReadiness? readiness;
 
     private DateTime horizonStart = DateTime.UtcNow.Date;
     private DateTime horizonEnd = DateTime.UtcNow.Date.AddDays(7);
@@ -114,12 +144,22 @@
         StateHasChanged();
     }
 
-    private void SelectPlan(Guid planVersionId)
+    private async Task SelectPlanAsync(Guid planVersionId)
     {
         selectedPlanId = planVersionId;
         actionError = null;
         actionSuccess = null;
         WorkspaceState.SetPlan(planVersionId);
+        try
+        {
+            readiness = await ReleaseService.GetReadinessAsync(planVersionId);
+        }
+        catch (Exception ex)
+        {
+            readiness = null;
+            actionError = ex.Message;
+        }
+        StateHasChanged();
     }
 
     private async Task CalculateAsync()
@@ -138,7 +178,7 @@
                 maxSolverSeconds);
             var outcome = await Lifecycle.CalculateAsync(request);
             await LoadAsync();
-            SelectPlan(outcome.Version.PlanVersionId);
+            await SelectPlanAsync(outcome.Version.PlanVersionId);
             actionSuccess = $"Plan {outcome.Version.VersionNumber} created ({(outcome.Plan.IsFeasible ? "feasible" : "infeasible")}).";
         }
         catch (Exception ex)
@@ -169,12 +209,36 @@
                 maxSolverSeconds);
             var outcome = await Lifecycle.ReplanAsync(baselinePlanVersionId, new PlanningRecalculationRequest(request, new PlanningTimeFencePolicy()));
             await LoadAsync();
-            SelectPlan(outcome.Version.PlanVersionId);
+            await SelectPlanAsync(outcome.Version.PlanVersionId);
             actionSuccess = $"Replanned as {outcome.Version.VersionNumber}.";
         }
         catch (Exception ex)
         {
             actionError = ex.Message;
+        }
+        finally
+        {
+            acting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ApproveAsync(Guid planVersionId)
+    {
+        acting = true;
+        actionError = null;
+        actionSuccess = null;
+        StateHasChanged();
+        try
+        {
+            readiness = await ReleaseService.ApproveAsync(planVersionId);
+            await LoadAsync();
+            actionSuccess = "Plan approved for release.";
+        }
+        catch (Exception ex)
+        {
+            actionError = ex.Message;
+            readiness = await TryGetReadinessAsync(planVersionId);
         }
         finally
         {
@@ -193,6 +257,7 @@
         {
             var release = await ReleaseService.ReleaseAsync(planVersionId);
             await LoadAsync();
+            readiness = await TryGetReadinessAsync(planVersionId);
             actionSuccess = $"Released {release.WorkOrders.Count} Work Order(s).";
         }
         catch (Exception ex)
@@ -206,9 +271,21 @@
         }
     }
 
+    private async Task<PlanReleaseReadiness?> TryGetReadinessAsync(Guid planVersionId)
+    {
+        try
+        {
+            return await ReleaseService.GetReadinessAsync(planVersionId);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static string StatusClass(PlanVersionStatus status) => status switch
     {
-        PlanVersionStatus.Feasible or PlanVersionStatus.Released => "bg-success-soft text-success",
+        PlanVersionStatus.Feasible or PlanVersionStatus.Approved or PlanVersionStatus.Released => "bg-success-soft text-success",
         PlanVersionStatus.Failed => "bg-danger-soft text-danger",
         PlanVersionStatus.Superseded => "bg-surface-inset text-muted",
         _ => "bg-surface-inset text-secondary"

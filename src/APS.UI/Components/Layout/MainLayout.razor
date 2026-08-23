@@ -2,179 +2,48 @@
 @implements IDisposable
 @inject IPlannerWorkspaceQueryService PlannerQuery
 @inject PlannerWorkspaceState WorkspaceState
-@inject IConfiguration Configuration
-@inject IUpdateService Updates
+@inject NavigationManager Navigation
 @inject ThemeService Theme
 
-<div class="flex h-screen w-screen overflow-hidden bg-canvas text-sm text-primary">
-    <aside class="flex w-56 shrink-0 flex-col border-r border-border bg-surface shadow-soft">
-        <div class="flex items-center gap-2.5 border-b border-border px-4 py-3">
-            <img src="_content/APS.UI/app-icon.png" alt="" class="h-8 w-8 object-contain" />
-            <div class="text-sm font-bold tracking-wide">APS</div>
-        </div>
-
-        <nav class="flex-1 overflow-y-auto px-2 py-3">
-            <NavItem Href="/" Match="NavLinkMatch.All" Label="Control Tower" />
-
-            <NavGroup Title="PLAN">
-                <NavItem Href="/plan/versions" Label="Plan Versions" />
-                <NavItem Href="/plan/demand" Label="Demand & Supply" />
-                <NavItem Href="/plan/campaigns" Label="Campaign Studio" />
-                <NavItem Href="/plan/steelmaking" Label="Steelmaking & Casting" />
-                <NavItem Href="/plan/rolling" Label="Rolling & Finishing" />
-                <NavItem Href="/plan/schedule" Label="Planning Workbench" />
-                <NavItem Href="/plan/inventory" Label="Inventory" />
-                <NavItem Href="/plan/material-flow" Label="Material Flow" />
-                <NavItem Href="/plan/master-data" Label="Master Data" />
-            </NavGroup>
-
-            <NavGroup Title="OPERATE">
-                <NavItem Href="/operate/work-orders" Label="Work Orders" />
-                <NavItem Href="/operate/traceability" Label="Traceability" />
-            </NavGroup>
-
-            <NavGroup Title="COMPARE">
-                <NavItem Href="/decide/compare" Label="Plan Compare" />
-            </NavGroup>
-        </nav>
-
-        @if (demoModeEnabled)
-        {
-            <div class="border-t border-border px-4 py-3 text-xs">
-                <div class="mb-1 font-semibold uppercase tracking-wide text-muted">Demo / reference</div>
-                <NavLink href="/demo/planning" class="text-accent hover:underline">Planning Sandbox</NavLink>
-            </div>
-        }
-        <AppearancePopover />
-    </aside>
-
-    <section class="flex min-w-0 flex-1 flex-col">
-        <PlanContextBar Plan="currentPlan" />
-        <main class="flex-1 overflow-y-auto bg-canvas p-6">
-            @if (backendUnavailable)
-            {
-                <div class="rounded-surface border border-dashed border-border-strong bg-surface p-8 text-center shadow-soft">
-                    <strong class="text-primary">Production planner workspace is unavailable</strong>
-                    <p class="mt-1 text-sm text-secondary">@backendUnavailableMessage</p>
+<div class="flex h-screen w-screen flex-col overflow-hidden bg-canvas text-sm text-primary">
+    <DesktopMenuBar />
+    <main class="min-h-0 flex-1 bg-canvas @(IsWorkbench ? "overflow-hidden" : "overflow-y-auto p-6")">
+        <ErrorBoundary>
+            <ChildContent>@Body</ChildContent>
+            <ErrorContent Context="ex">
+                <div class="rounded-surface border border-danger bg-danger-soft p-8 text-center">
+                    <strong class="text-danger">This page couldn't load</strong>
+                    <p class="mt-1 text-sm text-danger">@ex.Message</p>
                 </div>
-            }
-            else
-            {
-                <ErrorBoundary>
-                    <ChildContent>
-                        @Body
-                    </ChildContent>
-                    <ErrorContent Context="ex">
-                        <div class="rounded-surface border border-danger bg-danger-soft p-8 text-center">
-                            <strong class="text-danger">This page couldn't load</strong>
-                            <p class="mt-1 text-sm text-danger">@ex.Message</p>
-                        </div>
-                    </ErrorContent>
-                </ErrorBoundary>
-            }
-        </main>
-        <footer class="flex items-center justify-between border-t border-border bg-surface px-6 py-1.5 text-xs text-muted">
-            <span>APS Planner v@(AppVersion)</span>
-            <span class="flex items-center gap-3">
-                @if (Updates.Status.Phase == UpdatePhase.Available)
-                {
-                    <button type="button" class="font-medium text-accent hover:underline" @onclick="() => Updates.DownloadAsync()">Update available &middot; download v@(Updates.Status.AvailableVersion)</button>
-                }
-                else if (Updates.Status.Phase == UpdatePhase.Downloading)
-                {
-                    <span>Downloading update &middot; @(Updates.Status.DownloadProgress ?? 0)%</span>
-                }
-                else if (Updates.Status.Phase == UpdatePhase.ReadyToRestart)
-                {
-                    <button type="button" class="font-medium text-accent hover:underline" @onclick="Updates.RestartAndApply">Restart to apply v@(Updates.Status.AvailableVersion)</button>
-                }
-                else if (Updates.Status.Phase == UpdatePhase.Failed)
-                {
-                    <span class="text-danger">Update check failed@(Updates.Status.FailureCode is null ? "" : $" ({Updates.Status.FailureCode})")</span>
-                }
-            </span>
-        </footer>
-    </section>
+            </ErrorContent>
+        </ErrorBoundary>
+    </main>
 </div>
 
 @code {
-    private PlanContextView? currentPlan;
-    private bool demoModeEnabled;
-    private bool backendUnavailable;
-    private string? backendUnavailableMessage;
-
-    private static readonly string AppVersion =
-        System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "0.1.0";
+    private bool IsWorkbench
+    {
+        get
+        {
+            var path = Navigation.ToBaseRelativePath(Navigation.Uri).TrimEnd('/');
+            return string.IsNullOrEmpty(path) || path.Equals("plan/schedule", StringComparison.OrdinalIgnoreCase);
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
-        demoModeEnabled = Configuration.GetValue<bool>("APS:DemoModeEnabled");
-        WorkspaceState.Changed += OnWorkspaceChanged;
-        Updates.Changed += OnUpdatesChanged;
-        Theme.Changed += OnThemeChanged;
-        try
-        {
-            currentPlan = await PlannerQuery.GetCurrentPlanAsync();
-            if (currentPlan is not null)
-            {
-                WorkspaceState.SetPlan(currentPlan.PlanVersionId, currentPlan.ParentPlanVersionId);
-                WorkspaceState.SetWindow(currentPlan.HorizonStartUtc, currentPlan.HorizonEndUtc);
-            }
-        }
-        catch (InvalidOperationException ex)
-        {
-            backendUnavailable = true;
-            backendUnavailableMessage = ex.Message;
-        }
+        Navigation.LocationChanged += OnLocationChanged;
+        var currentPlan = await PlannerQuery.GetCurrentPlanAsync();
+        if (currentPlan is not null)
+            WorkspaceState.SetPlan(currentPlan.PlanVersionId, currentPlan.ParentPlanVersionId);
     }
 
-    private void OnWorkspaceChanged()
-    {
-        if (WorkspaceState.CurrentPlanVersionId.HasValue &&
-            WorkspaceState.CurrentPlanVersionId != currentPlan?.PlanVersionId)
-        {
-            _ = InvokeAsync(LoadSelectedPlanAsync);
-            return;
-        }
-
-        _ = InvokeAsync(StateHasChanged);
-    }
-
-    private async Task LoadSelectedPlanAsync()
-    {
-        try
-        {
-            var planVersionId = WorkspaceState.CurrentPlanVersionId;
-            currentPlan = planVersionId.HasValue
-                ? await PlannerQuery.GetPlanContextAsync(planVersionId.Value)
-                : await PlannerQuery.GetCurrentPlanAsync();
-
-            if (currentPlan is not null)
-            {
-                WorkspaceState.SetWindow(currentPlan.HorizonStartUtc, currentPlan.HorizonEndUtc);
-            }
-        }
-        catch (InvalidOperationException ex)
-        {
-            backendUnavailable = true;
-            backendUnavailableMessage = ex.Message;
-        }
-        StateHasChanged();
-    }
-
-    private void OnUpdatesChanged() => _ = InvokeAsync(StateHasChanged);
-    private void OnThemeChanged() => _ = InvokeAsync(StateHasChanged);
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs args) => _ = InvokeAsync(StateHasChanged);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-            await Theme.InitializeAsync();
+        if (firstRender) await Theme.InitializeAsync();
     }
 
-    public void Dispose()
-    {
-        WorkspaceState.Changed -= OnWorkspaceChanged;
-        Updates.Changed -= OnUpdatesChanged;
-        Theme.Changed -= OnThemeChanged;
-    }
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
 }

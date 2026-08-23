@@ -1,0 +1,43 @@
+@if (SelectedOperations.Count > 1)
+{
+    <section class="flex shrink-0 items-center gap-4 overflow-x-auto border-b border-border bg-accent-soft px-3 py-1.5 text-[10px]"
+             aria-label="Multi-operation selection summary"
+             data-gantt-selection-count="@SelectedOperations.Count"
+             data-gantt-bulk-move="@(CanBulkMove.ToString().ToLowerInvariant())">
+        <strong class="shrink-0 text-xs text-accent">@SelectedOperations.Count selected</strong>
+        <span class="shrink-0"><span class="text-muted">Occupied </span>@TotalOccupiedHours.ToString("0.##") h</span>
+        <span class="shrink-0"><span class="text-muted">Resources </span>@SelectedOperations.Select(x => x.ResourceId).Distinct().Count()</span>
+        <span class="shrink-0"><span class="text-muted">Campaigns/orders </span>@CampaignCount/@OrderCount</span>
+        <span class="shrink-0"><span class="text-muted">Range </span>@EarliestStart.ToString("dd MMM HH:mm")–@LatestEnd.ToString("dd MMM HH:mm")</span>
+        <strong class="shrink-0 @(CanBulkMove ? "text-success" : "text-danger")">@(CanBulkMove ? "Atomic horizontal move ready" : BulkMoveBlocker)</strong>
+        <span class="ml-auto shrink-0 text-muted">Ctrl-click toggles · Shift-click selects a visible lane sequence</span>
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public GanttScene Scene { get; set; } = default!;
+    [Parameter, EditorRequired] public PlanningWorkbenchState State { get; set; } = default!;
+
+    private IReadOnlyList<ScheduledProcessOperationView> SelectedOperations => State.SelectedPlanningKeys
+        .Select(key => Scene.OperationsByKey.GetValueOrDefault(key))
+        .Where(x => x is not null)
+        .Cast<ScheduledProcessOperationView>()
+        .ToArray();
+    private double TotalOccupiedHours => SelectedOperations.Sum(x => (x.EndUtc - x.StartUtc).TotalHours);
+    private DateTime EarliestStart => SelectedOperations.Min(x => x.StartUtc);
+    private DateTime LatestEnd => SelectedOperations.Max(x => x.EndUtc);
+    private IReadOnlyList<PlanningOperationWorkbenchDetail> SelectedDetails => State.SelectedPlanningKeys
+        .Select(key => Scene.DetailsByKey.GetValueOrDefault(key))
+        .Where(x => x is not null)
+        .Cast<PlanningOperationWorkbenchDetail>()
+        .ToArray();
+    private int CampaignCount => SelectedDetails.Select(x => x.CampaignNumber).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+    private int OrderCount => SelectedDetails.SelectMany(x => x.ProductionOrderNumbers).Distinct(StringComparer.OrdinalIgnoreCase).Count();
+    private bool HasProtectedOperation => SelectedDetails.Any(x => x.ExecutionStatus is OperationExecutionStatus.Running or OperationExecutionStatus.Completed);
+    private bool CanBulkMove => State.CanEditSchedule && SelectedOperations.Count == State.SelectedPlanningKeys.Count && !HasProtectedOperation;
+    private string BulkMoveBlocker => !State.CanEditSchedule
+        ? "Released plan is immutable"
+        : HasProtectedOperation
+            ? "Running/completed work selected"
+            : "Selection facts unavailable";
+}

@@ -12,6 +12,18 @@ public sealed record PlanReleaseBuildRequest(
     ProductionStructurePlanningResult ProductionStructure,
     FiniteScheduleResult Schedule);
 
+public sealed record PlanReleaseReadinessFinding(
+    string Code,
+    string Message,
+    Guid? MaterialRequirementId = null);
+
+public sealed record PlanReleaseReadiness(
+    Guid PlanVersionId,
+    string VersionNumber,
+    PlanVersionStatus Status,
+    bool IsReleaseReady,
+    IReadOnlyCollection<PlanReleaseReadinessFinding> Findings);
+
 public interface IPlanReleaseBuilder
 {
     PlanRelease Build(PlanReleaseBuildRequest request);
@@ -19,6 +31,14 @@ public interface IPlanReleaseBuilder
 
 public interface IPersistedPlanReleaseService
 {
+    Task<PlanReleaseReadiness> GetReadinessAsync(
+        Guid planVersionId,
+        CancellationToken cancellationToken = default);
+
+    Task<PlanReleaseReadiness> ApproveAsync(
+        Guid planVersionId,
+        CancellationToken cancellationToken = default);
+
     Task<PlanRelease> ReleaseAsync(
         Guid planVersionId,
         CancellationToken cancellationToken = default);

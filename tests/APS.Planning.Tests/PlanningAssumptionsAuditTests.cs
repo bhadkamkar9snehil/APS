@@ -80,9 +80,94 @@ public sealed class PlanningAssumptionsAuditTests
         // The derating is recorded too - the same furnace at 100% is a different plant.
         Assert.Equal(80m, recordedFurnace.CapacityFactorPct);
         Assert.False(recordedFurnace.AppliesSequenceRules);
+        Assert.Equal(ResourceOperatingState.Available, recordedFurnace.OperatingState);
 
         var recordedMill = Assert.Single(assumptions.ResourceScheduling, x => x.ResourceCode == "RM-1");
         Assert.Equal(ResourceSchedulingMode.Disjunctive, recordedMill.SchedulingMode);
+    }
+
+    [Fact]
+    public async Task Scenario_effective_resource_and_calendar_inputs_are_snapshotted_and_reloaded()
+    {
+        await using var db = CreateDb();
+        var repository = new PlanVersionRepository(db);
+        var furnace = new Resource
+        {
+            PlantId = Guid.NewGuid(),
+            ProcessStageId = Guid.NewGuid(),
+            Code = "RHF-1",
+            Name = "Reheating furnace 1",
+            ResourceType = ResourceType.Furnace,
+            ProcessUnitType = ProcessUnitType.ReheatingFurnace,
+            OperatingState = ResourceOperatingState.Available,
+            SchedulingMode = ResourceSchedulingMode.Cumulative,
+            CapacityBasis = ResourceCapacityBasis.Slots,
+            NominalConcurrentCapacity = 4m,
+            CapacityFactorPct = 100m
+        };
+        var configuredCalendar = new ResourceCalendar
+        {
+            ResourceId = furnace.Id,
+            Start = Now.AddHours(6),
+            End = Now.AddHours(7),
+            IsAvailable = true,
+            CapacityFactorPct = 80m,
+            ReasonCode = "BASE_ENERGY_LIMIT"
+        };
+        var scenario = ScenarioCode("DERATED-WITH-MAINTENANCE");
+        scenario.ResourceOverrides.Add(new ResourceScenarioOverride
+        {
+            PlanningScenarioId = scenario.Id,
+            ResourceId = furnace.Id,
+            OperatingState = ResourceOperatingState.CapacityDerated,
+            CapacityFactorPct = 60m,
+            EffectiveFromUtc = Now,
+            EffectiveToUtc = Now.AddDays(7),
+            Reason = "GRID_LIMIT"
+        });
+        scenario.ResourceOverrides.Add(new ResourceScenarioOverride
+        {
+            PlanningScenarioId = scenario.Id,
+            ResourceId = furnace.Id,
+            OperatingState = ResourceOperatingState.PlannedMaintenance,
+            EffectiveFromUtc = Now.AddHours(2),
+            EffectiveToUtc = Now.AddHours(3),
+            Reason = "PLANNED_MAINTENANCE"
+        });
+
+        var saved = await repository.SaveAsync(new PersistPlanningRunRequest(
+            PlanningRequest(
+                new[] { furnace },
+                CampaignObjectiveWeights.Default,
+                scenario,
+                new[] { configuredCalendar }),
+            PlanningResult(),
+            PlanTriggerType.Manual,
+            Now));
+        var reloaded = await repository.GetAsync(saved.PlanVersionId);
+
+        var assumptions = reloaded!.Assumptions!;
+        var recorded = Assert.Single(assumptions.ResourceScheduling);
+        Assert.Equal(ResourceOperatingState.CapacityDerated, recorded.OperatingState);
+        Assert.Equal(60m, recorded.CapacityFactorPct);
+        Assert.Equal(ResourceSchedulingMode.Cumulative, recorded.SchedulingMode);
+        Assert.Equal(ResourceCapacityBasis.Slots, recorded.CapacityBasis);
+        Assert.Equal(4m, recorded.NominalConcurrentCapacity);
+
+        Assert.NotNull(assumptions.ResourceCalendars);
+        Assert.Contains(assumptions.ResourceCalendars!, x =>
+            x.ResourceId == furnace.Id &&
+            x.StartUtc == configuredCalendar.Start &&
+            x.EndUtc == configuredCalendar.End &&
+            x.IsAvailable &&
+            x.CapacityFactorPct == 80m &&
+            x.ReasonCode == "BASE_ENERGY_LIMIT");
+        Assert.Contains(assumptions.ResourceCalendars!, x =>
+            x.ResourceId == furnace.Id &&
+            x.StartUtc == Now.AddHours(2) &&
+            x.EndUtc == Now.AddHours(3) &&
+            !x.IsAvailable &&
+            x.ReasonCode == "PLANNED_MAINTENANCE");
     }
 
     [Fact]
@@ -171,13 +256,14 @@ public sealed class PlanningAssumptionsAuditTests
     private static PlanningRunRequest PlanningRequest(
         IReadOnlyCollection<Resource> resources,
         CampaignObjectiveWeights weights,
-        PlanningScenario? scenario) =>
+        PlanningScenario? scenario,
+        IReadOnlyCollection<ResourceCalendar>? calendars = null) =>
         new(
             Array.Empty<ProductionOrder>(),
             Array.Empty<InventoryPosition>(),
             resources,
             Array.Empty<ResourceCapability>(),
-            Array.Empty<ResourceCalendar>(),
+            calendars ?? Array.Empty<ResourceCalendar>(),
             Array.Empty<TransitionRule>(),
             Array.Empty<PlantFlowLink>(),
             new CampaignPlanningPolicy(60m, 50m, 70m, 500m, 1000m, ObjectiveWeights: weights),

@@ -1,0 +1,146 @@
+<div class="aps-gantt-lane aps-time-grid relative overflow-hidden border-b border-border @(State.SelectedResourceIds.Contains(Row.Lane.ResourceId) ? "bg-accent-soft shadow-soft" : "even:bg-surface-raised")"
+     data-resource-id="@Row.Lane.ResourceId"
+     data-window-start="@State.VisibleStartUtc.ToString("O")"
+     data-window-end="@State.VisibleEndUtc.ToString("O")"
+     data-shift-boundaries="@ShiftBoundaries">
+    @foreach (var tick in Scene.Ticks)
+    {
+        <div class="pointer-events-none absolute inset-y-0 w-px @(tick.IsMajor ? "bg-border" : "bg-border/45")" style="left:@tick.LeftPercent%"></div>
+    }
+    @if (State.ShowNowMarker && NowUtc >= State.VisibleStartUtc && NowUtc <= State.VisibleEndUtc)
+    {
+        <div class="pointer-events-none absolute inset-y-0 z-[3] w-px" style="left:@GanttModels.Percent(State, NowUtc)%;background:repeating-linear-gradient(to bottom,var(--aps-success) 0 4px,transparent 4px 7px)" title="Wall-clock now"></div>
+    }
+    @if (State.ShowReferenceMarker && Workbench.Plan.ReferenceTimeUtc >= State.VisibleStartUtc && Workbench.Plan.ReferenceTimeUtc <= State.VisibleEndUtc)
+    {
+        <div class="pointer-events-none absolute inset-y-0 z-[3] w-px bg-accent/70" style="left:@GanttModels.Percent(State, Workbench.Plan.ReferenceTimeUtc)%" title="Planning reference time"></div>
+    }
+    @if (State.ShowFrozenFence && FrozenFenceEndUtc > State.VisibleStartUtc && Workbench.Plan.ReferenceTimeUtc < State.VisibleEndUtc)
+    {
+        <div class="pointer-events-none absolute inset-y-0 z-[1] bg-danger-soft/40"
+             style="left:@GanttModels.Percent(State, Workbench.Plan.ReferenceTimeUtc)%;width:@GanttModels.WidthPercent(State, Workbench.Plan.ReferenceTimeUtc, FrozenFenceEndUtc)%"
+             title="Frozen horizon · exceptional authority required"></div>
+    }
+
+    @foreach (var interval in Row.CalendarIntervals.Where(x => !x.IsAvailable))
+    {
+        <div class="aps-calendar-unavailable pointer-events-none absolute inset-y-0 z-[2]"
+             style="left:@GanttModels.Percent(State, interval.StartUtc)%;width:@GanttModels.WidthPercent(State, interval.StartUtc, interval.EndUtc)%"
+             title="@(interval.ReasonCode ?? "Resource unavailable") · @interval.StartUtc.ToString("dd MMM HH:mm")–@interval.EndUtc.ToString("HH:mm") · @interval.Source"></div>
+    }
+
+    @if (State.ShowBaseline)
+    {
+        @foreach (var baseline in VisibleBaselines())
+        {
+            var selected = State.SelectedPlanningKey?.Equals(baseline.Placement.PlanningKey, StringComparison.OrdinalIgnoreCase) == true;
+            <div class="aps-baseline aps-baseline--@CssBaselineChange(baseline.Change) pointer-events-none absolute bottom-1 z-[4] rounded-sm border border-dashed @BaselineGeometryClass @(selected ? "ring-2 ring-accent" : "")"
+                 style="left:@baseline.LeftPercent%;width:@baseline.WidthPercent%"
+                 title="@BaselineDescription(baseline)"></div>
+        }
+    }
+
+    @if (State.Mode == PlanningWorkbenchMode.Campaigns || SelectedCampaign is not null)
+    {
+        @foreach (var campaign in Row.CampaignSpans.Where(x => SelectedCampaign is null || x.CampaignNumber.Equals(SelectedCampaign, StringComparison.OrdinalIgnoreCase)))
+        {
+            <div class="aps-campaign-span pointer-events-none absolute top-0.5 z-[5] h-1 rounded-full"
+                 style="left:@campaign.LeftPercent%;width:@campaign.WidthPercent%"
+                 title="Campaign @campaign.CampaignNumber · @campaign.OperationCount operation(s)"></div>
+        }
+    }
+
+    @if (State.Mode is PlanningWorkbenchMode.Execution or PlanningWorkbenchMode.Recovery)
+    {
+        @foreach (var model in Row.Operations.Where(x => x.ActualStartUtc is not null))
+        {
+            var actualStart = model.ActualStartUtc!.Value;
+            var actualEnd = model.ActualEndUtc ?? Workbench.Plan.ReferenceTimeUtc;
+            if (actualEnd > actualStart && actualEnd > State.VisibleStartUtc && actualStart < State.VisibleEndUtc)
+            {
+                var clippedStart = actualStart < State.VisibleStartUtc ? State.VisibleStartUtc : actualStart;
+                var clippedEnd = actualEnd > State.VisibleEndUtc ? State.VisibleEndUtc : actualEnd;
+                <div class="pointer-events-none absolute bottom-1 z-[16] h-2 min-w-1 overflow-hidden rounded-sm border border-primary @(model.ExecutionStatus == OperationExecutionStatus.Completed ? "bg-success" : "bg-warning")"
+                     style="left:@GanttModels.Percent(State, clippedStart)%;width:@GanttModels.WidthPercent(State, clippedStart, clippedEnd)%"
+                     title="Actual · @model.Operation.PlanningKey · @actualStart.ToString("dd MMM HH:mm")–@(model.ActualEndUtc?.ToString("dd MMM HH:mm") ?? $"{Workbench.Plan.ReferenceTimeUtc:dd MMM HH:mm} running")">
+                    <span class="block px-0.5 text-[7px] font-bold leading-[6px] text-inverted">A</span>
+                </div>
+                <span class="sr-only">Actual execution for @model.Operation.PlanningKey from @actualStart.ToString("dd MMM HH:mm") to @(model.ActualEndUtc?.ToString("dd MMM HH:mm") ?? $"planning reference {Workbench.Plan.ReferenceTimeUtc:dd MMM HH:mm}")</span>
+            }
+        }
+    }
+
+    @foreach (var operation in Row.Operations)
+    {
+        <GanttOperationBlock Model="operation"
+                             State="State"
+                             Selected="@(State.SelectedPlanningKeys.Contains(operation.Operation.PlanningKey))"
+                             CanEdit="State.CanEditSchedule"
+                             IsFrozen="@(operation.Operation.StartUtc <= FrozenFenceEndUtc)"
+                             CapacityFocused="@IsCapacityFocused(operation.Operation)"
+                             TabIndex="@(operation.Operation.PlanningKey.Equals(KeyboardAnchorPlanningKey, StringComparison.OrdinalIgnoreCase) ? 0 : -1)"
+                             OperationSelected="OperationSelected"
+                             KeyboardNavigate="KeyboardNavigate"
+                             ContextRequested="ContextRequested" />
+    }
+
+    @if (State.StagedMove is not null &&
+         State.StagedMove.TargetResourceId == Row.Lane.ResourceId &&
+         Scene.OperationsByKey.TryGetValue(State.StagedMove.PlanningKey, out var source))
+    {
+        <div class="pointer-events-none absolute z-20 rounded-control border-2 border-accent bg-accent-soft/70 @(State.BaselineMode == GanttBaselineMode.CompareSubrow ? "top-2 bottom-6" : "inset-y-2")"
+             style="left:@GanttModels.Percent(State, State.StagedMove.TargetStartUtc)%;width:@GanttModels.WidthPercent(State, State.StagedMove.TargetStartUtc, State.StagedMove.TargetStartUtc + (source.EndUtc - source.StartUtc))%">
+            <span class="px-1 text-[10px] font-semibold text-accent">Proposed · @State.StagedMove.TargetStartUtc.ToString("HH:mm")</span>
+        </div>
+    }
+    @foreach (var move in State.StagedBulkMove?.Moves.Where(x => x.TargetResourceId == Row.Lane.ResourceId) ?? [])
+    {
+        @if (Scene.OperationsByKey.TryGetValue(move.PlanningKey, out var bulkSource))
+        {
+            <div class="pointer-events-none absolute z-20 rounded-control border-2 border-accent bg-accent-soft/70 @(State.BaselineMode == GanttBaselineMode.CompareSubrow ? "top-2 bottom-6" : "inset-y-2")"
+                 style="left:@GanttModels.Percent(State, move.TargetStartUtc)%;width:@GanttModels.WidthPercent(State, move.TargetStartUtc, move.TargetStartUtc + (bulkSource.EndUtc - bulkSource.StartUtc))%"
+                 title="Atomic proposal · @move.PlanningKey · @move.TargetStartUtc.ToString("dd MMM HH:mm")">
+                <span class="px-1 text-[10px] font-semibold text-accent">Atomic · @move.TargetStartUtc.ToString("HH:mm")</span>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public GanttRowModel Row { get; set; } = default!;
+    [Parameter, EditorRequired] public GanttScene Scene { get; set; } = default!;
+    [Parameter, EditorRequired] public PlanningWorkbenchState State { get; set; } = default!;
+    [Parameter, EditorRequired] public PlanningWorkbenchView Workbench { get; set; } = default!;
+    [Parameter] public DateTime FrozenFenceEndUtc { get; set; }
+    [Parameter] public string KeyboardAnchorPlanningKey { get; set; } = string.Empty;
+    [Parameter] public EventCallback<GanttOperationSelectionRequest> OperationSelected { get; set; }
+    [Parameter] public EventCallback<GanttKeyboardNavigationRequest> KeyboardNavigate { get; set; }
+    [Parameter] public EventCallback<GanttContextMenuRequest> ContextRequested { get; set; }
+
+    private DateTime NowUtc { get; } = DateTime.UtcNow;
+    private string? SelectedCampaign => State.SelectedPlanningKey is not null && Scene.DetailsByKey.TryGetValue(State.SelectedPlanningKey, out var detail)
+        ? detail.CampaignNumber
+        : null;
+    private string ShiftBoundaries => string.Join(",", Row.CalendarIntervals
+        .SelectMany(x => new[] { x.StartUtc, x.EndUtc })
+        .Where(x => x >= State.VisibleStartUtc && x <= State.VisibleEndUtc)
+        .Distinct()
+        .OrderBy(x => x)
+        .Select(x => x.ToString("O")));
+    private IEnumerable<GanttBaselineModel> VisibleBaselines() => State.BaselineMode == GanttBaselineMode.ChangedOnly
+        ? Row.Baselines.Where(x => x.Change != GanttBaselineChange.Unchanged)
+        : Row.Baselines;
+    private string BaselineGeometryClass => State.BaselineMode == GanttBaselineMode.CompareSubrow ? "h-4 border-2" : "h-2";
+    private bool IsCapacityFocused(ScheduledProcessOperationView operation) => State.CapacityFocus is { } focus &&
+        operation.ResourceId == focus.ResourceId &&
+        operation.EndUtc > focus.StartUtc && operation.StartUtc < focus.EndUtc;
+
+    private static string CssBaselineChange(GanttBaselineChange change) => change.ToString().ToLowerInvariant();
+    private static string BaselineDescription(GanttBaselineModel baseline) => baseline.Change switch
+    {
+        GanttBaselineChange.TimeMoved => $"Baseline · start {baseline.StartDeltaMinutes:+#;-#;0} min · end {baseline.EndDeltaMinutes:+#;-#;0} min · {baseline.Placement.StartUtc:dd MMM HH:mm}",
+        GanttBaselineChange.ResourceChanged => $"Baseline · resource changed from {baseline.Placement.ResourceCode} · {baseline.Placement.StartUtc:dd MMM HH:mm}",
+        GanttBaselineChange.Removed => $"Baseline · removed from current plan · {baseline.Placement.PlanningKey}",
+        _ => $"Baseline · {baseline.Placement.PlanningKey} · {baseline.Placement.StartUtc:dd MMM HH:mm}"
+    };
+}

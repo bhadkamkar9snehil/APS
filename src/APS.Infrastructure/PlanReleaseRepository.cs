@@ -21,9 +21,10 @@ public sealed class PlanReleaseRepository(ApsDbContext db) : IPlanReleaseReposit
 
         var state = await db.PlanVersionStates
             .SingleAsync(x => x.PlanVersionId == release.PlanVersionId, cancellationToken);
-        if (state.Status is PlanVersionStatus.Failed or PlanVersionStatus.Superseded)
+        if (state.Status != PlanVersionStatus.Approved || !state.IsActive)
         {
-            throw new InvalidOperationException($"Plan version {version.VersionNumber} in state {state.Status} cannot be released.");
+            throw new InvalidOperationException(
+                $"Plan version {version.VersionNumber} in state {state.Status} cannot be released; an active approved Plan Version is required.");
         }
 
         foreach (var workOrder in release.WorkOrders)

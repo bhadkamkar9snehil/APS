@@ -1,0 +1,6 @@
+<NavLink href="@Href" class="flex w-full items-center rounded-control px-3 py-2 text-left text-xs text-secondary hover:bg-surface-hover hover:text-primary" role="menuitem">@Label</NavLink>
+
+@code {
+    [Parameter, EditorRequired] public string Href { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+}

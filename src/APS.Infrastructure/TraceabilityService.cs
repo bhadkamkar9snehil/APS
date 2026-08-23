@@ -12,7 +12,17 @@ public sealed class TraceabilityService(ApsDbContext db) : ITraceabilityService
     {
         var workOrder = await db.WorkOrders
             .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == workOrderId, cancellationToken);
+            .Where(x => x.Id == workOrderId)
+            .Select(x => new
+            {
+                x.Id,
+                x.WorkOrderNumber,
+                x.WorkOrderType,
+                x.CampaignId,
+                x.PlannedQuantityMt,
+                x.ActualQuantityMt
+            })
+            .SingleOrDefaultAsync(cancellationToken);
 
         if (workOrder is null) return null;
 
@@ -64,7 +74,18 @@ public sealed class TraceabilityService(ApsDbContext db) : ITraceabilityService
     {
         var lot = await db.MaterialLots
             .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == materialLotId, cancellationToken);
+            .Where(x => x.Id == materialLotId)
+            .Select(x => new
+            {
+                x.Id,
+                x.LotNumber,
+                x.MaterialCode,
+                x.GradeCode,
+                x.CrossSectionCode,
+                x.QuantityMt,
+                x.ProducedByWorkOrderId
+            })
+            .SingleOrDefaultAsync(cancellationToken);
 
         if (lot is null) return null;
 

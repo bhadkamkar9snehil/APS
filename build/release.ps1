@@ -9,32 +9,25 @@
 
     The release script does, in order:
 
-      1. dotnet test    — runs the planning and UI test suites, stops on any failure.
-      2. dotnet publish — publishes APS.DesktopHost for win-x64, self-contained, with
-                           PublishReadyToRun (already set in the csproj).
+      1. dotnet test    — runs every test project registered in APS.slnx and stops on any failure.
+      2. dotnet publish — publishes APS.DesktopHost using the runtime, self-contained and
+                           ReadyToRun settings owned by APS.DesktopHost.csproj.
       3. vpk pack       — wraps that publish output into a Velopack release: a Setup.exe installer
                            plus update metadata, written to build/Releases/<version>/.
 
 .PARAMETER Version
-    Release version (e.g. "1.2.0"). If omitted, the script reads <Version> from
-    APS.DesktopHost.csproj.
-
-.PARAMETER AppId
-    Velopack app id used to identify this app across releases/updates. Defaults to "APS". Change
-    only if you also update UpdateSettings.RepositoryUrl-related tooling to match — the app id
-    must stay consistent release-to-release or update detection breaks.
+    Release version (e.g. "1.2.0"). If omitted, reads <Version> from APS.DesktopHost.csproj.
 
 .PARAMETER Configuration
-    Build configuration for publish. Defaults to "Release".
+    Build configuration. Defaults to "Release".
 
 .PARAMETER SkipTests
-    Skip the dotnet test step. Use only for quick local iteration — never for a real release.
+    Skip the dotnet test step. Use only for quick local iteration, never for a real release.
 
 .PREREQUISITES
     - .NET 10 SDK.
-    - Windows (win-x64 self-contained publish + vpk pack both require running on Windows).
-    - Velopack CLI: install once with `dotnet tool install -g vpk`
-      (upgrade later with `dotnet tool update -g vpk`).
+    - Windows.
+    - Velopack CLI: `dotnet tool install -g vpk`
 
 .EXAMPLE
     pwsh build/release.ps1 -Version 1.3.0
@@ -42,19 +35,15 @@
 [CmdletBinding()]
 param(
     [string]$Version,
-    [string]$AppId = "APS",
     [string]$Configuration = "Release",
     [switch]$SkipTests
 )
 
 $ErrorActionPreference = "Stop"
-
+$appId = "APS"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $desktopHostProject = Join-Path $repoRoot "src/APS.DesktopHost/APS.DesktopHost.csproj"
-$testProjects = @(
-    (Join-Path $repoRoot "tests/APS.Planning.Tests/APS.Planning.Tests.csproj"),
-    (Join-Path $repoRoot "tests/APS.UI.Tests/APS.UI.Tests.csproj")
-)
+$solution = Join-Path $repoRoot "APS.slnx"
 $appIcon = Join-Path $repoRoot "src/APS.DesktopHost/Assets/app-icon.ico"
 $publishDir = Join-Path $repoRoot "build/publish/win-x64"
 
@@ -65,7 +54,7 @@ function Get-CsprojVersion {
     if (-not $versionNode) {
         throw "Could not find <Version> in $CsprojPath. Pass -Version explicitly."
     }
-    return $versionNode
+    $versionNode
 }
 
 if (-not $Version) {
@@ -75,49 +64,40 @@ if (-not $Version) {
 
 $releasesDir = Join-Path $repoRoot "build/Releases/$Version"
 
-# --- Step 1: tests ---------------------------------------------------------
 if (-not $SkipTests) {
-    foreach ($testProject in $testProjects) {
-        Write-Host "==> dotnet test $testProject"
-        dotnet test $testProject --configuration $Configuration
-        if ($LASTEXITCODE -ne 0) {
-            throw "Tests failed for '$testProject' (exit code $LASTEXITCODE). Aborting release."
-        }
+    Write-Host "==> dotnet test $solution"
+    dotnet test $solution --configuration $Configuration
+    if ($LASTEXITCODE -ne 0) {
+        throw "Tests failed (exit code $LASTEXITCODE). Aborting release."
     }
 }
 else {
     Write-Host "==> Skipping tests (-SkipTests passed). Do not use this path for a real release."
 }
 
-# --- Step 2: publish --------------------------------------------------------
-Write-Host "==> dotnet publish $desktopHostProject (win-x64, self-contained, ReadyToRun)"
+Write-Host "==> dotnet publish $desktopHostProject"
 if (Test-Path $publishDir) {
     Remove-Item -Recurse -Force $publishDir
 }
 dotnet publish $desktopHostProject `
     --configuration $Configuration `
-    --runtime win-x64 `
-    --self-contained true `
-    -p:PublishReadyToRun=true `
     -p:Version=$Version `
     --output $publishDir
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed (exit code $LASTEXITCODE). Aborting release."
 }
 
-# --- Step 3: Velopack pack --------------------------------------------------
-$vpk = Get-Command vpk -ErrorAction SilentlyContinue
-if (-not $vpk) {
+if (-not (Get-Command vpk -ErrorAction SilentlyContinue)) {
     throw "vpk (Velopack CLI) was not found on PATH. Install it with: dotnet tool install -g vpk"
 }
 
-Write-Host "==> vpk pack (app id: $AppId, version: $Version)"
+Write-Host "==> vpk pack (app id: $appId, version: $Version)"
 if (Test-Path $releasesDir) {
     Remove-Item -Recurse -Force $releasesDir
 }
 New-Item -ItemType Directory -Force -Path $releasesDir | Out-Null
 vpk pack `
-    --packId $AppId `
+    --packId $appId `
     --packVersion $Version `
     --packTitle "APS Planner" `
     --packAuthors "APS" `
