@@ -21,15 +21,23 @@ public static class ResourceCapacityModel
     /// optimizer reports as a master-data error rather than silently treating as unconstrained.
     /// </summary>
     public static long EffectiveCapacityUnits(Resource resource) =>
-        EffectiveCapacityUnits(resource, resource.CapacityFactorPct);
+        EffectiveCapacityUnits(resource.NominalConcurrentCapacity, resource.CapacityFactorPct);
 
     /// <summary>
     /// Capacity under an explicit factor - used for a calendar window that derates the resource
     /// instead of taking it out of service entirely.
     /// </summary>
-    public static long EffectiveCapacityUnits(Resource resource, decimal capacityFactorPct)
+    public static long EffectiveCapacityUnits(Resource resource, decimal capacityFactorPct) =>
+        EffectiveCapacityUnits(resource.NominalConcurrentCapacity, capacityFactorPct);
+
+    /// <summary>
+    /// Snapshot/read-model overload of the same canonical capacity conversion. Historical Plan
+    /// Versions persist the nominal capacity and factor, not a mutable Resource entity, so they
+    /// still use exactly the same floor/scale semantics as CP-SAT.
+    /// </summary>
+    public static long EffectiveCapacityUnits(decimal? nominalConcurrentCapacity, decimal capacityFactorPct)
     {
-        var nominal = resource.NominalConcurrentCapacity ?? 0m;
+        var nominal = nominalConcurrentCapacity ?? 0m;
         if (nominal <= 0m) return 0;
         var factor = Math.Clamp(capacityFactorPct, 0m, 100m) / 100m;
         // Floor: never claim more capacity than the master data supports.
@@ -41,9 +49,15 @@ public static class ResourceCapacityModel
     /// otherwise the basis decides - a mass-equivalent unit consumes the task's tonnage, and a
     /// slot/position unit consumes one place regardless of tonnage.
     /// </summary>
-    public static long DemandUnits(Resource resource, decimal quantityMt, decimal? explicitDemand)
+    public static long DemandUnits(Resource resource, decimal quantityMt, decimal? explicitDemand) =>
+        DemandUnits(resource.CapacityBasis, quantityMt, explicitDemand);
+
+    /// <summary>
+    /// Snapshot/read-model overload of the canonical demand conversion.
+    /// </summary>
+    public static long DemandUnits(ResourceCapacityBasis capacityBasis, decimal quantityMt, decimal? explicitDemand)
     {
-        var demand = explicitDemand ?? resource.CapacityBasis switch
+        var demand = explicitDemand ?? capacityBasis switch
         {
             ResourceCapacityBasis.MassEquivalentMt => quantityMt,
             _ => 1m
