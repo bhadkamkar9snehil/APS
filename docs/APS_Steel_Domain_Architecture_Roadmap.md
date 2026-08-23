@@ -1,132 +1,145 @@
 # APS Steel-Domain Architecture and Roadmap
 
-> Canonical reference for the current state, gaps, target steel-domain model, and implementation direction of APS.
->
-> Governing implementation epic: GitHub issue #2.
->
-> UI is intentionally not a current priority. This document is about the domain model, master data, planning logic, solver formulation, material flow, execution boundaries, and traceability.
+**Status:** canonical steel-domain architecture and roadmap  
+**Re-baselined:** 23-Aug-2026 against current `main`  
+**Current primary implementation issue:** #16 — late-bound resource assignment, commitment and operational redispatch  
+**Historical pre-rebaseline roadmap:** [`archive/domain-roadmaps/APS_Steel_Domain_Architecture_Roadmap_pre_2026-08-23.md`](archive/domain-roadmaps/APS_Steel_Domain_Architecture_Roadmap_pre_2026-08-23.md)
+
+This document describes the **current** steel-domain architecture and the remaining roadmap. It supersedes the earlier roadmap that still described EAF/LRF/VD modeling as a major future gap and the production UI as only a sandbox.
+
+Implementation-state detail is also summarized in [`current/APS_CURRENT_STATE_2026-08-23.md`](current/APS_CURRENT_STATE_2026-08-23.md). Backend work order is governed by [`APS_Backend_Work_Program.md`](APS_Backend_Work_Program.md).
 
 ---
 
-## 1. Executive position
+## 1. Architectural position
 
-APS already has a strong planning/scheduling backbone: commercial lineage, campaign allocation, inventory netting, finite scheduling, plan versions, replanning, Work Order release, and material genealogy are substantially established.
+APS is a manufacturing Advanced Planning & Scheduling system for integrated steel production.
 
-The main weakness is that the physical production model is still too generic for a domain-true steel APS. The current production-structure path effectively begins at Heat -> CCM -> Billet -> Rolling. The next major evolution is to model the actual steel route and the constraints that make steel planning difficult:
+The canonical causal chain is:
 
 ```text
-SAP SO / stock requirement
-  -> Production Order
-  -> Campaign
-  -> furnace-feasible Heat structure
-  -> EAF
-  -> LRF
-  -> optional/required VD
-  -> CCM / cast sequence / strands
-  -> billet supply
-  -> optional/required reheating
-  -> RM
-  -> TMT / cooling / cutting / bundling / coiling / finishing
-  -> individual bundle/coil / FG lot
-  -> inventory allocation / SO / dispatch
+SAP Sales Order item / MTS requirement
+ -> customer + product + grade requirement resolution
+ -> qualified finished-goods coverage
+ -> MTO/MTS Production Order manufacturing requirement
+ -> recursive BOM/material requirement graph
+ -> time-phased material coverage and reservations
+ -> internally manufacturable upstream requirements / explicit shortfall
+ -> Campaign candidate optimization
+ -> grade sequence + furnace-feasible heats
+ -> configured ManufacturingRoute operations
+ -> finite material/resource/thermal schedule
+ -> immutable Plan Version
+ -> readiness review / Approved
+ -> persisted release
+ -> Work Orders + process operations
+ -> execution actuals + physical material transformation
+ -> inventory/WIP/remaining-demand refresh
+ -> bounded repair or broader replan
 ```
 
-The architecture should be explicitly **steel-specific at the domain level while keeping physical equipment counts data-driven**. EAF, LRF, VD, CCM, reheating furnace, RM, TMT, bundle, coil, heat, cast sequence, strand and billet are first-class steel concepts. Individual physical equipment such as `EAF-1`, `CCM-2`, `RM-1` remain configurable Resource records rather than hard-coded branches.
+Demand/material requirement is causality. Campaign is manufacturing aggregation/optimization. Resource assignment is a planning/dispatch decision. Work Orders are execution artifacts. Actual material and actual resource/time/quantity close the loop.
+
+The steel domain is explicit, but **plant topology and equipment count are data-driven**. APS must not encode one fixed plant diagram.
 
 ---
 
-## 2. Current implementation status
+## 2. Product boundary
 
-The following is an architectural maturity snapshot, not a formal completion metric.
+APS plans what the configured plant can manufacture.
 
-| Area | Current state | Assessment |
-|---|---|---|
-| SO -> PO -> Campaign -> WO lineage | Implemented | Strong |
-| MTO + MTS | Implemented | Strong |
-| FG + billet/intermediate inventory netting | Implemented | Strong foundation |
-| Campaign allocation | Implemented | Needs better optimization |
-| Heat formation inside campaign | Implemented | Needs furnace/route-specific heat rules |
-| Multi-grade campaigns | Supported through sequence class | Needs proper grade/metallurgy master |
-| Caster model | Multiple physical casters, capabilities, strand count | Good foundation |
-| Rolling mills | Multiple physical mills + capabilities | Good foundation |
-| EAF / LRF / VD | Not properly modeled/scheduled | Major gap |
-| CCM sequencing | Implemented; upstream assignment is still heuristic | Needs deeper optimization |
-| RM sequencing | CP-SAT-owned fixed-resource sequencing | Stronger after AddCircuit tranche |
-| Parallel equipment | Explicitly per physical Resource | Correct |
-| Hot/cold/finishing routes | Configurable | Good foundation |
-| Grade transition rules | Generic rule model exists | Needs metallurgical hierarchy |
-| Plant topology | Plant + stage + resource + flow links | Too shallow |
-| Finite scheduling | CP-SAT + calendars + dependencies + AddCircuit | Strong foundation |
-| Replanning | Versions + frozen/slushy + actuals | Good foundation |
-| Material genealogy | WO -> lot -> downstream lot -> PO/SO | Strong |
-| Execution integration | Adapter abstraction exists | Appropriate |
-| UI | Planning Sandbox/reference | Not current priority |
-
-Approximate maturity:
+For every uncovered material requirement:
 
 ```text
-Domain / lineage              ~90%
-Inventory foundation          ~80%
-Plan version / replanning     ~80%
-Finite scheduler foundation   ~80%
-Campaign formation            ~60%
-CCM planning                  ~60%
-Rolling planning              ~60%
-Plant master model            ~50%
-Grade/metallurgy model        ~30%
-EAF/LRF/VD planning           ~10%
+qualified supply available by need time?
+  yes -> consume/reserve it
+  no  -> can configured internal manufacturing satisfy it?
+          yes -> create/schedule upstream manufacturing requirement
+          no  -> explicit Shortfall / NotManufacturableHere
 ```
+
+Important rules:
+
+- material absence **does not delete manufacturing demand**;
+- a month-long campaign does not require all material to exist on day one;
+- future internal production, released/running WIP and authoritative known incoming material may satisfy later requirements;
+- APS production planning does not invent procurement, transfer or supplier decisions;
+- purchased/transferred material already present in authoritative inventory/incoming integration is simply known supply.
 
 ---
 
-## 3. What Plant -> ProcessStage -> Resource should mean
+## 3. Current implementation maturity
 
-The existing hierarchy is useful, but it needs precise steel-domain semantics.
+The earlier roadmap's maturity percentages are obsolete. Current `main` already contains the following canonical foundations.
+
+| Area | Current state |
+|---|---|
+| SO -> FG coverage -> MTO PO | Implemented and persisted |
+| MTO + MTS | Implemented |
+| Recursive BOM/material causality | Implemented foundation |
+| Time-phased material coverage/reservation | Implemented foundation |
+| Known future billet / committed WIP | Implemented foundation |
+| Campaign candidate optimization | Implemented/integrated |
+| Grade sequence / transition economics | Implemented foundation |
+| Furnace-feasible heat formation | Implemented |
+| Configured pre-CCM route | Implemented foundation |
+| EAF/LRF/VD/other configured steelmaking steps | Route-driven; not hard-coded topology |
+| Multiple physical CCMs | Implemented with independent physical timelines |
+| Route-driven downstream projection | Implemented/integrated |
+| Direct hot charge vs reheating | Configured/thermal decision, not universal RHF |
+| Billet thermal aging / actual-state replan | Implemented/integrated (#56) |
+| Liquid-steel thermal/resource-pair constraints | Implemented foundation |
+| Multiple physical rolling resources | Implemented |
+| Unary and cumulative scheduling modes | Implemented foundation |
+| Resource outage/derating scenarios | Implemented foundation |
+| Immutable Plan Versions | Implemented |
+| Plan compare / workbench readback | Implemented foundation |
+| Approval/readiness/release | Implemented persisted lifecycle |
+| Work Orders / process operations | Implemented |
+| Execution services and genealogy foundations | Implemented, deeper closure remains #18 |
+| Production Blazor UI / planner workbench | Implemented foundation |
+| Central Gantt workbench | Major overhaul integrated; further planner-grade depth remains |
+| Windows verification | Shared EOS Azure Windows verifier established |
+
+The remaining work is no longer “build the steel domain from Heat -> CCM upward.” It is to close **operational dispatch flexibility, execution truth, explanation, scenario consistency, complete read/command exposure, master authoring and integrated acceptance** on top of the now-established steel model.
+
+---
+
+## 4. Plant, stage and physical-resource semantics
 
 ### Plant
 
-One planning site / steel works.
+A steel works / planning site.
 
 ### Area
 
-Major operating area, for example:
+A major operating area such as steelmaking, casting, billet/intermediate storage, rolling or finishing.
 
-- steelmaking
-- continuous casting
-- billet yard / intermediate inventory
-- rolling
-- finishing
-- finished-goods yard
+### Process stage / operation type
 
-### ProcessStage
-
-A manufacturing step or capability class, **not a physical machine**.
+A manufacturing capability or route step. It is **not** a physical machine.
 
 Examples:
 
-- EAF melting
-- LRF refining
-- VD treatment
-- continuous casting
-- billet reheating
-- hot rolling
-- cold rolling
-- TMT/quench
-- cooling
-- cutting
-- bundling
-- coiling
+- primary steelmaking;
+- LRF/LF/secondary metallurgy;
+- VD/RH/AOD/VOD or other configured treatment;
+- continuous casting;
+- reheating;
+- hot rolling;
+- cold rolling;
+- TMT/quench;
+- cooling/cutting/bundling/coiling/finishing.
 
 ### Resource
 
-One physical independently capacity-constrained equipment instance.
-
-Examples:
+One physical independently constrained equipment instance, for example:
 
 ```text
 EAF-1
 EAF-2
 LRF-1
+LRF-2
 VD-1
 CCM-1
 CCM-2
@@ -135,1048 +148,329 @@ RM-1
 RM-2
 ```
 
-Every physical Resource has its own calendar, availability, capacity and schedule timeline.
+Each physical `ResourceId` owns its own:
 
-**A ProcessStage must never imply one combined queue across all Resources of that stage.**
+- capability/eligibility;
+- calendar;
+- operating state;
+- scheduling mode/capacity basis;
+- throughput/duration semantics;
+- sequence/transition occupancy;
+- planned, committed and actual execution relationship.
 
-This is critical for parallel operation:
-
-```text
-CCM-1 timeline  -------------------------->
-CCM-2 timeline  -------------------------->
-
-RM-1 timeline   -------------------------->
-RM-2 timeline   -------------------------->
-```
-
-The same principle applies to multiple EAF, LRF and VD units.
+Parallel resources are not collapsed into an artificial shared sequence merely because they have the same type.
 
 ---
 
-## 4. Steel-specific equipment taxonomy
+## 5. Manufacturing route is authoritative topology
 
-The current broad `ResourceType` values such as Furnace/Refining/Caster/RollingMill are not sufficiently expressive.
-
-Introduce a steel-specific classification such as `ProcessUnitType` or `SteelProcessType`:
+APS does **not** assume a universal:
 
 ```text
-EAF
-LRF
-VD
-CCM
-ReheatingFurnace
-HotRollingMill
-ColdRollingMill
-TMTWaterBox
-CoolingBed
-Shear
-BundlingLine
-Coiler
-FinishingLine
-MaterialBuffer
+EAF -> LRF -> VD -> CCM -> RHF -> RM
 ```
 
-Keep broad ResourceType if useful for infrastructure/generalization, but the planner should not infer EAF/LRF/VD semantics from a generic category.
+The configured `ManufacturingRoute` determines the ordered manufacturing operations.
 
-Example configured plant:
+Valid configured examples include:
 
 ```text
-Steelmaking
-  EAF-1
-  EAF-2
-  ...
-  LRF-1
-  LRF-2
-  ...
-  VD-1
-  ...
-
-Casting
-  CCM-1   4 strands
-  CCM-2   4 strands
-
-Rolling
-  RHF-1   shared feed resource
-  RM-1
-  RM-2
+primary steelmaking -> LRF -> CCM -> HotRoll
+primary steelmaking -> LRF -> VD -> CCM -> Reheat -> HotRoll
+CCM -> HotRoll
+CCM -> Reheat -> HotRoll
+CCM -> HotRoll -> ColdRoll -> Finish
+CCM -> HotRoll -> Reheat -> HotRoll
+billet inventory -> Reheat -> HotRoll
 ```
 
-EAF/LRF/VD counts are master data. The planning code must work for one, two or many units without changes.
+An operation may be:
+
+- required;
+- optional under grade/order/material/thermal policy;
+- forbidden by the applicable requirement.
+
+### VD and other secondary-treatment steps
+
+VD is present because the configured route and effective grade/order requirement require or permit it. The same principle applies to RH, AOD, VOD or other treatment operations. The planner must not infer process semantics from equipment naming alone.
+
+### Reheating
+
+Reheating is conditional, not universal.
+
+Direct hot charge is valid only when all applicable route/order/thermal/flow constraints permit it. Cold/yard billet, a route requiring RHF, loss of hot continuity or measured/estimated thermal ineligibility selects the configured reheat path.
+
+If reheating is required but no eligible configured resource/path exists, APS reports named infeasibility; it does not invent a furnace or bypass the requirement.
 
 ---
 
-## 5. Current biggest process gap: SMS is effectively Heat -> CCM
+## 6. Material and billet planning
 
-The current production-structure implementation is largely organized around caster planning and rolling planning. Conceptually it behaves close to:
+The material model separates **requirement identity** from **current stock**.
 
-```text
-Campaign
-  -> Heat
-  -> CCM
-  -> Billet
-  -> RM
-```
+A rolling requirement can remain valid even when the billet does not yet exist. APS may satisfy it from:
 
-The target chain is:
+- current qualified billet inventory;
+- authoritative future incoming billet;
+- released/running internal cast output;
+- APS-planned internal cast output.
 
-```text
-Campaign
-  -> Heat
-  -> EAF operation
-  -> LRF operation
-  -> optional/required VD operation
-  -> CCM operation
-  -> strand/billet output
-  -> rolling supply path
-```
+If none is available by the need time, the requirement remains visible as late supply/shortfall.
 
-Each heat should carry its own operation route and each operation should expose eligible physical resources.
+### Inventory decoupling
 
-Example:
+A configured inventory/buffer point intentionally breaks guaranteed hot continuity. Material remains valid supply but later hot-charge eligibility must be re-established from the current thermal state and configured route.
 
-```text
-Heat H101
-  EAF: eligible EAF-1 / EAF-2
-  LRF: eligible LRF-1 / LRF-2
-  VD: required; eligible VD-1
-  CCM: eligible CCM-1 / CCM-2
-```
-
-The solver then schedules these as coupled operations with transfer/queue/thermal constraints.
+This is why a downstream mill outage does not necessarily erase an upstream billet-production requirement. The plant may continue producing intermediate stock if the configured planning policy and capacity make that valid.
 
 ---
 
-## 6. Work Order type vs process-operation type
+## 7. Campaign, grade sequence and heat structure
 
-The execution-facing Work Order classification should stay relatively coarse, but APS needs finer process semantics.
+Campaign formation is not production-authoritative sort-and-fill.
 
-Recommended split:
+Current planning evaluates candidate grouping/sequence/heat structures using explicit technical and service economics including:
 
-```text
-WorkOrderType
-  Steelmaking
-  Casting
-  HotRolling
-  ColdRolling
-  Finishing
+- PO allocation-level service obligations;
+- grade/sequence compatibility;
+- customer/segregation constraints;
+- caster/input format compatibility;
+- route/downstream feasibility;
+- transition prohibition/time/penalty;
+- furnace-feasible heat envelopes;
+- heat-target deviation/utilization;
+- MTO/MTS policy;
+- campaign/setup economics;
+- early-production/service cost;
+- replan stability against the persisted baseline.
 
-ProcessOperationType
-  EAF
-  LRF
-  VD
-  CCM
-  RHF
-  RM
-  TMT
-  Cooling
-  Cutting
-  Bundling
-  Coiling
-```
+Campaigns aggregate manufacturing requirements, but PO/SO quantity/date/customer identity survives through allocation records.
 
-Examples:
-
-```text
-WO Type: Steelmaking
-Operation: EAF
-
-WO Type: Steelmaking
-Operation: LRF
-
-WO Type: Steelmaking
-Operation: VD
-
-WO Type: Casting
-Operation: CCM
-```
-
-APS retains operation-level schedule truth even if external execution groups multiple operations into one WO.
+Replan stability is a **soft** objective: hard technical feasibility and customer-service requirements may force a different grouping.
 
 ---
 
-## 7. Grade/metallurgy master
+## 8. Finite scheduling and resource semantics
 
-The current grade treatment (`GradeCode`, `GradeFamilyCode`, `GradeSequenceClassCode`) is not sufficient for 350+ grades.
+The CP-SAT finite scheduler owns constrained resource/time decisions.
 
-Introduce a first-class grade specification.
+Current foundations include:
 
-### Grade master
+- optional resource assignment with exactly-one selection;
+- independent physical-resource schedules;
+- unary finite capacity where appropriate;
+- cumulative capacity where configured;
+- resource calendars/downtime;
+- process/material dependencies;
+- min/max transfer or queue constraints where modeled;
+- route/resource qualification;
+- transition/setup sequencing;
+- time fences and plan stability;
+- service obligations/tardiness;
+- thermal feasibility;
+- operating-state/derating semantics.
 
-```text
-SteelGrade
-  GradeCode
-  Description
-  GradeFamily
-  GradeSequenceClass
-  CastingClass
-  QualityClass
-  ProductFamily compatibility
-  Active
-```
-
-### Chemistry
-
-```text
-GradeChemistryRequirement
-  GradeId
-  ElementCode
-  MinPct
-  MaxPct
-  TargetPct optional
-```
-
-The chemistry structure must support arbitrary alloying elements without schema changes.
-
-### Process requirements
-
-```text
-GradeProcessRequirement
-  ProcessType
-  Requirement = Required / Optional / Forbidden
-  CapabilityClass
-  Min/Max processing constraints
-  Max queue/hold constraints
-```
-
-Important examples:
-
-- EAF required
-- LRF required
-- VD required / optional / forbidden
-- CCM casting class requirement
-- reheating required / optional / bypass allowed
-- hot-charge eligibility
-- TMT requirement
-
-Grade master should also carry default superheat/casting-temperature requirements and stage yield/rate profiles where needed.
+Resource type does not imply interchangeability. Eligibility comes from explicit capability/master data and the complete process/material/grade/section/flow context.
 
 ---
 
-## 8. Do not create a 350 x 350 exact-grade matrix
+## 9. Thermal model
 
-Transition rules should be hierarchical.
+### Liquid steel
 
-Rule precedence:
+Liquid-steel planning uses configured thermal/superheat/casting constraints and transfer/resource-pair feasibility through the casting path.
 
-```text
-Exact grade override
-  > Grade sequence-class rule
-  > Grade-family rule
-  > Default rule
-```
+### Billet thermal chain
 
-Example:
+#56 is integrated. APS now supports:
 
-```text
-LowCarbon -> LowCarbon       preferred
-LowCarbon -> MediumCarbon    acceptable
-MediumCarbon -> LowCarbon    expensive
-BearingSteel -> LowCarbon    forbidden
+- hot/cold eligibility based on time/temperature evidence;
+- transfer/wait/holding-loss effects;
+- configured grade/order narrowing;
+- direct hot-charge eligibility;
+- optional-reheat fallback where the route permits;
+- conservative handling of unknown/yard material;
+- actual measured state overriding stale planned/categorical state during replan;
+- persisted decision basis for historical readback.
 
-G1008 -> G1010               exact override
-```
-
-Rules remain directional and can define:
-
-- allowed / forbidden
-- transition time
-- transition penalty
-- mandatory sequence break
-- tundish compatibility
-- caster-specific override
-
-The same hierarchical approach should exist for section/product transitions.
+Thermal state affects the **valid downstream route decision**; it does not erase the material or its upstream manufacturing lineage.
 
 ---
 
-## 9. Material, billet and cross-section model
+## 10. Resource assignment, commitment and operational flexibility
 
-String codes such as `150X150`, `16MM`, etc. should remain identifiers but not the only source of planning semantics.
+This is the current primary architectural gap under #16.
 
-Introduce structured cross-section/material specifications:
-
-```text
-CrossSection
-  Shape
-  WidthMm
-  HeightMm
-  ThicknessMm
-  DiameterMm
-  SectionFamily
-  CasterFormatClass
-  RollingFamily
-```
-
-Material/product specification should represent:
-
-- SAP material reference
-- material stage: liquid steel / billet / intermediate / finished
-- product form: billet / bar / rod / section / coil / bundle
-- grade
-- section/dimensions
-- cut length
-- theoretical mass-per-length where relevant
-- route family
-- rolling family
-- packaging rules
-
-This enables relationships such as:
+The target lifecycle is generic across process types:
 
 ```text
-150x150 billet
-  -> 8 mm TMT
-  -> 10 mm TMT
-  -> 12 mm TMT
-  -> 16 mm TMT
+operation requirement
+ -> eligible physical resources
+ -> planned resource
+ -> commitment state
+ -> committed resource
+ -> actual resource
 ```
 
-without maintaining thousands of exact string combinations.
+A heat that is ready at LRF must be able to retain valid CCM alternatives until the commitment boundary. If CCM-1 becomes unavailable and CCM-2 remains technically feasible, the system should support a bounded, auditable redispatch without changing the heat/order identity.
+
+The same architecture applies to other genuinely interchangeable process resources.
+
+Completion requires:
+
+- retain eligible alternatives after solve;
+- persist eligibility/exclusion evidence where needed;
+- operation-specific commitment policy;
+- planned vs committed vs actual assignment;
+- bounded local redispatch/repair;
+- revalidation of route/material/thermal/queue/sequence/calendar/capacity rules;
+- child Plan Version / revision history;
+- immutable actual-resource truth after execution;
+- typed readback of alternatives, commitment and redispatch history.
+
+Do not implement this as a CCM-specific exception framework.
 
 ---
 
-## 10. SAP SO/item/customer special characteristics
+## 11. Plan Version, approval and release
 
-An SAP Sales Order is not only material, grade, section, quantity and due date.
+Planning truth is persisted as immutable Plan Versions.
 
-Normalize order/customer requirements into an APS planning-requirement snapshot attached to the MTO Production Order.
-
-Support at least:
-
-- customer/customer group
-- end-use or quality class
-- tighter chemistry limits
-- mandatory/forbidden VD
-- mandatory/forbidden route or process stage
-- allowed/preferred/forbidden physical resources where contractually required
-- superheat/casting-temperature overrides
-- TMT/mechanical-property process requirement
-- dimensional tolerance
-- cut length
-- target/min/max bundle weight
-- bundle composition/segregation policy
-- coil weight/split requirement
-- marking/packing reference
-- inspection/testing requirement
-- heat/lot/customer segregation
-- whether different SO/customer quantities may share campaign/heat/rolling lot
-
-Constraint precedence:
+Current lifecycle includes:
 
 ```text
-Customer/SO hard requirement
-  narrows
-Grade/material default
-  narrows
-Plant/resource capability
+Draft -> Feasible -> Approved -> Released
 ```
 
-Order/customer requirements may make a route stricter but must never silently loosen a hard grade/metallurgy constraint.
+with failed/superseded states where applicable.
 
-This also means two orders with the same nominal grade and final section may still be incompatible for campaign/heat pooling.
+A historical Plan Version must be explainable from persisted snapshots/assumptions rather than silently adopting live masters.
+
+Release is identity-only:
+
+```text
+PlanVersionId
+ -> persisted Plan Version snapshots
+ -> readiness/approval policy
+ -> persisted release service
+ -> Work Orders + ScheduledOperations
+```
+
+The client must not reconstruct production structure and submit a second version of planning truth.
+
+Readiness includes persisted material/supply evidence and MTO service-completion checks.
 
 ---
 
-## 11. Furnace-capacity-driven heat formation
+## 12. Execution and genealogy
 
-Current heat formation uses global nominal/minimum/maximum heat-size policy. That is acceptable only as an early placeholder.
+The architecture distinguishes:
 
-The target rule is:
-
-> Every planned heat quantity must be feasible for at least one physical steelmaking route/resource combination.
-
-Heat formation must consider:
-
-- eligible EAFs
-- EAF nominal tap weight
-- EAF min/max feasible heat weight
-- ladle capacity where constraining
-- grade-specific heat range
-- order/customer restrictions
-- VD route requirement
-- expected steelmaking/casting yield
-- CCM/cast-sequence compatibility
-- downstream billet requirement
-- residual/partial-heat policy
-
-Example:
+### Commercial lineage
 
 ```text
-EAF-1
-  nominal 65 MT
-  min 62 MT
-  max 68 MT
-
-EAF-2
-  nominal 70 MT
-  min 66 MT
-  max 72 MT
-
-Grade X
-  feasible 62-68 MT
-
-Grade Y
-  feasible 65-70 MT
+SO/item -> PO -> Campaign allocation -> Heat/Rolling/Route/WO allocation
 ```
-
-Campaign planning should generate feasible **heat-structure candidates** rather than immediately distributing tonnage around one global nominal value.
-
-The heat should not be permanently bound to one EAF too early if several EAFs can make it. Candidate heat size and compatible furnace set are coupled decisions.
-
-Inventory netting happens before fresh-steel heat formation. If qualified billet supply already covers rolling requirement, no internal heat should be generated merely because an order exists.
-
----
-
-## 12. Campaign planning must evolve from deterministic fill to optimization
-
-Current campaign formation is deterministic grouping using compatibility partitions and maximum campaign quantity. That is a strong first implementation but not a mature APS campaign optimizer.
-
-Target:
-
-```text
-Production Order pool
-  -> hard compatibility filtering
-  -> campaign candidates
-  -> grade-sequence candidates
-  -> furnace-feasible heat structures
-  -> cast/resource/route alternatives
-  -> downstream feasibility evaluation
-  -> global selection
-```
-
-Compatibility should account for:
-
-- route
-- grade family/sequence class/exact overrides
-- customer requirements
-- chemistry/quality segregation
-- VD requirement
-- caster format
-- product-family rules
-- MTO/MTS mixing policy
-- inventory/supply source
-- downstream capability
-
-Objectives should be tiered:
-
-1. hard feasibility
-2. MTO fulfillment / due-date service
-3. schedule stability
-4. heat utilization / grade transition / cast-sequence efficiency
-5. rolling/reheating/hot-charge efficiency
-6. MTS target attainment / inventory economics / external billet cost
-
-Campaign remains the planning anchor, and **heat formation remains inside campaign planning**.
-
----
-
-## 13. Steelmaking route operations: EAF -> LRF -> VD -> CCM
-
-For each heat, derive the required route from grade, customer/order requirements, material route, and active plant topology.
-
-Examples:
-
-```text
-EAF -> LRF -> CCM
-EAF -> LRF -> VD -> CCM
-```
-
-A VD-required grade cannot be scheduled on a route that skips VD.
-
-Each heat operation should carry:
-
-- HeatId
-- ProcessOperationType
-- eligible physical resources
-- quantity
-- duration/rate model
-- predecessor/successor
-- min/max queue/transfer time
-- thermal envelope reference
-- grade/order requirement snapshot
-- solved resource/start/end
-- actual resource/start/end when execution occurs
-
-Every physical process unit remains independently schedulable.
-
----
-
-## 14. Superheat and thermal constraints
-
-Thermal modeling has two distinct domains and they must not be conflated.
-
-### Liquid-steel thermal constraints
-
-Model:
-
-- liquidus/reference temperature when supplied
-- target superheat at CCM
-- minimum/maximum superheat
-- hard casting-temperature window
-- preferred target range
-- EAF tap temperature range
-- LRF exit/target range
-- VD exit/target range
-- CCM arrival/casting range
-
-Support customer/order overrides that narrow grade defaults.
-
-The planner does not initially need a first-principles thermodynamic model, but it needs auditable thermal-loss/holding assumptions sufficient to reject impossible schedules.
-
-Potential model:
-
-- transfer duration
-- nominal temperature loss per minute or piecewise decay profile
-- maximum queue/holding time
-- transport/ladle class
-- heating/temperature-correction capability at eligible stages
-
-Hard thermal violations must remain hard constraints.
-
-### Billet thermal state
-
-Separately model hot billet / cold billet / reheated billet state for hot-charge and reheating decisions.
-
----
-
-## 15. CCM domain model
-
-Known physical configuration to support:
-
-```text
-CCM-1    4 strands
-CCM-2    4 strands
-```
-
-Each CCM should define:
-
-- strand count
-- supported billet/bloom/slab formats
-- supported grade/casting classes
-- casting speed/rate profile
-- min/max grade-sensitive casting speed
-- tundish/sequence heat limits
-- tundish-life assumptions where available
-- startup/sequence-break/setup
-- section-change rules
-- grade-transition rules
-- sequence-break requirements
-- yield/crop-loss profile
-- maintenance/calendar
-- hot-transfer destinations
-
-A cast sequence should explicitly contain:
-
-- physical CCM
-- section/format
-- tundish/sequence identity
-- ordered heat positions
-- grade transitions
-- expected start/end
-- expected output
-- sequence-break reason when applicable
-
-Output progression:
-
-```text
-Heat
-  -> CastSequence
-  -> CCM
-  -> Strand 1..4
-  -> billet quantities
-  -> later billet pieces/cut units
-```
-
-Initial planning can remain aggregate by strand, but the model must permit billet-piece/cut-pattern refinement later.
-
----
-
-## 16. Billet supply is a planning source, not only an SMS output
-
-Rolling demand can be satisfied from qualified sources:
-
-```text
-Finished goods
-Existing billet inventory
-External/purchased billet
-In-transit billet
-Internal actual cast billet
-Internal planned cast billet
-Manual planner supply
-```
-
-Each billet source needs:
-
-- specification / grade / section
-- quantity
-- available timestamp
-- location
-- source type
-- supplier/source reference
-- lot/heat/certificate where available
-- quality status
-- customer restrictions
-- reservation state
-- thermal state where relevant
-
-This makes the following contingency normal rather than exceptional:
-
-```text
-steelmaking unavailable
-external/existing billet available
-RHF and RM operational
-=> rolling remains schedulable
-```
-
-Internal fresh heats are one supply path, not a prerequisite for every rolling requirement.
-
----
-
-## 17. Shared reheating furnace and hot/cold charge
-
-The model must support a single physical reheating furnace feeding both rolling mills.
-
-Example topology:
-
-```text
-CCM-1 -----\
-CCM-2 ------+--> billet/hot path --> RHF-1 --> RM-1
-External ---+                         \------> RM-2
-Inventory --/
-```
-
-`RHF-1` is modeled once and owns one capacity timeline shared by both downstream demand streams.
-
-Possible feed paths:
-
-```text
-CCM -> direct/hot transfer -> RM
-CCM -> yard -> RHF -> RM
-Existing billet -> RHF -> RM
-External billet -> RHF -> RM
-Qualified sufficiently-hot billet -> RM
-```
-
-Whether RHF is mandatory is determined in precedence order by:
-
-1. customer/SO hard requirement
-2. grade process requirement
-3. material thermal state / cold-charge requirement
-4. plant operating policy
-
-Examples:
-
-- cold billet normally requires RHF
-- some grades may compulsorily require RHF
-- hot-charge-eligible material may bypass RHF only if thermal/time constraints are satisfied
-
-RHF capability can include:
-
-- charge/working capacity
-- throughput
-- residence time
-- min/max residence
-- grade/material/section compatibility
-- discharge temperature
-- calendar/downtime
-
----
-
-## 18. Rolling, TMT, cutting, bundling and coils
-
-Rolling must evolve from a generic RM block to a domain chain capable of representing actual output forms.
-
-Long-product/TMT route:
-
-```text
-qualified billet
-  -> optional RHF
-  -> RM
-  -> TMT/quench when required
-  -> cooling bed
-  -> cutting/shearing
-  -> bundling/packing
-  -> individual bundle FG lots
-```
-
-Coil route:
-
-```text
-qualified billet/intermediate
-  -> rolling
-  -> coiling
-  -> individual coil lots
-```
-
-RM capability should include:
-
-- input billet formats
-- grade/family eligibility
-- product/section range
-- throughput by grade/product/section
-- min/target campaign quantity
-- grade/section/product transition rules
-- setup/changeover
-- RHF/hot-transfer compatibility
-- calendar
-
-TMT requirements can include:
-
-- TMT required/optional/forbidden
-- TMT capability/profile class
-- customer override
-- speed/throughput effect where known
-
-### Bar/bundle planning
-
-For TMT/long products model:
-
-- bar diameter/section
-- standard/customer cut length
-- theoretical piece weight
-- expected pieces/bars
-- target/min/max bundle weight
-- expected bundle count
-- remainder handling
-- bundle composition/segregation
-- mixed-heat/mixed-lot policy
-- tagging/marking reference
-
-APS can plan expected bundle counts while execution creates actual bundle IDs/weights.
-
-### Coil planning
-
-Model:
-
-- target/min/max coil weight
-- expected coil count
-- split policy
-- customer-specific coil constraints
-- eventual actual individual coil IDs
-
----
-
-## 19. Time-phased inventory and material balance
-
-Current static netting is useful but must evolve from:
-
-```text
-Available(material)
-```
-
-to:
-
-```text
-Available(material, time)
-```
-
-Example:
-
-```text
-08:00  opening billet stock      80 MT
-11:00  Heat 101 output          +60 MT
-12:00  external receipt         +40 MT
-13:00  Heat 102 output          +60 MT
-14:00  RM consumption           -70 MT
-```
-
-Canonical balance:
-
-```text
-ProjectedAvailable(t)
- = opening usable inventory
- + confirmed receipts by t
- + planned/released production by t
- + actual production by t
- - reservations/allocations by t
- - planned/released consumption by t
- - safety/reserve constraints
-```
-
-Material events should include:
-
-- opening stock
-- external receipts
-- internal heat/strand production
-- quality release/hold/rejection
-- reheating state changes where relevant
-- RM consumption
-- downstream production
-- dispatch
-
-Reservations must prevent double-use.
-
-Inventory-decoupling points such as billet yard should be explicit; direct/hot-transfer paths remain tightly coupled.
-
----
-
-## 20. Rolling resource assignment still needs to move into CP-SAT
-
-The finite scheduler now owns same-resource order through per-Resource AddCircuit sequencing, but upstream production-structure planning still normally selects a particular physical caster/mill before solve.
-
-The target is:
-
-```text
-CP-SAT / coupled planning decides:
-  eligible resource
-  order on that resource
-  exact time
-```
-
-not only:
-
-```text
-heuristic decides RM-1 vs RM-2
-CP-SAT decides order/time afterward
-```
-
-The next resource-assignment tranche should expose multiple eligible physical RMs, and later EAF/LRF/VD/CCM alternatives, while preserving independent timelines per physical ResourceId.
-
-Caster assignment needs special treatment because changing CCM also changes:
-
-- cast-sequence/tundish membership
-- strand/material identity
-- billet availability
-- transfer links
-
-Therefore CCM assignment and cast-sequence formation must be coupled rather than treated as a trivial independent resource alternative.
-
----
-
-## 21. Contingency and plant operating states
-
-Partial plant operation is a normal planning condition.
-
-Support:
-
-- steelmaking area unavailable while rolling continues on qualified billets
-- one EAF down
-- one LRF down
-- VD down
-- one CCM down
-- RHF down
-- one RM down
-- planned maintenance
-- throughput derating
-- grade-specific temporary restrictions
-
-Contingency must emerge from explicit alternate routes/material sources, not hidden fallback code.
-
-Example:
-
-```text
-steelmaking unavailable
- -> no new internal heats
- -> evaluate existing/external billet
- -> cold billet through RHF if required
- -> schedule available RM
-```
-
-If a VD-required grade has no available VD and there is no approved alternate route, it is infeasible/delayed.
-
----
-
-## 22. Commercial lineage and physical genealogy
-
-Two complementary traces must be preserved.
-
-### Commercial/planning lineage
-
-```text
-SAP SO/item
-  -> Production Order
-  -> Campaign allocation
-  -> Heat/route allocation
-  -> Work Order allocation
-```
-
-This answers **why** material is being produced.
 
 ### Physical genealogy
 
 ```text
-Heat
-  -> EAF/LRF/VD operations
-  -> CCM / CastSequence / Strand
-  -> billet lot/piece
-  -> RHF if used
-  -> RM
-  -> rolled intermediate
-  -> TMT / cut / bundle OR coil
-  -> individual FG lot
-  -> inventory allocation
-  -> SO/item/delivery
+Heat/cast/strand -> billet/material lot -> reheating/rolling -> downstream material -> bundle/coil/FG
 ```
 
-This answers **which physical material** fulfilled an order.
+These relationships overlap but are not the same thing.
 
-External billet genealogy starts at the external source lot/certificate rather than an internal heat.
+Execution services already provide operation/work-order/heat foundations and actual material output. #18 remains the next primary after #16 to close actual transformation, actual-state feedback and route-wide genealogy rigor.
 
-Aggregation must never erase lineage. One WO can contain quantities from multiple Production Orders, and one physical output lot can be allocated downstream while preserving its origin.
-
----
-
-## 23. Solver architecture
-
-Preserve and extend the current CP-SAT foundation:
-
-- optional intervals
-- `AddExactlyOne` resource selection
-- `NoOverlap` per physical resource
-- AddCircuit sequencing per physical ResourceId
-- directional sequence-dependent transition time
-- adjacency-only transition penalty
-- calendars/downtime
-- dependencies
-- min/max transfer/queue windows
-- frozen/slushy/liquid stability
-- weighted tardiness and tiered objectives
-
-Non-negotiable invariant:
-
-> Same process/equipment type does not imply one shared schedule. Every physical Resource gets its own capacity and sequencing problem.
-
-Ultimately the solver/candidate layer must consider:
-
-- furnace heat-size feasibility
-- grade/customer/process requirements
-- EAF/LRF/VD/CCM alternatives
-- thermal/superheat feasibility
-- cast sequence/tundish compatibility
-- billet supply and timing
-- RHF/hot/cold charge path
-- RM alternatives
-- TMT/finishing constraints
-- due dates and priorities
-- schedule stability
+Actuals must never rewrite historical planned truth. They become new execution facts used by replan.
 
 ---
 
-## 24. Planning diagnostics
+## 13. UI and central planning workbench
 
-A mature APS must explain why something cannot be planned.
+The statement that APS has only a Planning Sandbox is obsolete.
 
-Pre-solve/domain diagnostics should detect:
+Current `APS.UI` contains production-oriented pages for demand/supply, Campaign Studio, steelmaking/casting, rolling/finishing, finite schedule, material flow, Plan Versions/compare, inventory and master data, plus the central planning-workbench components/state.
 
-- grade has no valid route
-- VD required but no eligible/available VD
-- no EAF supports feasible heat size
-- no CCM supports grade/format
-- customer restrictions conflict with route/grade
-- thermal/superheat window impossible
-- billet cannot feed requested RM/product
-- mandatory RHF unavailable
-- qualified billet not available by required time
-- packaging/customer requirement has no feasible route
+The Gantt is the primary planning instrument and has undergone a major overhaul. Current implementation includes synchronized resource/time workbench behavior, splitters, multi-tier scale, dependency routing, baselines/calendars/campaign/execution/proposal layers, selection/drag/preview/apply flows, capacity and analysis surfaces.
 
-Solver diagnostics should classify:
+Ponytail cleanup subsequently consolidated several standalone render-layer components into fewer canonical lane/viewport paths. **That consolidation removed duplicate plumbing, not the represented planning layers.**
 
-- due-date/capacity conflict
-- thermal max-wait conflict
-- RHF bottleneck
-- resource outage
-- frozen-plan conflict
-- material timing conflict
-- forbidden sequence transition
+Remaining Gantt/product work should be read from:
 
-Relaxation suggestions must never silently relax hard metallurgy or customer requirements.
+- [`current/APS_GANTT_OVERHAUL_IMPLEMENTATION_STATUS.md`](current/APS_GANTT_OVERHAUL_IMPLEMENTATION_STATUS.md);
+- [`APS_GANTT_WORKBENCH_OVERHAUL_REQUIREMENTS.md`](APS_GANTT_WORKBENCH_OVERHAUL_REQUIREMENTS.md);
+- [`APS_UI_Implementation_Plan.md`](APS_UI_Implementation_Plan.md).
 
 ---
 
-## 25. Implementation order
+## 14. Current roadmap
 
-### Foundation
+### Phase A — late-bound dispatch and local repair
 
-1. Plant/Area/ProcessStage/Resource + steel-specific ProcessUnitType — issue #3
-2. Grade/metallurgy/process-requirement master — issue #4
-3. Material/cross-section/product-form master — issue #5
-4. SAP/customer special-characteristic snapshot — issue #6
+**#16 current primary**
 
-### Steelmaking/casting
+Close the complete eligible -> planned -> committed -> actual resource lifecycle and bounded operational redispatch.
 
-5. Furnace-capacity-driven heat formation — issue #7
-6. Heat-route operations EAF -> LRF -> optional/required VD -> CCM — issue #8
-7. Superheat/temperature/thermal-transfer model — issue #9
-8. CCM/tundish/strand-output model — issue #10
+### Phase B — execution/material closure
 
-### Billet/reheating/rolling
+**#18 next**
 
-9. Internal/external billet supply and steelmaking-down contingency — issue #11
-10. Shared RHF + hot/cold charge — issue #12
-11. RM/TMT/cooling/cutting/bundling/coiling — issue #13
-12. Time-phased material balance — issue #14
+Complete route-wide execution, actual material transformation, actual-state feedback and genealogy while preserving commercial/physical lineage separation.
 
-### Optimization
+### Phase C — diagnostics/explanation
 
-13. Candidate campaign/grade/heat optimization — issue #15
-14. Coupled resource assignment across EAF/LRF/VD/CCM/RHF/RM — issue #16
+**#19**
 
-### Operations
+Normalize material, master, campaign, route, thermal, resource, capacity, sequence, time-fence and execution causes. Explanations must identify evidence and restoration options without silently weakening hard constraints.
 
-15. Operating-state scenarios/outages/contingencies — issue #17
-16. Full-route release/execution/genealogy — issue #18
-17. Steel-domain diagnostics and relaxation guidance — issue #19
+### Phase D — scenarios/decision consistency
 
----
+**#57 and #43**
 
-## 26. Architectural invariants
+Use the same canonical material/route/resource semantics for outage/material contingency, Plan Version comparison, CTP, scenario and capacity views. Rough-cut capacity remains distinct from finite occupancy.
 
-1. Campaign remains the planning anchor.
-2. Heat formation remains part of campaign planning.
-3. No equipment count is hard-coded in business logic.
-4. No global single heat size assumption.
-5. No global single steel route assumption.
-6. EAF/LRF/VD/CCM/RHF/RM and other steel steps are explicit domain concepts.
-7. Every physical Resource has its own independent schedule timeline.
-8. Two 4-strand CCMs and two RMs can operate concurrently.
-9. Customer/SAP special requirements can narrow grade/route/resource/quality/packaging eligibility.
-10. Hard metallurgy/quality/customer constraints remain hard.
-11. Inventory, WIP and external supply are first-class planning inputs.
-12. Steelmaking can be unavailable while rolling remains feasible from qualified billet supply.
-13. Shared RHF capacity is modeled once across both RM feed streams.
-14. Cold-charge/hot-charge/reheating decisions are explicit.
-15. Commercial lineage and physical genealogy are both preserved.
-16. Individual bundles/coils can be traced even if APS plans at a higher aggregate grain.
-17. Replanning fixes history/actuals and optimizes only remaining work.
-18. No silent heuristic fallback may be presented as a valid finite schedule.
+### Phase E — complete exposure and configuration
+
+**#36 and #60**
+
+Expose every meaningful planning fact/lever through typed read/command contracts and complete validated operational master authoring.
+
+### Phase F — deterministic reference acceptance
+
+**#61 and #44**
+
+Persist a realistic deterministic integrated-steel reference dataset and close the full manufacturing-planning acceptance loop across demand, material, campaigns, routes, finite scheduling, Plan Versions, release, execution, replan and readback.
+
+Scope-gated/independent work such as process-taxonomy expansion (#62) and clean-host Tailwind verification (#59) remains subordinate to the canonical domain sequence.
 
 ---
 
-## 27. Immediate next tranche
+## 15. Non-negotiable steel-domain invariants
 
-The next code tranche should implement the **Plant + Metallurgy Foundation** before adding more UI or secondary API work:
+1. A physical resource is not a process stage.
+2. Same-type resources are not automatically interchangeable.
+3. A planned resource is not operation identity.
+4. Configured route, not a hard-coded EAF/LRF/VD/CCM/RHF/RM diagram, defines topology.
+5. Material shortage does not erase manufacturing demand.
+6. Future material may satisfy future operations; current inventory is not the planning horizon.
+7. Campaign aggregation must preserve PO/SO allocation identity and service obligations.
+8. Actual physical resource/time/material never rewrites the historical plan.
+9. Plan Version history is immutable and must remain explainable from persisted evidence.
+10. Operational redispatch must revalidate material, thermal, sequence, queue, calendar and capacity constraints.
+11. Rough-cut capacity and finite scheduled occupancy are different truths.
+12. UI interactions may propose planning changes; they do not bypass the planning engine.
 
-```text
-Plant
-  -> Area
-  -> ProcessStage
-  -> Physical Resource
+---
 
-Steel ProcessUnitType
-  -> EAF
-  -> LRF
-  -> VD
-  -> CCM
-  -> Reheating Furnace
-  -> RM
-  -> downstream steel equipment
+## 16. Verification
 
-Grade Master
-  -> families
-  -> sequence/casting classes
-  -> chemistry
-  -> VD / reheating / TMT requirements
-  -> superheat defaults
-  -> resource/route capability classes
+The old “never use CI” instruction is obsolete.
 
-Material Master
-  -> billet/intermediate/final product
-  -> structured cross sections
-  -> bar/coil/bundle characteristics
+The authoritative APS automated verification path is the shared self-hosted Windows Azure DevOps **EOS** agent running the repository-owned [`../build/verify.ps1`](../build/verify.ps1).
 
-Order Requirement Snapshot
-  -> SAP/customer special characteristics
-```
+A commit may be called green only when the exact Windows run/evidence for that exact SHA has been inspected. The verifier performs restore, full Release build, every solution-registered test project and self-contained `win-x64` DesktopHost publish smoke.
 
-Only after that foundation is correct should the current campaign/heat route be rewritten around EAF/LRF/VD/CCM operations and furnace-feasible heat-size candidates.
+GitHub Actions/hosted CI are not authoritative APS verification substitutes.
 
-This is the transition point from a generic manufacturing scheduler with steel terminology to a robust steel-domain APS.
+See [`windows-ci.md`](windows-ci.md) and [`APS_Testing_Strategy.md`](APS_Testing_Strategy.md).
