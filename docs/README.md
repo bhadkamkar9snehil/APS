@@ -1,57 +1,86 @@
 # APS Documentation
 
-Documentation is classified by **authority and purpose**, not merely by age.
+Documentation is classified by **authority and purpose**, not by filename age or words such as `FINAL`, `COMPLETE` or `STATUS`.
 
-## Current implementation authority
+Canonical code authority is `main`. Historical documents are preserved, but they do not override current code or current-state documentation.
 
-Start here:
+## 1. Start here — current implementation authority
 
-1. [`current/APS_CURRENT_STATE_2026-08-23.md`](current/APS_CURRENT_STATE_2026-08-23.md) — current integrated `main` state and latest recorded Windows verification.
-2. [`current/README.md`](current/README.md) — current documentation index.
-3. [`APS_Backend_Work_Program.md`](APS_Backend_Work_Program.md) — ordered remaining backend program.
-4. [`APS_Backend_Canonical_Path_Inventory.md`](APS_Backend_Canonical_Path_Inventory.md) — production lifecycle/path authority.
-5. [`APS_End_to_End_Manufacturing_Planning_Flow.md`](APS_End_to_End_Manufacturing_Planning_Flow.md) — canonical causal flow.
-6. [`APS_Testing_Strategy.md`](APS_Testing_Strategy.md) and [`windows-ci.md`](windows-ci.md) — test and Windows verification contract.
-7. [`current/APS_GANTT_OVERHAUL_IMPLEMENTATION_STATUS.md`](current/APS_GANTT_OVERHAUL_IMPLEMENTATION_STATUS.md) — current Gantt implementation status.
+1. [`current/APS_CURRENT_STATE_2026-08-23.md`](current/APS_CURRENT_STATE_2026-08-23.md) — current integrated implementation snapshot and latest recorded exact Windows verification.
+2. [`current/README.md`](current/README.md) — current/canonical documentation index.
+3. [`APS_Backend_Work_Program.md`](APS_Backend_Work_Program.md) — ordered remaining backend program; current primary is #16.
+4. [`APS_Backend_Canonical_Path_Inventory.md`](APS_Backend_Canonical_Path_Inventory.md) — production planning/query/approval/release/execution authority.
+5. [`APS_End_to_End_Manufacturing_Planning_Flow.md`](APS_End_to_End_Manufacturing_Planning_Flow.md) — canonical demand→material→campaign→route→schedule→release→execution→replan causality.
+6. [`APS_Steel_Domain_Architecture_Roadmap.md`](APS_Steel_Domain_Architecture_Roadmap.md) — current steel-domain architecture and remaining roadmap.
+7. [`APS_Testing_Strategy.md`](APS_Testing_Strategy.md) and [`windows-ci.md`](windows-ci.md) — test strategy and authoritative Windows verification contract.
+8. [`current/APS_GANTT_OVERHAUL_IMPLEMENTATION_STATUS.md`](current/APS_GANTT_OVERHAUL_IMPLEMENTATION_STATUS.md) — current Gantt/workbench implementation status after overhaul and Ponytail consolidation.
 
-`main` is the code authority. A current-state document cannot override behavior that the current production call path does not implement.
+`main` code wins if a status document becomes stale.
 
-## Current specifications and target contracts
+## 2. Current specifications / target contracts
 
-These define intended or still-evolving behavior and remain useful even when implementation is incomplete:
+These remain current target/semantic contracts. Some intentionally include behavior that is still incomplete; use the current-state/status documents to distinguish target from implementation.
 
 - [`APS_Backend_Visibility_Contract.md`](APS_Backend_Visibility_Contract.md)
 - [`APS_Demand_to_Production_Order_and_Due_Date_Model.md`](APS_Demand_to_Production_Order_and_Due_Date_Model.md)
+- [`APS_SO_PO_Campaign_Summary.md`](APS_SO_PO_Campaign_Summary.md)
+- [`APS_SO_PO_Campaign_Service_Date_Examples.md`](APS_SO_PO_Campaign_Service_Date_Examples.md)
 - [`APS_GANTT_WORKBENCH_OVERHAUL_REQUIREMENTS.md`](APS_GANTT_WORKBENCH_OVERHAUL_REQUIREMENTS.md)
 - [`APS_UI_UX_Product_Blueprint.md`](APS_UI_UX_Product_Blueprint.md)
 - [`APS_UI_Implementation_Plan.md`](APS_UI_Implementation_Plan.md)
-- [`APS_Steel_Domain_Architecture_Roadmap.md`](APS_Steel_Domain_Architecture_Roadmap.md)
 
-A specification describes the target. Use the current-state document and code to determine whether a target is already implemented.
+### Gantt requirements detail
 
-## Dated audits and implementation history
+The current Gantt requirements document separates normative requirements from historical starting-state observations. It explicitly incorporates the detailed requirement families from [`reference/APS_GANTT_WORKBENCH_OVERHAUL_REQUIREMENTS_2026-08-22_FULL.md`](reference/APS_GANTT_WORKBENCH_OVERHAUL_REQUIREMENTS_2026-08-22_FULL.md) while superseding that file's old branch/component/current-defect claims.
 
-The following kinds of files are **point-in-time evidence**, not live status authority:
+## 3. Historical stable-path pointers
 
-- `APS_Backend_Acceptance_Audit_2026-08-18.md`;
-- `APS_Backend_Audit_Remediation_Map.md` when it describes the 18-Aug audit state;
-- demand-orchestration gap/checklist files written while #45 was open;
-- repository cleanup plans/manifests dated 18-Aug;
-- `current/APS_GANTT_IMPLEMENTATION_RECONNAISSANCE.md` — retained as the pre-overhaul Gantt baseline;
-- `superpowers/plans/*` and `superpowers/specs/*`;
-- branch-specific completion reports.
+Several old root paths are intentionally retained so GitHub issue/external links continue working. Their bodies now state that they are historical and link to the preserved original under `archive/`.
 
-These documents are still valuable for rationale, acceptance intent and provenance. They must not be cited to claim a feature is currently absent or unfinished without checking current `main`.
+Examples:
 
-## Reference and archive
+- [`APS_Backend_Acceptance_Audit_2026-08-18.md`](APS_Backend_Acceptance_Audit_2026-08-18.md);
+- [`APS_Backend_Audit_Remediation_Map.md`](APS_Backend_Audit_Remediation_Map.md);
+- [`APS_Repository_Cleanup_and_Documentation_Archive_Plan.md`](APS_Repository_Cleanup_and_Documentation_Archive_Plan.md);
+- [`APS_Repository_Cleanup_Manifest_2026-08-18.md`](APS_Repository_Cleanup_Manifest_2026-08-18.md);
+- demand-orchestration gap/audit/checklist files from issue #45;
+- [`current/APS_GANTT_IMPLEMENTATION_RECONNAISSANCE.md`](current/APS_GANTT_IMPLEMENTATION_RECONNAISSANCE.md);
+- date-stamped [`superpowers/`](superpowers/) plans/specifications.
 
-[`reference/`](reference/) contains useful non-authoritative design/reference material. [`archive/`](archive/) contains superseded historical material.
+Do not use these pointers or their archived originals to claim that current `main` is missing work without tracing current code/status first.
 
-A filename such as `COMPLETE`, `FINAL`, `SUMMARY` or `STATUS` does not make a document authoritative. Its classification and date matter.
+## 4. Reference
 
-The retired Python/workbook/Flask implementation and earlier UIs are historical. Their final retained snapshot is available at tag `v0.2.5`.
+[`reference/`](reference/) contains supporting non-authoritative material such as:
 
-## Product/backend completion rule
+- DHTMLX behavioral research;
+- detailed historical Gantt requirement derivation;
+- earlier functional/product architecture thinking;
+- workbook/Flask parity/API references;
+- configuration/master-data references;
+- legacy tuning material.
+
+See [`reference/README.md`](reference/README.md).
+
+A current canonical document may explicitly incorporate a reference's detailed definitions; otherwise current docs win on conflict.
+
+## 5. Archive
+
+[`archive/`](archive/) contains superseded historical material. The archive now explicitly separates:
+
+- dated backend audits;
+- completed demand-orchestration implementation material;
+- superseded steel-domain roadmaps;
+- pre-overhaul Gantt reconnaissance;
+- date-stamped Superpowers implementation/design snapshots;
+- repository-cleanup history;
+- older API/design/UI/optimization/fix-plan history.
+
+See [`archive/README.md`](archive/README.md).
+
+Historical text is preserved intentionally, including old “current”, branch, issue and CI statements. **Archive means those statements are point-in-time evidence, not present-tense authority.**
+
+## 6. Production-completion rule
 
 A capability is complete only when its applicable production chain is coherent:
 
@@ -61,26 +90,33 @@ Domain/master
  -> application/planning contract
  -> planner/solver enforcement
  -> Plan Version evidence
- -> release/execution/replan where applicable
+ -> approval/release where applicable
+ -> execution/replan where applicable
  -> typed read/API/UI consumption where applicable
 ```
 
-A class, test fixture, old API route, workbook sheet or historical completion report is not sufficient by itself.
+A class, unit test, old API route, workbook sheet, UI button or historical completion report is not sufficient by itself.
 
-## UI status
+## 7. Current UI status
 
-The production Blazor UI is **already substantially implemented**. It is no longer correct to describe all UI work as future/deferred. Current `main` contains the planner shell, finite-schedule/Gantt workbench, analysis/inspector/resource-load/capacity surfaces and multiple domain workspaces.
+The production Blazor UI is **substantially implemented**. It is no longer correct to describe APS as having only a future UI or only the Planning Sandbox.
 
-The gated `/demo/planning` sandbox remains a demo path and must not be confused with the production planner lifecycle.
+Current `main` contains production planner/domain pages and the central Gantt/workbench. The gated `/demo/planning` sandbox remains explicitly non-authoritative.
 
-## Verification authority
+Ponytail cleanup consolidated several UI/Gantt/theme/update wrappers. Deleted standalone Gantt layer files do **not** imply loss of baseline/calendar/campaign/execution/proposal behavior; current behavior is described in the Gantt implementation-status document.
+
+## 8. Verification authority
 
 APS uses a Windows-authoritative verification contract:
 
 - shared self-hosted Azure DevOps agent `EOS`;
 - repository-owned [`../build/verify.ps1`](../build/verify.ps1);
-- Release build;
-- all solution-registered test projects;
+- full Release solution build;
+- every solution-registered test project;
 - self-contained `win-x64` DesktopHost publish smoke.
 
-GitHub Actions or hosted CI are **not substitutes** for the APS Windows gate. See [`windows-ci.md`](windows-ci.md).
+GitHub Actions/hosted CI are not substitutes for the APS Windows gate. Never call a later SHA green from an older run. See [`windows-ci.md`](windows-ci.md).
+
+## 9. Retired implementation source
+
+The Python/workbook/Flask prototype and earlier UIs are not active runtime/build source on current `main`. Their final retained source snapshot is available through Git history at tag `v0.2.5`.
