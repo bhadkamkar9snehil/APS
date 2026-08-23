@@ -1,6 +1,7 @@
 using System.Text.Json;
 using APS.Application;
 using APS.Domain;
+using APS.Planning;
 using Microsoft.EntityFrameworkCore;
 
 namespace APS.Infrastructure;
@@ -274,7 +275,17 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
 
     private static PlanningAssumptions BuildAssumptions(PlanningRunRequest request, PlanningRunResult result)
     {
-        var resourceScheduling = request.Resources
+        // Persist the same effective plant the solver sees. Scenarios are applied inside the
+        // planning engine, so snapshotting raw master data here would make historical plans lie
+        // about outages, deratings and partial-horizon calendar overrides.
+        var effectivePlant = PlanningScenarioApplier.Apply(
+            request.Resources,
+            request.Capabilities,
+            request.ResourceCalendars,
+            request.Scenario,
+            request.HorizonStartUtc,
+            request.HorizonEndUtc);
+        var resourceScheduling = effectivePlant.Resources
             .Select(x => new ResourceSchedulingAssumption(
                 x.Id,
                 x.Code,
@@ -286,7 +297,7 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
                 x.OperatingState))
             .OrderBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        var resourceCalendars = request.ResourceCalendars
+        var resourceCalendars = effectivePlant.Calendars
             .OrderBy(x => x.ResourceId)
             .ThenBy(x => x.Start)
             .Select(x => new ResourceCalendarAssumption(
