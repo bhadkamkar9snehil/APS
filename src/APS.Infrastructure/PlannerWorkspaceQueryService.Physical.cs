@@ -258,7 +258,9 @@ public sealed partial class PlannerWorkspaceQueryService
         return operations.Select(operation =>
         {
             resources.TryGetValue(operation.ResourceId, out var resource);
-            resourceAssumptions?.TryGetValue(operation.ResourceId, out var resourceAssumption);
+            ResourceSchedulingAssumption? resourceAssumption = null;
+            if (resourceAssumptions is not null)
+                resourceAssumptions.TryGetValue(operation.ResourceId, out resourceAssumption);
             return new ScheduledProcessOperationView(
                 operation.Id,
                 operation.PlanningKey,
