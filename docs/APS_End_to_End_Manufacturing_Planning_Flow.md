@@ -1,207 +1,212 @@
 # APS End-to-End Manufacturing Planning Flow
 
-Status: **canonical manufacturing-planning flow**
+**Status:** canonical manufacturing-planning causal flow  
+**Re-baselined:** 23-Aug-2026 against integrated `main`  
+**Scope:** domain, planning, persistence, release, execution and replan semantics. UI presentation is covered separately.
 
-Scope: backend/domain/planning only. UI implementation is intentionally excluded.
+APS is a **manufacturing planning and scheduling system**. It is not a procurement recommendation engine and not a logistics-transfer recommendation engine.
 
-This document closes an important architectural ambiguity: APS is a **manufacturing planning and scheduling system**, not a procurement recommendation engine and not a logistics-transfer recommendation engine.
+APS consumes authoritative customer/stock demand, qualified inventory, known incoming material, committed/released internal WIP, resource/master state and execution actuals. It may create upstream **internal manufacturing requirements** where the configured plant knows how to make the required material. If a requirement cannot be covered by qualified supply or internal manufacturing in time, APS keeps the requirement visible as an explicit shortfall/late-supply condition.
 
-APS consumes authoritative inventory and known incoming/material-state integrations. APS may create upstream **internal manufacturing requirements** for materials it knows how to produce. If a requirement is not covered and APS has no configured internal manufacturing route that can satisfy it in time, APS exposes an explicit **shortfall**. It does not recommend `BUY`, `TRANSFER`, supplier selection, procurement quantity or commercial sourcing action.
-
----
-
-## 1. Canonical planning objective
-
-Given demand and current manufacturing/inventory state, APS must answer:
-
-1. What needs to be produced?
-2. What material is already available or is already known to become available?
-3. What uncovered material can be manufactured internally?
-4. What upstream production does that imply recursively through the BOM?
-5. What quantity cannot be covered by inventory/known receipts/internal manufacturing and therefore remains a shortfall?
-6. How should the internally manufacturable quantity be grouped into campaigns/heats/lots?
-7. On which eligible resources and at what times should every constrained manufacturing operation run?
-8. What Work Orders/operations should be released?
-9. What actually happened?
-10. What remains to be planned after actual production, WIP and inventory are refreshed?
-
-APS must never delete demand merely because material is unavailable today.
+APS never deletes demand merely because material is unavailable today.
 
 ---
 
-## 2. End-to-end canonical flow
+## 1. Canonical causal chain
 
 ```text
-SAP Sales Order / MTS stock requirement
+SAP Sales Order item / MTS stock requirement
         |
         v
-Normalized Production Order demand
+Normalize customer / grade / product / section / route requirements
         |
-        +--> customer / SO-item requirements
-        +--> grade / section / product / packaging requirements
+        v
+Qualified finished-goods coverage
+        |
+        +--> fully covered -> customer demand remains visible; no unnecessary MTO manufacture
+        |
+        v
+Uncovered finished-product manufacturing requirement
+        |
+        +--> MTO -> derived/reconciled Production Order with SO-item lineage
+        +--> MTS -> stock-policy Production Order
         |
         v
 Recursive BOM / material-requirement graph
         |
         v
-Time-phased material netting at every BOM node
+Time-phased material coverage at each requirement node
         |
-        +--> on-hand qualified inventory
-        +--> known incoming inventory/supply from integration
+        +--> qualified on-hand inventory
+        +--> authoritative known incoming material
         +--> released/running internal production receipts
         +--> APS-planned internal production receipts
         |
         v
-Uncovered quantity
+Uncovered material quantity at required time
         |
         +--> internally manufacturable in configured plant?
-        |        |
-        |        +--> YES -> create upstream internal production requirement
-        |        |           and recurse into its BOM
-        |        |
-        |        +--> NO  -> SHORTFALL
+        |       |
+        |       +--> YES -> create upstream internal production requirement
+        |       |           and recursively resolve its own material needs
+        |       |
+        |       +--> NO  -> Shortfall / NotManufacturableHere
         |
         v
-Internal production requirements at schedulable production stages
+Schedulable internal production requirements
         |
         v
-Campaign candidate generation / campaign selection
+Campaign candidate optimization
         |
         v
-Furnace-capacity / route-feasible heat formation
+Grade sequence + furnace-feasible heat structure
         |
         v
-Configured manufacturing route
-(primary steelmaking -> secondary metallurgy -> CCM -> billet -> RHF/hot charge -> RM -> downstream finishing)
+Configured ManufacturingRoute operations
         |
         v
-Finite resource scheduling
+Finite resource / material / thermal schedule
         |
         v
-Plan Version
+Immutable persisted Plan Version
         |
         v
-Work Orders + operation-level execution rows
+Readiness review -> Approved
         |
         v
-Execution actuals / material output / genealogy
+Identity-only persisted release
         |
         v
-Inventory + WIP + remaining demand refresh
+Work Orders + process operations
         |
         v
-Local repair / replan
+Execution actuals + actual material transformation/genealogy
+        |
+        v
+Inventory / WIP / remaining-demand refresh
+        |
+        v
+Bounded local repair or broader replan -> child Plan Version
 ```
 
----
-
-## 3. Manufacturing-only material semantics
-
-Every material requirement should resolve to one of these planning states:
-
-### CoveredNow
-Qualified material is already available in authoritative inventory.
-
-### CoveredByKnownReceipt
-Material is not available now, but an authoritative known receipt or already-committed production receipt will make it available before the requirement time.
-
-Examples:
-- released/running internal heat output;
-- already-known external/incoming inventory from the integration layer;
-- material already in transit if the inventory integration exposes it as an authoritative receipt.
-
-APS does **not** decide that this receipt should be purchased or transferred. It only consumes the known supply fact.
-
-### PlannedInternalProduction
-The material is not yet available, but APS knows from BOM + manufacturing-route masters that the material can be manufactured internally. APS creates the required upstream production and schedules it before the consumer need time where feasible.
-
-### LateInternalSupply
-The internal production path exists but cannot produce the material by the required time under current finite capacity/constraints.
-
-### Shortfall
-The requirement remains uncovered after inventory, known receipts, committed production and feasible APS-planned internal production.
-
-### NotManufacturableHere
-APS has no configured internal manufacturing route for the material at this installation. The requirement remains visible as a shortfall/information requirement. A commercial team or another system may decide what to do; APS does not prescribe procurement or transfer.
+Demand/material requirement is causality. Campaign is manufacturing aggregation/optimization. Resource assignment is a planning/dispatch decision. Work Orders are downstream execution artifacts. Actual material closes the loop.
 
 ---
 
-## 4. Recursive BOM is material planning, not mandatory finite scheduling
+## 2. Demand and Production Order semantics
 
-The BOM may legitimately contain:
+### Sales Order item
+
+A Sales Order item is customer/commercial demand. It retains customer, material/product, grade/specification, section/product form, open quantity, customer-required/confirmed date and applicable customer/order restrictions.
+
+### MTO Production Order
+
+A new MTO Production Order represents the **finished-product quantity that still must be manufactured internally after qualified FG coverage**.
+
+Example:
 
 ```text
-Finished coil/bar
+SO open quantity       100 MT
+qualified FG coverage   30 MT
+-----------------------------
+MTO manufacturing PO    70 MT
+```
+
+Missing billet/raw material does not reduce the 70 MT PO. Upstream material planning explains how much can be supplied internally and what remains short/late.
+
+### MTS Production Order
+
+MTS demand originates from stock policy/replenishment need and does not require a fake Sales Order.
+
+### Aggregation boundary
+
+PO remains the demand/manufacturing lineage unit. Campaign/Heat/Rolling/route-operation/WO allocation records preserve PO/SO quantity/date/customer identity when physical production is shared.
+
+---
+
+## 3. Material planning states
+
+A material requirement may resolve conceptually to the following states.
+
+### CoveredNow
+
+Qualified material is available in authoritative inventory at or before need time.
+
+### CoveredByKnownReceipt
+
+Material is not available now but a trustworthy receipt exists before the need time, such as:
+
+- released/running internal output;
+- authoritative incoming/in-transit material;
+- another committed future receipt from the integration/state model.
+
+APS consumes the known supply fact. It does not decide that the material should be purchased or transferred.
+
+### PlannedInternalProduction
+
+The material is absent now, but the configured BOM/route/master data show that the plant can make it internally. APS creates the upstream manufacturing requirement and schedules the producing operations.
+
+### LateInternalSupply / LateSupply
+
+The internal or known-supply path exists but cannot make the material available by the consuming need time under current finite constraints.
+
+### Shortfall
+
+The requirement remains uncovered after qualified inventory, known receipts, committed internal supply and feasible APS-planned internal production.
+
+### NotManufacturableHere
+
+The installation has no configured internal manufacturing path for the material. The requirement remains explicit; another business/system may decide how to respond. APS does not invent BUY/TRANSFER/supplier recommendations.
+
+---
+
+## 4. Recursive BOM is material causality, not mandatory finite scheduling depth
+
+The configured BOM may extend beyond the part of the plant that APS finite-schedules.
+
+Example material depth:
+
+```text
+finished bar/coil
  -> rolled intermediate
  -> billet/bloom
  -> liquid steel
- -> steelmaking charge
- -> hot metal / DRI / HBI / scrap / alloys / fluxes
- -> BF burden / sinter / pellets / coke
- -> iron ore / coal / limestone / other leaf raw materials
+ -> charge/raw materials
+ -> upstream intermediate/raw-material requirements
 ```
 
-APS must calculate the complete requirement tree through every configured BOM level unless quantity is covered by qualified supply at an intermediate node.
+At every node APS may net qualified supply and only recurse for the uncovered quantity.
 
-This does **not** mean APS must finite-schedule every stage represented in the BOM.
-
-Example deployment:
+The finite-scheduling scope can be narrower, for example:
 
 ```text
-BOM/material-planning depth:
-FG -> billet -> liquid steel -> hot metal -> burden -> ore/coal
-
-Finite-scheduling depth:
-EAF/LRF/VD/CCM/RHF/RM/finishing
+configured steelmaking/refining -> CCM -> optional RHF -> rolling -> finishing
 ```
 
-Hot metal or iron ore may therefore appear as a time-phased requirement/shortfall without a corresponding Work Order if that producing process is outside the configured APS scheduling scope.
+A leaf raw-material requirement may therefore appear as a time-phased shortfall without a corresponding APS Work Order if its producing process is outside the configured scheduling scope.
 
-If a future installation configures BF or another upstream production stage as an APS-scheduled manufacturing route, the same material graph can create internal production requirements for that stage without redesigning BOM logic.
+If a future installation configures an upstream producing stage as an APS-managed ManufacturingRoute, the same material graph can create an internal manufacturing requirement for it without redesigning the BOM model.
 
 ---
 
-## 5. Material netting occurs before unnecessary upstream manufacture
+## 5. Time-phased material availability is fundamental
 
-At every BOM node:
+APS does **not** plan only against opening inventory.
+
+At a requirement node the conceptual netting is:
 
 ```text
 Gross requirement
- - usable inventory
- - known incoming supply
- - committed internal future supply
- - already-planned internal supply
+ - qualified on-hand supply available by need time
+ - authoritative known incoming supply available by need time
+ - committed/released internal future supply available by need time
+ - already planned internal supply available by need time
  = uncovered requirement
 ```
 
-Only the uncovered requirement is exploded/manufactured further.
+The exact production implementation may represent reservations/coverage with more detailed persisted facts, but the causal rule is the same.
 
-Examples:
-
-### Finished inventory covers SO
-No manufacturing is required.
-
-### Finished inventory absent, billet available
-Plan rolling/downstream production only. Do not form unnecessary SMS heats.
-
-### Billet absent, internal billet production possible
-Create the required internal steelmaking/casting plan.
-
-### Billet absent, SMS down, known billet receipt exists
-Use the known future billet receipt if it arrives in time; schedule RHF/RM accordingly.
-
-### Billet absent, SMS down, no known billet receipt
-The rolling requirement remains visible with a billet shortfall. APS does not invent a procurement recommendation.
-
----
-
-## 6. Required-at time is fundamental
-
-Material feasibility is time-phased, not based on planning-run start inventory.
-
-A one-month campaign can consume progressively produced material.
-
-Example:
+### Month-long example
 
 ```text
 01-Sep opening billet          0 MT
@@ -209,295 +214,281 @@ Example:
 09-Sep internal cast receipt  65 MT
 15-Sep internal cast receipt  65 MT
 
-RM need:
-05-Sep 60 MT  -> feasible
-10-Sep 60 MT  -> feasible
-12-Sep 60 MT  -> short/late unless another receipt is planned
+Rolling need:
+05-Sep 60 MT -> first receipt can satisfy it
+10-Sep 60 MT -> second receipt can satisfy it
+16-Sep 60 MT -> third receipt can satisfy it
 ```
 
-Campaign creation does not require all campaign material to exist on day one.
+A month-long Campaign does not require all 180 MT to exist on 01-Sep.
+
+If a required receipt arrives after the consumer need time, APS should expose lateness/shortfall and finite-schedule consequences rather than silently treating the future material as available early.
 
 ---
 
-## 7. Demand -> Production Order -> material requirements
+## 6. Material netting prevents unnecessary upstream manufacture
 
-### MTO
+### FG covers customer demand
 
-```text
-SAP SO / item
- -> Production Order
- -> requirement snapshot
- -> BOM/material requirements
- -> manufacturing plan
-```
+No new manufacturing is created for the covered quantity.
 
-### MTS
+### FG absent, qualified billet available
 
-```text
-stock target / replenishment requirement
- -> internal Production Order
- -> BOM/material requirements
- -> manufacturing plan
-```
+Plan rolling/downstream work from billet without creating unnecessary SMS heats.
 
-No fake Sales Order is required for MTS.
+### Billet absent, internally manufacturable
 
-Every quantity must remain traceable through allocations.
+Create the upstream steelmaking/casting requirement and schedule it before downstream consumption where feasible.
+
+### SMS unavailable, authoritative billet receipt exists
+
+Use the qualified future billet receipt if it arrives in time; do not generate a replacement internal heat solely because opening billet inventory is zero.
+
+### SMS unavailable and no usable billet supply
+
+Keep the rolling/customer manufacturing requirement visible and report the billet/material shortfall. Do not fabricate a procurement action.
 
 ---
 
-## 8. Campaign planning begins only after material/manufacturing need is known
+## 7. ManufacturingRoute is authoritative process topology
 
-Campaign planning should not itself be the material-requirements engine.
+APS does not assume one fixed steel chain such as:
 
-Correct responsibility split:
+```text
+EAF -> LRF -> VD -> CCM -> RHF -> RM
+```
 
-### Material engine
-Determines internal production requirement quantities and shortfalls through BOM + inventory/time-phased supply.
+The configured `ManufacturingRoute` determines which process operations exist, their order and the applicable input/output/queue/decoupling semantics.
 
-### Campaign optimizer
-Groups compatible **internal production requirements** into economically/operationally good campaigns and heats.
+Examples of valid configured downstream paths include:
 
-This prevents double-netting inventory in both campaign logic and BOM logic.
+```text
+CCM -> HotRoll
+CCM -> Reheat -> HotRoll
+CCM -> HotRoll -> ColdRoll -> Finish
+CCM -> HotRoll -> Reheat -> HotRoll
+billet inventory -> Reheat -> HotRoll
+```
+
+Pre-CCM routes likewise may include the configured primary steelmaking/refining/treatment operations appropriate to the plant and grade.
+
+### Conditional operations
+
+VD, reheating and other treatment operations may be required, optional or forbidden by the effective route/grade/order requirement. Their presence is not inferred from a universal plant diagram.
 
 ---
 
-## 9. Heat formation
+## 8. Hot charge, reheating and inventory decoupling
 
-Heat formation must answer:
+Hot charge is a preferred valid route only when:
 
-- how much liquid steel/fresh cast output is internally required;
-- which configured steelmaking routes can make it;
-- which furnace capacity envelopes are feasible;
-- number of heats;
-- heat quantities;
-- yield-adjusted input/output;
-- grade/customer/process constraints;
-- heat-to-PO/material-requirement allocation.
+- the configured route allows it;
+- the material is fresh/known-hot with adequate thermal evidence;
+- grade/order policy permits it;
+- a valid physical hot-transfer path exists;
+- downstream timing/resource feasibility preserves the thermal window.
 
-Heat size is not a random global number.
+Reheating becomes required when, for example:
 
-Every heat must be traceable back to material requirements and ultimately demand.
+- billet is cold/yard material;
+- the route/order explicitly requires reheating;
+- direct hot charge is prohibited;
+- measured/estimated thermal state falls outside the downstream entry requirement;
+- an inventory/decoupling point intentionally breaks guaranteed hot continuity.
 
----
+If reheat is required and no eligible configured reheat path exists, APS reports infeasibility. It does not invent a furnace or bypass the requirement.
 
-## 10. Manufacturing route
-
-The route is master-data driven.
-
-Examples may include:
-
-```text
-EAF -> LRF -> CCM
-EAF -> LRF -> VD -> CCM
-BOF -> LF -> CCM
-Induction furnace -> LF -> CCM
-other configured secondary metallurgy -> CCM
-```
-
-Downstream:
-
-```text
-CCM -> hot charge -> RM
-CCM -> billet buffer -> RHF -> RM
-known billet inventory -> RHF -> RM
-RM -> TMT -> cooling -> cutting -> bundling
-RM -> rod/coiling route
-```
-
-APS must not hard-code one meltshop topology.
+A downstream outage does not automatically erase valid upstream billet production where a legitimate inventory decoupling path exists. The produced intermediate may remain planned/buffered and be reevaluated later from actual material/thermal state.
 
 ---
 
-## 11. Resource flexibility
+## 9. Campaign, grade sequence and heat planning
 
-For every constrained operation:
+Campaign formation is optimization, not demand creation and not authoritative sort-and-fill.
+
+Candidate selection may account for:
+
+- PO allocation-level service obligations;
+- route/section/caster compatibility;
+- grade/sequence compatibility and forbidden transitions;
+- transition time/penalty;
+- customer/quality segregation;
+- furnace-feasible heat envelopes;
+- heat utilization/residual economics;
+- downstream route/resource feasibility;
+- MTO/MTS policy;
+- setup/campaign economics;
+- early-production/service cost;
+- stability against the persisted baseline during replan.
+
+The selected Campaign may aggregate multiple Production Orders while each allocation preserves its own quantity/date/customer lineage.
+
+---
+
+## 10. Quantity-aware service dates
+
+Shared physical work does not collapse several customer service dates into one artificial due date.
+
+Example:
 
 ```text
-Eligible Resources
- -> Planned Resource
- -> Commitment State
- -> Committed Resource
- -> Actual Resource
+PO-A 40 MT due 10-Sep
+PO-B 60 MT due 18-Sep
+shared campaign/physical production
 ```
 
-Frequency of use is irrelevant.
+Campaign summary may expose earliest/latest dates, but allocation-level service obligations remain distinct. Finite scheduling/service evaluation uses the relevant quantity/date/priority obligations rather than pretending all 100 MT has the same customer due date.
 
-If LRF-2 can process one heat per year, it is still a valid eligible alternative for that heat and must remain available until commitment.
+`ProductionRequiredByUtc` should reflect the applicable configured post-production/quality/packing/dispatch allowance; where no effective allowance exists, the service-date basis falls back explicitly rather than being silently invented in UI code.
 
-The same applies to:
-- primary furnace;
-- LRF/LF;
-- VD/RH;
-- CCM;
-- RHF;
-- RM;
-- constrained finishing equipment.
+---
 
-Local redispatch must revalidate the same route, flow, thermal, material, sequence and resource constraints as the original solve.
+## 11. Resource eligibility and operational flexibility
+
+Operation identity comes from the configured manufacturing requirement. Resource assignment is separate:
+
+```text
+operation requirement
+ -> eligible physical resources
+ -> planned resource
+ -> commitment state
+ -> committed resource
+ -> actual resource
+```
+
+Parallel same-type resources retain independent physical timelines.
+
+An LRF-ready heat may, for example, remain technically eligible for more than one CCM before the commitment boundary. If the planned caster becomes unavailable, a bounded redispatch to another still-valid CCM should preserve Heat/Campaign/PO/SO identity while revalidating route, material, thermal, transfer, queue, sequence, calendar and capacity constraints.
+
+The complete generic planned→committed→actual redispatch lifecycle is the current #16 work area.
 
 ---
 
 ## 12. Finite scheduling
 
-Finite scheduling decides:
+Finite scheduling assigns eligible physical resources and times while enforcing the applicable configured constraints, including:
 
-- eligible physical resource assignment;
-- operation timing;
-- per-resource sequence;
-- setup/changeover;
-- calendars/outages;
-- capacity;
-- predecessor/queue constraints;
-- thermal constraints;
-- material availability;
-- stability/frozen constraints;
-- service/tardiness objective.
+- physical resource capacity/scheduling mode;
+- resource calendars/operating state/derating;
+- route and material dependencies;
+- transfer/queue windows;
+- liquid/billet thermal feasibility where modeled;
+- resource transition/setup sequence;
+- service obligations;
+- time fences and plan stability;
+- operating-state/scenario overlays.
 
-Same-type equipment remains independent physical timelines.
-
-Resource scheduling semantics must reflect physical behavior. Disjunctive `NoOverlap` is not universally valid for cumulative/residence resources such as some RHFs or cooling beds.
+Unary and cumulative resources are distinct scheduling semantics. A physical CCM/RM/RHF/etc. is not merged into a type-level artificial queue.
 
 ---
 
-## 13. Plan Version
+## 13. Plan Version, approval and release
 
-A Plan Version is the immutable explanation of one planning answer.
+Every canonical production calculation/replan persists immutable Plan Version truth.
 
-It must retain at least:
-
-- demand/PO snapshot;
-- customer/order requirements;
-- BOM/material requirement tree;
-- inventory/known-supply coverage;
-- shortfalls;
-- campaign decisions;
-- heat structure and allocations;
-- eligible resource alternatives;
-- selected assignments;
-- schedule;
-- thermal/material assumptions;
-- diagnostics;
-- later dispatch revisions and comparison to parent plans.
-
----
-
-## 14. Work Order generation
-
-Work Orders are generated from the **solved manufacturing plan**, not directly from SO quantity.
-
-Conceptually:
+Current lifecycle includes:
 
 ```text
-Demand
- -> material/manufacturing requirements
- -> campaign/heat/route structure
- -> finite solved operations
- -> release mapping
- -> Work Orders + operation rows
+Draft -> Feasible -> Approved -> Released
 ```
 
-WO allocation preserves PO/SO lineage.
+with failed/superseded states where applicable.
 
-A coarse MES Work Order does not erase APS process-operation detail.
+A historical Plan Version should be read using its persisted snapshots/assumptions rather than silently applying today's mutable resource/calendar masters.
+
+Release is identity-only:
+
+```text
+PlanVersionId
+ -> persisted plan snapshots
+ -> readiness/approval policy
+ -> persisted release service
+ -> Work Orders + ScheduledOperations
+```
+
+The client does not reconstruct campaigns/routes/schedules and submit a competing release payload.
+
+Readiness currently includes persisted material/supply evidence and MTO service-completion evidence.
 
 ---
 
-## 15. Execution and actual material
+## 14. Execution and replanning
 
-Execution captures actual manufacturing truth:
+Execution adds actual facts; it does not rewrite historical plan truth.
 
+Canonical actuals include, as applicable:
+
+- work-order/operation status;
 - actual resource;
 - actual start/end;
-- actual processed quantity;
-- heat/cast/strand output;
-- billet lots;
-- rolling input/output;
-- bundles/coils/FG lots;
-- quality/hold state.
+- actual quantity;
+- heat/cast/strand identity;
+- produced/consumed material lots/units;
+- correction/provenance history.
 
-Actual material output enters inventory exactly once.
+Commercial allocation lineage and physical material genealogy remain distinct relationships.
 
-Physical genealogy is separate from commercial demand allocation.
+Replanning consumes:
 
----
+- persisted baseline Plan Version;
+- completed/running/protected operations;
+- actual material/inventory state;
+- committed/released future internal output;
+- current authoritative masters/scenario state;
+- applicable time-fence/resource-override policy.
 
-## 16. Replanning
-
-Replan inputs are refreshed from:
-
-- completed operations;
-- running operations;
-- released/committed operations;
-- actual material receipts;
-- remaining committed future receipts;
-- current inventory;
-- current resource state;
-- remaining demand.
-
-Rules:
-
-- completed work is fixed/history;
-- running work retains actual machine/start;
-- already-produced quantity is inventory;
-- only remaining committed production stays as future supply;
-- no duplicate replacement production is generated for material already on the way;
-- uncommitted future work may be reoptimized;
-- local repair is preferred when a small operational change occurs.
+The same Production-mode planning kernel creates a child Plan Version for the remaining work.
 
 ---
 
-## 17. End-to-end acceptance scenarios
+## 15. Scenarios, CTP and capacity
 
-### Scenario A — FG stock covers demand
-No manufacturing WOs.
+Scenario/CTP/capacity work must reuse the same canonical demand/material/route/resource semantics as normal planning rather than creating sidecar planning logic.
 
-### Scenario B — billet stock covers rolling
-No SMS heats; RM/downstream scheduled.
+Rough-cut capacity and finite scheduled occupancy are different truths and must remain explicitly labeled/separate.
 
-### Scenario C — billet missing but internally manufacturable
-SMS/CCM production is planned to create billet before rolling need.
-
-### Scenario D — future committed billet
-Rolling waits for the future receipt; no duplicate heat.
-
-### Scenario E — recursive raw-material requirement
-Finished demand explodes through billet/liquid steel/hot metal/burden/ore as configured. Inventory is netted at each level. A non-manufacturable uncovered leaf remains a shortfall.
-
-### Scenario F — SMS unavailable, known billet exists
-RM may continue.
-
-### Scenario G — SMS unavailable, no billet supply
-Rolling need remains visible with shortfall; APS does not invent supply.
-
-### Scenario H — rare alternate LRF
-Heat can be redispatched to a qualified alternate LRF even if that resource is seldom used.
-
-### Scenario I — partial heat actual
-Actual quantity + remaining committed future quantity equals the correct remaining supply; no double counting.
-
-### Scenario J — month-long progressive supply
-Later campaign operations consume material made later in the horizon, not only opening inventory.
+Resource outage scenarios do not permit fabricated material supply. Known billet/inventory may still support downstream production while uncovered material remains short/late.
 
 ---
 
-## 18. Remaining cross-cutting gaps
+## 16. Core acceptance invariants
 
-This end-to-end flow depends on completion of at least:
+APS must preserve at least these invariants end-to-end:
 
-- #9 thermal model
-- #14 time-phased material engine
-- #15 campaign optimization
-- #16 resource late binding / redispatch
-- #18 physical genealogy
-- #19 diagnostics
-- #33 recursive BOM
-- #34 generic steel route projection
-- #35 resource scheduling modes
-- #36 backend visibility
-- #38 canonical pipeline cleanup
-- #39 master-data wiring
-- #42 rule consistency
-- #44 end-to-end closure
+1. Fully FG-covered SO demand creates no unnecessary manufacturing PO.
+2. Partial FG coverage creates only the uncovered manufacturing quantity.
+3. Missing current billet/raw material does not suppress internally required finished manufacture.
+4. Future known/planned material can satisfy later campaign operations when available in time.
+5. Deep BOM leaf shortfalls remain explicit and attributable.
+6. SMS outage plus qualified billet supply can still allow rolling.
+7. SMS outage plus no billet supply leaves explicit material shortfall; APS does not invent supply.
+8. Same-type parallel resources remain independent physical timelines.
+9. Cumulative/shared resources use configured cumulative capacity rather than universal `NoOverlap`.
+10. PO/customer service dates survive Campaign/Heat/Rolling aggregation at allocation grain.
+11. Actual production and remaining future supply do not double-count material.
+12. Physical genealogy and commercial lineage remain separately traversable.
+13. Month-long plans can consume progressively produced material.
+14. Infeasibility reports named domain cause/evidence rather than only `Infeasible`.
+15. Scenario/CTP semantics do not diverge from the canonical production kernel.
+16. Billet thermal aging can change hot-charge/reheat decisions without erasing the billet requirement/material.
+17. Configured downstream routes are not forced through a first-HotRoll architecture pivot.
+18. Alternate-resource redispatch preserves operation/business identity and revalidates all applicable constraints.
+19. Historical Plan Versions remain immutable/explainable from persisted evidence.
+20. Release cannot bypass persisted approval/readiness rules.
 
-Subsystem completion is not sufficient. The flow must work as one canonical .NET pipeline.
+Executable coverage and remaining integrated gaps are maintained in [`APS_Testing_Strategy.md`](APS_Testing_Strategy.md).
+
+---
+
+## 17. Documents governing this flow
+
+- [`current/APS_CURRENT_STATE_2026-08-23.md`](current/APS_CURRENT_STATE_2026-08-23.md) — current implementation-state authority;
+- [`APS_Backend_Work_Program.md`](APS_Backend_Work_Program.md) — remaining implementation sequence;
+- [`APS_Demand_to_Production_Order_and_Due_Date_Model.md`](APS_Demand_to_Production_Order_and_Due_Date_Model.md) — demand/service semantics;
+- [`APS_Backend_Visibility_Contract.md`](APS_Backend_Visibility_Contract.md) — typed exposure target;
+- [`APS_Steel_Domain_Architecture_Roadmap.md`](APS_Steel_Domain_Architecture_Roadmap.md) — current steel-domain architecture/roadmap;
+- [`APS_Backend_Canonical_Path_Inventory.md`](APS_Backend_Canonical_Path_Inventory.md) — production lifecycle authority;
+- [`APS_Testing_Strategy.md`](APS_Testing_Strategy.md) — acceptance strategy;
+- [`windows-ci.md`](windows-ci.md) — authoritative Windows verification contract.
+
+Current code on `main` wins over a stale historical document when implementation-state claims conflict.
