@@ -1,828 +1,361 @@
 # APS Production UI Implementation Plan
 
+**Status:** current UI delivery plan — implemented foundation + remaining product work  
+**Re-baselined:** 23-Aug-2026 against `main` at `71e456d2fe124173cdd1f0bfeac82e18f53dc45f`
+
+The old version of this document described an early state in which `APS.UI` contained little more than Home/Planning sandbox pages. That is no longer true. Current `main` already contains a substantial production Blazor planner and the large Gantt workbench overhaul.
+
+Current implementation-state authority: [`current/APS_CURRENT_STATE_2026-08-23.md`](current/APS_CURRENT_STATE_2026-08-23.md).
+
+---
+
 ## 1. Objective
 
-Implement the complete production Blazor interface described in `APS_UI_UX_Product_Blueprint.md` without moving planning logic into the UI and without building screens ahead of authoritative backend/query support.
+Complete the production planner interface without moving planning truth into Razor/JavaScript and without rebuilding backend logic per screen.
 
-The plan is organized by dependency, not by visual convenience.
+The UI consumes typed application/query contracts. It may own:
 
----
+- selection;
+- filtering;
+- viewport/zoom/pan;
+- visual preferences;
+- staged interaction state;
+- formatting.
 
-## 2. Current baseline
+It must not own:
 
-### Current production-code strengths available to the UI
-
-PR #1 already establishes useful application/domain foundations including:
-
-- MTO Production Orders with SO/item lineage
-- MTS Production Orders from stock policy
-- FG/intermediate inventory netting
-- campaign allocations
-- heat-level planning structure
-- caster/mill structure
-- finite CP-SAT schedule
-- physical-resource calendars
-- plan version persistence / baseline comparison concepts
-- Work Order release
-- execution updates and traceability contracts
-- inventory snapshot provider
-- planning/replanning APIs
-
-### Current UI
-
-`APS.UI` currently contains only:
-
-- `Home.razor`
-- `Planning.razor`
-- shared schedule visualization support
-
-`Planning.razor` is explicitly a built-in-sample Planning Sandbox. It is not DB-backed planner UX.
-
-### Consequence
-
-The first production UI implementation step is **not** styling. It is the production read/query layer and workspace state model.
+- material balance;
+- resource eligibility;
+- campaign compatibility;
+- service/lateness truth;
+- thermal decisions;
+- release readiness;
+- solver feasibility;
+- authoritative Plan Version mutation.
 
 ---
 
-## 3. Architecture for the UI
+## 2. Current implemented UI baseline
 
-Recommended project responsibilities:
+Current `APS.UI/Components/Pages` includes production-facing pages such as:
+
+- `Home.razor`;
+- `DemandSupply.razor`;
+- `CampaignStudio.razor`;
+- `SteelmakingCasting.razor`;
+- `RollingFinishing.razor`;
+- `FiniteSchedule.razor`;
+- `MaterialFlow.razor`;
+- `Inventory.razor`;
+- `PlanVersions.razor`;
+- `PlanCompare.razor`;
+- `MasterData.razor`;
+- `Planning.razor` for the deliberately separate demo/sandbox path;
+- execution/traceability/decision pages present in the same production UI tree.
+
+The product is therefore **not** waiting for “Phase 1 shell before any production UI can exist.” The remaining work is to deepen authoritative contracts, workflows and acceptance quality around an already substantial UI.
+
+---
+
+## 3. Current UI architecture
 
 ```text
 APS.Domain
-  canonical entities / rules
+  domain identities/rules
 
 APS.Application
-  commands
-  query contracts
-  read models
-  lifecycle policy
-  validation
+  commands + query/read contracts + lifecycle contracts
 
 APS.Infrastructure
-  EF/query implementations
+  persistence/providers/query implementations
 
 APS.Service
-  API endpoints
-  SignalR planning/execution notifications
-  composition root
+  API/host/composition
 
 APS.UI
   shell
-  pages
-  visualization components
-  client/workspace state
-  formatting only
+  domain workspaces
+  Gantt/workbench
+  client interaction/view state
+  formatting/visualization
+
+APS.DesktopHost
+  Windows desktop hosting/update/runtime integration
 ```
 
-Rules:
+Non-negotiable rules:
 
-- no EF DbContext in Razor components
-- no solver invocation from presentation components except through application/service command boundary
-- no material balance / lateness / utilization recomputation in JavaScript or Razor
-- charts receive already-defined semantic read models
-- UI state may contain filters/selection/view preferences, never planning truth
+- no EF `DbContext` in Razor components;
+- no solver/material recomputation in UI;
+- no direct unsafe mutation of Campaign/Heat/resource truth;
+- UI edits become validated commands/replans/child Plan Versions;
+- stable backend IDs/planning keys support cross-view navigation;
+- read models should expose reasons/basis so UI does not parse prose or infer domain decisions.
 
 ---
 
-## 4. UI read-model strategy
+## 4. Shell/design-system status
 
-Avoid one giant `PlanningRunResult` DTO for all pages.
+A production shell/design system already exists and has gone through multiple simplification passes.
 
-Create workspace-specific read models.
+Post-Ponytail cleanup removed several wrapper components/types where they no longer earned their abstraction cost. Examples include old `NavGroup`, `NavItem`, `PlanContextBar`, `AppearancePopover` and theme preference/accent/color helper types. Their deletion should not be interpreted as deleting the whole navigation/theme experience; current ownership was consolidated into fewer shell/theme components/services.
 
-Suggested contracts:
+Current direction remains:
 
-```text
-PlanContextVm
-ControlTowerVm
-DemandCoverageVm
-ProductionOrderDetailVm
-CampaignStudioVm
-HeatDetailVm
-CastSequenceVm
-ResourceScheduleVm
-MaterialFlowVm
-WorkOrderExecutionVm
-GenealogyVm
-PlanCompareVm
-ScenarioVm
-CtpResultVm
-DiagnosticRegisterVm
-MasterImpactVm
-```
+- dense industrial workspace;
+- continuous work surfaces rather than generic SaaS card grids;
+- compact but legible typography;
+- restrained depth/elevation;
+- semantic status colors separated from process/equipment colors;
+- stable geometry for high-density planner use;
+- keyboard/accessibility support as a product requirement, not an afterthought.
 
-Each model must include:
-
-- PlanVersionId when plan-bound
-- authoritative/estimated basis
-- timestamps/data freshness where relevant
-- stable entity IDs for cross-navigation
-- human-readable code/number fields
-- reason/status fields supplied by application layer
+Future UI cleanup should optimize ownership/clarity while preserving user-observable behavior.
 
 ---
 
-## 5. Workspace state model
+## 5. Gantt / finite schedule — implemented central workbench
 
-Create a scoped UI service similar to:
+The finite schedule is no longer a “basic Gantt sandbox.” A large custom workbench is integrated.
 
-```text
-PlannerWorkspaceState
-  CurrentPlanVersionId
-  BaselinePlanVersionId
-  ScenarioId
-  Horizon
-  SelectedEntity
-  SelectedResourceIds
-  TimeWindow
-  GlobalFilters
-```
+Implemented foundations include:
 
-Selection is an entity reference:
+- synchronized resource grid + UTC timeline;
+- hierarchical physical-resource lanes;
+- row/time virtualization;
+- resource calendars/capacity;
+- operation blocks and inspector;
+- baseline comparison;
+- campaign spans;
+- dependency focus;
+- Now/reference/frozen-fence markers;
+- execution actual overlays;
+- zoom/pan/fit/reset;
+- splitters/resizable grid columns;
+- keyboard navigation/accessibility contracts;
+- multi-selection;
+- staged single and atomic bulk moves;
+- authoritative final-position bulk-move validation;
+- frozen/time-fence enforcement;
+- resource-load/capacity region;
+- schedule overlays/auxiliary panels;
+- released-baseline edit protection;
+- pointer-cancel/blur cleanup.
 
-```text
-EntityRef
-  EntityType
-  EntityId
-  DisplayCode
-```
+See [`current/APS_GANTT_OVERHAUL_IMPLEMENTATION_STATUS.md`](current/APS_GANTT_OVERHAUL_IMPLEMENTATION_STATUS.md).
 
-This enables a selected Campaign or Heat to remain selected when the user moves between Campaign Studio, finite schedule and material flow.
+### Gantt component consolidation
 
-State that matters for deep links should also be representable in URL/query parameters.
+Standalone baseline/calendar/campaign/dependency/execution/marker/proposal layer files from the original overhaul branch were later consolidated into the current lane/viewport scene. The behavior remains; the file boundaries changed.
 
----
-
-## 6. Phase 0 - backend/UI contract audit
-
-Issue: #22
-
-Before building production screens, inventory current backend commands/queries/API endpoints against the blueprint.
-
-Deliverable: a coverage table with statuses:
-
-- Ready
-- Partial
-- Missing
-
-At minimum audit:
-
-| Capability | Required UI contract |
-|---|---|
-| Plan current/list/detail | query |
-| Planning run start/status | command + progress query/event |
-| Demand/PO register | query |
-| Demand coverage | query |
-| Campaign list/detail | query |
-| Heat allocations | query |
-| Cast sequence | query |
-| Schedule/resource lanes | query |
-| Material reservations/events | query |
-| Diagnostics | query |
-| Plan compare | query |
-| Release preview/commit | command |
-| WO/operation execution | query + command |
-| Replan preview/run | query + command |
-| Traceability | query |
-| Scenarios | query + command |
-| CTP | command/query result |
-| Capacity | query |
-| Master data | CRUD/query/validation |
-
-Do not begin a production page whose essential contract is `Missing`.
+Do not create new wrapper components merely to recreate the old filename structure.
 
 ---
 
-## 7. Phase 1 - shell and design system
+## 6. Plan lifecycle UI — current state
 
-Issues: #21, #31
+`PlanVersions.razor` now sits on top of the current release lifecycle, which includes a real persisted Approved state.
 
-### Components
-
-```text
-AppShell
-PlanContextBar
-PrimaryRail
-WorkspaceHeader
-CommandBar
-ContextInspector
-InspectorSection
-StatusPill
-BasisBadge
-EntityLink
-MetricStrip
-SplitPane
-DataGrid
-EmptyState
-ErrorState
-ProgressStage
-DiagnosticBadge
-```
-
-### Design tokens
-
-Create one design-token source for:
-
-- surface hierarchy
-- border/depth
-- typography
-- spacing
-- process colors
-- status colors
-- motion
-- chart grid/axis styling
-
-Prefer CSS custom properties backed by component classes; Tailwind may be used for composition but must not fragment semantic styles across pages.
-
-### First acceptance target
-
-A static shell populated with fake/read-only `PlanContextVm` should already demonstrate:
-
-- persistent plan context
-- rail
-- split workspace
-- inspector
-- compact dense visual hierarchy
-
-No feature-specific production behavior yet.
-
----
-
-## 8. Phase 2 - Control Tower / Plan lifecycle
-
-Issue: #23
-
-### Required queries
+Required workflow semantics are:
 
 ```text
-GET current plan context
-GET plan versions
-GET control tower summary
-GET diagnostics summary
-GET plan delta summary
-```
-
-### Required commands
-
-```text
-StartPlanningRun
-CancelPlanningRun
-AcceptPlan
-FreezePlan
-ReleasePlan
-StartReplan
-```
-
-Only implement commands actually supported by backend lifecycle. Missing lifecycle states should first be added to Application/Domain.
-
-### Visual components
-
-- PlanPulse
-- DemandCoverageSummary
-- ResourcePressureSkyline
-- RiskStream
-- PlanDeltaSummary
-- PlanningRunProgress
-
-### Completion criterion
-
-A planner can enter the app, identify the current plan, know if it is usable and navigate directly to the reason it is not.
-
----
-
-## 9. Phase 3 - Demand & Campaign Studio
-
-Issue: #24
-
-### Pages/routes
-
-```text
-/plan/demand
-/plan/campaigns
-/plan/campaigns/{id}
-```
-
-### Demand read model
-
-For every demand/PO row expose:
-
-- SO/item/customer
-- MTO/MTS
-- requested quantity
-- due/priority
-- grade/material/final section
-- requirement snapshot flags
-- FG coverage
-- intermediate coverage
-- external supply coverage
-- fresh requirement
-- uncovered quantity
-- planned completion
-- service risk
-
-### Campaign read model
-
-Expose:
-
-- campaign identity/status
-- PO allocation quantities
-- grade sequence
-- heat structure
-- heat allocations
-- selected section/route
-- inventory/fresh split
-- transition rules and reason/source
-- diagnostics / rejected alternatives when available
-
-### Interaction
-
-Initial version is read/inspect + planning constraints.
-
-Do **not** implement direct mutable drag/drop campaign truth.
-
-If manual intervention is desired, add application commands such as:
-
-```text
-SetCampaignKeepTogetherConstraint
-SetCampaignKeepSeparateConstraint
-SetPreferredCampaignConstraint
-FreezeCampaign
-```
-
-then rerun planning.
-
----
-
-## 10. Phase 4 - physical process / finite schedule
-
-Issue: #25
-
-### Routes
-
-```text
-/plan/steelmaking
-/plan/rolling
-/plan/schedule
-```
-
-These can share the same selected entity/time window state.
-
-### ECharts usage
-
-Use ECharts for:
-
-- compact process timelines
-- thermal/queue margin plots
-- utilization views
-- material readiness overlays
-
-### Custom schedule board
-
-The finite Gantt may require a custom HTML/CSS/Canvas/SVG hybrid rather than forcing ECharts into an operational scheduler.
-
-Requirements:
-
-- virtualized resource lanes
-- independent physical ResourceId lanes
-- task blocks
-- downtime blocks
-- frozen/slushy/liquid zones
-- dependency overlays only for selected task
-- zoom/pan
-- now/reference marker
-- hover/selection linked to inspector
-
-### First performance target
-
-Design for at least:
-
-- hundreds of heats
-- thousands of operation blocks
-- dozens of resources
-
-without DOM creation proportional to every possible dependency edge.
-
----
-
-## 11. Phase 5 - Material Flow
-
-Issue: #26
-
-### Routes
-
-```text
-/plan/material
-/material/inventory
-/material/supply/{id}
-```
-
-### Components
-
-- MaterialAvailabilityChart
-- MaterialFlowSankey
-- ReservationRegister
-- SupplySourceBadge
-- MaterialStatusBadge
-- MaterialTimelineInspector
-
-### Contract requirement
-
-The backend/read model must expose the actual planning material events/reservations. Do not reconstruct them by subtracting campaign quantities in the UI.
-
----
-
-## 12. Phase 6 - Execution / Replan / Traceability
-
-Issue: #27
-
-### Routes
-
-```text
-/operate
-/operate/work-orders
-/operate/work-orders/{id}
-/operate/replan
-/trace
-/trace/{entityType}/{id}
-```
-
-### Work Order page
-
-Use a hierarchical operation timeline, not one flat WO grid.
-
-```text
-WO
-  allocation summary
-  operation 1
-  operation 2
-  operation 3
-  produced/consumed material
-  actual history
-```
-
-### Manual actual entry
-
-Use a focused right-side command panel.
-
-Every submission shows:
-
-- source = Manual
-- timestamp
-- correction status
-- exact operation/WO target
-
-### Replanning
-
-The replan screen is a **diff-before-run** setup:
-
-- what is completed
-- what is running
-- what is frozen
-- current inventory timestamp
-- new events/deviations
-- selected baseline
-
-After run, navigate directly to Plan Compare.
-
-### Traceability
-
-Use incremental graph expansion. Never render all genealogy nodes by default.
-
----
-
-## 13. Phase 7 - Scenario / CTP / Diagnostics / Capacity
-
-Issues: #28, #29
-
-### Scenario routes
-
-```text
-/decide/scenarios
-/decide/scenarios/{id}
-/compare/{baseline}/{candidate}
-```
-
-### CTP route
-
-```text
-/decide/ctp
-```
-
-### Diagnostics route
-
-```text
-/diagnostics
-```
-
-### Capacity route
-
-```text
-/capacity
-```
-
-The user should be able to jump into these workbenches from any affected entity via the inspector.
-
----
-
-## 14. Phase 8 - Master-data workbench
-
-Issue: #30
-
-### Routes
-
-```text
-/configure/plant
-/configure/resources/{id}
-/configure/grades
-/configure/grades/{id}
-/configure/materials
-/configure/sections
-/configure/routes
-/configure/transitions
-/configure/calendars
-/configure/external-supply
-```
-
-### Editor pattern
-
-Use three panes where useful:
-
-```text
-master list/tree | editor | effective result / impact
-```
-
-Example grade editor:
-
-- identity/family/class
-- chemistry ranges
-- process requirements
-- thermal requirements
-- customer override compatibility preview
-- effective resource eligibility preview
-
-Example transition-rule editor:
-
-- rule list
-- exact/class/family/default scope
-- precedence preview
-- matrix/graph visualization only for the effective subset currently selected
-
-Do not present a 350 x 350 editable grade matrix.
-
----
-
-## 15. Entity inspector content matrix
-
-| Entity | Key inspector content |
-|---|---|
-| Sales Order | customer/item/qty/due/requirement/coverage/PO |
-| Production Order | MTO/MTS source, quantity, stock/fresh split, campaign allocations |
-| Campaign | PO allocations, grades, heats, section, due, diagnostics |
-| Heat | grade, quantity, PO allocations, process route, cast sequence |
-| Operation | process, resource, time, dependencies, constraints, actuals |
-| Cast Sequence | CCM, heats, section, tundish/sequence, strand output |
-| Resource | capability, state, calendar, load, upcoming tasks |
-| Material supply | source, spec, qty, availability, reservation |
-| Material lot | genealogy, quality, current location/status, PO allocations |
-| Work Order | allocations, operations, planned vs actual, external reference |
-| Diagnostic | severity, hard/soft, evidence, affected entities, suggestion |
-| Plan Version | baseline, status, horizon, solver, changes, audit |
-
----
-
-## 16. Backend-to-UI coverage matrix
-
-### Current PR #1 baseline
-
-| Capability | Current backend status | Current production UI status | Target issue |
-|---|---|---|---|
-| Planning run | Ready/partial production API + real engine | sample sandbox only | #22/#23 |
-| Campaigns | Ready | table in sandbox | #24 |
-| Heat/cast planning | Ready in current core scope | partial table | #25 |
-| Rolling plans | Ready in current core scope | partial table | #25 |
-| Finite schedule | Ready | basic Gantt sandbox | #25 |
-| Plan Versions | Ready/partial | none | #23 |
-| Plan compare | Ready/partial | none | #28 |
-| Inventory snapshot | Ready | none | #26 |
-| Work Order release | Ready | preview table in sandbox | #27 |
-| Work Order execution | Ready | none | #27 |
-| Heat/strand actuals | Ready | none | #27 |
-| Traceability | Ready/partial | none | #27 |
-| CTP | workbook-era implementation exists; .NET production contract to audit | old HTML only | #22/#28 |
-| Scenarios | roadmap / contract audit required | old HTML only | #22/#28 |
-| Diagnostics | issue objects exist; production normalization/read model required | basic issue list in sandbox | #29 |
-| Master-data editing | persistence exists for several masters; production CRUD/validation audit required | none | #22/#30 |
-
-This table must be updated as backend work advances. UI completion claims should reference it.
-
----
-
-## 17. Visual design implementation
-
-### Do not copy the old CSS token-for-token
-
-The old prototype establishes some useful process color ideas but visually relies heavily on:
-
-- white cards
-- rounded rectangles
-- floating KPI tiles
-- top tabs
-- generic soft shadows
-
-The production design should instead use:
-
-- continuous work surfaces
-- fixed rails
-- split panes
-- instrument strips
-- recessed schedule/material tracks
-- stronger typographic hierarchy
-- deliberate numeric density
-- subtle dimensional borders and depth
-
-### Theme direction
-
-Recommended first production direction:
-
-**precision industrial light workspace**
-
-- graphite navigation chassis
-- warm off-white / steel work surface
-- darker inset timelines and resource rails
-- restrained violet/teal brand accent
-- equipment/process colors only where semantically useful
-- semantic warning/error colors protected from process-color collisions
-
-A dark operational theme can be added later, but should share the same geometry and semantics rather than become a separate design system.
-
----
-
-## 18. Component boundaries
-
-Suggested component families:
-
-```text
-Shell/
-  AppShell
-  PlanContextBar
-  PrimaryRail
-  WorkspaceHeader
-  ContextInspector
-
-Planning/
-  DemandCoverageBar
-  CampaignAllocationMatrix
-  GradeSequenceGraph
-  HeatStructureRibbon
-  HeatProcessTrain
-  CastSequenceBoard
-  StrandOutputView
-  ResourceScheduleBoard
-
-Material/
-  AvailabilityChart
-  MaterialFlowSankey
-  ReservationRegister
-
-Execution/
-  WorkOrderTree
-  OperationActualEditor
-  PlanActualOverlay
-  GenealogyExplorer
-
-Decision/
-  ScenarioDelta
-  CtpDecisionPanel
-  DiagnosticRegister
-  CapacityLens
-
-MasterData/
-  MasterTree
-  EffectiveRuleViewer
-  MasterImpactPanel
-```
-
-Avoid page-specific copies of the same entity display logic.
-
----
-
-## 19. Testing sequence
-
-Every phase gets:
-
-1. application/query unit tests
-2. component tests
-3. deterministic sample read-model fixture
-4. screenshot/visual regression
-5. browser E2E for primary flow
-
-Key E2E journeys:
-
-### Journey A - normal plan
-
-```text
-Control Tower
- -> Run Plan
- -> Campaign inspection
- -> Schedule inspection
- -> Compare
- -> Accept
+calculate/replan
+ -> Feasible
+ -> inspect persisted readiness
+ -> Approve
  -> Release
 ```
 
-### Journey B - infeasible
+UI must show readiness blockers from the backend contract. It must never enable a direct Feasible -> Released shortcut or reimplement release readiness client-side.
 
-```text
-Run Plan
- -> Infeasible
- -> Diagnostic
- -> affected PO/Heat/Resource
- -> master/action suggestion
-```
-
-### Journey C - execution/replan
-
-```text
-Released WO
- -> actual operation update
- -> actual material output
- -> Replan
- -> Compare against baseline
-```
-
-### Journey D - traceability
-
-```text
-Bundle/coil
- -> RM
- -> billet
- -> cast/strand/heat
- -> campaign
- -> PO
- -> SO
-```
-
-### Journey E - CTP
-
-```text
-request qty/date
- -> alternatives
- -> blocker or promise basis
- -> inspect implied campaign/resource/material path
-```
+Current readiness includes material/supply and persisted MTO service evidence. Future service-date refinement must flow from backend contracts rather than Razor logic.
 
 ---
 
-## 20. Definition of done for a feature
+## 7. Current workspace status and remaining focus
 
-A backend capability is product-complete only when:
+### Demand & Supply
 
-- its authoritative state is queryable
-- it has a deliberate UI location
-- it has loading/empty/error/stale states
-- its status/reason is understandable
-- upstream/downstream lineage is navigable
-- its important actions are explicit and auditable
-- it participates in Plan Version context where applicable
-- it has component/E2E coverage
-- it meets performance/accessibility expectations
+Implemented page foundation exists. Remaining work is driven by backend visibility/completeness rather than creating the page from scratch:
+
+- allocation-grain service/date semantics;
+- richer supply/shortfall basis;
+- cross-navigation into material/campaign/schedule;
+- complete typed exposure under #36.
+
+### Campaign Studio
+
+Implemented page foundation exists. Continue to expose:
+
+- PO allocations and quantity identity;
+- grade sequence/heat structure;
+- service implications;
+- candidate/rejection/transition evidence as backend #19/#36 surfaces mature;
+- planning constraints/replan actions rather than direct mutation.
+
+### Steelmaking / Casting
+
+Implemented page foundation exists. Continue to expose actual route-driven operations rather than a fixed EAF/LRF/VD diagram. Resource alternatives/commitment/actual resource should deepen as #16 lands.
+
+### Rolling / Finishing
+
+Implemented page foundation exists. #56 now provides time/temperature-aware billet thermal decisions; UI should consume and expose hot/reheat basis rather than treating #56 as future work.
+
+### Material Flow / Inventory
+
+Implemented page foundations exist. Continue toward full requirement -> coverage -> reservation -> supply -> shortfall drilldown directly from canonical material facts.
+
+### Plan Compare / decision surfaces
+
+Operation comparison exists. #57/#43 remain backend owners for broader scenario/service/material/campaign/capacity/diagnostic comparison and CTP/capacity convergence. UI should extend the existing compare path, not build a second scenario-only truth engine.
+
+### Execution / traceability
+
+Page/read foundations exist, but #18 remains the key backend gap for full physical material transformation/genealogy and actual-state closure.
+
+### Master Data
+
+A substantial MasterData page exists. #60/#39/#41 remain the backend/application owners for typed validated operational authoring/effective-value semantics. Do not compensate with direct EF access from UI.
 
 ---
 
-## 21. Delivery order
+## 8. Workspace state
 
-The recommended implementation sequence is strict:
+The original plan proposed a broad `PlannerWorkspaceState`. Ponytail cleanup intentionally reduced this to state that genuinely needs cross-component persistence.
 
-```text
-#22 Query/read model foundation
-  -> #21 shell + inspector
-  -> #23 Control Tower
-  -> #24 Demand/Campaign
-  -> #25 Physical production + finite schedule
-  -> #26 Material
-  -> #27 Execution/replan/trace
-  -> #28 Scenario/Compare/CTP/Capacity
-  -> #29 Diagnostics deepening
-  -> #30 Masters
-  -> #31 hardening
-```
+Current design rule:
 
-Some issues can overlap after #21/#22 establish stable foundations, but no feature page should bypass those foundations to move faster.
+- Plan Version/baseline identity and real shared selection/view state may live in scoped state;
+- transient component state stays with the owning component;
+- no-op compatibility setters are not evidence that a broad global state object should be rebuilt;
+- URL/deep-link state should be added only where it materially improves navigation/bookmarking.
+
+Do not resurrect global UI state simply for symmetry with the original plan.
 
 ---
 
-## 22. Immediate next implementation tranche
+## 9. Remaining delivery sequence
 
-Before visual page construction:
+The UI program is now dependency-driven around remaining backend truth rather than old numbered “build the first page” phases.
 
-1. inventory current Application/Service contracts against #22
-2. create missing query/read-model contracts for Control Tower and Plan context
-3. establish `PlannerWorkspaceState`
-4. implement the production shell and inspector with sample read-model fixtures
-5. connect shell to real Plan Version/current-plan queries
-6. build Control Tower first
+### A. #16 resource commitment/redispatch UI enablement
 
-Only then begin Campaign Studio and the operational schedule board.
+Once the generic backend lifecycle lands, expose:
 
-This gives the product a stable navigation/state/data foundation and prevents a second UI rewrite after the domain grows.
+- eligible alternatives and exclusion reasons;
+- planned/committed/actual resource;
+- commitment state/policy;
+- redispatch preview/result/history;
+- local repair impact.
+
+The finite schedule/workbench is the primary operational surface for this, but backend commands own mutation.
+
+### B. #18 execution/genealogy
+
+Deepen Work Orders/operations/actuals/traceability around:
+
+- actual resource/time/quantity;
+- consumed/produced material;
+- split/merge genealogy;
+- external billet downstream genealogy;
+- plan versus actual variance;
+- replan impact.
+
+### C. #19 diagnostics
+
+Upgrade analysis/diagnostic surfaces from summary/navigation to stable domain-coded evidence:
+
+- hard versus soft;
+- entity references;
+- material/route/resource/thermal/capacity/time-fence categories;
+- safe advisory restoration guidance;
+- objective/penalty evidence where available.
+
+### D. #57 / #43 decision workbenches
+
+Extend existing Plan Compare/scenario/capacity surfaces using canonical persisted facts. CTP/scenario/capacity must never call a hidden alternate planner.
+
+### E. #36 complete read/command exposure
+
+Close any remaining UI need to parse opaque JSON, join unrelated DTOs or infer backend decisions.
+
+### F. #60 master authoring
+
+Make the existing master workbench fully operational with typed validation/effective-value/impact feedback.
+
+### G. #61 realistic reference data
+
+Use the deterministic persisted reference plant to design/test realistic information density, not only tiny fixtures.
+
+### H. #31 systematic browser/visual/E2E quality
+
+Build repeatable coverage for:
+
+- pointer drag/autoscroll/pan;
+- focus and virtualization;
+- fullscreen/localStorage;
+- long-open-session time progression;
+- 1080p/1440p/4K layouts;
+- visual regression;
+- end-to-end plan -> diagnose -> compare -> approve -> release;
+- execution -> replan;
+- CTP/scenario/traceability/master-validation journeys.
+
+---
+
+## 10. Key entity inspector contract
+
+Continue to expose authoritative facts for:
+
+| Entity | Primary facts |
+|---|---|
+| Sales Order | customer/item/qty/service date/requirements/coverage/PO lineage |
+| Production Order | MTO/MTS source, manufacturing qty, FG coverage, campaign/material/service status |
+| Campaign | PO allocations, grade sequence, heat structure, service/transition/candidate evidence |
+| Heat | grade/quantity/PO allocations/route/cast sequence/thermal/resource state |
+| Operation | process, eligible/planned/committed/actual resource, planned/actual time, constraints, baseline/binding/material evidence |
+| Resource | capability/state/calendar/scheduling mode/capacity/load/upcoming work |
+| Material requirement/supply | required qty/time, coverage/reservation, supply basis, shortfall/late state |
+| Material lot | physical genealogy/quality/location/status/commercial allocations where applicable |
+| Work Order | allocations, process operations, plan/actual, external references |
+| Diagnostic | stable code, severity, hard/soft, evidence, entity refs, advisory suggestion |
+| Plan Version | status, baseline/scenario, horizon, assumptions/readiness/comparison/release audit |
+
+Do not duplicate entity presentation/meaning per page.
+
+---
+
+## 11. UI product quality definition
+
+A UI capability is not complete because a route renders.
+
+For each workflow require:
+
+- authoritative typed backend source;
+- explicit loading/empty/error/stale state;
+- reason/source for important status;
+- stable cross-navigation IDs;
+- keyboard/focus behavior where applicable;
+- no color-only critical meaning;
+- realistic-density performance;
+- correct historical Plan Version interpretation;
+- backend-validated state-changing commands;
+- component/model regression coverage;
+- browser/desktop workflow evidence where browser behavior matters;
+- exact-SHA Windows verification before claiming release readiness.
+
+---
+
+## 12. Current highest-value UI work
+
+Do **not** restart the shell or rebuild the Gantt from the old implementation plan.
+
+Highest-value UI work is now:
+
+1. preserve and harden the integrated Gantt/workbench;
+2. wire #16 resource commitment/redispatch facts/commands into that workbench once backend-authoritative;
+3. deepen execution/genealogy/diagnostic/decision workspaces as #18/#19/#57/#43/#36 land;
+4. complete master authoring with #60;
+5. use #61 realistic data plus #31 browser/visual/E2E testing to finish production quality.
+
+The production UI already exists. The task is now **domain completeness, interaction correctness and operational quality**, not first-page construction.
