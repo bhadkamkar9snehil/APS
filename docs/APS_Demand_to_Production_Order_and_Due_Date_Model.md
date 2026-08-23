@@ -1,75 +1,94 @@
 # APS Demand → Production Order → Due-Date Model
 
-Status: **canonical design clarification / backend gap**
+**Status:** canonical demand/service semantics; MTO orchestration foundation implemented, service-date refinement remains  
+**Re-baselined:** 23-Aug-2026 against current `main`
 
-Scope: backend planning semantics only. No UI implementation.
+This document originally described the missing #45 MTO demand-orchestration service. That gap is now closed. The document remains authoritative for demand/Production Order meaning and for the **remaining due-date/service refinement**.
 
-## 1. Why this document exists
+---
 
-The current .NET domain contains both `SalesOrder` and `ProductionOrder`, and `ProductionOrder` may reference `SalesOrderId`, but the canonical backend does not yet have a sufficiently explicit MTO demand-orchestration service that derives and maintains manufacturing Production Orders from Sales Order items.
+## 1. Current implementation state
 
-This must be made explicit because `ProductionOrder` means **manufacturing requirement**, not a renamed Sales Order and not a generic demand record.
+The canonical backend now has `IProductionDemandOrchestrationService` in the production lifecycle.
+
+Implemented foundation includes:
+
+- Sales Order/customer demand normalization;
+- qualified FG coverage before manufacturing need;
+- MTO Production Order creation/reconciliation for uncovered internally manufacturable finished demand;
+- idempotent repeated reconciliation;
+- SO/PO lineage and demand snapshots;
+- MTS manufacturing requirements as a separate stock-policy path;
+- material shortage does not silently shrink the finished manufacturing requirement;
+- later Campaign/Heat/Rolling/WO allocations preserve Production Order identity;
+- persisted release readiness now checks that MTO manufacturing demand has persisted production allocation/schedule evidence and is not planned later than the persisted Production Order `RequiredDate`.
+
+The **remaining gap is not “create MTO POs.”** It is richer explicit customer-service date semantics and quantity/allocation-grain service measurement through aggregation.
+
+---
 
 ## 2. Canonical meaning
 
 ### Sales Order item
 
-Commercial/customer demand imported from SAP.
+Commercial/customer demand imported from the authoritative ERP/integration source.
 
-Carries at least:
-- Sales Order number/item;
+Carries, as available:
+
+- Sales Order/item;
 - customer;
 - material/product;
 - grade/specification;
-- final cross-section/product form;
+- final product form/section;
 - ordered/open quantity;
 - customer required/delivery date;
-- SAP/customer-specific requirements;
+- customer/SAP requirements;
 - status.
 
 ### Production Order
 
-APS manufacturing requirement.
+APS manufacturing requirement, not a renamed Sales Order.
 
-For MTO it exists only for the quantity that must be manufactured internally after qualified finished-goods coverage is considered.
-
-For MTS it is generated from stock-policy replenishment need.
-
-Canonical flow:
+For MTO:
 
 ```text
-SAP Sales Order item
-  -> open customer requirement
-  -> qualified FG coverage
-  -> uncovered finished-product quantity
-  -> internally manufacturable?
-       -> yes: MTO Production Order
-       -> no: visible finished-product shortfall
+open customer demand
+ - qualified FG coverage
+ = internal manufacturing requirement
 ```
 
-A fully FG-covered Sales Order does not require new manufacturing merely to preserve an SO→PO shape.
-
-## 3. MTO PO cardinality
-
-Default policy should remain simple and lineage-safe:
-
-- one MTO PO per Sales Order item + homogeneous manufacturing requirement;
-- preserve `SalesOrderId` and exact quantity;
-- do **not** aggregate unrelated SOs into a PO;
-- aggregation belongs at Campaign/Heat/Rolling Plan level through allocation entities;
-- split a PO only when there is a real planning reason: quantity/time split, route split, customer segregation, partial firm/released state, or another explicit manufacturing boundary.
-
-This preserves the canonical flow:
+For MTS:
 
 ```text
-SO item A -> PO-A --\
-                 \
-SO item B -> PO-B ----> Campaign -> Heat(s) -> WO(s)
-                 /
-SO item C -> PO-C --/
+stock policy / replenishment need
+ -> internal MTS manufacturing requirement
 ```
 
-The Campaign/WO allocations preserve exact PO/SO quantities through aggregation.
+A fully FG-covered SO item does not require a new MTO manufacturing PO just to preserve an SO→PO shape.
+
+---
+
+## 3. MTO cardinality and lineage
+
+Default remains lineage-safe:
+
+- one MTO PO per SO item + homogeneous manufacturing requirement;
+- preserve `SalesOrderId`/item identity and quantity;
+- do not aggregate unrelated SOs merely to reduce PO count;
+- aggregation occurs at Campaign/Heat/Rolling/WO allocation level;
+- split a PO only for an explicit manufacturing/commitment/time/route reason.
+
+```text
+SO-A -> PO-A --\
+               \
+SO-B -> PO-B ----> Campaign / Heat / WO allocations
+               /
+SO-C -> PO-C --/
+```
+
+Aggregation must never erase independent customer/date/quantity identity.
+
+---
 
 ## 4. Quantity derivation
 
@@ -77,176 +96,187 @@ For each SO item:
 
 ```text
 OpenCustomerDemand
-- qualified FG already allocated/available for that SO requirement
+- qualified finished-goods allocation/coverage
 = ManufacturingRequirementQuantity
 ```
 
-If zero, no new MTO PO is required.
+If zero, no new MTO manufacturing PO is needed.
 
-If positive and the finished material is internally manufacturable, create/update the MTO PO for that quantity.
+If positive and internally manufacturable, APS creates/reconciles the MTO PO for the uncovered quantity.
 
-The PO quantity is **not** reduced because billet/raw material is absent. Upstream material shortages are discovered by recursive BOM/time-phased material planning and remain visible as shortfalls while the finished manufacturing requirement continues to exist.
+If billet/raw material is absent, the PO is **not** silently reduced. Recursive BOM/time-phased material planning exposes the upstream internal requirement or explicit shortfall while the finished manufacturing requirement remains visible.
 
-## 5. Required-by date semantics
+This is now an implemented production invariant, not only a target.
 
-Do not collapse all dates into one ambiguous `RequiredDate` long-term.
+---
 
-Recommended canonical dates:
+## 5. Current date representation versus target semantics
 
-- `CustomerRequiredDateUtc` / requested delivery date — from SAP SO item;
-- optional `ConfirmedDeliveryDateUtc` — if SAP provides it;
-- `ProductionRequiredByUtc` — latest acceptable completion of finished manufacturing before post-production/QA/dispatch allowance;
-- operation/material need times — derived backward from the solved/estimated production route.
+The current model still uses a generic Production Order `RequiredDate` in important paths, including the current persisted service-readiness guard.
 
-Initially, if no post-production allowance master exists:
+That is useful but **not the desired final date vocabulary**.
+
+Target explicit dates:
+
+- `CustomerRequiredDateUtc` — requested/customer delivery date;
+- optional `ConfirmedDeliveryDateUtc` — ERP-confirmed date where available;
+- `ProductionRequiredByUtc` — latest acceptable finished manufacturing completion before QA/dispatch/post-production allowance;
+- operation/material required-at times — derived backward from the route/schedule.
+
+When no post-production allowance is configured, a legitimate compatibility basis is:
 
 ```text
 ProductionRequiredByUtc = CustomerRequiredDateUtc
 ```
 
-but the basis must be explicit.
+but the basis should be explicit rather than hidden behind one overloaded `RequiredDate` property.
 
-## 6. Backward timing
+---
 
-The SO due date is a demand/service constraint, not the due date of every upstream task.
+## 6. Backward timing semantics
 
-Correct relationship:
+The customer due date is a demand/service obligation, not the due date of every upstream activity.
 
 ```text
 Customer delivery required
-  <- FG/QA/dispatch allowance
-Finished production required
-  <- downstream operation duration/queue
-Rolling material required
-  <- rolling/RHF duration/queue
+ <- QA / dispatch / FG allowance
+Finished manufacturing required
+ <- downstream route duration / queue
+Rolling feed required
+ <- rolling / heating / queue
 Billet required
-  <- casting/refining/steelmaking route
+ <- casting / refining / steelmaking
 Raw materials required
 ```
 
-The material/BOM engine therefore derives `RequiredAtUtc` backward through the consuming operation/route where finite timing is known.
+Material `RequiredAtUtc` should follow the actual consuming route/operation timing where finite timing is known.
 
-## 7. Current implementation behavior and limitation
+---
 
-Current campaign planning sorts POs roughly by:
+## 7. Campaign/service behavior — current versus target
 
-1. MTO before MTS;
-2. higher Priority;
-3. earlier `RequiredDate`;
-4. grade / PO number.
+Campaign planning is no longer accurately described as simple production-authoritative sort-and-fill; #15 candidate Campaign/grade-sequence/heat optimization is integrated.
 
-Campaign compatibility currently partitions by:
-- grade sequence class;
-- caster section;
-- route;
-- exact grade or mixed-grade policy;
-- MTO/MTS mixing policy;
-- customer/SO/dedicated segregation policy.
+Current planning already considers service/due-date signals together with manufacturing economics, compatibility, transitions, furnace-feasible heats, downstream feasibility and replan stability.
 
-Campaigns are then filled up to maximum campaign quantity. Campaign `RequiredDate` becomes the earliest PO required date in the campaign.
+However a shared physical Campaign/heat/rolling task may support multiple POs with different due dates. A single aggregate due date remains insufficient as the final service model.
 
-Hot-rolling groups similarly retain compatible grade/input/output/route/product-family/feed-source combinations and use the earliest PO date as the task due date.
+### Target
 
-CP-SAT penalizes task tardiness using `FiniteScheduleTask.DueUtc` weighted by task priority.
+Each PO allocation retains:
 
-This is a useful baseline, but it is **not sufficient service-date modeling** because an aggregated campaign/heat/rolling task can support several POs with different due dates. Using only the earliest date can over-constrain later demand and hide quantity-specific service performance.
+- quantity;
+- its own customer/production required-by date;
+- expected completion/coverage basis;
+- service status/tardiness contribution.
 
-## 8. Target due-date behavior for aggregation
+A shared physical task may aggregate demand, but service evaluation must remain allocation-aware.
 
-Every PO allocation retains its own required-by date.
+---
 
-A Campaign may contain orders with different dates only when:
-- all hard compatibility/segregation rules allow it;
-- the finite schedule can still satisfy each PO's own service requirement, or a deliberate lateness tradeoff is visible in the objective;
-- due-date spread/campaign holding cost is considered in candidate scoring.
+## 8. Quantity-specific service evaluation
 
-Do not turn a campaign's earliest date into the sole due date of every tonne in that campaign.
-
-Recommended campaign facts:
-- earliest required date;
-- latest required date;
-- weighted/service-critical date distribution;
-- PO allocation list with quantity + individual required-by date.
-
-## 9. Quantity-specific service evaluation
-
-Service should ultimately be evaluated at demand allocation grain:
+Example:
 
 ```text
 PO-A 40 MT due 10-Sep
 PO-B 60 MT due 18-Sep
 ```
 
-If one 100 MT rolling/campaign block serves both, APS must still know which downstream output quantity satisfies PO-A versus PO-B and measure tardiness against each PO separately.
+One 100 MT physical block may serve both, but APS must still know which quantity serves each PO and measure service against each obligation.
 
-The solver may use shared physical tasks, but the objective/read model must preserve allocation-level service.
+The solver can optimize shared physical tasks; the Plan Version/read model must preserve allocation-level customer-service truth.
 
-## 10. Campaign clubbing target
+This is the key remaining refinement behind the note in current release readiness: comparing persisted completion to generic `ProductionOrder.RequiredDate` is a useful safety gate, not the final service architecture.
+
+---
+
+## 9. Campaign clubbing semantics
 
 Campaign clubbing is optimization, not PO creation.
 
-Candidate compatibility includes:
-- manufacturing route;
-- caster/input format;
-- grade/sequence class and transition rules;
-- customer/quality/segregation restrictions;
-- downstream mill/outlet feasibility;
-- MTO/MTS policy;
-- campaign/heat capacity limits.
+Hard compatibility may include:
 
-Candidate scoring includes:
-- individual PO due-date feasibility/tardiness;
-- due-date spread;
+- route;
+- caster/input format;
+- grade/sequence transition rules;
+- customer/quality segregation;
+- downstream feasibility;
+- MTO/MTS policy;
+- campaign/heat physical envelopes.
+
+Objective/scoring may include:
+
+- allocation-level due-date/service impact;
+- due-date spread/early production;
 - grade transitions;
 - heat utilization;
-- caster/tundish continuity;
-- rolling/downstream feasibility;
-- campaign count/setup/stability.
+- caster continuity;
+- downstream feasibility;
+- campaign/setup/stability cost.
 
-The selected campaign may aggregate many POs, but no PO loses its own quantity/date/customer identity.
+No selected Campaign may erase the underlying PO/customer/date identities.
 
-## 11. Required backend service
+---
 
-Introduce one canonical MTO demand-orchestration service responsible for:
+## 10. Canonical demand orchestration ownership
 
-1. ingest/read current Sales Order items;
-2. calculate open customer demand;
-3. apply qualified FG coverage/reservations;
+The current canonical MTO service owns the foundation that the old version of this document proposed:
+
+1. read/normalize current Sales Order demand;
+2. calculate open demand;
+3. apply qualified FG coverage;
 4. determine internally manufacturable finished requirement;
-5. create/update/cancel derived MTO Production Orders idempotently;
-6. preserve SO item linkage and requirement snapshots;
-7. derive `ProductionRequiredByUtc` using configured delivery/QA allowance;
-8. prevent duplicate POs across repeated SAP sync/planning runs;
-9. retain firm/released PO stability during replan;
-10. expose demand coverage and PO derivation explanation.
+5. create/update/cancel/reconcile derived MTO Production Orders idempotently;
+6. preserve SO linkage and requirement snapshots;
+7. prevent duplicate POs across repeated planning/sync;
+8. preserve firm/released stability according to lifecycle/replan policy;
+9. expose demand coverage/derivation through planner read models.
 
-MTS remains separate: stock policy -> internal MTS Production Order.
+Remaining service-date enhancements should evolve this canonical path, not introduce another demand planner.
 
-## 12. End-to-end demand flow
+---
+
+## 11. End-to-end flow
 
 ```text
 SAP SO item
-  -> normalize customer requirement
-  -> qualified FG coverage
-  -> MTO manufacturing PO for uncovered finished quantity
-  -> recursive BOM / time-phased material requirements
-  -> internally manufacturable upstream requirements + shortfalls
-  -> campaign candidate optimization
-  -> heat/route/rolling structure
-  -> finite schedule
-  -> WOs / operation allocations
-  -> actual production / FG inventory
-  -> SO fulfilment / remaining demand
-  -> replan
+ -> normalized customer requirement
+ -> qualified FG coverage
+ -> MTO PO for uncovered finished manufacturing quantity
+ -> recursive BOM / time-phased material requirements
+ -> internal upstream manufacturing requirement or explicit shortfall
+ -> Campaign / heat / route / rolling structure
+ -> finite schedule
+ -> immutable Plan Version
+ -> persisted service/readiness evidence
+ -> Approved / released WOs and operations
+ -> actual production / FG state
+ -> remaining demand
+ -> replan
 ```
 
-## 13. Acceptance scenarios
+---
 
-1. 100 MT SO, 100 MT qualified FG -> no new MTO PO; demand covered by stock.
-2. 100 MT SO, 30 MT FG -> 70 MT MTO PO.
-3. 100 MT SO, 0 billet/raw material -> still 100 MT MTO PO if FG can be manufactured internally; BOM exposes upstream production/shortfall.
-4. Two SO items same grade/section/due window -> two POs remain separate, may share one campaign/heat/WO through allocations.
-5. Same grade but customer segregation requires dedicated campaign -> POs never club.
-6. PO-A due 10-Sep and PO-B due 25-Sep can share a campaign only if service/campaign optimization justifies it; each retains own due date.
-7. Repeated SAP sync does not create duplicate MTO POs.
-8. Released/firm PO is not silently resized because inventory later changes; adjustment becomes an explicit replan/reconciliation decision.
+## 12. Acceptance scenarios
+
+Current/future acceptance must preserve:
+
+1. 100 MT SO + 100 MT qualified FG -> no new MTO manufacturing PO.
+2. 100 MT SO + 30 MT qualified FG -> 70 MT MTO PO.
+3. 100 MT SO + no billet/raw material -> still 100 MT MTO PO if finished product is internally manufacturable; upstream shortage remains explicit.
+4. Two SO items same grade/section/date window -> separate POs may share Campaign/Heat/WO through allocations.
+5. Customer segregation requiring dedicated manufacture prevents inappropriate clubbing.
+6. PO-A due 10-Sep and PO-B due 25-Sep can share physical work only while each retains its own service obligation.
+7. Repeated demand reconciliation does not duplicate MTO POs.
+8. Released/firm PO is not silently resized because inventory changes; adjustment is explicit reconciliation/replan behavior.
+9. Current persisted release readiness blocks MTO demand with no production allocation/scheduled completion evidence.
+10. Future date refinement distinguishes customer-required versus production-required-by and reports service at allocation grain rather than relying only on one aggregate `RequiredDate`.
+
+---
+
+## 13. Implementation priority
+
+Do **not** reopen #45 as if MTO orchestration were absent.
+
+The remaining date/service work should be addressed where it best fits the active backend program—primarily #36 visibility/read contracts, #19 diagnostics/service explanation, #57 richer comparison and #44 end-to-end service acceptance—without creating a duplicate demand service.
