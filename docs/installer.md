@@ -1,17 +1,36 @@
 # Installer & Auto-Update (Velopack)
 
-APS desktop releases are built and packaged locally with Velopack. GitHub Actions is not used as the APS verification or release pipeline.
+**Re-baselined:** 23-Aug-2026 against current `main`.
+
+APS desktop release packaging is an explicit Windows release action using Velopack. Continuous APS verification and release publishing are deliberately separate concerns.
 
 ## Runtime update path
 
-- `Program.Main` calls `VelopackApp.Build().Run()` before constructing the WPF application.
-- `App.xaml.cs` constructs `VelopackUpdateService` with a `GithubSource` for the public APS repository.
-- `UpdateCheckWorker` checks at startup and then roughly hourly, with jitter and exponential backoff after feed failures.
-- Update checks do not download automatically.
-- `IUpdateService` exposes update state and explicit download/apply operations to the UI.
-- Non-installed development launches report `Unsupported` and do not poll the GitHub release feed.
+Current desktop ownership is intentionally compact:
 
-The repository URL is owned by the desktop composition root because that is its only runtime consumer. The Velopack package id is fixed as `APS` by the release script and must remain stable across releases.
+- `Program.Main` calls `VelopackApp.Build().Run()` before constructing the WPF application;
+- `App.xaml.cs` owns the APS GitHub update repository URL because the desktop composition root is the runtime consumer;
+- `App.xaml.cs` registers one `VelopackUpdateService` and exposes it through `IUpdateService`;
+- `UpdateCheckWorker` owns background update checks;
+- `DesktopMenuBar.razor` consumes the update service and has regression coverage for its reactive lifecycle;
+- non-installed development launches report unsupported update behavior rather than pretending to be an installed Velopack application.
+
+Recent Ponytail cleanup removed obsolete update settings/backend wrappers and corresponding appsettings entries. That was **consolidation**, not removal of desktop update behavior. Do not recreate the deleted wrappers unless a concrete second update backend/configuration source actually requires them.
+
+The Velopack package ID remains `APS` and must be stable across releases.
+
+## Authoritative verification before packaging
+
+APS uses the shared self-hosted Windows Azure DevOps `EOS` agent and repository-owned [`../build/verify.ps1`](../build/verify.ps1) as the authoritative automated build/test contract.
+
+Before a production release is treated as verified, the exact release SHA should have Windows evidence for:
+
+1. solution restore;
+2. full Release build;
+3. every solution-registered test project;
+4. self-contained `win-x64` DesktopHost publish smoke.
+
+GitHub Actions/hosted CI are not substitutes for this Windows gate.
 
 ## Build a release
 
@@ -21,29 +40,33 @@ Run on Windows:
 pwsh build/release.ps1 -Version 1.0.0
 ```
 
-The script performs:
+The release script owns packaging/publish preparation. It runs the solution test gate unless `-SkipTests` is deliberately supplied for non-release local iteration.
 
-1. `dotnet test APS.slnx` and aborts on failure unless `-SkipTests` is explicitly supplied for local iteration.
-2. `dotnet publish` of `APS.DesktopHost.csproj`.
-3. `vpk pack`, producing installer/update assets in `build/Releases/<version>/`.
+A real production release must **not** use `-SkipTests` as its acceptance path.
 
-Runtime identifier, self-contained publishing and ReadyToRun are owned by `APS.DesktopHost.csproj`; the release script does not duplicate those settings.
+The release sequence includes:
 
-If `-Version` is omitted, the script reads `<Version>` from `APS.DesktopHost.csproj`.
+1. solution tests;
+2. `APS.DesktopHost` publish;
+3. Velopack `vpk pack` output under `build/Releases/<version>/`.
+
+Runtime identifier/self-contained/ReadyToRun settings belong to `APS.DesktopHost.csproj`; avoid duplicating them in scripts.
+
+If `-Version` is omitted, the script reads the desktop project version.
 
 ### Prerequisites
 
-- .NET 10 SDK
-- Windows
+- Windows;
+- .NET SDK matching `global.json` (currently 10.0.203 with latest-patch roll-forward);
 - Velopack CLI:
 
 ```powershell
 dotnet tool install -g vpk
 ```
 
-## Publish the release
+## Publish a release
 
-Publishing is manual and local. After `build/release.ps1` succeeds, upload the generated release directory with Velopack and a GitHub token with the required repository permission, for example:
+Publishing remains an explicit action after verified packaging. Example:
 
 ```powershell
 vpk upload github `
@@ -55,38 +78,52 @@ vpk upload github `
   --tag "v1.0.0"
 ```
 
-The tag, package version and `APS.DesktopHost.csproj` version must describe the same release.
+The Git tag, package version and desktop project version must refer to the same release.
+
+Do not hard-code a “current published release” in this document; the GitHub Releases feed is runtime publishing authority.
 
 ## Persistent data
 
-Velopack owns the application install directory and may replace it during updates. Persistent APS data therefore lives outside that tree under the `LocalApplicationPaths` location:
+Velopack may replace the install directory during updates, so APS application data remains outside the install tree.
+
+Current local application data is resolved through `LocalApplicationPaths`, including the self-contained SQLite database and logs. The normal data root is under:
 
 ```text
-%LocalAppData%\APS-Data\Data\
+%LocalAppData%\APS-Data\
 ```
 
-The self-contained APS SQLite database is `aps.db` in that data directory when no explicit APS connection string is configured. Logs live under its `logs` child directory.
+with `aps.db` in the data directory when no explicit APS connection string is configured.
 
-## Versioning
+The desktop host performs migration checks before starting hosted services so background services do not race database migration on startup.
 
-`src/APS.DesktopHost/APS.DesktopHost.csproj` is the application-version authority. Use semantic versioning:
+## Release/runtime verification
 
-- patch for compatible fixes and small refinements;
-- minor for substantial planner capabilities/workflows;
-- major only for a declared stable milestone or compatibility-breaking product change.
+For a production installer/update release, verify more than build/test:
 
-Release tags use `v<Version>` and must point at the exact commit used to build the published assets. Historical prototypes use `archive/*` tags and are not part of the active release lineage.
-
-Do not hard-code a “current published release” in this document; the GitHub Releases feed is the authority for what is currently published.
-
-## Release verification
-
-For a real release, verify from an installed preceding version:
-
+- clean install or upgrade from an installed prior version;
 - update discovery;
-- download and prepared-update persistence;
-- application shutdown/restart and update application;
-- resulting application version and Windows Installed Apps metadata;
-- delta/full-package behavior from the second published release onward.
+- download/prepared-update behavior;
+- shutdown/restart and update application;
+- resulting application/package version;
+- Windows Installed Apps metadata;
+- persistent database/log data survives install-directory replacement;
+- migration/startup succeeds on the release database path;
+- desktop window opens/responds;
+- representative planner view loads;
+- update menu correctly reflects supported/available/downloading/ready/error state;
+- delta/full package behavior from the second published release onward.
 
-The repository policy remains: build/test/runtime verification is performed in the intended developer environment, not inferred from GitHub Actions status.
+When persistence/startup changes, create/retain the appropriate pre-launch database backup and run SQLite integrity/quick-check evidence as part of release QA.
+
+## Latest recorded current-main evidence
+
+For `main` at `71e456d2fe124173cdd1f0bfeac82e18f53dc45f`, recorded Windows evidence includes:
+
+- Release build 0 warnings/errors;
+- 336/336 tests;
+- self-contained `APS.DesktopHost.exe` publish;
+- SQLite `PRAGMA quick_check: ok`;
+- pre-launch backup;
+- published desktop baseline opened and remained responsive.
+
+This is evidence for that exact SHA only and does not replace verification of a later release commit.
