@@ -10,6 +10,27 @@ public sealed class GanttSceneTests
     private static readonly DateTime Start = new(2026, 8, 20, 0, 0, 0, DateTimeKind.Utc);
 
     [Fact]
+    public void WidthPercent_keeps_a_short_operation_visible_at_wide_zoom()
+    {
+        var state = State();
+        state.SetPlanWindow(Start, Start.AddDays(30), Start, Start.AddDays(30));
+
+        var width = GanttModels.WidthPercent(state, Start, Start.AddMinutes(15));
+
+        Assert.True(width >= .25d, $"a 15-minute operation on a 30-day timeline must stay visible/clickable, got {width}%");
+    }
+
+    [Fact]
+    public void WidthPercent_stays_zero_for_an_operation_entirely_outside_the_visible_window()
+    {
+        var state = State();
+
+        var width = GanttModels.WidthPercent(state, Start.AddDays(20), Start.AddDays(20).AddMinutes(15));
+
+        Assert.Equal(0d, width);
+    }
+
+    [Fact]
     public void Scene_mounts_only_the_visible_row_window_with_overscan_and_clips_operations_by_time()
     {
         var lanes = Enumerable.Range(0, 30)

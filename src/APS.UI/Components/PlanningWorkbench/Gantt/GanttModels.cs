@@ -667,7 +667,12 @@ public static class GanttModels
         var clippedStart = start < state.VisibleStartUtc ? state.VisibleStartUtc : start;
         var clippedEnd = end > state.VisibleEndUtc ? state.VisibleEndUtc : end;
         var total = Math.Max(1d, (state.VisibleEndUtc - state.VisibleStartUtc).TotalMinutes);
-        return Math.Max(0d, (clippedEnd - clippedStart).TotalMinutes / total * 100d);
+        var raw = (clippedEnd - clippedStart).TotalMinutes / total * 100d;
+
+        // An operation that genuinely overlaps the visible window must stay visible/clickable even
+        // when its share of a wide-zoom timeline rounds to a sub-pixel width; one with no real
+        // overlap (raw <= 0, e.g. clipped entirely outside the window) must stay exactly 0.
+        return raw <= 0d ? 0d : Math.Clamp(raw, .25d, 100d);
     }
 
     private static bool Contains(string? value, string query) =>
