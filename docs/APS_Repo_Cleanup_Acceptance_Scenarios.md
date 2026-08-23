@@ -1,15 +1,8 @@
 # APS Repository Cleanup Acceptance Scenarios
 
-Status: **cleanup acceptance checklist**
+**Status:** historical acceptance checklist — cleanup completed/superseded  
+**Preserved original:** [`archive/repository-cleanup/APS_Repo_Cleanup_Acceptance_Scenarios.md`](archive/repository-cleanup/APS_Repo_Cleanup_Acceptance_Scenarios.md)
 
-- all Markdown/docs files inventoried;
-- each classified Canonical / Current implementation note / Reference / Archive;
-- canonical docs linked from `docs/README.md`;
-- stale docs moved to archive, not deleted;
-- reference docs receive superseded banner;
-- root-level documentation clutter removed/moved appropriately;
-- retired Python/workbook prototype absent from the active tree and recoverable from tag `v0.2.5`;
-- no current doc links to obsolete path;
-- cleanup manifest records every move and rationale;
-- no source-code move occurs as part of documentation cleanup unless separately reviewed;
-- no GitHub Actions/CI used.
+This checklist belonged to the earlier repository cleanup pass. Its old `no GitHub Actions/CI used` item was a process constraint for that pass, not the current APS verification doctrine.
+
+Current documentation/governance checks are defined by [`APS_Repository_Current_Reference_Archive_Classification_Rules.md`](APS_Repository_Current_Reference_Archive_Classification_Rules.md). Current Windows verification is defined by [`windows-ci.md`](windows-ci.md).
