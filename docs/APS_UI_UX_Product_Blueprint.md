@@ -1,125 +1,115 @@
 # APS Production UI / UX Product Blueprint
 
+**Status:** product/UX target plus current implementation constraints  
+**Re-baselined:** 23-Aug-2026 against `main` at `71e456d2fe124173cdd1f0bfeac82e18f53dc45f`
+
+This document defines the production user experience. It is **not** current implementation-state authority; use [`current/APS_CURRENT_STATE_2026-08-23.md`](current/APS_CURRENT_STATE_2026-08-23.md) and [`current/APS_GANTT_OVERHAUL_IMPLEMENTATION_STATUS.md`](current/APS_GANTT_OVERHAUL_IMPLEMENTATION_STATUS.md) for that.
+
+The original blueprint predates the production Blazor/Gantt build-out. Its product model remains useful, but statements implying that the UI is only a Planning Sandbox or that visual implementation has not begun are obsolete.
+
+---
+
 ## 1. Purpose
 
-This document defines the production user experience for the .NET APS.
-
-It is intentionally **not** a visual refresh of the workbook-era HTML application and it is not a collection of pages generated from backend class names. The interface must expose the planning model as one coherent operational system:
+The interface must expose APS as one coherent operational system:
 
 ```text
 Demand
-  -> Production Order
-  -> inventory / supply allocation
-  -> Campaign
-  -> Heat structure
-  -> physical process operations
-  -> finite resource schedule
-  -> Work Order release
-  -> execution actuals
-  -> material genealogy
-  -> replanning / next Plan Version
+ -> Production Order
+ -> inventory / supply allocation
+ -> Campaign
+ -> Heat structure
+ -> configured process operations
+ -> finite physical-resource schedule
+ -> Plan Version readiness / approval / release
+ -> Work Orders / execution actuals
+ -> material genealogy
+ -> replanning / next Plan Version
 ```
 
-The primary UX objective is that a planner can move through this chain in either direction without losing context or reconstructing relationships manually.
+A planner should move through this chain in either direction without reconstructing relationships manually.
+
+The UI is not a visual refresh of the workbook-era prototype and is not a page-per-backend-class generator.
 
 ---
 
 ## 2. Source-of-truth rule
 
-UI development must always distinguish three states:
+Every UI capability is one of:
 
-- `BackendReady`: authoritative application/domain/query behavior exists and the UI can expose it.
-- `BackendPartial`: a concept exists but is not yet complete enough for a production action; UI may expose read-only/reference state only.
-- `Planned`: the product blueprint reserves a UI location, but no screen may imply the behavior already exists.
+- **BackendReady** — authoritative application/query/command behavior exists; production UI may expose and act on it;
+- **BackendPartial** — useful facts exist but a production action/read path is incomplete; UI must show only supported behavior;
+- **Planned** — the blueprint reserves a workflow but UI must not imply the backend behavior exists.
 
-At the time this document is introduced, PR #1 contains a real .NET planning backbone and a **reference Planning Sandbox**, but that page is not the production planner workspace. It runs a built-in sample scenario and displays campaign/cast/rolling/schedule/WO output directly from `IPlanningEngine`.
+Current `main` already contains a substantial DB-backed production UI and Gantt. The `/demo/planning` sandbox remains a separate direct-kernel reference path and must not become a second production lifecycle.
 
-The production UI must therefore be built on explicit application/query contracts and DB-backed state, not by enlarging the sandbox.
+The UI never compensates for a missing backend contract by recomputing planning truth in Razor/JavaScript.
 
 ---
 
 ## 3. Product mental model
 
-The system has four user-facing layers.
-
-### 3.1 Control
+### Control
 
 Answers:
 
-- What is the current authoritative plan?
-- Can it be trusted?
+- What is the authoritative Plan Version?
+- Is it feasible, reviewed and release-ready?
 - What is late, blocked or at risk?
-- What changed from the previous plan?
-- What action is required now?
+- What changed?
+- What requires action?
 
-### 3.2 Plan
-
-Answers:
-
-- What demand must be satisfied?
-- What supply already covers it?
-- Why did APS form these campaigns and heats?
-- Where and when will each physical operation run?
-- Which material feeds each downstream requirement?
-
-### 3.3 Operate
+### Plan
 
 Answers:
 
-- What has been released?
-- What is running/completed/held?
-- What material was actually produced or consumed?
-- What is now fixed in history?
-- What remaining work should be replanned?
+- What demand remains?
+- What supply covers it and when?
+- Why were Campaigns/heats formed?
+- Where and when do physical operations run?
+- What material feeds each requirement?
 
-### 3.4 Decide / Configure
+### Operate
 
 Answers:
 
-- What happens under another scenario?
-- What can we promise?
-- Why is a plan infeasible?
-- What master/rule produced this decision?
-- What would be affected if a master changes?
+- What is released/running/completed/held?
+- What actually happened and on which resource?
+- What material was consumed/produced?
+- What is immutable history?
+- What remains replannable?
 
-These layers determine the navigation. Backend module names do not.
+### Decide / Configure
+
+Answers:
+
+- What changes under another scenario?
+- What can be promised?
+- Why is something infeasible?
+- What rule/master caused the decision?
+- What is the impact of changing configuration?
+
+Navigation follows these planner questions, not backend namespaces.
 
 ---
 
 ## 4. Primary users
 
-### Production planner / PPC
-
-Primary persona. Needs complete plan creation, diagnosis, comparison, freezing, release and replanning.
-
-### Operations / dispatch
-
-Needs an equipment- and sequence-centric view with minimal commercial clutter.
-
-### Material planner
-
-Needs time-phased material availability, reservations, external/internal supply and shortages.
-
-### Customer-service / commercial user
-
-Needs demand coverage and CTP without understanding solver internals.
-
-### Master-data owner
-
-Needs controlled editing, inheritance/effective-value inspection, validation and impact analysis.
-
-### Management
-
-Needs trustworthy plan health, service risk, bottlenecks and deltas, with drilldown rather than separate executive-only data.
+- Production planner / PPC — plan, diagnose, compare, approve, release and replan.
+- Operations / dispatch — equipment/sequence/commitment/execution focus.
+- Material planner — time-phased material, reservations, supply and shortfalls.
+- Customer-service/commercial — demand coverage, service status and CTP.
+- Master-data owner — controlled authoring, effective values, validation and impact.
+- Management — trustworthy plan health/service/bottleneck/delta with drilldown.
 
 ---
 
 ## 5. Navigation architecture
 
-The production application should use a compact primary rail, not nine or ten equal top tabs.
+The conceptual architecture remains:
 
 ```text
-CONTROL TOWER
+CONTROL / HOME
 
 PLAN
   Demand & Supply
@@ -127,7 +117,7 @@ PLAN
   Steelmaking & Casting
   Rolling & Finishing
   Finite Schedule
-  Material Flow
+  Material Flow / Inventory
 
 OPERATE
   Work Orders & Operations
@@ -141,1068 +131,552 @@ DECIDE
   Capacity
 
 CONFIGURE
-  Plant & Resources
-  Grades & Metallurgy
-  Materials & Sections
-  Routes & Capabilities
-  Rules & Calendars
-  External Supply
+  Plant / Resources / Routes / Capabilities
+  Grades / Metallurgy / Thermal
+  Materials / Sections / Packaging
+  Rules / Calendars / Scenarios
 
 AUDIT
   Plan Versions
-  Integration State
+  Integration / lifecycle evidence
 ```
 
-The rail may collapse to icons, but the current Plan Version remains visible independently of navigation.
+Current shell implementation has been simplified since the first blueprint: several tiny navigation/context/theme wrappers were removed after their responsibilities were consolidated. The product navigation intent remains; do not recreate obsolete wrapper components simply to match the original file structure.
 
 ---
 
-## 6. Persistent application shell
+## 6. Persistent shell principles
 
-Every production workspace shares four persistent layers.
+### Plan context
 
-### 6.1 Plan context bar
+The current Plan Version remains visible independently of navigation and must expose, as contracts permit:
 
-Always shows:
+- Plan Version / baseline / scenario;
+- lifecycle status;
+- horizon/reference time;
+- solver/result state;
+- created/released state;
+- stale-data/context warning where relevant.
 
-- plan version / scenario
-- baseline plan if applicable
-- status
-- horizon
-- reference time
-- solver status
-- created time
-- released/frozen state
-- stale-data indicator
+Global actions are enabled only from backend lifecycle truth.
 
-Primary actions live here only when globally valid:
+Current lifecycle must reflect the implemented approval boundary:
 
-- Calculate / Run Plan
-- Compare
-- Review / Accept
-- Freeze
-- Release
-- Replan
+```text
+Draft -> Feasible -> Approved -> Released
+```
 
-The action state must come from backend lifecycle rules. UI code must not infer that an action is safe merely because a button can be clicked.
+The UI must not present a direct Feasible -> Released shortcut.
 
-### 6.2 Workspace header
+### Workspace header
 
-Shows the current planner question, not redundant branding.
+State the planner question, not redundant branding.
 
-Examples:
+### Main canvas
 
-- `Which demand is still uncovered?`
-- `How did APS construct Campaign C-1042?`
-- `Where is heat H-188 scheduled?`
-- `What changed after the CCM outage?`
+Visualization/work-surface first; dense tables support exact review/drilldown.
 
-### 6.3 Main canvas
+### Context inspector
 
-Visualization-first area. Dense tables are supporting views or synchronized lower panes.
-
-### 6.4 Context inspector
-
-A persistent right-side inspector opens for selected entities.
-
-Supported entity types include:
-
-- Sales Order / item
-- Production Order
-- Campaign
-- Campaign Heat
-- Cast Sequence
-- Process Operation
-- Resource
-- Material supply / reservation
-- Material lot / bundle / coil
-- Work Order
-- Diagnostic
-- Plan Version
-
-Inspector sections:
-
-1. Identity
-2. Current state
-3. Planning meaning / reason
-4. Commercial lineage
-5. Physical lineage
-6. Constraints / requirements
-7. Timing / quantities
-8. Related diagnostics
-9. Available safe actions
-
-The inspector is the main mechanism for cross-screen continuity; avoid repeated modal dialogs.
+Selected SO/PO/Campaign/Heat/Operation/Resource/Material/WO/Diagnostic/Plan Version should expose identity, current state, planning reason/basis, commercial/physical lineage, constraints, timing/quantity, diagnostics and safe actions.
 
 ---
 
-## 7. Global selection and lineage behavior
+## 7. Selection and lineage
 
-Selecting an entity must propagate context through compatible views.
-
-Example:
+Selection should propagate through compatible views.
 
 ```text
-Select SO-1001 / Item 10
-  -> Demand row highlights
-  -> its PO allocation highlights
-  -> Campaign segment highlights
-  -> allocated heats highlight
-  -> scheduled operation path highlights
-  -> material source path highlights
-  -> related WOs / actual lots highlight
+SO item
+ -> PO
+ -> Campaign allocation
+ -> Heat / route operation
+ -> scheduled physical resource
+ -> material path
+ -> WO / actual material
 ```
 
-Backward selection works the same way:
+Backward physical trace must remain distinct from commercial allocation trace:
 
 ```text
-Select bundle BU-0098
-  -> RM operation
-  -> consumed billet lots
-  -> cast / strand / heat
-  -> campaign
-  -> PO allocations
-  -> SO/items
+bundle/coil/FG
+ -> rolled output/input
+ -> billet/strand/cast
+ -> heat
 ```
 
-This is more important than preserving a particular page layout.
+and separately:
+
+```text
+WO/operation allocation
+ -> PO
+ -> SO item/customer demand
+```
+
+Do not collapse planned pegging, reservations and actual genealogy into one ambiguous link type.
 
 ---
 
 ## 8. Plan lifecycle UX
 
-The main planner journey is:
+The current target journey is:
 
 ```text
-Input readiness
-  -> configure run
-  -> calculate
-  -> inspect diagnostics
-  -> inspect demand/campaign/material/schedule
-  -> compare to baseline
-  -> accept/review
-  -> freeze/release
-  -> execute
-  -> receive actuals
-  -> replan remaining work
+input readiness
+ -> calculate/replan
+ -> inspect diagnostics/service/material/schedule
+ -> compare baseline/candidate
+ -> persisted readiness
+ -> Approve
+ -> Release
+ -> execute
+ -> actuals
+ -> child replan
 ```
 
-### 8.1 Input readiness
+### Readiness/approval
 
-Before calculation, show a compact readiness gate:
+Current backend readiness already evaluates persisted material/supply evidence and persisted MTO service-completion evidence. UI must render these findings directly.
 
-- demand loaded
-- inventory timestamp / trust
-- resource/calendars loaded
-- route/master validity
-- planning horizon
-- scenario overrides
-- known blocking master-data errors
+A feasible plan is not automatically approved. An approved plan is not releasable if it is no longer active or readiness has become invalid under the persisted release rules.
 
-Do not make users discover a missing master only after a long solver run when it can be validated earlier.
+### Release
 
-### 8.2 Planning run
-
-Planning runs are asynchronous jobs.
-
-Suggested visible stages:
-
-```text
-Queued
-Preparing input
-Demand / supply netting
-Campaign / heat planning
-Production structure
-Finite scheduling
-Diagnostics
-Persisting Plan Version
-Complete / Failed / Cancelled
-```
-
-The UI shows stage, elapsed state, cancellation availability and failure reason. It must never pretend the browser itself performs the calculation.
-
-### 8.3 Review
-
-A feasible plan is not automatically an accepted plan.
-
-Review surface should summarize:
-
-- demand service
-- late orders
-- campaign decisions
-- major transitions
-- material assumptions
-- external supply usage
-- bottlenecks
-- changes from baseline
-- warnings / degraded assumptions
-
-### 8.4 Release
-
-Release is an auditable state transition. Show exactly what will be released:
-
-- WOs
-- operation groups
-- resources
-- quantities
-- PO/SO allocations
-- frozen horizon implications
+Show exactly what lifecycle transition is occurring and what Plan Version is being released. Work Orders/operations derive from immutable persisted Plan Version structure, not client-reconstructed payloads.
 
 ---
 
-## 9. Control Tower
+## 9. Control / Home
 
-The Control Tower is not a card dashboard. It is a plan-health instrument panel.
+The landing surface should behave as a plan-health instrument panel rather than a generic card dashboard.
 
-### Primary composition
+Priorities:
 
-#### Plan pulse strip
+- Plan Version/status/trust;
+- release readiness;
+- demand/service exposure;
+- material shortfall/confidence;
+- physical resource pressure;
+- critical diagnostics;
+- plan delta versus baseline;
+- direct navigation to contributing entities.
 
-Horizontal strip for:
-
-- feasibility
-- review/release state
-- service attainment
-- plan churn
-- material confidence
-- critical diagnostics
-
-#### Demand coverage composition
-
-One integrated stacked view:
-
-```text
-Requested demand
-| FG stock | existing billet | external billet | fresh production | uncovered |
-```
-
-Drill to affected SO/PO rows.
-
-#### Resource pressure skyline
-
-Physical resources, not only process families.
-
-Shows:
-
-- finite utilization
-- blocked/downtime spans
-- queue pressure
-- next overload/bottleneck
-
-#### Risk stream
-
-Chronological list of events likely to affect the plan:
-
-- late demand
-- resource outage
-- incoming billet risk
-- material hold
-- thermal/queue risk
-- near-term operation without margin
-
-#### Plan delta
-
-Compared with the selected baseline:
-
-- operations moved
-- resource changes
-- campaigns split/merged
-- new/removed work
-- service gained/lost
-
-Every aggregate is clickable and highlights its contributing entities.
+Summary values must drill to their sources.
 
 ---
 
-## 10. Demand & Supply workspace
+## 10. Demand & Supply
 
-The primary question is **how each demand requirement will be satisfied**.
+Primary question: **how will each demand requirement be satisfied?**
 
-### Main visualization
+Expose:
 
-Demand rows use a quantitative coverage bar:
+- SO/item/customer;
+- MTO/MTS Production Order manufacturing need;
+- quantity/service date/priority;
+- grade/material/final section;
+- qualified FG coverage;
+- intermediate/known incoming/internal planned coverage;
+- uncovered/shortfall state;
+- projected completion/service status;
+- immutable requirement snapshot/basis.
 
-```text
-SO / PO required quantity
-[FG][existing billet][external billet][fresh SMS][uncovered]
-```
-
-### Supporting columns
-
-- SO / item
-- customer
-- material / grade / final section
-- required quantity
-- due date
-- priority
-- MTO/MTS
-- customer/quality restriction indicator
-- target / projected stock for MTS
-- plan completion
-- service risk
-
-### Inspector
-
-Shows the immutable requirement snapshot used by the selected plan, including customer-specific narrowing rules.
-
-### Core actions
-
-- inspect requirement
-- inspect supply allocation
-- inspect why uncovered
-- open assigned campaign
-- open CTP for new/additional demand
-
-Direct editing of ERP demand is not a planning UI concern unless explicitly supported by integration policy.
+Current production scope is manufacturing-only. Do not present speculative procurement/transfer recommendations unless that product boundary is deliberately changed in backend code/contracts/tests.
 
 ---
 
 ## 11. Campaign Studio
 
-Campaign Studio explains and, where policy allows, constrains campaign formation.
+Explain Campaign formation through:
 
-### 11.1 Campaign composition map
+- PO allocation matrix;
+- grade sequence;
+- heat structure and furnace-feasible quantities;
+- route/section/segregation constraints;
+- transition/effective rule source;
+- service implications;
+- candidate/rejection evidence as #19/#36 expose it.
 
-Rows = POs.
-Columns = selected campaigns.
-Cell = allocated quantity.
-
-This makes many-to-many split/merge behavior explicit.
-
-### 11.2 Campaign ribbon
-
-For selected campaign:
-
-```text
-PO allocations
- -> grade order
- -> heat structure
- -> cast section
- -> rolling requirements
-```
-
-### 11.3 Grade sequence visualization
-
-Ordered grade nodes with transition edges showing:
-
-- allowed / forbidden
-- exact/class/family rule source
-- transition severity
-- sequence break
-
-### 11.4 Heat structure
-
-Each heat shows:
-
-- planned input/output quantity
-- furnace envelope
-- grade
-- heat-to-PO allocation
-- special requirements
-- downstream cast eligibility
-
-### 11.5 Manual planning interaction
-
-Do not allow a planner to directly mutate solver truth.
-
-Manual interaction should create **constraints / preferences for the next run**:
-
-- keep together
-- keep separate
-- force campaign
-- forbid campaign
-- preferred sequence
-- freeze selected campaign
-
-Then revalidate/reoptimize.
+Manual intervention must become validated constraints/preferences followed by replan/reoptimization; never directly rewrite solved Campaign truth in the browser.
 
 ---
 
-## 12. Steelmaking & Casting workspace
+## 12. Steelmaking & Casting
 
-This view is heat-centric and process-centric.
+Do **not** hard-code the UI to `EAF -> LRF -> VD -> CCM`.
 
-### Heat train
+Render the configured route and actual process identities returned by the backend. VD may be required/optional/forbidden. Additional process taxonomy is scope-driven under #62.
 
-A selected heat is visualized as a real process path:
+For each operation expose as contracts mature:
 
-```text
-EAF -> LRF -> VD? -> CCM
-```
+- eligible resources;
+- planned/committed/actual resource;
+- start/end/duration;
+- queue/transfer/thermal evidence;
+- execution state;
+- allocation/lineage.
 
-Each operation node shows:
-
-- eligible resource count
-- selected physical resource
-- duration
-- planned start/end
-- queue/transfer window
-- requirement status
-- execution status if released
-
-### Cast sequence board
-
-Each physical CCM is its own lane.
-
-Within a sequence show:
-
-- tundish / sequence identity
-- heat order
-- grade transitions
-- section
-- planned cast output
-- sequence break reason
-
-### Four-strand view
-
-For a selected heat/cast:
-
-```text
-CCM-1
-  Strand 1  planned output
-  Strand 2  planned output
-  Strand 3  planned output
-  Strand 4  planned output
-```
-
-Later billet-piece/cut-pattern detail can expand beneath these lanes without changing the information architecture.
-
-### Thermal overlay
-
-A compact temperature/holding visualization may show:
-
-- required entry/exit/casting ranges
-- transfer loss assumptions
-- maximum hold window
-- planned queue margin
-
-Do not imply a thermodynamic simulation where only configured envelopes exist.
+CCMs remain distinct physical resources. Cast/sequence/strand identity must not be visually pooled by equipment type.
 
 ---
 
-## 13. Rolling & Finishing workspace
+## 13. Rolling & Finishing
 
-Primary question: **what feed reaches which mill, through what route, and what finished units result?**
+Primary question: **which material feed reaches which configured downstream operation and why?**
 
-### Feed map
+Current #56 thermal logic means UI should expose:
 
-For each rolling requirement show source path:
+- billet source;
+- planned/actual thermal basis;
+- transfer/wait assumption;
+- hot-direct / hot-buffered / reheat-required decision;
+- why direct hot charge was rejected;
+- whether reheating is thermal-driven or required separately by route/order policy.
 
-```text
-fresh hot cast -> direct mill
-existing billet -> RHF -> mill
-external billet -> RHF -> mill
-inventory billet -> mill where permitted
-```
-
-### Shared RHF visualization
-
-One lane per physical RHF. Show contention from both mill streams and queue consequences.
-
-### RM lanes
-
-RM-1 and RM-2 are never visually merged.
-
-Each block shows:
-
-- grade
-- input section -> output section
-- source campaign / POs
-- quantity
-- changeover
-- due/service signal
-
-### Downstream route
-
-TMT / cooling / cutting / bundling / coiling / finishing appear as process operations when present.
-
-### Planned unitization
-
-Show expected bundle/coil count/weights and packaging specification as planning output. Actual individual IDs belong to execution/genealogy.
+Do not imply `CCM -> RHF -> RM` is universal. The configured route may be direct hot roll, reheated, billet-only or multi-stage downstream processing.
 
 ---
 
-## 14. Finite Schedule Board
+## 14. Finite Schedule Board — central workbench
 
-This is the most information-dense planner screen.
+The Gantt is already a major implemented workbench, not a future concept.
 
-### Required behavior
+Current requirements/behavior include:
 
-- horizontal time axis
-- one lane per physical ResourceId
-- virtualized rendering for large task counts
-- synchronized frozen left resource column
-- zoom day/shift/hour
-- horizon and now/reference markers
-- frozen/slushy/liquid background zones
-- resource calendar/downtime blocks
-- task blocks with process semantics
-- setup/changeover spans or edge markers
-- material-ready and due markers
-- dependency/transfer paths on selection
-
-### Selection behavior
-
-Selecting one task highlights:
-
-- predecessor/successor chain
-- source heat/campaign/PO
-- material receipt/consumption
-- resource alternatives if retained in diagnostics
-- related issue(s)
-
-### Visual warnings
-
-Warnings are compact overlays, not text inside every block:
-
-- late
-- thermal margin low
-- material tight
-- queue near max
-- frozen
-- actual deviates from plan
+- one row per physical resource within hierarchy;
+- synchronized resource grid and UTC timeline;
+- virtualized rows/time;
+- calendars/unavailable spans;
+- operation blocks;
+- Now/reference/frozen-fence markers;
+- baselines/campaign/dependencies/execution overlays;
+- zoom/pan/fit/reset;
+- keyboard/accessibility behavior;
+- multi-selection;
+- staged move/bulk-move proposals;
+- authoritative move validation;
+- resource-load/capacity synchronization;
+- inspector/analysis surfaces;
+- released-plan edit protection.
 
 ### Dragging
 
-Do not make freehand Gantt dragging the authoritative scheduler.
+A drag is a **proposal**, not a direct schedule mutation. Preview/apply must be validated through canonical backend constraints and persist a child Plan Version/replan outcome where applicable.
 
-If manual scheduling is introduced, a drag creates a proposed constraint or move and then runs validation/reoptimization. The UI must show whether the proposed move is accepted, rejected or causes downstream consequences.
+Atomic bulk moves are evaluated as one final proposed schedule.
+
+### Component consolidation
+
+The absence of the old standalone `GanttBaselineLayer`, `GanttCalendarLayer`, `GanttCampaignLayer`, `GanttExecutionLayer`, `GanttProposalLayer` etc. does not mean those behaviors were removed. Current `GanttResourceLane`/viewport scene owns several aligned overlays directly after Ponytail cleanup.
+
+See [`current/APS_GANTT_OVERHAUL_IMPLEMENTATION_STATUS.md`](current/APS_GANTT_OVERHAUL_IMPLEMENTATION_STATUS.md).
 
 ---
 
-## 15. Material Flow workspace
+## 15. Material Flow
 
-### 15.1 Time-phased availability
+Expose the actual canonical material facts:
 
-Use a step/area chart for each selected qualified material pool:
+- opening/qualified inventory;
+- known incoming receipts;
+- internal planned/committed receipts;
+- reservations/ownership;
+- planned consumption;
+- actual adjustments;
+- projected availability;
+- shortfall/late/non-manufacturable reason;
+- required-at time.
 
-- opening inventory
-- external receipts
-- internal cast receipts
-- reservations
-- planned consumption
-- actual adjustments
+Never reconstruct material availability by subtracting displayed Campaign quantities in the UI.
 
-Zero is a hard visual floor. Any shortage region is explicit.
+Held/blocked/rejected material remains visible physical state but excluded from qualified usable supply.
 
-### 15.2 Source-to-demand flow
+---
 
-Use a Sankey or equivalent flow diagram selectively:
+## 16. Execution / replan
+
+WO is an execution container; process operation remains scheduling truth.
+
+Expose:
+
+- planned/committed/actual resource;
+- planned vs actual start/end/quantity;
+- execution state/provenance;
+- actual material input/output where implemented;
+- what is completed/running/committed/frozen;
+- remaining replannable work;
+- baseline versus recovery/child Plan Version.
+
+#18 remains the backend owner for completing full physical material transformation/genealogy and actual-state closure.
+
+---
+
+## 17. Traceability
+
+Keep two coordinated graphs:
+
+### Commercial
 
 ```text
-FG stock / billet inventory / external supply / fresh casting
-      -> PO / campaign requirements
-      -> RHF / rolling
-      -> FG
+SO/item -> PO -> Campaign/Heat/WO/operation allocations
 ```
 
-### 15.3 Reservation table
-
-Shows exact ownership:
-
-- source
-- material/spec
-- lot when known
-- quantity
-- available time
-- PO
-- campaign
-- Plan Version
-- reservation/release state
-
-### 15.4 Quality/status
-
-Held/blocked/rejected material is visible but visually excluded from usable supply.
-
----
-
-## 16. Execution workspace
-
-### 16.1 Work Orders & operations
-
-WO is the execution container. Process operation remains the scheduling truth.
-
-A single screen uses expandable rows:
+### Physical
 
 ```text
-WO Steelmaking H101
-  EAF operation
-  LRF operation
-  VD operation
-
-WO Casting H101
-  CCM operation
+source lot/heat -> cast/strand -> billet -> downstream transformations -> FG unit
 ```
 
-and similarly for RHF/RM/finishing.
-
-### 16.2 Manual actual entry
-
-Initial manual workflow must capture:
-
-- status
-- actual resource
-- actual start/end
-- actual quantity
-- comment/reason
-- produced material units/lots where applicable
-- provenance = Manual
-
-Corrections require explicit correction state/history.
-
-### 16.3 Actual-vs-plan
-
-Timeline overlay shows planned and actual spans without destroying the baseline plan.
-
-### 16.4 Replan preview
-
-Before replanning show:
-
-- completed/fixed operations
-- running operations
-- frozen operations
-- current inventory snapshot
-- major deviations triggering replan
-
-Then create a new Plan Version and compare it with the baseline.
+Render incrementally; do not load the whole plant genealogy by default.
 
 ---
 
-## 17. Traceability workspace
+## 18. Scenario / Compare
 
-Two synchronized modes.
+Existing Plan Compare is a real foundation. Do not build a separate scenario-only comparison engine.
 
-### Commercial lineage
+#57 should extend canonical persisted comparison to include:
 
-```text
-SO/item -> PO -> Campaign allocation -> WO/operation allocation
-```
+- service;
+- material requirements/coverage/shortfalls;
+- Campaign/heat composition;
+- capacity/resource changes;
+- diagnostics;
+- scenario-assumption attribution.
 
-### Physical genealogy
-
-```text
-Heat -> cast -> strand -> billet lot -> RHF/RM -> rolled lot -> bundle/coil -> FG
-```
-
-The graph should support forward/backward expansion without rendering the entire plant genealogy at once.
-
-Each edge displays quantity where meaningful.
-
-Planned pegging, current reservation and immutable actual genealogy must use different visual semantics.
+UI prioritizes delta rather than showing two independent giant plans.
 
 ---
 
-## 18. Scenario / Compare workspace
+## 19. CTP / Promise
 
-### Scenario register
+CTP must consume the same planning kernel/material/route/resource rules as normal planning.
 
-Show:
+Output should explain:
 
-- name
-- baseline
-- override type
-- resources/supply affected
-- status
-- owner / created time
+- feasible quantity/date alternatives;
+- stock/known/planned-internal basis;
+- existing/new manufacturing path where applicable;
+- earliest achievable date;
+- resource/material assumptions;
+- blocker/diagnostic when infeasible.
 
-### Compare view
-
-Use synchronized columns or overlay views for:
-
-- service
-- campaigns/heats
-- resource assignment
-- operation movement
-- material reservation
-- bottlenecks
-- diagnostics
-
-Prioritize **delta** over displaying two entire plans independently.
-
-### Scenario promotion
-
-A scenario remains non-authoritative until explicitly promoted/recalculated/accepted according to application policy.
+No unexplained green/red promise answer.
 
 ---
 
-## 19. CTP / Promise workspace
+## 20. Diagnostics
 
-CTP uses the same planning kernel and therefore should feel like a compact focused scenario.
+Normalize into stable backend-coded evidence:
 
-Input:
+- severity;
+- hard/soft;
+- category/code;
+- affected entities;
+- evidence;
+- consequence;
+- advisory restoration guidance;
+- source Plan Version/stage.
 
-- material / grade / section
-- quantity
-- requested date
-- customer/quality constraints when relevant
+Categories include demand/service, material, Campaign, route, capability/resource, thermal/queue, transition/sequence, calendar/capacity, time fence/stability and execution.
 
-Output should explain alternatives:
-
-1. stock-only
-2. join existing campaign
-3. new campaign
-4. earliest later date
-5. cannot promise
-
-Each answer displays:
-
-- promise date
-- planning basis
-- material source
-- campaign action
-- required resource path
-- risk/confidence/trust
-- blocker if not feasible
-
-No standalone green/red answer without explanation.
+Do not parse human messages to determine diagnostic behavior.
 
 ---
 
-## 20. Diagnostics workspace
+## 21. Capacity
 
-All failures/warnings should normalize into one diagnostic model.
+Keep two clearly distinct products:
 
-Fields:
+- **rough-cut capacity** — estimate/screening;
+- **finite occupancy** — solved schedule using actual physical resource scheduling mode/capacity/calendar semantics.
 
-- severity
-- hard/soft
-- category
-- code
-- affected entity
-- message
-- evidence
-- consequence
-- suggested next action
-- source plan version
-
-Categories include:
-
-- master data
-- campaign compatibility
-- furnace/heat size
-- metallurgy/process
-- thermal
-- CCM/cast sequence
-- material
-- RHF/rolling
-- capacity
-- transition
-- frozen/stability
-- execution/integration
-
-A diagnostic should link directly to the related entity or master editor.
-
----
-
-## 21. Capacity workspace
-
-Keep two lenses visually and semantically separate.
-
-### Rough-cut
-
-Fast planning estimate:
-
-- demand hours
-- available hours
-- utilization
-- overload
-
-### Finite occupancy
-
-From the actual finite schedule:
-
-- scheduled process occupancy
-- setup/changeover occupancy
-- downtime
-- idle
-- starvation/wait
-
-The UI must always label the capacity basis.
+The Gantt already includes a synchronized capacity/resource-load region. Historical views must use persisted Plan Version assumptions where available, not mutable current master reinterpretation.
 
 ---
 
 ## 22. Master-data workbench
 
-Master data is not a collection of unrestricted grids.
+A MasterData UI foundation already exists. The product target remains relationship/effective-value driven rather than unrestricted spreadsheets.
 
-### Tree / relationship driven editors
+#60/#39/#41 own the missing production authoring guarantees:
 
-Plant:
+- typed validated commands;
+- effective rule/value preview;
+- reference existence and numeric invariant validation;
+- intentional retirement/deactivation semantics where history requires it;
+- impact feedback where feasible.
 
-```text
-Plant -> Area -> Stage -> Resource -> Capability -> Calendar
-                           |
-                           -> Flow Links
-```
-
-Grade:
-
-```text
-Grade -> Family / Sequence Class / Casting Class
-      -> Chemistry
-      -> Process requirements
-      -> Thermal requirements
-```
-
-Product/material:
-
-```text
-Material -> Product form -> Cross section -> Packaging
-```
-
-Route:
-
-```text
-Route -> Operations -> Resource capabilities -> transfer/buffer semantics
-```
-
-Transition rules need an **effective rule preview** so users can see exact vs class/family vs default precedence.
-
-Before saving a high-impact change, show validation and affected objects where technically possible.
+UI must not use `DbContext` directly to bypass those application boundaries.
 
 ---
 
-## 23. Visual design language
+## 23. Visual language
 
-The UI should read as a **precision industrial planning instrument**, not a generic SaaS admin dashboard.
+APS should read as a **precision industrial planning instrument**, not generic SaaS.
 
-### Principles
+Principles:
 
-- dense but calm
-- strong hierarchy through scale, alignment, surface depth and data shape
-- subtle physical depth: inset tracks, raised controls, engraved/divided rails; avoid playful skeuomorphism
-- sans-serif typography only
-- compact numeric typography with tabular numerals
-- whitespace is structural, not decorative
-- avoid large rounded cards everywhere
-- use continuous work surfaces, split panes and instrument strips
+- dense but calm;
+- strong spatial/typographic hierarchy;
+- restrained depth/elevation/inset tracks;
+- continuous work surfaces and split panes;
+- large-enough legible operational typography;
+- tabular numerals;
+- status meaning separated from process/equipment color;
+- no critical meaning conveyed by color alone;
+- avoid repeated large rounded card grids.
 
-### Color semantics
-
-Color must be consistent and never the only status carrier.
-
-Suggested process semantics can remain stable across views, for example:
-
-- EAF: hot orange
-- LRF: violet
-- VD: teal
-- CCM: green
-- RHF: amber
-- RM: steel/blue-grey
-- finishing: blue/cyan family
-
-Status semantics are separate:
-
-- feasible / completed
-- warning / at risk
-- error / blocked
-- informational
-- frozen / actual
-
-Do not overload one color with both equipment and severity meanings.
+Post-cleanup theme simplification is not a reason to flatten the visual system; it means fewer implementation abstractions should own the same semantic visual language.
 
 ---
 
 ## 24. Visualization policy
 
-Prefer a chart/diagram when it answers a planner question faster than reading rows.
+Use visualizations when they answer a planner question faster than rows:
 
-Recommended primary visuals:
+- demand coverage;
+- Campaign allocation;
+- grade/transition sequence;
+- heat/process route;
+- Gantt/resource schedule;
+- material time-phased availability/flow;
+- capacity/load;
+- plan delta;
+- genealogy.
 
-- demand coverage stacked bars
-- campaign allocation matrix
-- grade transition sequence graph
-- heat structure ribbon
-- heat process train
-- four-strand CCM diagram
-- resource Gantt
-- material time-phased step chart
-- source-to-demand Sankey
-- utilization skyline / heatmap
-- plan delta movement visualization
-- genealogy graph
-
-Tables remain essential for exact values, filtering, export and bulk review.
+Tables remain necessary for exact values, filters, review and export.
 
 ---
 
-## 25. Status model
+## 25. Lifecycle vocabulary
 
-Canonical UI lifecycle vocabulary must be centralized.
+Do not maintain a UI-only Plan Version state machine.
 
-### Plan Version
+Current persisted lifecycle includes:
 
 ```text
-Queued
-Preparing
-Planning
+Draft
 Feasible
-Infeasible
-Review Required
-Accepted
-Frozen
+Approved
 Released
 Superseded
 Failed
-Cancelled
 ```
 
-Only use states actually supported by backend contracts; unsupported desired states must remain roadmap items until implemented.
+Planning-run progress (`Queued`, `Running`, etc.) is separate from persisted Plan Version lifecycle.
 
-### Operation / WO
-
-At minimum align with application execution status rather than inventing UI-only states.
-
-### Material
-
-Differentiate:
-
-- usable
-- reserved
-- in transit
-- held
-- blocked
-- rejected
-- consumed
+Desired future concepts such as warnings/acknowledgement/freeze policy must be represented only when backend contracts support them.
 
 ---
 
 ## 26. Interaction safety rules
 
 1. Never silently loosen a hard requirement.
-2. Never let a UI drag or inline edit overwrite authoritative schedule truth without validation.
-3. Never release an infeasible plan.
-4. Never hide stale inventory or stale Plan Version context.
-5. Never merge planned pegging, reservations and actual genealogy into one ambiguous relationship.
-6. Never represent rough-cut capacity as finite schedule truth.
-7. Never infer resource interchangeability from equipment type.
-8. Destructive/high-impact master changes require explicit save and validation.
+2. Never let a drag/inline edit overwrite schedule truth without authoritative validation.
+3. Never release merely because a plan is Feasible; current release requires active Approved readiness.
+4. Never hide stale Plan Version/inventory context.
+5. Never merge planned pegging, reservations and actual genealogy.
+6. Never present rough-cut capacity as finite occupancy.
+7. Never infer interchangeability from resource type/name.
+8. Never create speculative procurement/transfer actions in UI while production backend rejects them.
+9. High-impact master changes require validated application commands.
 
 ---
 
-## 27. UI-enabling application/API requirements
+## 27. Backend/UI contract rule
 
-Before production pages are built, create query/read contracts for:
+Every meaningful screen needs intentional typed reads/commands for:
 
-- active/current Plan Version
-- plan version register/detail
-- planning run status/progress
-- demand / PO coverage
-- campaign detail and heat allocations
-- process operations / schedule
-- resource timeline/calendars
-- material ledger/reservations
-- diagnostics
-- release/WO/operation state
-- execution actuals
-- genealogy
-- compare
-- CTP
-- scenarios
-- master list/detail/effective-rule/validation
+- Plan Version/context/readiness;
+- demand/coverage/service;
+- Campaign/heat structure;
+- operations/resources/calendars/capacity;
+- material requirements/ledger/reservations;
+- diagnostics;
+- comparison/scenario/CTP;
+- execution/genealogy;
+- master effective values/validation.
 
-Blazor should consume these contracts. It should not query `ApsDbContext` directly and should not reconstruct relationships from low-level endpoint fragments.
-
-SignalR is appropriate for planning-run progress and live execution/replan refresh where useful.
+#36 is the backend completeness gate. UI must not reconstruct missing truth from opaque JSON or unrelated DTOs.
 
 ---
 
-## 28. Performance requirements
+## 28. Performance
 
-Design for real planning scale from the start.
+Design/test at realistic planner density:
 
-- virtualize large grids
-- virtualize/clip Gantt lanes
-- use server-side paging/filtering for large registers
-- downsample dense charts
-- lazy-load inspector details
-- render genealogy incrementally
-- avoid sending entire Plan Versions to every page
-- cache stable master reference data with explicit invalidation
+- virtualize Gantt rows/time and large tables;
+- server-side page/filter large registers where appropriate;
+- lazy-load detail/graph expansion;
+- downsample dense charts;
+- avoid sending entire Plan Versions to every page;
+- keep shell responsive during planning;
+- use #61 deterministic reference data to validate realistic density.
 
-The shell should remain responsive while a calculation is running.
-
----
-
-## 29. Accessibility requirements
-
-- keyboard navigation for all primary planner actions
-- visible focus state
-- status never depends on color alone
-- tooltips are supplemental, not the only source of information
-- sufficient contrast in dense schedule views
-- reduced-motion support
-- screen-reader names for action controls and chart summaries
-- text alternatives for complex visualizations where practical
+The integrated Gantt already uses row/time virtualization; future changes must not regress it.
 
 ---
 
-## 30. What happens to the current Planning Sandbox
+## 29. Accessibility
 
-The existing `/planning` sandbox remains useful as:
+- keyboard navigation for primary planner workflows;
+- visible focus;
+- no color-only status;
+- tooltips supplementary only;
+- high-contrast/forced-colors behavior where relevant;
+- reduced motion;
+- accessible business identifiers/names;
+- text alternatives/summaries for complex visuals where practical.
 
-- engine smoke-test UI
-- no-DB demonstration
-- component/reference harness
-
-It should **not** gradually become the production workspace.
-
-Production pages should use DB-backed query/application contracts and the shared shell described above.
-
----
-
-## 31. What happens to the old HTML prototype
-
-The workbook-era HTML/CSS remains useful as a feature checklist and interaction reference for functions that existed there:
-
-- planning
-- execution
-- material
-- capacity
-- CTP
-- scenarios
-- BOM/master data
-
-It is not the information architecture or visual target for the new product.
-
-The flat top-tab structure, repeated generic cards and locally computed presentation logic should not be carried forward wholesale.
+#31 owns systematic browser/accessibility/visual regression acceptance.
 
 ---
 
-## 32. Coverage rule
+## 30. Demo sandbox
 
-Every new backend capability is incomplete from a product perspective until this table can be answered:
+`/demo/planning` remains useful as a calculation/component/reference harness. It is not the production workspace and must stay explicitly segregated.
+
+Current production pages already exist; do not route production features back through the sandbox to fill a missing contract.
+
+---
+
+## 31. Historical prototype
+
+The retired workbook-era HTML/UI remains historical reference at tag `v0.2.5` for feature comparison only. Do not carry forward its flat top-tab architecture, generic card repetition or presentation-side calculations as production authority.
+
+---
+
+## 32. Product coverage rule
+
+For every backend capability answer:
 
 | Question | Required answer |
 |---|---|
-| Where can I see it? | workspace / inspector |
-| How do I understand why it exists? | lineage / diagnostics / rule source |
-| How do I act on it? | safe explicit command or read-only by design |
-| What plan/version does it belong to? | visible Plan Version context |
-| Can I trace it upstream/downstream? | entity links / graph |
-| Can I compare it with the previous plan? | delta support where meaningful |
-| Is it authoritative or estimated? | explicit basis badge |
-
-This coverage rule should be applied to every future domain feature.
+| Where is it visible? | workspace / inspector / audit surface |
+| Why does it exist? | lineage / diagnostic / rule source |
+| How can it be acted on? | safe explicit command or read-only by design |
+| Which Plan Version/state owns it? | visible context |
+| Can it be traced? | stable entity/material/commercial links |
+| Can it be compared? | delta support where meaningful |
+| Is it authoritative/estimated/actual? | explicit basis |
 
 ---
 
-## 33. Implementation tracking
+## 33. Current implementation priorities
 
-Production UI work is tracked under Epic #20 and child issues #21-#31.
+The old child-issue order (#22 -> #21 -> #23...) described first construction and is no longer a useful statement of current work.
 
-The intended order is:
+Current UI work should follow backend truth:
 
-1. #22 query/read-model layer
-2. #21 shell/design system/inspector
-3. #23 Control Tower / Plan Version lifecycle
-4. #24 Demand & Campaign Studio
-5. #25 physical production + finite schedule
-6. #26 material flow
-7. #27 execution/replan/traceability
-8. #28 scenarios/compare/CTP/capacity
-9. #29 diagnostics
-10. #30 master-data workbench
-11. #31 accessibility/performance/E2E/visual regression
+1. preserve/harden the integrated Gantt/workbench;
+2. expose #16 eligible/planned/committed/actual resource and redispatch workflow when backend-authoritative;
+3. deepen #18 execution/genealogy;
+4. deepen #19 diagnostics;
+5. extend #57/#43 scenario/compare/CTP/capacity decisions;
+6. close #36 typed read/command gaps;
+7. complete #60 validated master authoring;
+8. validate realistic density with #61;
+9. complete systematic #31 browser/accessibility/performance/visual/E2E acceptance.
 
-The visual implementation should begin only after the UI data contracts for its first workspace are stable enough to avoid moving planning logic into Razor components.
+Production UI work is tracked under Epic #20 and its children, but issue text must also be audited against current `main` before implementation because several original child descriptions predate the integrated UI.
