@@ -144,7 +144,7 @@ public sealed class PlanReleaseLifecycleTests
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ReleaseAsync(planId));
 
-        Assert.Contains("must be approved", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("active approved", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Null(repository.Persisted);
     }
 
@@ -168,6 +168,29 @@ public sealed class PlanReleaseLifecycleTests
     }
 
     [Fact]
+    public async Task Inactive_approved_plan_cannot_be_released()
+    {
+        await using var db = NewDb();
+        var planId = SeedPlan(
+            db,
+            PlanVersionStatus.Approved,
+            new[] { Requirement(MaterialRequirementStatus.AvailableNow) },
+            Array.Empty<MaterialSupplyRequirement>(),
+            isActive: false);
+        await db.SaveChangesAsync();
+        var repository = new CapturingReleaseRepository();
+        var service = new PersistedPlanReleaseService(db, repository);
+
+        var readiness = await service.GetReadinessAsync(planId);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ReleaseAsync(planId));
+
+        Assert.False(readiness.IsReleaseReady);
+        Assert.Contains(readiness.Findings, x => x.Code == "PLAN_NOT_ACTIVE");
+        Assert.Contains("active approved", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(repository.Persisted);
+    }
+
+    [Fact]
     public async Task Release_repository_rejects_feasible_plan_bypass()
     {
         await using var db = NewDb();
@@ -182,7 +205,7 @@ public sealed class PlanReleaseLifecycleTests
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => repository.PersistAsync(release));
 
-        Assert.Contains("approval is required", error.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("active approved", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -212,7 +235,8 @@ public sealed class PlanReleaseLifecycleTests
         ApsDbContext db,
         PlanVersionStatus status,
         IReadOnlyCollection<MaterialRequirement>? requirements,
-        IReadOnlyCollection<MaterialSupplyRequirement>? supplies)
+        IReadOnlyCollection<MaterialSupplyRequirement>? supplies,
+        bool isActive = true)
     {
         var planId = Guid.NewGuid();
         var now = new DateTime(2026, 8, 23, 8, 0, 0, DateTimeKind.Utc);
@@ -231,7 +255,7 @@ public sealed class PlanReleaseLifecycleTests
             HorizonStartUtc = now,
             HorizonEndUtc = now.AddDays(7),
             SolverStatus = "Optimal",
-            IsActive = true,
+            IsActive = isActive,
             MaterialRequirementsJson = requirements is null ? null : JsonSerializer.Serialize(requirements, JsonOptions),
             MaterialSupplyRequirementsJson = supplies is null ? null : JsonSerializer.Serialize(supplies, JsonOptions)
         });
