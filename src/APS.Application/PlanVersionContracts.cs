@@ -21,7 +21,12 @@ public sealed record PlanningAssumptions(
     CampaignObjectiveWeights CampaignObjectiveWeights,
     IReadOnlyCollection<CampaignCompositionDecision> CampaignCompositionDecisions,
     IReadOnlyCollection<ResourceSchedulingAssumption> ResourceScheduling,
-    IReadOnlyCollection<BilletThermalDecision>? BilletThermalDecisions = null);
+    IReadOnlyCollection<BilletThermalDecision>? BilletThermalDecisions = null,
+    /// <summary>
+    /// Effective calendar intervals supplied to the solver for this plan. Optional so plan versions
+    /// persisted before calendar snapshotting was introduced remain deserializable.
+    /// </summary>
+    IReadOnlyCollection<ResourceCalendarAssumption>? ResourceCalendars = null);
 
 /// <summary>How one physical resource was modelled by the solver for this plan (#35).</summary>
 public sealed record ResourceSchedulingAssumption(
@@ -31,7 +36,21 @@ public sealed record ResourceSchedulingAssumption(
     ResourceCapacityBasis CapacityBasis,
     decimal? NominalConcurrentCapacity,
     decimal CapacityFactorPct,
-    bool AppliesSequenceRules);
+    bool AppliesSequenceRules,
+    /// <summary>
+    /// Effective operating state used by the planning run. Null means the plan predates state
+    /// snapshotting and consumers must use their documented compatibility fallback.
+    /// </summary>
+    ResourceOperatingState? OperatingState = null);
+
+/// <summary>One effective resource-calendar interval supplied to the solver for a persisted plan.</summary>
+public sealed record ResourceCalendarAssumption(
+    Guid ResourceId,
+    DateTime StartUtc,
+    DateTime EndUtc,
+    bool IsAvailable,
+    decimal? CapacityFactorPct,
+    string? ReasonCode);
 
 public sealed record PlanVersionSnapshot(
     Guid PlanVersionId,
