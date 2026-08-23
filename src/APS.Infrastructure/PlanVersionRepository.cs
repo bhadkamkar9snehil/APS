@@ -272,23 +272,40 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             Deserialize<RouteOperationDecision>(state.RouteOperationDecisionsJson));
     }
 
-    private static PlanningAssumptions BuildAssumptions(PlanningRunRequest request, PlanningRunResult result) =>
-        new(
+    private static PlanningAssumptions BuildAssumptions(PlanningRunRequest request, PlanningRunResult result)
+    {
+        var resourceScheduling = request.Resources
+            .Select(x => new ResourceSchedulingAssumption(
+                x.Id,
+                x.Code,
+                x.SchedulingMode,
+                x.CapacityBasis,
+                x.NominalConcurrentCapacity,
+                x.CapacityFactorPct,
+                x.AppliesSequenceRules,
+                x.OperatingState))
+            .OrderBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var resourceCalendars = request.ResourceCalendars
+            .OrderBy(x => x.ResourceId)
+            .ThenBy(x => x.Start)
+            .Select(x => new ResourceCalendarAssumption(
+                x.ResourceId,
+                x.Start,
+                x.End,
+                x.IsAvailable,
+                x.CapacityFactorPct,
+                x.ReasonCode))
+            .ToArray();
+
+        return new PlanningAssumptions(
             request.Scenario?.ScenarioCode,
             request.CampaignPolicy.ObjectiveWeights ?? CampaignObjectiveWeights.Default,
             result.CampaignPlan.CompositionDecisions ?? Array.Empty<CampaignCompositionDecision>(),
-            request.Resources
-                .Select(x => new ResourceSchedulingAssumption(
-                    x.Id,
-                    x.Code,
-                    x.SchedulingMode,
-                    x.CapacityBasis,
-                    x.NominalConcurrentCapacity,
-                    x.CapacityFactorPct,
-                    x.AppliesSequenceRules))
-                .OrderBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)
-                .ToArray(),
-            result.ProductionStructure.BilletThermalDecisions ?? Array.Empty<BilletThermalDecision>());
+            resourceScheduling,
+            result.ProductionStructure.BilletThermalDecisions ?? Array.Empty<BilletThermalDecision>(),
+            resourceCalendars);
+    }
 
     public async Task<IReadOnlyCollection<BaselinePlanOperation>> GetBaselineOperationsAsync(
         Guid planVersionId,
