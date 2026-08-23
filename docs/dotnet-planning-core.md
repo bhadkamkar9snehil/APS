@@ -1,291 +1,192 @@
 # .NET Planning Core
 
-**Status:** Current implementation note  
-**Authority:** Subordinate to `APS_Backend_Acceptance_Audit_2026-08-18.md`, `APS_End_to_End_Manufacturing_Planning_Flow.md`, `APS_Backend_Work_Program.md`, and `APS_Backend_Canonical_Path_Inventory.md`.
+**Status:** current implementation note  
+**Re-baselined:** 23-Aug-2026 against `main` at `71e456d2fe124173cdd1f0bfeac82e18f53dc45f`  
+**Authority:** subordinate to [`current/APS_CURRENT_STATE_2026-08-23.md`](current/APS_CURRENT_STATE_2026-08-23.md), [`APS_Backend_Work_Program.md`](APS_Backend_Work_Program.md) and [`APS_Backend_Canonical_Path_Inventory.md`](APS_Backend_Canonical_Path_Inventory.md).
 
-The production APS architecture is the .NET solution. The retired Python/workbook prototype is available only through Git history at tag `v0.2.5`.
+The production APS architecture is the .NET solution. The retired Python/workbook prototype is historical at tag `v0.2.5`.
 
 ## Production ownership boundary
 
-- SAP/MES-facing integrations provide customer demand, authoritative inventory/incoming-material facts, execution actuals and manufacturing truth.
-- APS owns manufacturing Production Orders, campaigns, heat/route planning, finite schedules, immutable Plan Versions, Work Order release and replanning decisions.
-- APS is a **manufacturing planner**. It does not recommend procurement or transfer decisions. Material that cannot be covered by qualified authoritative supply or manufactured by configured plant routes is a shortfall.
-- MES remains the execution system for released Work Orders and physical production events; APS retains the planning/execution-feedback model needed to replan.
+- integrations provide customer demand, authoritative inventory/incoming-material facts and execution actuals;
+- APS owns manufacturing Production Orders, material requirements, campaigns/heats/routes, finite schedules, immutable Plan Versions, readiness/approval/release and replanning decisions;
+- MES remains execution authority for physical production events while APS persists the planning/execution feedback needed to replan;
+- current Production mode is manufacturing-only and rejects speculative BUY/TRANSFER/manual-supply planning controls.
 
-## Canonical production lifecycle
-
-Production planning no longer consists of a public collection of independently callable campaign/structure/schedule/release APIs.
+## Canonical lifecycle
 
 ```text
 production planning command
-  -> IPlanningLifecycleService
-       -> IPlanningMasterDataProvider
-       -> IInventorySnapshotProvider
-       -> IPlanningEngine (Production mode)
-       -> IPlanVersionRepository
-  -> IPlannerWorkspaceQueryService
-  -> IPersistedPlanReleaseService
-       -> IPlanReleaseRepository
-  -> execution services / MES event adapters
-  -> IReplanningActualStateProvider
-  -> IPlanningLifecycleService.ReplanAsync
+ -> IPlanningLifecycleService
+      -> IPlanningMasterDataProvider
+      -> IInventorySnapshotProvider
+      -> IProductionDemandOrchestrationService
+      -> IPlanningEngine (Production)
+      -> IPlanVersionRepository
+ -> IPlannerWorkspaceQueryService
+ -> IPersistedPlanReleaseService
+      -> persisted readiness
+      -> ApproveAsync
+      -> ReleaseAsync
+      -> IPlanReleaseRepository
+ -> canonical execution services
+ -> IReplanningActualStateProvider
+ -> IPlanningLifecycleService.ReplanAsync
 ```
 
-`IPlanningEngine` remains the reusable calculation kernel. It is not, by itself, a production lifecycle because it does not own authoritative input resolution or persistence.
+`IPlanningEngine` is the canonical calculation kernel but not a production lifecycle by itself.
 
-### Production vs compatibility mode
+## Production versus compatibility mode
 
-`PlanningRunRequest` carries `PlanningExecutionMode`:
+- `PlanningExecutionMode.Production` requires authoritative configured route/master truth and fails rather than silently using compatibility structure.
+- `PlanningExecutionMode.Compatibility` is for explicit demo/focused-test paths.
 
-- `Production` — used by the canonical lifecycle; configured manufacturing-route operations are mandatory.
-- `Compatibility` — retained for focused tests and the explicitly enabled demo sandbox. The simplified legacy structure builder may run only in this mode.
+Demo paths remain segregated under `/api/demo/planning/*` and `/demo/planning` when deliberately enabled.
 
-A direct Production-mode engine call without configured route planning fails explicitly instead of silently falling back.
+## Demand and material — current state
 
-## Authoritative input resolution
+Older versions of this note listed #45/#33/#14 as future work. That is obsolete.
 
-Production callers provide demand and planning controls. They do **not** provide arbitrary plant/resource/calendar/inventory snapshots.
+Current integrated foundations include:
 
-The lifecycle resolves:
+- #45 SO item -> qualified FG coverage -> MTO Production Order orchestration;
+- #33 recursive BOM/material-requirement causality;
+- #14 one time-phased material coverage/reservation/future-supply foundation;
+- #11 billet/known-incoming contingency.
 
-- physical resources, capabilities, calendars, flow links, transition rules and configured manufacturing routes from `IPlanningMasterDataProvider`;
-- grade/section/material/packaging masters that are currently wired into that provider;
-- current qualified inventory from `IInventorySnapshotProvider`;
-- known authoritative incoming material facts from the integration/master path;
-- released/running future internal supply during replan from `IReplanningActualStateProvider`.
+Current stock is not the planning horizon. Known incoming, committed/released WIP and planned internal production can satisfy later material needs. Uncovered non-manufacturable quantity remains explicit shortfall.
 
-Remaining end-to-end master-data wiring is tracked by issue #39.
+## Campaign and heat planning — current state
 
-## Demand and material boundary
+#15 candidate Campaign/grade-sequence/heat optimization is integrated.
 
-The current .NET domain already has Sales Orders and Production Orders, but canonical MTO SO-item -> FG coverage -> Production Order orchestration remains issue #45.
+Campaign formation now uses hard-compatible candidate sets plus explicit service/manufacturing economics rather than treating deterministic sort-and-fill as production authority. Plan Version assumptions retain campaign decision evidence used for later explanation/comparison.
 
-Likewise, current campaign/material logic can net FG/intermediate supply and create fresh-steel requirements, but the canonical recursive BOM/material-requirement graph remains issue #33 and the single time-phased material ledger remains issue #14.
+## Configured manufacturing routes — current state
 
-Target causality remains:
+#34 and #58 are integrated foundations.
 
-```text
-SO/MTS demand
-  -> Production Order manufacturing requirement
-  -> recursive BOM/material requirements
-  -> one time-phased supply/shortfall ledger
-  -> internal production requirements
-  -> campaigns/heats/routes
-  -> finite schedule
-```
+`ManufacturingRoute` controls operation order/presence both before and after CCM. There is no universal EAF/LRF/VD chain and no architectural pivot at first `HotRoll`.
 
-Campaign is an aggregation/optimization construct; it is not the original cause of production.
+Valid route shapes can include direct hot charge, configured reheating, billet-only output, downstream finishing, multi-pass or inter-pass heating when the route/master data says so.
 
-## Campaign and heat planning
+## Thermal planning — current state
 
-Current campaign planning can:
+### Liquid steel
 
-- preserve MTO/MTS Production Order lineage;
-- net qualified FG and compatible intermediate supply;
-- allocate multiple Production Orders into campaigns;
-- respect grade/sequence/route/segregation compatibility;
-- create grade sequence and heat structure;
-- use yield-aware heat input quantities;
-- form heats using equipment-aware envelopes where configured.
+#9 provides the configured liquid-steel thermal/resource-pair foundation.
 
-Campaign candidate/set selection is still too deterministic and is tracked by issue #15.
+### Billet thermal state
 
-## Configured manufacturing routes
+#56 is complete and integrated. The planner can:
 
-Production mode requires configured route operations rather than treating a hard-coded EAF/LRF/VD/CCM chain as universal plant truth.
+- estimate billet thermal eligibility from source exit state, required rolling-entry state and transfer/wait/holding loss;
+- keep direct hot charge when still eligible;
+- retry through a configured optional `Reheat` path when thermal aging removes direct-hot eligibility;
+- treat unknown/yard material conservatively;
+- consume actual measured billet state during replan, overriding stale categorical/planned state;
+- persist/read back the decision basis in Plan Version assumptions.
 
-Current route-domain structures support ordered `ManufacturingRouteOperation` records with:
-
-- `ProcessOperationType`;
-- release WO type;
-- input/output material and cross-section semantics;
-- required/optional operation semantics;
-- capability class;
-- minimum/maximum queue time;
-- inventory-decoupling metadata;
-- charge/hot-material requirements;
-- yield.
-
-`RouteResourceCapability` binds physical resource eligibility to route/process/grade/material/section/product attributes.
-
-The route-driven topology still needs deeper generalization for different long-product steel plants; that work is issue #34. Downstream non-100% backward yield propagation is also not complete.
+Older text saying #56 remains the next work item is stale.
 
 ## Finite scheduling
 
-`FiniteScheduleOptimizer` uses Google OR-Tools CP-SAT and currently models:
+`FiniteScheduleOptimizer` uses OR-Tools CP-SAT and supports, among current behavior:
 
-- optional resource assignment variables and `AddExactlyOne`;
-- unary finite capacity through `NoOverlap`;
-- resource calendars/downtime;
-- explicit route/material/process dependencies;
-- minimum and optional maximum transfer/queue lags;
-- frozen/slushy plan-stability constraints;
-- weighted tardiness;
-- assignment penalties;
-- makespan;
-- sequence-dependent setup and transition rules.
+- one-of resource assignment from alternatives;
+- per-physical-resource sequencing;
+- disjunctive and cumulative scheduling semantics based on masters;
+- resource calendars and scenario operating state;
+- route/material/process dependencies;
+- transfer/queue constraints;
+- liquid/billet thermal constraints;
+- frozen/slushy stability controls;
+- service/tardiness, assignment, transition/setup and stability objective terms;
+- linked-resource groups for casting continuity where applicable.
 
-### Solver-owned physical-resource sequencing
+Same-type physical resources remain independent `ResourceId` timelines.
 
-For fixed-resource queues, solver ordering uses `AddCircuit` **per physical `ResourceId`**, never per resource type.
+## Resource assignment / current primary gap
 
-```text
-CCM-1 -> independent circuit
-CCM-2 -> independent circuit
-RM-1  -> independent circuit
-RM-2  -> independent circuit
-```
+The current primary backend issue is **#16**.
 
-Therefore different casters/mills remain independently and simultaneously schedulable.
-
-For selected adjacent distinct plans `A -> B` on one physical machine:
+A solver-selected resource is not operation identity. The remaining generic lifecycle is:
 
 ```text
-Start(B) >= End(A) + TransitionTime(A,B)
+Eligible Resources
+ -> Planned Resource
+ -> Commitment State
+ -> Committed Resource
+ -> Actual Resource
+ -> auditable redispatch/local repair
 ```
 
-Transition time/penalty is charged only on the selected adjacency. Forbidden directional transitions omit the corresponding arc. Same-`SourceEntityId` progressive feed-block siblings receive no artificial transition/setup charge; their real material/predecessor constraints remain authoritative.
+The CCM pre-selection defect has already been corrected for the casting slice: eligible casters reach CP-SAT and cast-sequence continuity is solver-enforced. #16 remains open because the generic commitment/dispatch/exclusion-evidence/readback lifecycle is not yet complete across all configured operations.
 
-Alternative-resource late binding and commitment/redispatch are tracked by issue #16. Resource scheduling modes beyond universal unary `NoOverlap` are tracked by issue #35.
+## Plan Versions and historical truth
 
-## Plan Versions
+Every canonical calculation/replan persists an immutable Plan Version with stable planning keys and the applicable demand/material/campaign/heat/route/operation assumptions/snapshots.
 
-Every production calculation/replan creates an immutable persisted Plan Version.
+Recent hardening ensures historical workbench capacity prefers persisted resource/calendar scheduling assumptions rather than silently joining changed live masters. Older snapshots use an explicit compatibility fallback when those newer assumptions did not exist.
 
-Plan Version persistence includes, among other current facts:
+## Plan approval and release
 
-- parent/baseline relationship and trigger;
-- horizon and solver result;
-- stable operation planning keys;
-- planned resource/start/end;
-- eligible resource-option snapshots and dispatch revisions;
-- inventory/material-plan facts currently implemented;
-- Production Order snapshots;
-- Campaign, allocation, grade-sequence and heat snapshots;
-- cast-sequence snapshots;
-- rolling-plan snapshots;
-- **configured route-operation and route-operation-allocation snapshots**;
-- planned packaging/material-unit snapshots.
+Older text describing release as simply identity-only from a feasible plan is incomplete.
 
-Route-operation snapshots were registered and added to persistence during #38 because production release must not reconstruct downstream work from live masters after the approved plan has changed.
-
-## Canonical production release
-
-Production release is now **identity-only**.
+Current lifecycle includes:
 
 ```text
-PlanVersionId
-  -> immutable persisted Plan Version snapshots
-  -> IPersistedPlanReleaseService
-  -> PlanRelease
-  -> IPlanReleaseRepository
-  -> released Work Orders + ScheduledOperations
+Draft -> Feasible -> Approved -> Released
 ```
 
-A caller can no longer submit campaigns, production structure and schedule in the production release request.
+`IPersistedPlanReleaseService` owns:
 
-`IPersistedPlanReleaseService` builds SMS/casting, rolling and configured downstream Work Orders from persisted plan structure/operation/allocation snapshots and uses the persisted effective resource assignment. The release is idempotent: an already-released Plan Version returns its existing persisted WOs/operations.
+- `GetReadinessAsync`;
+- `ApproveAsync`;
+- `ReleaseAsync`.
 
-The old `PlanReleaseBuildRequest` and `IPlanReleaseBuilder` remain for demo/test in-memory release construction only.
+Approval/release evaluate persisted material/supply/service evidence. Release requires an active Approved Plan Version. Repository persistence also rejects direct bypass/replay attempts.
 
-## Execution and replanning
+Release still reconstructs Work Orders/process operations from immutable Plan Version snapshots, not live route masters or a caller-built plan payload.
 
-Canonical execution services are:
+## Execution and replan
 
-- `IOperationExecutionService` — operation-grain planned/committed/actual state;
-- `IWorkOrderExecutionService` — WO lifecycle and external execution linkage;
-- `IHeatExecutionService` — casting specialization that also materializes strand/billet output.
+Canonical services remain:
 
-Manual endpoints and MES event endpoints are adapters into those same services; they are not separate state stores.
+- `IOperationExecutionService`;
+- `IWorkOrderExecutionService`;
+- `IHeatExecutionService`.
 
-Replan loads:
+Replan combines persisted baseline truth with current authoritative inventory, protected WIP/future output, execution actuals, time-fence/resource/schedule overrides and current masters, then persists a child Plan Version through the same Production-mode engine.
 
-- persisted baseline Plan Version;
-- current inventory;
-- completed/running operation state;
-- protected remaining output from committed/released/running upstream production;
-- time-fence/resource-override policy;
-- current authoritative masters.
+#18 remains responsible for closing full downstream material transformation/genealogy and actual-state feedback.
 
-It then invokes the same Production-mode `IPlanningEngine` and persists a child Plan Version.
+## Planner read model
 
-## Query/read model
+`IPlannerWorkspaceQueryService` remains the single planner read facade, split across contract/partial files by concern rather than by competing implementations.
 
-`IPlannerWorkspaceQueryService` is the one planner query facade.
+Current UI/read surfaces include Plan Version context, demand/supply, campaigns, physical schedule, Gantt/workbench, work orders/execution, comparison and supporting decision views. #36 remains the completeness gate for every meaningful backend fact/lever.
 
-Its view contracts are split across several files (`PlannerWorkspaceContracts`, `PhysicalWorkspaceContracts`, `ExecutionWorkspaceContracts`, `DecisionWorkspaceContracts`) for organization, but these are not competing query implementations.
+## Current Gantt/workbench hardening relevant to the planning core
 
-Current mapped planner read surfaces include current context, recent versions, control tower, demand/supply, campaigns, steelmaking/casting, finite schedule, work orders and plan comparison. Full backend visibility remains issue #36.
+The integrated workbench now has regression coverage for:
 
-## Demo isolation
+- final-state atomic bulk-move validation;
+- frozen/time-fence consistency between preview/apply;
+- fixed-query-count move validation paths;
+- pointer cancellation/blur cleanup;
+- historical capacity/readback immutability.
 
-Demo/reference calculation is explicit opt-in:
+Post-Ponytail removal of several small Gantt layer files was implementation consolidation, not intentional behavior removal; see [`current/APS_GANTT_OVERHAUL_IMPLEMENTATION_STATUS.md`](current/APS_GANTT_OVERHAUL_IMPLEMENTATION_STATUS.md).
 
-```json
-{
-  "APS": {
-    "DemoModeEnabled": false
-  }
-}
-```
+## Verification
 
-When enabled, component/demo endpoints live under:
+The old statement that APS verification is deferred and does not use CI is obsolete.
 
-```text
-/api/demo/planning/*
-```
+Authoritative automated verification is the shared self-hosted Windows Azure DevOps `EOS` agent running repository-owned [`../build/verify.ps1`](../build/verify.ps1). GitHub Actions/hosted CI are not substitutes.
 
-and the Blazor calculation sandbox is at:
-
-```text
-/demo/planning
-```
-
-The sandbox directly uses the calculation kernel in Compatibility mode and may build an in-memory demo release. Its results are deliberately non-authoritative and non-persisted.
-
-Without a configured APS database, production calculate/replan/release endpoints return a service/configuration failure rather than an ephemeral production-looking result.
-
-## Integration boundary
-
-`APS.Integrations` maps transport/vendor-specific data into APS contracts. Planning code does not reference vendor-specific REST/table details.
-
-Current inbound execution events flow through the canonical execution services. `ExecutionActual` remains a transport-neutral mapping DTO. `IExecutionActualProvider` and `IPlanPublisher` currently have no production implementation and are classified future-only ports, not alternate production paths.
-
-## Runtime/API surface after #38
-
-Core production APIs include:
-
-- `GET /api/health`
-- `GET /api/inventory/snapshot`
-- `GET /api/planning/master-data`
-- `POST /api/planning/calculate` — canonical production calculation + persistence
-- `POST /api/planning/run` — compatibility alias to the same lifecycle
-- `POST /api/planning/replan/{baselinePlanVersionId}`
-- `GET /api/planning/versions/{planVersionId}`
-- plan comparison endpoints
-- `POST /api/planning/versions/{planVersionId}/release` — canonical persisted-plan release
-- `POST /api/planning/release/{planVersionId}` — identity-only compatibility alias
-- `/api/ui/planner/*` read surfaces
-- `/api/execution/*` canonical manual/operations adapters
-- `/api/integration/*` MES/integration event adapters
-- traceability endpoints.
-
-When demo mode is enabled, non-authoritative component endpoints are available only under `/api/demo/planning/*`.
-
-## Verification status
-
-Focused #38 boundary tests have been checked in for:
-
-- authoritative master/inventory lifecycle ownership;
-- Plan Version persistence;
-- missing-route production failure;
-- manufacturing-only supply policy enforcement;
-- direct Production-mode compatibility-fallback rejection;
-- identity-only/idempotent persisted release;
-- configured downstream route-operation release.
-
-They have **not been executed in this environment**. Per project rule, GitHub Actions/CI is not used for APS verification. Build/test execution is deferred to the intended developer environment.
+Latest recorded evidence for `71e456d...`: Release build 0 warnings/errors, 336/336 tests, self-contained Windows publish, SQLite quick-check OK and live desktop verification of the 105-operation/8-resource released baseline.
 
 ## Next backend work
 
-After #38 canonicalization, the ordered backend program continues with #45: authoritative MTO SO-item -> qualified FG coverage -> Production Order/service-date orchestration. See `APS_Backend_Work_Program.md` for the full sequence.
+The current ordered sequence starts with **#16**, then #18, #19, #57, #43, #36, #60, #61 and #44, with #39/#40/#41/#42/#32 applied as cross-cutting gates. See [`APS_Backend_Work_Program.md`](APS_Backend_Work_Program.md).
