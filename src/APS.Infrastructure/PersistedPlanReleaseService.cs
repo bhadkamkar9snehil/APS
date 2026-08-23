@@ -44,6 +44,9 @@ public sealed class PersistedPlanReleaseService(
         if (state.Status != PlanVersionStatus.Feasible)
             throw new InvalidOperationException(
                 $"Plan Version {version.VersionNumber} is {state.Status}; only a feasible persisted plan can be approved.");
+        if (!state.IsActive)
+            throw new InvalidOperationException(
+                $"Plan Version {version.VersionNumber} is no longer active and cannot be approved. Replan from the current baseline instead.");
 
         var readiness = EvaluateReadiness(version, state);
         if (!readiness.IsReleaseReady)
@@ -69,9 +72,9 @@ public sealed class PersistedPlanReleaseService(
         var state = await db.PlanVersionStates
             .AsNoTracking()
             .SingleAsync(x => x.PlanVersionId == planVersionId, cancellationToken);
-        if (state.Status != PlanVersionStatus.Approved)
+        if (state.Status != PlanVersionStatus.Approved || !state.IsActive)
             throw new InvalidOperationException(
-                $"Plan Version {version.VersionNumber} is {state.Status}; it must be approved before release.");
+                $"Plan Version {version.VersionNumber} is {state.Status} and active={state.IsActive}; an active approved Plan Version is required before release.");
 
         var readiness = EvaluateReadiness(version, state);
         if (!readiness.IsReleaseReady)
@@ -163,6 +166,12 @@ public sealed class PersistedPlanReleaseService(
             findings.Add(new PlanReleaseReadinessFinding(
                 "PLAN_STATUS_NOT_APPROVABLE",
                 $"Plan status {state.Status} is not eligible for approval or release."));
+        }
+        if (!state.IsActive && state.Status != PlanVersionStatus.Released)
+        {
+            findings.Add(new PlanReleaseReadinessFinding(
+                "PLAN_NOT_ACTIVE",
+                "This Plan Version is no longer active. Replan or select the current active Plan Version before approval/release."));
         }
 
         if (string.IsNullOrWhiteSpace(state.MaterialRequirementsJson))
