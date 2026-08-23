@@ -7,6 +7,8 @@ namespace APS.Infrastructure;
 
 public sealed partial class PlannerWorkspaceQueryService
 {
+    private static readonly JsonSerializerOptions PlanningSnapshotJsonOptions = new(JsonSerializerDefaults.Web);
+
     public async Task<PlanningWorkbenchView?> GetPlanningWorkbenchAsync(
         Guid? planVersionId = null,
         Guid? baselinePlanVersionId = null,
@@ -22,6 +24,7 @@ public sealed partial class PlannerWorkspaceQueryService
         var schedule = await GetFiniteScheduleAsync(plan.PlanVersionId, cancellationToken);
         var material = await GetMaterialFlowAsync(plan.PlanVersionId, cancellationToken);
         if (demand is null || campaigns is null || schedule is null || material is null) return null;
+        var assumptions = await GetPlanningAssumptionsAsync(plan.PlanVersionId, cancellationToken);
 
         PlanContextView? baseline = null;
         FiniteScheduleWorkspaceView? baselineSchedule = null;
@@ -40,18 +43,14 @@ public sealed partial class PlannerWorkspaceQueryService
             }
         }
 
-        var exceptions = BuildExceptions(plan, demand, schedule, material);
+        var exceptions = BuildExceptions(plan, demand, schedule, material, assumptions);
         var operationDetails = await BuildOperationDetailsAsync(plan.PlanVersionId, campaigns, cancellationToken);
         var dependencyLinks = BuildDependencyLinks(schedule, operationDetails);
-        var calendarIntervals = await BuildCalendarIntervalsAsync(plan, schedule, cancellationToken);
+        var calendarIntervals = await BuildCalendarIntervalsAsync(plan, schedule, assumptions, cancellationToken);
         var baselinePlacements = baselineSchedule is null
             ? Array.Empty<PlanningBaselinePlacementView>()
             : BuildBaselinePlacements(baselineSchedule);
-        var capacityBuckets = await BuildCapacityBucketsAsync(
-            plan,
-            schedule,
-            calendarIntervals,
-            cancellationToken);
+        var capacityBuckets = BuildCapacityBuckets(plan, schedule, calendarIntervals, assumptions);
         var lateDemand = demand.Rows.Count(row => row.RequiredDate < schedule.ScheduleEndUtc);
         var queue = new PlanningQueueView(
             demand.Rows.Count,
@@ -79,6 +78,19 @@ public sealed partial class PlannerWorkspaceQueryService
             calendarIntervals,
             baselinePlacements,
             capacityBuckets);
+    }
+
+    private async Task<PlanningAssumptions?> GetPlanningAssumptionsAsync(
+        Guid planVersionId,
+        CancellationToken cancellationToken)
+    {
+        var json = await db.PlanVersionStates.AsNoTracking()
+            .Where(x => x.PlanVersionId == planVersionId)
+            .Select(x => x.PlanningAssumptionsJson)
+            .SingleOrDefaultAsync(cancellationToken);
+        return string.IsNullOrWhiteSpace(json)
+            ? null
+            : JsonSerializer.Deserialize<PlanningAssumptions>(json, PlanningSnapshotJsonOptions);
     }
 
     private static IReadOnlyCollection<PlanningDependencyLinkView> BuildDependencyLinks(
@@ -116,10 +128,33 @@ public sealed partial class PlannerWorkspaceQueryService
     private async Task<IReadOnlyCollection<PlanningResourceCalendarIntervalView>> BuildCalendarIntervalsAsync(
         PlanContextView plan,
         FiniteScheduleWorkspaceView schedule,
+        PlanningAssumptions? assumptions,
         CancellationToken cancellationToken)
     {
-        var resourceIds = schedule.ResourceLanes.Select(x => x.ResourceId).ToArray();
-        if (resourceIds.Length == 0) return Array.Empty<PlanningResourceCalendarIntervalView>();
+        var resourceIds = schedule.ResourceLanes.Select(x => x.ResourceId).ToHashSet();
+        if (resourceIds.Count == 0) return Array.Empty<PlanningResourceCalendarIntervalView>();
+
+        // New plan versions carry the effective calendar that was supplied to the solver. An empty
+        // snapshot is meaningful (the run had no calendar overrides), so only null means the plan
+        // predates calendar snapshotting and needs the explicit compatibility fallback below.
+        if (assumptions?.ResourceCalendars is { } snapshotCalendars)
+        {
+            return snapshotCalendars
+                .Where(x => resourceIds.Contains(x.ResourceId) &&
+                            x.EndUtc > plan.HorizonStartUtc &&
+                            x.StartUtc < plan.HorizonEndUtc)
+                .OrderBy(x => x.ResourceId)
+                .ThenBy(x => x.StartUtc)
+                .Select(x => new PlanningResourceCalendarIntervalView(
+                    x.ResourceId,
+                    x.StartUtc,
+                    x.EndUtc,
+                    x.IsAvailable,
+                    x.CapacityFactorPct,
+                    x.ReasonCode,
+                    "PlanAssumptionSnapshot"))
+                .ToArray();
+        }
 
         return await db.ResourceCalendars.AsNoTracking()
             .Where(x => resourceIds.Contains(x.ResourceId) &&
@@ -134,7 +169,7 @@ public sealed partial class PlannerWorkspaceQueryService
                 x.IsAvailable,
                 x.CapacityFactorPct,
                 x.ReasonCode,
-                "ResourceCalendar"))
+                "LiveCompatibilityFallback"))
             .ToArrayAsync(cancellationToken);
     }
 
@@ -170,17 +205,17 @@ public sealed partial class PlannerWorkspaceQueryService
             .ThenBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
-    private async Task<IReadOnlyCollection<PlanningCapacityBucketView>> BuildCapacityBucketsAsync(
+    private static IReadOnlyCollection<PlanningCapacityBucketView> BuildCapacityBuckets(
         PlanContextView plan,
         FiniteScheduleWorkspaceView schedule,
         IReadOnlyCollection<PlanningResourceCalendarIntervalView> calendars,
-        CancellationToken cancellationToken)
+        PlanningAssumptions? assumptions)
     {
         if (schedule.ResourceLanes.Count == 0) return Array.Empty<PlanningCapacityBucketView>();
-        var resourceIds = schedule.ResourceLanes.Select(x => x.ResourceId).ToArray();
-        var resources = await db.Resources.AsNoTracking()
-            .Where(x => resourceIds.Contains(x.Id))
-            .ToDictionaryAsync(x => x.Id, cancellationToken);
+        var resourceAssumptions = assumptions?.ResourceScheduling
+            .GroupBy(x => x.ResourceId)
+            .ToDictionary(x => x.Key, x => x.Last())
+            ?? new Dictionary<Guid, ResourceSchedulingAssumption>();
         var calendarsByResource = calendars
             .GroupBy(x => x.ResourceId)
             .ToDictionary(x => x.Key, x => x.ToArray());
@@ -196,30 +231,35 @@ public sealed partial class PlannerWorkspaceQueryService
 
         foreach (var lane in schedule.ResourceLanes)
         {
-            resources.TryGetValue(lane.ResourceId, out var resource);
+            resourceAssumptions.TryGetValue(lane.ResourceId, out var resourceAssumption);
             calendarsByResource.TryGetValue(lane.ResourceId, out var laneCalendars);
+            var schedulingMode = resourceAssumption?.SchedulingMode ?? lane.SchedulingMode;
+            var capacityBasis = resourceAssumption?.CapacityBasis ?? ResourceCapacityBasis.NotApplicable;
+            var nominalConcurrentCapacity = resourceAssumption?.NominalConcurrentCapacity ?? lane.NominalConcurrentCapacity;
+            var operatingState = resourceAssumption?.OperatingState ?? lane.OperatingState;
+            var baseFactor = Math.Clamp(resourceAssumption?.CapacityFactorPct ?? 100m, 0m, 100m) / 100m;
+
             for (var start = bucketStart; start < plan.HorizonEndUtc; start = start.AddHours(1))
             {
                 var end = start.AddHours(1) < plan.HorizonEndUtc ? start.AddHours(1) : plan.HorizonEndUtc;
                 if (end <= plan.HorizonStartUtc) continue;
                 var effectiveStart = start < plan.HorizonStartUtc ? plan.HorizonStartUtc : start;
-                var baseFactor = Math.Clamp(resource?.CapacityFactorPct ?? 100m, 0m, 100m) / 100m;
                 var capacityWindow = CapacityWindow(
                     effectiveStart,
                     end,
-                    lane.OperatingState,
+                    operatingState,
                     baseFactor,
                     laneCalendars ?? Array.Empty<PlanningResourceCalendarIntervalView>());
                 var unavailableMinutes = capacityWindow.UnavailableMinutes;
                 var availableClockMinutes = capacityWindow.AvailableMinutes;
-                var capacityMultiplier = lane.SchedulingMode == ResourceSchedulingMode.Cumulative
-                    ? (double)Math.Max(0m, lane.NominalConcurrentCapacity ?? 0m)
+                var capacityMultiplier = schedulingMode == ResourceSchedulingMode.Cumulative
+                    ? (double)Math.Max(0m, nominalConcurrentCapacity ?? 0m)
                     : 1d;
                 var availableMinutes = availableClockMinutes * capacityMultiplier;
-                var processingMinutes = lane.SchedulingMode == ResourceSchedulingMode.Cumulative
+                var processingMinutes = schedulingMode == ResourceSchedulingMode.Cumulative
                     ? lane.Operations.Sum(operation =>
                         OverlapMinutes(operation.StartUtc, operation.EndUtc, effectiveStart, end) *
-                        (double)CapacityDemand(resource, operation.QuantityMt))
+                        (double)CapacityDemand(capacityBasis, operation.QuantityMt))
                     : MergedOverlapMinutes(
                         lane.Operations.Select(x => (x.StartUtc, x.EndUtc)),
                         effectiveStart,
@@ -236,8 +276,8 @@ public sealed partial class PlannerWorkspaceQueryService
                     Math.Round(processingMinutes, 3),
                     Math.Round(unavailableMinutes, 3),
                     decimal.Round(occupancyRatio, 4),
-                    CapacityBasis(resource),
-                    lane.SchedulingMode));
+                    CapacityBasis(capacityBasis),
+                    schedulingMode));
             }
         }
 
@@ -296,13 +336,13 @@ public sealed partial class PlannerWorkspaceQueryService
         return (available, unavailable);
     }
 
-    private static decimal CapacityDemand(Resource? resource, decimal quantityMt) => resource?.CapacityBasis switch
+    private static decimal CapacityDemand(ResourceCapacityBasis capacityBasis, decimal quantityMt) => capacityBasis switch
     {
         ResourceCapacityBasis.MassEquivalentMt => Math.Max(0m, quantityMt),
         _ => 1m
     };
 
-    private static PlanningCapacityBasis CapacityBasis(Resource? resource) => resource?.CapacityBasis switch
+    private static PlanningCapacityBasis CapacityBasis(ResourceCapacityBasis capacityBasis) => capacityBasis switch
     {
         ResourceCapacityBasis.Slots => PlanningCapacityBasis.Slots,
         ResourceCapacityBasis.MassEquivalentMt => PlanningCapacityBasis.MassEquivalentMt,
@@ -436,7 +476,8 @@ public sealed partial class PlannerWorkspaceQueryService
         PlanContextView plan,
         DemandSupplyView demand,
         FiniteScheduleWorkspaceView schedule,
-        MaterialFlowWorkspaceView material)
+        MaterialFlowWorkspaceView material,
+        PlanningAssumptions? assumptions)
     {
         var result = new List<PlanningWorkbenchException>();
 
@@ -473,13 +514,21 @@ public sealed partial class PlannerWorkspaceQueryService
                 new PlannerEntityRef(PlannerEntityType.SalesOrder, salesOrder.SalesOrderId, $"{salesOrder.SalesOrderNumber}/{salesOrder.SalesOrderItemNumber}")));
         }
 
-        foreach (var lane in schedule.ResourceLanes.Where(x => x.OperatingState != ResourceOperatingState.Available))
+        var resourceAssumptions = assumptions?.ResourceScheduling
+            .GroupBy(x => x.ResourceId)
+            .ToDictionary(x => x.Key, x => x.Last())
+            ?? new Dictionary<Guid, ResourceSchedulingAssumption>();
+        foreach (var lane in schedule.ResourceLanes)
         {
+            resourceAssumptions.TryGetValue(lane.ResourceId, out var resourceAssumption);
+            var operatingState = resourceAssumption?.OperatingState ?? lane.OperatingState;
+            if (operatingState == ResourceOperatingState.Available) continue;
+
             result.Add(new PlanningWorkbenchException(
-                $"RESOURCE-{lane.ResourceCode}-{lane.OperatingState}",
+                $"RESOURCE-{lane.ResourceCode}-{operatingState}",
                 PlanningWorkbenchExceptionKind.ResourceUnavailable,
                 PlanningWorkbenchExceptionSeverity.Critical,
-                $"{lane.ResourceCode} is {lane.OperatingState}",
+                $"{lane.ResourceCode} is {operatingState}",
                 $"{lane.Operations.Count} scheduled operation(s) use this resource.",
                 new PlannerEntityRef(PlannerEntityType.Resource, lane.ResourceId, lane.ResourceCode)));
         }
