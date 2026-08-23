@@ -47,7 +47,14 @@ public sealed class HistoricalPlanningAssumptionsTests
                     start.AddHours(2),
                     IsAvailable: false,
                     CapacityFactorPct: 0m,
-                    ReasonCode: "SNAPSHOT_MAINTENANCE")
+                    ReasonCode: "SNAPSHOT_MAINTENANCE"),
+                new ResourceCalendarAssumption(
+                    resourceId,
+                    start.AddHours(2),
+                    start.AddHours(3),
+                    IsAvailable: true,
+                    CapacityFactorPct: 50m,
+                    ReasonCode: "SNAPSHOT_DERATE")
             });
 
         db.PlanVersions.Add(new PlanVersion
@@ -101,7 +108,7 @@ public sealed class HistoricalPlanningAssumptionsTests
             CapacityFactorPct = 80m
         };
         db.Resources.Add(resource);
-        var liveCalendar = new ResourceCalendar
+        var liveMaintenance = new ResourceCalendar
         {
             ResourceId = resourceId,
             Start = start.AddHours(1),
@@ -110,7 +117,16 @@ public sealed class HistoricalPlanningAssumptionsTests
             CapacityFactorPct = 0m,
             ReasonCode = "SNAPSHOT_MAINTENANCE"
         };
-        db.ResourceCalendars.Add(liveCalendar);
+        var liveDerate = new ResourceCalendar
+        {
+            ResourceId = resourceId,
+            Start = start.AddHours(2),
+            End = start.AddHours(3),
+            IsAvailable = true,
+            CapacityFactorPct = 50m,
+            ReasonCode = "SNAPSHOT_DERATE"
+        };
+        db.ResourceCalendars.AddRange(liveMaintenance, liveDerate);
         db.PlanOperationSnapshots.Add(new PlanOperationSnapshot
         {
             PlanVersionId = planId,
@@ -133,10 +149,14 @@ public sealed class HistoricalPlanningAssumptionsTests
         var beforeCapacity = before.CapacityBuckets.OrderBy(x => x.ResourceId).ThenBy(x => x.StartUtc).ToArray();
         var beforeCalendars = before.ResourceCalendarIntervals.OrderBy(x => x.ResourceId).ThenBy(x => x.StartUtc).ToArray();
         Assert.NotEmpty(beforeCapacity);
-        Assert.Single(beforeCalendars);
+        Assert.Equal(2, beforeCalendars.Length);
         Assert.All(beforeCalendars, x => Assert.Equal("PlanAssumptionSnapshot", x.Source));
         Assert.All(beforeCapacity, x => Assert.Equal(ResourceSchedulingMode.Cumulative, x.SchedulingMode));
         Assert.All(beforeCapacity, x => Assert.Equal(PlanningCapacityBasis.Slots, x.Basis));
+
+        var compoundedDerate = Assert.Single(beforeCapacity, x => x.StartUtc == start.AddHours(2));
+        Assert.Equal(96d, compoundedDerate.AvailableMinutes);
+        Assert.Equal(0d, compoundedDerate.UnavailableMinutes);
 
         // Simulate the plant master changing after the Plan Version was cut. A historical read must
         // remain a view of the solved plan, not reinterpret it using today's resource configuration.
@@ -145,9 +165,11 @@ public sealed class HistoricalPlanningAssumptionsTests
         resource.NominalConcurrentCapacity = 1m;
         resource.CapacityFactorPct = 10m;
         resource.OperatingState = ResourceOperatingState.Breakdown;
-        liveCalendar.IsAvailable = true;
-        liveCalendar.CapacityFactorPct = 100m;
-        liveCalendar.ReasonCode = "LIVE_MASTER_CHANGED";
+        liveMaintenance.IsAvailable = true;
+        liveMaintenance.CapacityFactorPct = 100m;
+        liveMaintenance.ReasonCode = "LIVE_MASTER_CHANGED";
+        liveDerate.CapacityFactorPct = 5m;
+        liveDerate.ReasonCode = "LIVE_DERATE_CHANGED";
         await db.SaveChangesAsync();
 
         var after = await service.GetPlanningWorkbenchAsync(planId);
