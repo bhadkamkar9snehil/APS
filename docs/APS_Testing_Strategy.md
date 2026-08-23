@@ -1,525 +1,397 @@
 # APS Testing Strategy
 
-**Status:** Governing test strategy  
-**Scope:** Canonical .NET APS backend, persistence, planner workbench, and desktop-hosted UI  
+**Status:** governing test strategy  
+**Scope:** canonical .NET APS backend, persistence, planner workbench and Windows desktop-hosted UI  
+**Re-baselined:** 23-Aug-2026 against `main` at `71e456d2fe124173cdd1f0bfeac82e18f53dc45f`  
 **Primary acceptance anchors:** #44, #31, #61
+
+Implementation-state detail: [`current/APS_CURRENT_STATE_2026-08-23.md`](current/APS_CURRENT_STATE_2026-08-23.md).
+
+---
 
 ## 1. Purpose
 
-APS is not adequately protected by a large count of isolated planning tests. The system is a manufacturing-planning product whose correctness depends on a chain of truths remaining consistent:
+APS correctness is a chain, not a raw test count:
 
-`demand -> material/BOM -> campaigns/heats -> routes -> finite schedule -> Plan Version -> release -> execution actuals -> material/WIP -> replan -> read model -> planner UI`
+```text
+demand
+ -> material/BOM
+ -> campaigns/heats
+ -> configured routes
+ -> finite resource/material/thermal schedule
+ -> Plan Version
+ -> readiness/approval/release
+ -> execution actuals/material state
+ -> replan
+ -> read model
+ -> planner UI
+```
 
-The test system must prove that chain at the lowest useful layer and then prove the important cross-layer workflows again at integration and user-workflow level.
+Testing must protect the lowest useful rule and also prove important cross-layer workflows.
 
-The goals are:
+Goals:
 
-1. prevent business-rule regressions in steel planning;
-2. prevent persistence/readback drift between in-memory planning truth and stored Plan Versions;
-3. prevent provider-specific defects from being hidden by EF InMemory tests;
-4. prevent UI interaction regressions in the Gantt and decision workbench;
-5. make failures localizable to the owning layer;
-6. keep the normal test suite deterministic and reproducible;
-7. use realistic integrated acceptance data without replacing focused tests with one giant fixture;
-8. make release packaging depend on the whole executable test gate, not one project.
+1. prevent steel-planning rule regressions;
+2. prevent persisted Plan Version/readback drift;
+3. detect relational/provider defects that EF InMemory cannot prove;
+4. protect release/approval lifecycle boundaries;
+5. protect the Gantt as the central planner interaction surface;
+6. keep failures deterministic and localizable;
+7. prove realistic integrated behavior without replacing focused tests with one giant fixture;
+8. make the Windows verification gate solution-driven rather than hand-maintained.
+
+---
 
 ## 2. Governing principles
 
-### 2.1 Test behavior, not implementation trivia
+### Test behavior, not implementation trivia
 
-A test should normally assert a business invariant, public contract, persisted fact, rendered state, or user-observable interaction.
+Prefer assertions on business invariants, public contracts, persisted facts, rendered behavior and user-observable interactions.
 
-Examples of good contracts:
+Good examples:
 
-- material shortage remains explicit and does not silently reduce manufacturing demand;
-- an LRF-ready heat may retain multiple eligible CCMs until commitment;
-- running/completed operations cannot be dragged in the Gantt;
-- a persisted Plan Version can be read back with the same route/resource/material decisions;
-- duplicate business keys are rejected by the relational provider;
-- release is impossible when release-readiness invariants are not satisfied.
+- material shortfall never silently shrinks manufacturing demand;
+- future internal supply can satisfy a later material need;
+- same-type physical resources remain independent timelines;
+- delayed billet thermal state can force configured reheating;
+- actual measured billet state overrides a stale planned estimate on replan;
+- atomic bulk moves are validated against their **final proposed schedule**, not each member's old baseline placement;
+- frozen/running/completed operations cannot be moved;
+- historical capacity readback is invariant to later live master/calendar edits;
+- only an active Approved Plan Version can be released;
+- release readiness is based on persisted Plan Version evidence;
+- direct release-payload replay cannot bypass the repository lifecycle boundary.
 
-Tests that merely search source files for arbitrary class names or CSS snippets are not substitutes for product behavior. Static file inspection is acceptable only when the file itself is the product contract, for example project dependency boundaries, release-script gates, fixed metadata, or forbidden repository references.
+Static source-text tests are appropriate only when the file itself is the product contract, such as dependency boundaries, generated/build wiring or forbidden repository references.
 
-### 2.2 Lowest useful layer first
+### Lowest useful layer first
 
-Every defect should be protected at the lowest layer that can express the actual cause.
+Protect the root cause at the lowest layer that expresses it. Add a second integration/workflow test when a defect crosses layers.
 
-If the defect crosses layers, add a second workflow/integration test proving the complete behavior.
+### Do not lock known-wrong behavior
 
-Example:
+Do not add green characterization tests for a known bug simply to increase coverage. Fix the defect with the regression or keep the gap explicitly tracked.
 
-- wrong material netting formula -> focused planning/material test;
-- same wrong netting caused a released plan to fabricate supply -> focused planning test **plus** release/readback acceptance test.
+### Deterministic time and identity
 
-### 2.3 No green tests that lock known-wrong behavior
+Use fixed UTC epochs and stable IDs/business keys where ordering or exact values matter. Avoid uncontrolled wall-clock dependencies in tests.
 
-Do not add characterization tests that assert a known bug merely to increase coverage. A known defect either:
+### Provider fidelity matters
 
-- receives a failing test together with the production fix in the same change; or
-- remains an explicitly tracked acceptance gap until the implementation is corrected.
+EF Core InMemory does not prove unique constraints, foreign keys, transactions, SQL translation, concurrency or migration/schema behavior. Use SQLite relational tests for fast provider semantics and production-provider tests where provider-specific behavior matters.
 
-Do not commit skipped tests as a substitute for implementation.
+### One realistic reference plant, many focused fixtures
 
-### 2.4 Deterministic time and identity
+#61 will own the persisted realistic reference dataset. It complements focused fixtures; it does not replace them.
 
-Tests should use fixed UTC epochs and stable IDs/business keys whenever the exact value matters.
+---
 
-Avoid `DateTime.UtcNow`, `DateTime.Now`, random delays, and uncontrolled `Guid.NewGuid()` in assertions or fixtures. Random GUIDs are acceptable only when their exact value is irrelevant and cannot influence ordering or reproducibility.
+## 3. Test layers and current projects
 
-Time-dependent production code should increasingly receive an explicit reference time or clock abstraction. Planner tests already have a natural `ReferenceTimeUtc`; use it.
+| Layer | Project / mechanism | Ownership |
+|---|---|---|
+| Repository architecture | `APS.Architecture.Tests` | project dependency graph, test registration, build/release wiring, repository boundaries |
+| Domain/application/planning | `APS.Planning.Tests` | orchestration, BOM/material logic, campaign/route/resource/thermal semantics, solver behavior, Plan Version lifecycle/service behavior where relational storage is not the subject |
+| Infrastructure/persistence | `APS.Infrastructure.Tests` | EF/SQLite/provider semantics, persistence/readback, query counts, transactions/concurrency, repository/service integration |
+| Rendered UI/component | `APS.UI.Tests` + bUnit/state/model tests | component lifecycle/DOM contracts, Gantt models, selection, keyboard/accessibility, source contracts where browser execution is not required |
+| Real browser/desktop workflow | #31 harness + Windows live QA | JS pointer geometry, fullscreen/localStorage/browser layout, long-open-session behavior, visual regression, end-to-end planner flows |
+| Persisted integrated acceptance | #61 reference plant + #44 scenarios | canonical SQL-backed lifecycle at realistic density |
 
-### 2.5 Provider fidelity matters
+### Current registered test suite
 
-EF Core InMemory is acceptable for application/service tests where database semantics are irrelevant. It must not be used as evidence for:
+Latest recorded Windows verification for `71e456d...` executed **336/336 tests**:
 
-- unique constraints;
-- foreign keys/cascades;
-- relational transactions;
-- SQL translation;
-- provider-specific mappings;
-- concurrency behavior;
-- migration/schema correctness.
+- `APS.Architecture.Tests`: **9**
+- `APS.Infrastructure.Tests`: **12**
+- `APS.Planning.Tests`: **182**
+- `APS.UI.Tests`: **133**
 
-Use in-memory SQLite for fast relational contract tests. Use the production SQL Server provider for the smaller set of tests whose behavior is SQL Server-specific.
+Counts are evidence for that exact SHA, not a permanent target. Behavior coverage matters more than preserving the number.
 
-### 2.6 One realistic reference plant, many focused fixtures
+---
 
-Issue #61 defines the deterministic persisted integrated steel-plant dataset. That dataset is for integrated acceptance, realistic density, performance, scenario, and end-to-end evidence.
-
-It does **not** replace focused tests. Small fixtures should continue to isolate individual rules such as LRF alternates, CCM flexibility, recursive BOM, thermal windows, or cumulative RHF capacity.
-
-## 3. Test layers and ownership
-
-| Layer | Project / mechanism | What it owns | What it must not pretend to prove |
-|---|---|---|---|
-| Repository architecture | `APS.Architecture.Tests` | project dependency graph, test-project registration, release-gate wiring, repository-level invariants | business behavior or rendered UI |
-| Domain/application/planning | primarily `APS.Planning.Tests` | steel planning rules, orchestration, material logic, route/resource semantics, solver decisions, Plan Version behavior where persistence is not the subject | relational database semantics or browser JS |
-| Infrastructure/persistence | `APS.Infrastructure.Tests` | EF mappings, SQLite/SQL provider behavior, persistence/readback, transactions, execution persistence, repository/service integration | pixel/UI interaction fidelity |
-| Rendered Blazor components | `APS.UI.Tests` + bUnit | component lifecycle, DOM output, selection/status/filter behavior, keyboard events, accessibility attributes, workbench component contracts | browser layout engine, pointer geometry, localStorage/fullscreen/real JS behavior |
-| Browser workflow / visual regression | future browser harness under #31 | pointer drag/autoscroll/pan, focus, JS interop, responsive geometry, 1080p/1440p/4K screenshots, real planner workflows | solver internals |
-| Persisted integrated acceptance | deterministic #61 reference plant | canonical SQL-backed flow across provider -> planner -> Plan Version -> release/execution/replan -> reads | replacement for focused unit/regression tests |
-
-### Why there is no empty `APS.Domain.Tests` project
-
-The current Domain and Application projects are predominantly entities, enums, records and interfaces/contracts. Creating a project full of property/default-value tests would add noise without protecting behavior. Domain behavior should be tested directly when behavior exists there. Until then, the planning/application behavior that consumes those contracts belongs in `APS.Planning.Tests`, while storage semantics belong in `APS.Infrastructure.Tests`.
-
-If meaningful pure domain services/aggregates are introduced later, create `APS.Domain.Tests` at that point rather than pre-populating an empty symmetry project.
-
-## 4. Test project rules
+## 4. Solution registration rule
 
 Every executable test project under `tests/` must:
 
 1. set `<IsTestProject>true</IsTestProject>`;
 2. be registered in `APS.slnx`;
-3. run under the release test gate;
-4. use the same target framework family as the product unless isolation requires otherwise;
-5. have a clearly defined owning layer;
-6. avoid references to higher product layers unless the test is explicitly an integration test.
+3. run under `build/verify.ps1`;
+4. have clear layer ownership;
+5. avoid higher-layer references unless intentionally testing integration.
 
-`APS.Architecture.Tests` enforces the current production project dependency graph and prevents orphaned test projects.
+The Windows verifier discovers test projects from `APS.slnx`; adding a test project to the solution automatically brings it into the gate.
 
-## 5. Release gate
+---
 
-The local release path is authoritative for APS project verification; the repository explicitly does not use GitHub Actions/hosted CI as the APS verification mechanism.
+## 5. Authoritative Windows verification gate
 
-`build/release.ps1` must run:
+The old statement “do not use CI” is obsolete.
 
-```text
-dotnet test APS.slnx --configuration Release
-```
+APS uses the shared self-hosted Windows Azure DevOps agent `EOS` as its authoritative automated build/test environment. The repository-owned [`../build/verify.ps1`](../build/verify.ps1) contract performs:
 
-before publish/pack unless a developer deliberately uses `-SkipTests` for non-release local iteration.
+1. `dotnet restore APS.slnx`;
+2. full Release `dotnet build APS.slnx --no-restore`;
+3. every solution-registered `tests/*` project with TRX output;
+4. self-contained `win-x64` publish of `APS.DesktopHost`.
 
-A real release must not use `-SkipTests`.
+See [`windows-ci.md`](windows-ci.md).
 
-### Gate intent
+### What is not authoritative
 
-The release gate should fail for:
+- GitHub Actions/hosted CI is not the APS verification authority;
+- a local compile alone is not a release-quality proof;
+- a previous SHA's Windows result does not make a newer SHA green;
+- static review is not a substitute for the Windows gate.
 
-- compilation failures in any registered test project;
-- architecture boundary violations;
-- planning/domain regressions;
-- persistence/provider regressions;
-- rendered UI component regressions.
+### Release packaging
 
-Browser/visual suites may be a separate explicit pre-release command if their runtime makes them unsuitable for every inner-loop run, but their result is still required before a production release once #31's harness exists.
+`build/release.ps1` remains an explicit packaging path. Real release preparation must not bypass the complete test gate. `-SkipTests` is an inner-loop convenience only, never production release evidence.
 
-## 6. Test data policy
+---
 
-### 6.1 Fixed epochs
+## 6. Latest recorded integrated verification
 
-Use named fixed epochs such as:
+For `main` at `71e456d2fe124173cdd1f0bfeac82e18f53dc45f`, the recorded Windows evidence reports:
 
-```csharp
-new DateTime(2026, 8, 22, 6, 0, 0, DateTimeKind.Utc)
-```
+- Release build: **0 warnings, 0 errors**;
+- tests: **336/336 passed**;
+- self-contained Windows `APS.DesktopHost.exe` publish produced;
+- SQLite `PRAGMA quick_check`: `ok`;
+- pre-launch database backup created;
+- live published desktop loaded the released baseline;
+- **105 operations / 8 resources** rendered;
+- Gantt, operation inspector, resource-load and capacity views exercised;
+- released-baseline editing correctly blocked;
+- final desktop process remained open and responsive.
 
-rather than wall-clock time.
+This result belongs only to that exact baseline and must be replaced by new evidence after later code changes.
 
-### 6.2 Stable business keys
+---
 
-Prefer readable keys that explain the scenario:
+## 7. Current high-value regression coverage
 
-- `SO-10042`
-- `PO-10042`
-- `HEAT-2042`
-- `CMP-G42-01`
-- `LRF-01`, `LRF-02`
-- `CCM-01`, `CCM-02`
-- `RM-01`, `RM-02`
+### Release lifecycle/readiness
 
-Use stable GUID constants when entity identity participates in ordering, persistence, or expected outputs.
+Current tests cover the new approval boundary, including:
 
-### 6.3 Builders over giant fixtures
+- Feasible is not directly releasable;
+- active Plan Version required for approval/release;
+- unresolved persisted material findings block approval;
+- non-firm or late external incoming evidence blocks readiness where applicable;
+- valid planned internal manufacture/future supply is not rejected merely because stock is absent now;
+- release repository rejects bypass/replay attempts;
+- persisted MTO service readiness detects missing allocation, incomplete scheduled evidence and late completion.
 
-Repeated setup should move into narrowly named builders only after repetition becomes material. Builders must expose the scenario facts rather than hide them behind dozens of defaults.
+This is stronger than the pre-consolidation Feasible-only release model.
 
-Good:
+### Atomic Gantt/workbench move validation
 
-```text
-PlantBuilder.WithTwoCasters()
-DemandBuilder.ForGrade("G42").Due(...).Quantity(100)
-```
+Current planning regressions cover final-state atomic move semantics:
 
-Bad:
+- moving A into B's old slot while B moves away is not falsely blocked;
+- selected operations overlapping in the **proposed** target schedule are blocked;
+- moved predecessor/successor geometry is evaluated using proposed positions;
+- a proposed precedence violation is detected;
+- collision with non-selected/frozen work remains a blocker;
+- query-count behavior is protected against per-move N+1 regressions.
 
-```text
-CreateStandardFixture42()
-```
+### Time fence and pointer cancellation
 
-where the scenario cannot be understood without opening the helper.
+Focused tests protect:
 
-### 6.4 Reference dataset
+- authoritative proposal/request time-fence policy consistency;
+- frozen-horizon move behavior;
+- pointer-cancel/window-blur rollback of drag/pan/split state;
+- no accidental .NET commit callback during cancellation;
+- cleanup of proposal ghost/feedback/cursor/highlights/autoscroll state.
 
-The #61 dataset should use deterministic seed/business keys and a fixed reference epoch. It should be recreated from an empty database and produce the same logical masters/demand/state.
+### Historical capacity/readback
 
-Performance evidence should record actual operation counts and elapsed time from that dataset rather than assert an arbitrary synthetic count unrelated to the plant topology.
+Tests protect persisted Plan Version interpretation from live-master drift:
 
-## 7. APS manufacturing acceptance matrix
+- historical resource scheduling assumptions are used where snapshotted;
+- calendar/resource capacity facts do not change when live resource/calendar masters later change;
+- cumulative capacity and compounded derating match solver semantics;
+- compatibility fallback is explicit for older snapshots lacking the persisted assumption.
 
-The A–T scenarios below come from #44 and are the canonical backend acceptance spine. “Strong” means focused executable coverage already exists in the current suite for the core rule; it does not imply the whole #44 cross-layer acceptance path is complete. “Partial” means some rule-level coverage exists but the complete invariant/readback/workflow is not yet demonstrated. “Gap” means the required product behavior or acceptance path is still materially open.
+### EF/query hardening
 
-| #44 scenario | Required invariant | Current focused evidence | Status / next test level |
-|---|---|---|---|
-| A — fully FG-covered SO | qualified FG prevents unnecessary manufacturing while demand allocation stays visible | demand orchestration / material allocation tests | Partial: add persisted demand/readback acceptance |
-| B — partial FG coverage | only uncovered quantity becomes MTO manufacturing requirement | demand orchestration regression tests | Strong rule coverage; add integrated reference-plant assertion |
-| C — billet inventory covers rolling | rolling proceeds without unnecessary SMS production | material/dispatch flexibility and route-aware sourcing tests | Partial: add persisted Plan Version/readback path |
-| D — billet absent but internally manufacturable | internal billet requirement produces upstream Campaign/heat/CCM supply before consumption | recursive material + rolling/billet supply tests | Partial: integrated timing chain remains important |
-| E — future internal billet | later internal receipt satisfies RM without duplicate replacement heat | time-phased material/late-supply tests | Partial: prove through replan/readback |
-| F — deep BOM shortfall | recursive netting to leaf; non-manufacturable leaf remains explicit shortfall | recursive material requirement/late-supply tests | Strong rule coverage; add persisted shortage visibility |
-| G — SMS down, billet known | downstream rolling remains feasible from qualified billet/receipt | material/dispatch flexibility + scenario work | Partial; #57 completion evidence required |
-| H — SMS down, no billet | requirement remains visible with attributable shortfall; no fabricated supply | material shortage/scenario work | Partial; #57 completion evidence required |
-| I — rare alternate LRF | technically qualified alternate remains eligible and selectable without changing heat/order identity | operation commitment/resource flexibility tests; activated infrastructure redispatch tests | Strong focused coverage; add UI/workflow redispatch path |
-| J — CCM flexibility | LRF-ready heat can move CCM-1 -> CCM-2 if feasibility remains valid | multi-caster + operation flexibility tests | Partial: add canonical preview/apply validation workflow |
-| K — parallel resources | physical CCM/RM resources remain independent concurrent timelines | multi-caster/resource-scheduling tests | Strong focused coverage; add realistic-density schedule assertion |
-| L — cumulative shared RHF | overlapping feed permitted within cumulative capacity and rejected above capacity | resource scheduling / capacity semantics tests | Partial: strengthen boundary/over-capacity cases and persisted readback |
-| M — mixed PO service dates | aggregation never loses independent due-date/customer service truth | service-date scheduling tests | Partial: add delivery/read-model acceptance |
-| N — partial actual production | actual + remaining future supply never double counts | replanning actual-state / material ledger tests | Partial: add persisted execution -> replan -> readback flow |
-| O — downstream genealogy | physical material genealogy and commercial lineage remain separately traversable | traceability/execution foundations | Gap/partial under #18: needs integrated actual material path |
-| P — month-long horizon | material may be produced progressively; not all required at campaign start | unified time-phased material coverage / late-supply tests | Strong rule coverage; reference-plant month-horizon evidence still required |
-| Q — infeasible explanation | named domain cause + restoration evidence, not only `Infeasible` | schedule infeasibility diagnostics tests | Partial: binding/slack evidence remains incomplete |
-| R — scenario/CTP consistency | normal plan, scenario and CTP share route/material/resource semantics | canonical boundary/scenario/CTP foundations | Gap/partial under #43/#42: needs cross-path consistency acceptance |
-| S — billet thermal aging / actual replan | thermal window ages; delay can force RHF; actual temperature replaces estimate | thermal constraint tests | Partial; #56 actual-replan completion evidence required |
-| T — downstream route generality | billet-only, direct CCM->HotRoll and multi-pass routes use configured route truth | downstream route projection/readback tests | Partial; #58 completion evidence required |
+Current infrastructure/planning tests include query-count and relational behavior protections for read/workbench and demand-reconciliation paths, including the fixed-query-count expectation across small versus larger move/input sets.
 
-### Matrix rule
+### Billet thermal behavior
 
-No scenario becomes “complete” merely because one unit test exists. #44 requires concrete canonical .NET evidence across the applicable path:
+#56 completion coverage includes:
 
-`Domain/master -> SQL/provider -> application/planning -> solver -> Plan Version -> release/execution/replan -> read API`
+- known-hot bypass where permitted;
+- internally produced billet inside the hot window;
+- delay/thermal aging forcing configured RHF where available;
+- RHF-unavailable downstream blocking without erasing valid upstream billet production;
+- conservative unknown/yard state;
+- actual measured temperature/state precedence on replan;
+- order-level thermal narrowing;
+- historical Plan Version readback of decision basis.
 
-Focused tests identify the exact rule failure. Integrated acceptance proves that the rule survives the complete lifecycle.
+### Route generality
 
-## 8. Gantt and planning-workbench test matrix
+#58 coverage protects configured downstream route behavior without the first-`HotRoll` architectural pivot, including billet-only/direct-hot and configured multi-step downstream chains.
 
-The Gantt is the central operational workbench and needs four distinct forms of coverage.
+---
 
-### 8.1 Pure geometry/model tests
+## 8. #44 manufacturing acceptance matrix — current status
 
-Keep fast deterministic tests for:
+“Strong” means the core rule has strong focused executable coverage. It does **not** mean #44's complete cross-layer proof is done.
 
-- visible row virtualization and overscan;
-- time clipping;
-- zoom and snap arithmetic;
-- drag candidate geometry;
+| Scenario | Invariant | Current state |
+|---|---|---|
+| A — fully FG-covered SO | stock coverage avoids unnecessary new manufacture | Partial integrated proof; focused demand coverage exists |
+| B — partial FG coverage | only uncovered quantity becomes MTO manufacturing need | Strong focused coverage |
+| C — billet inventory covers rolling | downstream plan without unnecessary SMS | Partial integrated proof |
+| D — billet absent but manufacturable | upstream internal billet requirement/supply | Partial integrated timing proof |
+| E — future internal billet | later supply satisfies later RM need without duplication | Strong rule foundation; replan/readback acceptance still important |
+| F — deep BOM shortfall | leaf shortage explicit, no demand shrink | Strong focused coverage |
+| G — SMS down, billet known | downstream contingency through qualified supply | Open integrated proof under #57 |
+| H — SMS down, no billet | attributable shortfall, no fabricated supply | Open integrated proof under #57 |
+| I — rare alternate LRF | eligible rare alternate survives/selects correctly | Strong foundation; #16 completes generic lifecycle |
+| J — CCM flexibility | LRF-ready heat can use another valid CCM | Solver-owned CCM slice exists; #16 completes generic dispatch lifecycle |
+| K — parallel resources | independent physical timelines | Strong focused coverage |
+| L — cumulative shared RHF | overlap within configured capacity | Strong scheduling foundation; integrated readback remains relevant |
+| M — mixed PO service dates | aggregation preserves independent service truth | Partial; due-date model still needs final allocation-grain refinement |
+| N — partial actual production | actual + remaining future supply no double count | Partial; #18 integrated closure |
+| O — downstream genealogy | physical and commercial lineage separately traversable | Open under #18 |
+| P — month-long horizon | progressive future supply allowed | Strong time-phased rule foundation; #61 integrated density proof pending |
+| Q — infeasible explanation | named domain cause + restoration evidence | Partial under #19 |
+| R — scenario/CTP consistency | shared canonical rules | Open/partial under #43/#42 |
+| S — billet thermal aging/actual replan | delay can force RHF; actual overrides estimate | **Strong focused coverage; #56 closed** |
+| T — downstream route generality | route truth, no first-HotRoll pivot | **Strong focused/readback coverage; #58 closed** |
+
+No row becomes “complete end to end” from one unit test. #44 still requires the applicable canonical chain to be demonstrated.
+
+---
+
+## 9. Gantt/workbench coverage model
+
+The Gantt is the central operational workbench and requires four forms of evidence.
+
+### Pure model/state tests
+
+Protect:
+
+- viewport/zoom/pan/fit arithmetic;
+- clipping and virtualization;
+- resource hierarchy/sorting/collapse;
+- baseline classification;
 - dependency geometry;
-- baseline placement/change classification;
-- resource hierarchy and collapse/sort behavior;
-- capacity model calculations;
-- operation-content density decisions;
-- adaptive lane sizing once implemented.
-
-These tests should not depend on a browser.
+- capacity math;
+- operation content/density decisions;
+- multi-selection and proposed atomic move geometry;
+- time-fence policy;
+- historical capacity assumptions.
 
-### 8.2 Rendered component tests
+### Rendered component contracts
 
-Use bUnit for component contracts such as:
+Use bUnit/state/component tests for:
 
-- operation drag protection by execution state;
-- eligible-resource data exposed to the interaction layer;
-- Ctrl/Meta toggle and Shift range selection;
-- keyboard context menu;
-- keyboard operation navigation;
-- selected/frozen/running semantic attributes;
-- non-color-only status indicators;
-- accessible names using business identifiers;
-- toolbar state and disabled/enabled command semantics;
-- analysis-dock tab/state behavior;
-- release readiness presentation once the backend contract exists.
-
-Rendered tests should assert DOM/events, not inspect `.razor` source text.
-
-### 8.3 Browser interaction tests
+- operation editing protection;
+- semantic/accessibility attributes;
+- keyboard navigation/context behavior;
+- resource/operation selection;
+- analysis dock and inspector contracts;
+- toolbar/command disabled/enabled semantics;
+- release/readiness presentation where applicable.
 
-A browser harness under #31 must cover the JS/browser behavior that bUnit cannot prove:
-
-1. horizontal pan updates continuously while dragging/panning;
-2. operation drag shows live ghost and snap guide;
-3. edge autoscroll continuously recomputes candidate/snap feedback;
-4. final drop matches the visible proposal;
-5. cross-resource drag only permits eligible target lanes;
-6. frozen/running/completed operations cannot be moved;
-7. Ctrl/Cmd multi-select and Shift range select;
-8. keyboard navigation retains visible focus as rows virtualize;
-9. splitter resizing and resource-grid column resizing;
-10. density/zoom/snap preferences survive reload through localStorage;
-11. fullscreen enter/exit restores layout/focus;
-12. context menus remain within viewport and are keyboard operable;
-13. dependency overlays remain aligned while scrolling/zooming;
-14. baseline compare modes remain aligned;
-15. current-time/execution overlays advance correctly in long-open sessions;
-16. 1080p, 1440p and 4K deterministic screenshots;
-17. realistic operation counts remain responsive and usable.
-
-### 8.4 End-to-end planner workflows
-
-The browser/user workflow layer should eventually cover, at minimum:
-
-- run plan -> inspect exceptions -> diagnose -> compare -> release;
-- move operation -> preview full impact -> acknowledge warnings if required -> apply -> persisted child Plan Version;
-- alternate-resource redispatch for LRF/CCM while preserving heat/order identity;
-- execution update -> recovery/replan -> protected actual/running operations;
-- material-shortage inspection without suppressing future manufacturing need;
-- CTP promise -> scenario consistency;
-- physical genealogy and commercial traceability traversal;
-- master validation error -> correction -> rerun.
-
-## 9. Persistence test matrix
-
-`APS.Infrastructure.Tests` must progressively cover:
-
-### Schema/model contracts
-
-- full model creates on SQLite;
-- unique business keys are enforced;
-- foreign keys and configured cascades behave as intended;
-- indexes/alternate keys critical to identity are present;
-- migrations can create/upgrade a clean database where migration infrastructure is available.
+Post-Ponytail component consolidation means tests should assert current **behavior**, not require the old standalone Gantt layer filenames to exist.
 
-### Plan Version persistence
+### Browser/desktop interaction
 
-- parent/child lineage persists;
-- released versions are immutable;
-- route decisions persist, including skipped operations;
-- eligible resource options persist independently from selected resource;
-- material requirements/reservations/ledger/sourcing alternatives persist;
-- planning assumptions persist for later explanation/comparison;
-- actual resource/time/quantity persists without rewriting historical plan truth.
+#31 still owns a systematic browser/visual harness for things unit/bUnit tests cannot prove well:
 
-### Transactional behavior
+- pointer drag and continuous feedback;
+- edge autoscroll;
+- actual browser focus/virtualization interaction;
+- fullscreen/localStorage behavior;
+- context-menu viewport placement;
+- synchronized overlays while scroll/zoom changes;
+- long-open-session Now/execution marker progression;
+- deterministic 1080p/1440p/4K visual regression;
+- realistic-density responsiveness.
 
-Cross-entity lifecycle writes that must be atomic need relational transaction tests. Examples:
+Current main has already received live Windows desktop QA for the integrated baseline; that is valuable evidence, but it does not replace a repeatable #31 browser/visual harness.
 
-- release creating WOs + scheduled operations;
-- redispatch revision + operation state;
-- execution actual + material output;
-- replan child version + snapshots.
+### End-to-end planner workflows
 
-### SQL Server-specific tests
+Required long-term workflows include:
 
-Only add SQL Server tests where SQLite cannot represent the production behavior. Keep their number small and explicit. Examples may include provider-specific migration/SQL behavior or concurrency semantics.
+- calculate -> inspect exceptions -> compare -> approve -> release;
+- move/bulk move -> preview -> validate -> apply as child Plan Version;
+- alternate-resource redispatch while preserving heat/PO/material identity;
+- execution update -> recovery/replan -> protect actual/running/committed work;
+- material-shortage drilldown with future supply retained;
+- CTP/scenario consistency;
+- physical genealogy plus commercial traceability;
+- master validation -> correction -> replan.
 
-## 10. Planning and solver test matrix
+---
 
-Planning tests should be organized by invariant rather than implementation class.
+## 10. Persistence and query test priorities
 
-### Demand and coverage
+`APS.Infrastructure.Tests` and integration tests should progressively prove:
 
-- full/partial FG coverage;
-- MTO/MTS distinction;
-- independent service dates and customer identity;
-- no disappearance of manufacturing requirement.
+### Schema/model
 
-### Material
+- unique business keys;
+- FK/cascade behavior;
+- indexes/alternate identities;
+- migrations/upgrades where used;
+- relational transactions/concurrency.
 
-- recursive BOM depth;
-- inventory/known incoming/WIP netted once;
-- required-at time;
-- future internal receipts;
-- non-manufacturable explicit shortfall;
-- no replacement supply duplication after partial actuals;
-- material shortage does not make manufacturing demand vanish.
+### Plan Version
 
-### Campaign/heat
+- parent/child lineage;
+- released immutability;
+- Approval/Release lifecycle state;
+- route decisions, including skips/reasons;
+- eligible versus planned resource evidence;
+- material requirements/reservations/coverage;
+- thermal and capacity assumptions required for historical interpretation;
+- service-readiness evidence;
+- actual facts without rewriting historical planned facts.
 
-- grade sequence families;
-- heat sizing from physical envelopes;
-- campaign composition traceability;
-- campaign split/merge/resequence when those commands are implemented;
-- month-long campaign material timing.
+### Query performance
 
-### Route/resource
+Guard against regressions such as:
 
-- configured route operation presence/order;
-- optional/forbidden operations;
-- all eligible physical resources retained until commitment;
-- rare alternate LRF;
-- CCM flexibility;
-- parallel identical-type resources;
-- disjunctive vs cumulative scheduling semantics;
-- maintenance/derating calendars.
+- N+1 validation loops;
+- one query per moved operation;
+- one query per demand/coverage row;
+- sibling collection cartesian amplification;
+- loading full entities when projections suffice.
 
-### Thermal
+Query-count tests should assert the shape that matters: increasing workload size should not linearly increase database round trips when the path is designed to batch/preload.
 
-- liquid-steel windows;
-- hot-direct billet aging;
-- forced RHF after thermal aging;
-- authoritative actual temperature replacing estimate on replan.
+---
 
-### Execution/replan
+## 11. Test data policy
 
-- running/completed/committed protection;
-- partial actual quantity;
-- off-plan physical actual truth retained and flagged;
-- bounded repair vs broad replan;
-- no duplicate material supply;
-- persisted genealogy.
+- use fixed UTC epochs;
+- use stable readable business keys;
+- use stable GUIDs where identity participates in ordering/persistence;
+- prefer narrow builders over giant opaque fixtures;
+- keep the future #61 reference dataset deterministic and reproducible from an empty database;
+- record actual operation/campaign/material counts and elapsed time instead of inventing arbitrary performance counts.
 
-### Diagnostics and decision support
+---
 
-- named infeasibility causes;
-- finite-capacity binding evidence;
-- slack/headroom where supported;
-- scenario comparison;
-- CTP consistency;
-- release-readiness reasons.
-
-## 11. Performance tests
-
-Do not use elapsed-time assertions on tiny synthetic fixtures as the primary performance evidence.
-
-Use two levels:
-
-### Deterministic algorithmic budgets
-
-Fast tests may guard obvious complexity regressions, for example Gantt scene virtualization should mount only a bounded visible subset of a 10,000-operation input.
-
-These are guardrails, not workstation benchmarks.
-
-### Reference-plant benchmarks
-
-Once #61 is available, record:
-
-- demand count;
-- campaign/heat count;
-- operation count;
-- material event count;
-- solver wall time;
-- workbench query time;
-- initial Gantt render time;
-- pan/zoom/selection interaction responsiveness;
-- memory where practical.
-
-Keep the hardware/environment in the evidence so comparisons are meaningful.
-
-## 12. Accessibility and visual regression
-
-Under #31, major workspaces require deterministic visual regression at common desktop sizes:
-
-- 1920x1080;
-- 2560x1440;
-- representative 4K layout.
-
-Screenshots should use deterministic data, fixed reference time, stable viewport, disabled nonessential animation, and stable font/render conditions.
-
-Accessibility tests should explicitly cover:
-
-- keyboard reachability and focus order;
-- visible focus;
-- screen-reader names for important commands/operations;
-- status not encoded by color alone;
-- contrast for critical operational states;
-- reduced-motion behavior;
-- menus/dialogs/context menus with correct focus return.
-
-## 13. Regression policy
-
-For every production defect:
-
-1. identify the actual violated invariant;
-2. add the smallest deterministic regression test that reproduces it;
-3. fix production code;
-4. if the defect crossed persistence/UI/lifecycle boundaries, add or extend the relevant integration/workflow test;
-5. do not make the test pass by broadening tolerances unless the domain contract itself changed;
-6. name the test after the behavior, not the bug ticket.
-
-Example test name:
-
-`Future_internal_billet_receipt_prevents_duplicate_replacement_heat`
-
-not:
-
-`Issue_123_test`.
-
-Issue numbers can be referenced in comments only when they add historical context.
-
-## 14. Test naming and structure
-
-Use behavior-oriented names:
-
-`<condition>_<expected outcome>`
-
-or
-
-`<operation>_<expected invariant>`
-
-Keep Arrange/Act/Assert visually obvious without mandatory comments.
-
-A test should normally have one behavioral reason to fail. Multiple assertions are appropriate when they prove one invariant, for example redispatch preserving heat identity **and** changing only the resource.
-
-## 15. What not to do
-
-- Do not rely only on EF InMemory for persistence confidence.
-- Do not add hundreds of source-string assertions for Razor markup.
-- Do not assert private implementation details when a public outcome exists.
-- Do not use arbitrary sleeps.
-- Do not create random synthetic plants per test run.
-- Do not use current material availability to shrink the manufacturing requirement in fixtures.
-- Do not treat solver `Feasible` alone as proof that a plan is release-ready.
-- Do not call a UI feature tested merely because its C# model has unit tests.
-- Do not use one huge #61 fixture to debug every failed planning rule.
-- Do not allow test projects to exist outside the solution/release gate.
-
-## 16. Near-term implementation order
-
-1. **Test architecture and gate** — activate all test projects, enforce solution registration, run full solution before release.
-2. **Relational persistence baseline** — SQLite model/schema/constraint/cascade tests, then Plan Version persistence/readback.
-3. **Rendered Gantt component coverage** — operation block, resource grid, toolbar, analysis dock, release/validation state.
-4. **Known planning regressions** — add tests together with fixes for release readiness, move-impact validation, late-demand semantics, binding evidence, persisted undo/recovery.
-5. **Browser harness under #31** — pointer/keyboard/JS/layout/visual regression.
-6. **#61 reference plant acceptance** — integrated A–T evidence and realistic performance.
-7. **SQL Server-specific acceptance** — only where provider behavior cannot be proven with SQLite.
-
-## 17. Definition of a properly tested APS feature
-
-A feature is properly tested when:
-
-- its governing domain invariant has a deterministic executable test;
-- persistence semantics are tested when the feature stores or mutates canonical truth;
-- its read model is tested when planner/execution users depend on that information;
-- its rendered state/interaction is tested when exposed in Blazor;
-- browser behavior is tested when it depends on JS, pointer geometry, layout, focus, or browser APIs;
-- a cross-cutting manufacturing scenario is represented in #44/#61 integrated acceptance where applicable;
-- the relevant tests are registered in the solution and executed by the release gate.
-
-That is the standard APS should use instead of raw line coverage or raw test count.
+## 12. Definition of a meaningful green
+
+A change is meaningfully green when:
+
+- the lowest useful regression protects the changed rule;
+- cross-layer behavior is tested when the defect crosses layers;
+- relational semantics use a relational provider when required;
+- relevant Gantt interaction is covered at the appropriate model/component/browser level;
+- every test project is registered in `APS.slnx`;
+- the exact commit passes the authoritative EOS Windows `build/verify.ps1` contract before being claimed verified;
+- release/runtime evidence is recorded separately when the change affects startup, migration, real data or desktop interaction.
+
+Raw line coverage and raw test count are secondary metrics, not the APS acceptance standard.
