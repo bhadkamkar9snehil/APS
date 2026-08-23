@@ -292,7 +292,7 @@ public sealed partial class PlannerWorkspaceQueryService
         IReadOnlyCollection<PlanningResourceCalendarIntervalView> calendars)
     {
         var wallClockMinutes = (rangeEnd - rangeStart).TotalMinutes;
-        if (operatingState != ResourceOperatingState.Available) return (0d, wallClockMinutes);
+        if (!IsSchedulableOperatingState(operatingState)) return (0d, wallClockMinutes);
 
         var overlapping = calendars
             .Where(x => x.EndUtc > rangeStart && x.StartUtc < rangeEnd)
@@ -335,6 +335,11 @@ public sealed partial class PlannerWorkspaceQueryService
 
         return (available, unavailable);
     }
+
+    private static bool IsSchedulableOperatingState(ResourceOperatingState state) => state is
+        ResourceOperatingState.Available or
+        ResourceOperatingState.CapacityDerated or
+        ResourceOperatingState.QualityRestricted;
 
     private static decimal CapacityDemand(ResourceCapacityBasis capacityBasis, decimal quantityMt) => capacityBasis switch
     {
@@ -522,7 +527,7 @@ public sealed partial class PlannerWorkspaceQueryService
         {
             resourceAssumptions.TryGetValue(lane.ResourceId, out var resourceAssumption);
             var operatingState = resourceAssumption?.OperatingState ?? lane.OperatingState;
-            if (operatingState == ResourceOperatingState.Available) continue;
+            if (IsSchedulableOperatingState(operatingState)) continue;
 
             result.Add(new PlanningWorkbenchException(
                 $"RESOURCE-{lane.ResourceCode}-{operatingState}",
