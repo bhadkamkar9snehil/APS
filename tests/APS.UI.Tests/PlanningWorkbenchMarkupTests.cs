@@ -20,15 +20,45 @@ public sealed class PlanningWorkbenchMarkupTests
     }
 
     [Fact]
-    public void Lifecycle_rail_groups_modes_as_a_control_deck()
+    public void Lifecycle_rail_is_a_flat_native_radio_group()
     {
         var rail = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/WorkbenchLifecycleRail.razor"));
 
-        Assert.Contains("bg-surface-inset", rail);
-        Assert.Contains("shadow-inner", rail);
-        Assert.Contains("aria-current", rail);
-        Assert.Contains("w-full", rail);
-        Assert.Contains("grid-cols-4", rail);
+        foreach (var label in new[] { "Plan", "Campaigns", "Execution", "Recovery" })
+            Assert.Contains(label, rail);
+
+        Assert.Contains("<fieldset", rail);
+        Assert.Contains("<legend class=\"sr-only\">Planning lifecycle</legend>", rail);
+        Assert.Contains("type=\"radio\"", rail);
+        Assert.Contains("name=\"planning-workbench-mode\"", rail);
+        Assert.Contains("peer sr-only", rail);
+        Assert.Contains("text-[13px]", rail);
+        Assert.Contains("font-semibold", rail);
+        Assert.Contains("peer-checked:after:h-0.5", rail);
+        Assert.Contains("hover:text-primary", rail);
+        Assert.Contains("peer-focus-visible:ring-2", rail);
+        Assert.DoesNotContain("role=\"tab", rail);
+        Assert.DoesNotContain("aria-selected", rail);
+        Assert.DoesNotContain("bg-surface-inset", rail);
+        Assert.DoesNotContain("shadow-inner", rail);
+        Assert.DoesNotContain("grid-cols-4", rail);
+        Assert.DoesNotContain("border-border-strong", rail);
+        Assert.DoesNotContain("shadow-soft", rail);
+    }
+
+    [Fact]
+    public void Lifecycle_radio_peer_state_is_scoped_to_each_mode_item()
+    {
+        var rail = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/WorkbenchLifecycleRail.razor"))
+            .Replace("\r\n", "\n");
+
+        var scopeStart = rail.IndexOf("<span class=\"relative\">", StringComparison.Ordinal);
+        var input = scopeStart >= 0 ? rail.IndexOf("<input", scopeStart, StringComparison.Ordinal) : -1;
+        var label = input >= 0 ? rail.IndexOf("<label", input, StringComparison.Ordinal) : -1;
+        var scopeEnd = label >= 0 ? rail.IndexOf("</span>", label, StringComparison.Ordinal) : -1;
+
+        Assert.True(scopeStart >= 0 && scopeStart < input && input < label && label < scopeEnd,
+            "Each generated radio and its peer-styled label must share a neutral wrapper.");
     }
 
     [Fact]
@@ -39,8 +69,12 @@ public sealed class PlanningWorkbenchMarkupTests
         Assert.DoesNotContain("overflow-x-auto", header);
         Assert.Contains("w-56", header);
         Assert.Contains("shrink-0", header);
-        Assert.Contains("Objective", header);
-        Assert.Contains("Delivery reliability", header);
+        Assert.DoesNotContain("Objective", header);
+        Assert.DoesNotContain("Delivery reliability", header);
+        Assert.Contains("Plan reference", header);
+        Assert.Contains("PlanReferenceUtc", header);
+        Assert.DoesNotContain(" UTC", header);
+        Assert.Contains("dd MMM HH:mm'Z'", header);
     }
 
     [Fact]
@@ -114,10 +148,22 @@ public sealed class PlanningWorkbenchMarkupTests
     {
         var header = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/WorkbenchScenarioHeader.razor"));
 
-        Assert.Contains("Mode == PlanningWorkbenchMode.Execution", header);
+        Assert.Contains("CanStartRecovery", header);
+        Assert.Contains("Mode is PlanningWorkbenchMode.Execution or PlanningWorkbenchMode.Recovery", header);
         Assert.Contains("Mode is PlanningWorkbenchMode.Plan or PlanningWorkbenchMode.Campaigns", header);
         Assert.Contains("StartPlanning.InvokeAsync", header);
         Assert.Contains("StartRecovery.InvokeAsync", header);
+    }
+
+    [Fact]
+    public void Scenario_mode_selection_is_side_effect_free_and_recovery_is_labeled_as_a_draft()
+    {
+        var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+
+        Assert.Contains("PlanReferenceUtc=\"@workbench.Plan.ReferenceTimeUtc\"", page);
+        Assert.Contains("CanStartRecovery=\"@state.CanStartRecovery\"", page);
+        Assert.Contains("PlanningScenarioIntent.Recovery => \"Draft\"", page);
+        Assert.Contains("private void SetMode(PlanningWorkbenchMode mode)\n    {\n        state.SetMode(mode);\n    }", page.Replace("\r\n", "\n"));
     }
 
     [Fact]

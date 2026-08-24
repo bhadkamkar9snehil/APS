@@ -1,21 +1,26 @@
 @using APS.UI.State
 
-<nav class="w-full min-w-0 py-1" aria-label="Planning lifecycle">
-    <div class="grid w-full max-w-3xl grid-cols-4 gap-1 border border-border-strong bg-surface-inset p-1 shadow-inner">
-        @foreach (var item in items)
-        {
-            var selected = Mode == item.Mode;
-            <button type="button"
-                    class="group min-w-0 rounded-sm border px-3 py-1.5 text-left transition-colors focus-visible:z-10 @(selected ? "border-accent bg-surface-raised text-primary shadow-soft" : "border-transparent text-secondary hover:border-border-strong hover:bg-surface-hover")"
-                    aria-current="@(selected ? "step" : null)"
-                    title="@item.Description"
-                    @onclick="() => SelectAsync(item.Mode)">
-                <span class="block text-xs font-semibold">@item.Label</span>
-            </button>
-        }
-    </div>
-
-</nav>
+<fieldset class="flex min-w-0 items-center gap-5 py-1">
+    <legend class="sr-only">Planning lifecycle</legend>
+    @foreach (var item in items)
+    {
+        var selected = Mode == item.Mode;
+        <span class="relative">
+            <input id="@($"planning-workbench-mode-{item.Mode}")"
+                   class="peer sr-only"
+                   type="radio"
+                   name="planning-workbench-mode"
+                   value="@item.Mode"
+                   checked="@selected"
+                   @onchange="() => SelectAsync(item.Mode)" />
+            <label for="@($"planning-workbench-mode-{item.Mode}")"
+                   class="relative px-0 py-2 text-[13px] font-semibold leading-5 text-secondary transition-colors hover:text-primary peer-checked:text-primary peer-checked:after:absolute peer-checked:after:inset-x-0 peer-checked:after:bottom-0 peer-checked:after:h-0.5 peer-checked:after:bg-accent peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2"
+                   title="@item.Description">
+                <span>@item.Label</span>
+            </label>
+        </span>
+    }
+</fieldset>
 
 @code {
     [Parameter, EditorRequired] public PlanningWorkbenchMode Mode { get; set; }

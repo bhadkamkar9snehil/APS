@@ -39,6 +39,7 @@
                                  StateClass="@ScenarioStateClass"
                                  Mode="@state.Mode"
                                  IsReleased="@workbench.Plan.IsReleased"
+                                 CanStartRecovery="@state.CanStartRecovery"
                                  CanEdit="@(state.CanEditSchedule && !acting)"
                                  IsBusy="@acting"
                                  CanUndo="@CanUndo"
@@ -48,7 +49,7 @@
                                  ResourceCount="@workbench.Schedule.ResourceCount"
                                  ScheduleStartUtc="@workbench.Schedule.ScheduleStartUtc"
                                  ScheduleEndUtc="@workbench.Schedule.ScheduleEndUtc"
-                                 ActualsTimeUtc="@workbench.Plan.ReferenceTimeUtc"
+                                 PlanReferenceUtc="@workbench.Plan.ReferenceTimeUtc"
                                  Undo="UndoAsync"
                                  Redo="RedoAsync"
                                  Optimize="ReplanAsync"
@@ -440,7 +441,7 @@
         : state.ScenarioIntent == PlanningScenarioIntent.Clone
             ? $"Working scenario · {FriendlyPlanName(workbench!.Plan.VersionNumber)}"
         : FriendlyPlanName(workbench!.Plan.VersionNumber);
-    private string ScenarioStateLabel => state.ScenarioIntent switch { PlanningScenarioIntent.Recovery => "Recovery draft", PlanningScenarioIntent.Clone => "Working draft", PlanningScenarioIntent.New => "New draft", _ => workbench!.Plan.Status.ToString() };
+    private string ScenarioStateLabel => state.ScenarioIntent switch { PlanningScenarioIntent.Recovery => "Draft", PlanningScenarioIntent.Clone => "Working draft", PlanningScenarioIntent.New => "New draft", _ => workbench!.Plan.Status.ToString() };
     private string ScenarioStateClass => workbench!.Plan.Status == PlanVersionStatus.Feasible ? "bg-success-soft text-success" : workbench.Plan.IsReleased ? "bg-info-soft text-info" : "bg-warning-soft text-warning";
     private DateTime FrozenFenceEndUtc => workbench?.Plan.ReferenceTimeUtc.AddMinutes(frozenMinutes) ?? DateTime.MinValue;
 
@@ -483,7 +484,6 @@
     });
     private void SetMode(PlanningWorkbenchMode mode)
     {
-        if (mode == PlanningWorkbenchMode.Recovery && state.CanStartRecovery) { StartRecovery(); return; }
         state.SetMode(mode);
     }
     private void StartRecovery() { state.StartRecovery(); SetMessage("Recovery scenario started from the released baseline. Completed work remains fixed and future work can now be repaired.", false); }

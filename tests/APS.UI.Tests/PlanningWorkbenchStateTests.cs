@@ -64,6 +64,20 @@ public sealed class PlanningWorkbenchStateTests
     }
 
     [Fact]
+    public void Released_baseline_can_preview_recovery_mode_without_starting_a_recovery_scenario()
+    {
+        var state = new PlanningWorkbenchState();
+        state.SetReleasedPlan(true);
+
+        state.SetMode(PlanningWorkbenchMode.Recovery);
+
+        Assert.Equal(PlanningWorkbenchMode.Recovery, state.Mode);
+        Assert.Equal(PlanningScenarioIntent.Existing, state.ScenarioIntent);
+        Assert.False(state.CanEditSchedule);
+        Assert.True(state.CanStartRecovery);
+    }
+
+    [Fact]
     public void Released_plan_can_be_cloned_into_an_editable_planning_scenario()
     {
         var state = new PlanningWorkbenchState();
