@@ -240,7 +240,7 @@ public sealed class PlanningWorkbenchMarkupTests
         Assert.Contains("Scene.DependencyLines", viewport);
 
         var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
-        Assert.Contains("Binding chain unavailable", page);
+        Assert.Contains("<span>Binding chain</span><span>Unavailable</span>", page);
         Assert.DoesNotContain("ShowCriticalPath", page);
         Assert.DoesNotContain("ToggleCriticalPath", page);
     }
@@ -496,4 +496,61 @@ public sealed class PlanningWorkbenchMarkupTests
         Assert.Contains("snapped.unavailable", script);
         Assert.Contains("state.Viewport.SnapMode,\n            targetShiftBoundaries", page.Replace("\r\n", "\n"));
     }
+
+    [Fact]
+    public void Gantt_command_bar_consolidates_baseline_and_view_controls_without_duplicate_permanent_peers()
+    {
+        var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+        var toolbarStart = page.IndexOf("<header class=\"shrink-0 border-b", StringComparison.Ordinal);
+        var toolbarEnd = page.IndexOf("</header>", toolbarStart, StringComparison.Ordinal);
+        Assert.True(toolbarStart >= 0 && toolbarEnd > toolbarStart,
+            "The command bar must have a bounded composition scope.");
+        var toolbar = page[toolbarStart..toolbarEnd];
+
+        Assert.Equal(1, Count(toolbar, "Baseline · @BaselineLabel"));
+        Assert.Equal(1, Count(toolbar, ">View<"));
+        Assert.Contains("Baseline · @BaselineLabel", toolbar);
+        Assert.Equal(4, Count(toolbar, "name=\"gantt-baseline-mode\""));
+        Assert.Equal(4, Count(toolbar, "type=\"radio\""));
+        Assert.Contains("checked=\"@(!state.ShowBaseline)\"", toolbar);
+        Assert.Contains("checked=\"@(state.ShowBaseline && state.BaselineMode == GanttBaselineMode.Ghost)\"", toolbar);
+        Assert.Contains("checked=\"@(state.ShowBaseline && state.BaselineMode == GanttBaselineMode.ChangedOnly)\"", toolbar);
+        Assert.Contains("checked=\"@(state.ShowBaseline && state.BaselineMode == GanttBaselineMode.CompareSubrow)\"", toolbar);
+        Assert.Contains("@onchange=\"DisableBaselineAsync\"", toolbar);
+        Assert.Contains("@onchange=\"() => SetBaselineModeAsync(GanttBaselineMode.Ghost)\"", toolbar);
+        Assert.Contains("@onchange=\"() => SetBaselineModeAsync(GanttBaselineMode.ChangedOnly)\"", toolbar);
+        Assert.Contains("@onchange=\"() => SetBaselineModeAsync(GanttBaselineMode.CompareSubrow)\"", toolbar);
+
+        Assert.Contains(">ROW LAYOUT<", toolbar);
+        Assert.Contains("aria-label=\"Row density\"", toolbar);
+        Assert.Contains(">MOVE<", toolbar);
+        Assert.Contains("aria-label=\"Move snap\"", toolbar);
+        Assert.Contains(">SCHEDULE EVIDENCE<", toolbar);
+        Assert.Contains(">Selected chain<", toolbar);
+        Assert.Contains(">Binding chain<", toolbar);
+        Assert.Contains("<span>Binding chain</span><span>Unavailable</span>", toolbar);
+        Assert.DoesNotContain("Binding chain unavailable", toolbar);
+        Assert.Contains(">MARKERS<", toolbar);
+        foreach (var marker in new[] { "Due dates", "Wall-clock now", "Plan reference", "Frozen fence" })
+            Assert.Contains(marker, toolbar);
+
+        Assert.DoesNotContain("<ToggleButton Active=\"state.ShowBaseline\"", toolbar);
+        Assert.DoesNotContain("aria-label=\"Baseline display\"", toolbar);
+        Assert.DoesNotContain(">Markers</summary>", toolbar);
+        Assert.Equal(2, Count(toolbar, "ToggleDependenciesAsync"));
+
+        var disableHandler = page[page.IndexOf("private async Task DisableBaselineAsync", StringComparison.Ordinal)..page.IndexOf("private async Task SetBaselineModeAsync", StringComparison.Ordinal)];
+        Assert.Contains("state.SetLayerVisibility(false, state.ShowDependencies);", disableHandler);
+        Assert.Contains("SaveGanttPreferenceAsync(\"showBaseline\", state.ShowBaseline)", disableHandler);
+        Assert.DoesNotContain("ToggleBaseline", disableHandler);
+
+        var modeHandlerStart = page.IndexOf("private async Task SetBaselineModeAsync", StringComparison.Ordinal);
+        var modeHandler = page[modeHandlerStart..page.IndexOf("private async Task ToggleDependenciesAsync", modeHandlerStart, StringComparison.Ordinal)];
+        Assert.Contains("state.SetLayerVisibility(true, state.ShowDependencies);", modeHandler);
+        Assert.Contains("state.SetBaselineMode(mode);", modeHandler);
+        Assert.Contains("SaveGanttPreferenceAsync(\"showBaseline\", state.ShowBaseline)", modeHandler);
+        Assert.Contains("SaveGanttPreferenceAsync(\"baselineMode\", state.BaselineMode.ToString())", modeHandler);
+    }
+
+    private static int Count(string value, string fragment) => value.Split(fragment, StringSplitOptions.None).Length - 1;
 }

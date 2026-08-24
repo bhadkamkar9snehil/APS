@@ -108,39 +108,53 @@
                         <button type="button" class="rounded-control border border-border px-2 text-xs text-accent" @onclick="ClearFocus">Reset filters</button>
                     }
                 </div>
-                <select aria-label="Row density" value="@state.Viewport.Density" @onchange="DensityChangedAsync" class="rounded-control border border-border bg-surface-raised px-2 py-1 text-xs">
-                    @foreach (var density in Enum.GetValues<GanttDensity>()) { <option value="@density">@density</option> }
-                </select>
-                <select aria-label="Move snap" value="@state.Viewport.SnapMode" @onchange="SnapChangedAsync" class="rounded-control border border-border bg-surface-raised px-2 py-1 text-xs">
-                    @foreach (var snap in Enum.GetValues<GanttSnapMode>())
-                    {
-                        <option value="@snap" disabled="@(snap == GanttSnapMode.ShiftBoundary && !HasShiftBoundaries)">@(snap == GanttSnapMode.ShiftBoundary && !HasShiftBoundaries ? "Shift unavailable" : SnapLabel(snap))</option>
-                    }
-                </select>
-                <ToggleButton Active="state.ShowBaseline" Label="Baseline" OnClick="ToggleBaselineAsync" />
-                <select aria-label="Baseline display" value="@state.BaselineMode" @onchange="BaselineModeChangedAsync" disabled="@(!state.ShowBaseline)" class="rounded-control border border-border bg-surface-raised px-2 py-1 text-xs disabled:opacity-50">
-                    <option value="Ghost">All baseline</option>
-                    <option value="ChangedOnly">Changed only</option>
-                    <option value="CompareSubrow">Compare subrow</option>
-                </select>
-                <ToggleButton Active="state.ShowDependencies" Label="Selected chain" OnClick="ToggleDependenciesAsync" />
                 <details class="relative shrink-0">
-                    <summary class="cursor-pointer rounded-control border border-border px-2 py-1 text-xs">Markers</summary>
+                    <summary class="cursor-pointer rounded-control border border-border px-2 py-1 text-xs">Baseline · @BaselineLabel</summary>
                     <div class="absolute right-0 top-full z-50 mt-1 w-44 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
-                        <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@state.ShowDueMarkers" @onchange="ToggleDueMarkersAsync" />Due dates</label>
+                        <fieldset>
+                            <legend class="sr-only">Baseline display</legend>
+                            <label class="flex items-center gap-2 py-1 text-xs"><input type="radio" name="gantt-baseline-mode" checked="@(!state.ShowBaseline)" @onchange="DisableBaselineAsync" />Off</label>
+                            <label class="flex items-center gap-2 py-1 text-xs"><input type="radio" name="gantt-baseline-mode" checked="@(state.ShowBaseline && state.BaselineMode == GanttBaselineMode.Ghost)" @onchange="() => SetBaselineModeAsync(GanttBaselineMode.Ghost)" />All baseline</label>
+                            <label class="flex items-center gap-2 py-1 text-xs"><input type="radio" name="gantt-baseline-mode" checked="@(state.ShowBaseline && state.BaselineMode == GanttBaselineMode.ChangedOnly)" @onchange="() => SetBaselineModeAsync(GanttBaselineMode.ChangedOnly)" />Changed only</label>
+                            <label class="flex items-center gap-2 py-1 text-xs"><input type="radio" name="gantt-baseline-mode" checked="@(state.ShowBaseline && state.BaselineMode == GanttBaselineMode.CompareSubrow)" @onchange="() => SetBaselineModeAsync(GanttBaselineMode.CompareSubrow)" />Compare subrow</label>
+                        </fieldset>
+                    </div>
+                </details>
+                <details class="relative shrink-0">
+                    <summary class="cursor-pointer rounded-control border border-border px-2 py-1 text-xs">View</summary>
+                    <div class="absolute right-0 top-full z-50 mt-1 w-64 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
+                        <div class="text-[11px] font-semibold uppercase text-muted">ROW LAYOUT</div>
+                        <label class="mt-1 block text-[11px] text-secondary">Density
+                            <select aria-label="Row density" value="@state.Viewport.Density" @onchange="DensityChangedAsync" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-1 text-xs">
+                                @foreach (var density in Enum.GetValues<GanttDensity>()) { <option value="@density">@density</option> }
+                            </select>
+                        </label>
+                        <div class="mt-2 border-t border-border pt-2 text-[11px] font-semibold uppercase text-muted">MOVE</div>
+                        <label class="mt-1 block text-[11px] text-secondary">Snap
+                            <select aria-label="Move snap" value="@state.Viewport.SnapMode" @onchange="SnapChangedAsync" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-1 text-xs">
+                                @foreach (var snap in Enum.GetValues<GanttSnapMode>())
+                                {
+                                    <option value="@snap" disabled="@(snap == GanttSnapMode.ShiftBoundary && !HasShiftBoundaries)">@(snap == GanttSnapMode.ShiftBoundary && !HasShiftBoundaries ? "Shift unavailable" : SnapLabel(snap))</option>
+                                }
+                            </select>
+                        </label>
+                        <div class="mt-2 border-t border-border pt-2 text-[11px] font-semibold uppercase text-muted">SCHEDULE EVIDENCE</div>
+                        <label class="mt-1 flex items-center gap-2 text-xs"><input type="checkbox" checked="@state.ShowDependencies" @onchange="ToggleDependenciesAsync" />Selected chain</label>
+                        @if (workbench.BindingEvidence is { Count: > 0 })
+                        {
+                            <button type="button" class="mt-1 w-full rounded-control border border-border px-2 py-1 text-left text-xs" @onclick="ToggleDependenciesAsync" title="Show the solver-derived binding evidence for the selected operation">Binding chain</button>
+                        }
+                        else
+                        {
+                            <div aria-disabled="true" class="mt-1 flex items-center justify-between rounded-control border border-border px-2 py-1 text-xs text-muted opacity-60" title="Solver-derived slack and binding-cause evidence are not available in this plan read model"><span>Binding chain</span><span>Unavailable</span></div>
+                        }
+                        <div class="mt-2 border-t border-border pt-2 text-[11px] font-semibold uppercase text-muted">MARKERS</div>
+                        <label class="mt-1 flex items-center gap-2 text-xs"><input type="checkbox" checked="@state.ShowDueMarkers" @onchange="ToggleDueMarkersAsync" />Due dates</label>
                         <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@state.ShowNowMarker" @onchange="ToggleNowMarkerAsync" />Wall-clock now</label>
                         <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@state.ShowReferenceMarker" @onchange="ToggleReferenceMarkerAsync" />Plan reference</label>
                         <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@state.ShowFrozenFence" @onchange="ToggleFrozenFenceAsync" />Frozen fence</label>
                     </div>
                 </details>
-                @if (workbench.BindingEvidence is { Count: > 0 })
-                {
-                    <button type="button" class="rounded-control border border-border px-2 py-1 text-xs" @onclick="ToggleDependenciesAsync" title="Show the solver-derived binding evidence for the selected operation">Binding chain</button>
-                }
-                else
-                {
-                    <button type="button" disabled class="rounded-control border border-border px-2 py-1 text-xs text-muted opacity-60" title="Solver-derived slack and binding-cause evidence are not available in this plan read model">Binding chain unavailable</button>
-                }
                 <button type="button" class="rounded-control border px-2 py-1 text-xs @(state.CapacityPanelOpen ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="ToggleCapacityPanelAsync">@(state.CapacityPanelOpen ? "Hide load" : "Resource load")</button>
                 <button type="button" class="shrink-0 rounded-control border px-2 py-1 text-xs @(state.OperationListOpen ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => state.ToggleOperationList()">@(state.OperationListOpen ? "Hide list" : "Schedule list")</button>
                 <button type="button" class="shrink-0 rounded-control border px-2 py-1 text-xs @(state.ShortcutPanelOpen ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => state.ToggleShortcutPanel()">Shortcuts</button>
@@ -567,10 +581,25 @@
         await SaveGanttPreferenceAsync("snapMode", snap.ToString());
     }
 
-    private async Task ToggleBaselineAsync()
+    private string BaselineLabel => !state.ShowBaseline ? "Off" : state.BaselineMode switch
     {
-        state.ToggleBaseline();
+        GanttBaselineMode.ChangedOnly => "Changed",
+        GanttBaselineMode.CompareSubrow => "Compare",
+        _ => "All"
+    };
+
+    private async Task DisableBaselineAsync()
+    {
+        state.SetLayerVisibility(false, state.ShowDependencies);
         await SaveGanttPreferenceAsync("showBaseline", state.ShowBaseline);
+    }
+
+    private async Task SetBaselineModeAsync(GanttBaselineMode mode)
+    {
+        state.SetLayerVisibility(true, state.ShowDependencies);
+        state.SetBaselineMode(mode);
+        await SaveGanttPreferenceAsync("showBaseline", state.ShowBaseline);
+        await SaveGanttPreferenceAsync("baselineMode", state.BaselineMode.ToString());
     }
 
     private async Task ToggleDependenciesAsync()
@@ -583,13 +612,6 @@
     private async Task ToggleNowMarkerAsync() { state.ToggleNowMarker(); await SaveGanttPreferenceAsync("showNowMarker", state.ShowNowMarker); }
     private async Task ToggleReferenceMarkerAsync() { state.ToggleReferenceMarker(); await SaveGanttPreferenceAsync("showReferenceMarker", state.ShowReferenceMarker); }
     private async Task ToggleFrozenFenceAsync() { state.ToggleFrozenFence(); await SaveGanttPreferenceAsync("showFrozenFence", state.ShowFrozenFence); }
-
-    private async Task BaselineModeChangedAsync(ChangeEventArgs args)
-    {
-        if (!Enum.TryParse<GanttBaselineMode>(args.Value?.ToString(), out var mode)) return;
-        state.SetBaselineMode(mode);
-        await SaveGanttPreferenceAsync("baselineMode", mode.ToString());
-    }
 
     private async Task ToggleCapacityPanelAsync()
     {

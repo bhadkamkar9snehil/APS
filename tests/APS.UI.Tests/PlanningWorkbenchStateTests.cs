@@ -244,6 +244,31 @@ public sealed class PlanningWorkbenchStateTests
     }
 
     [Fact]
+    public void Explicit_baseline_layer_visibility_preserves_evidence_and_marker_state_while_modes_change()
+    {
+        var state = new PlanningWorkbenchState();
+
+        state.SetLayerVisibility(false, true);
+        state.SetBaselineMode(GanttBaselineMode.ChangedOnly);
+
+        Assert.False(state.ShowBaseline);
+        Assert.Equal(GanttBaselineMode.ChangedOnly, state.BaselineMode);
+        Assert.True(state.ShowDependencies);
+
+        state.SetLayerVisibility(true, state.ShowDependencies);
+        state.SetBaselineMode(GanttBaselineMode.CompareSubrow);
+        state.SetMarkerVisibility(false, true, false, true);
+
+        Assert.True(state.ShowBaseline);
+        Assert.Equal(GanttBaselineMode.CompareSubrow, state.BaselineMode);
+        Assert.True(state.ShowDependencies);
+        Assert.False(state.ShowDueMarkers);
+        Assert.True(state.ShowNowMarker);
+        Assert.False(state.ShowReferenceMarker);
+        Assert.True(state.ShowFrozenFence);
+    }
+
+    [Fact]
     public void Staged_proposal_survives_zoom_and_row_virtualization_with_unchanged_domain_geometry()
     {
         var state = new PlanningWorkbenchState();
