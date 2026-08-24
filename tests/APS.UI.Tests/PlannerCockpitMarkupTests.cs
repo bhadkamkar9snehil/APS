@@ -12,7 +12,7 @@ public sealed class PlannerCockpitMarkupTests
         Assert.DoesNotContain("<aside", layout);
         Assert.DoesNotContain("<footer", layout);
 
-        foreach (var label in new[] { "File", "Plan", "View", "Analyze", "Execute", "Configure", "Help" })
+        foreach (var label in new[] { "Workspaces", "Configure", "Appearance", "Help" })
             Assert.Contains($"Label=\"{label}\"", menu);
     }
 

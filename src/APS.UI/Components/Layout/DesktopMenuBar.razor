@@ -1,6 +1,5 @@
 @implements IDisposable
 @inject NavigationManager Navigation
-@inject PlannerCockpitState Cockpit
 @inject ThemeService Theme
 @inject IUpdateService Updates
 
@@ -8,44 +7,25 @@
     <button type="button" class="mr-2 grid h-7 w-7 place-items-center rounded-control hover:bg-surface-hover" aria-label="Open Planning Workbench" @onclick="OpenWorkbench">
         <img src="_content/APS.UI/app-icon.png" alt="" class="h-6 w-6 object-contain" />
     </button>
-    <DesktopMenu Label="File">
+    <DesktopMenu Label="Workspaces">
         <MenuLink Href="/" Label="Planning Workbench" />
         <MenuLink Href="/plan/versions" Label="Plans and scenarios" />
-        <MenuButton Label="New planning scenario" OnClick="() => Cockpit.RequestCommand(PlannerCockpitCommand.CreateScenario)" />
-    </DesktopMenu>
-    <DesktopMenu Label="Plan">
-        <MenuButton Label="Optimize schedule" Shortcut="Ctrl+O" OnClick="() => Cockpit.RequestCommand(PlannerCockpitCommand.Optimize)" />
-        <MenuButton Label="Validate plan" OnClick="() => Cockpit.RequestCommand(PlannerCockpitCommand.Validate)" />
-        <MenuButton Label="Release plan" OnClick="() => Cockpit.RequestCommand(PlannerCockpitCommand.Release)" />
         <MenuLink Href="/plan/campaigns" Label="Campaign register" />
+        <MenuLink Href="/plan/demand" Label="Demand and supply" />
+        <MenuLink Href="/plan/inventory" Label="Inventory" />
+        <MenuLink Href="/plan/material-flow" Label="Material flow" />
+        <MenuLink Href="/operate/work-orders" Label="Work order register" />
+        <MenuLink Href="/plan/steelmaking" Label="Steelmaking and casting" />
+        <MenuLink Href="/plan/rolling" Label="Rolling and finishing" />
+        <MenuLink Href="/operate/traceability" Label="Traceability" />
     </DesktopMenu>
-    <DesktopMenu Label="View">
-        <MenuButton Label="Demand queue" OnClick="Cockpit.ToggleQueue" />
-        <MenuButton Label="Planner inspector" OnClick="Cockpit.ToggleInspector" />
-        <MenuButton Label="Analysis dock" OnClick="Cockpit.ToggleAnalysis" />
-        <div class="my-1 border-t border-border"></div>
+    <DesktopMenu Label="Configure">
+        <MenuLink Href="/plan/master-data" Label="Master data" />
+    </DesktopMenu>
+    <DesktopMenu Label="Appearance">
         <MenuButton Label="System appearance" OnClick="() => Theme.SetModeAsync(ThemeMode.System)" />
         <MenuButton Label="Light appearance" OnClick="() => Theme.SetModeAsync(ThemeMode.Light)" />
         <MenuButton Label="Dark appearance" OnClick="() => Theme.SetModeAsync(ThemeMode.Dark)" />
-    </DesktopMenu>
-    <DesktopMenu Label="Analyze">
-        <MenuButton Label="Control overview" OnClick="() => Cockpit.OpenAnalysis(PlannerAnalysisView.ControlOverview)" />
-        <MenuButton Label="Exceptions and capacity" OnClick="() => Cockpit.OpenAnalysis(PlannerAnalysisView.Exceptions)" />
-        <MenuButton Label="Scenario comparison" OnClick="() => Cockpit.OpenAnalysis(PlannerAnalysisView.ScenarioComparison)" />
-        <MenuButton Label="Traceability" OnClick="() => Cockpit.OpenAnalysis(PlannerAnalysisView.Traceability)" />
-    </DesktopMenu>
-    <DesktopMenu Label="Execute">
-        <MenuButton Label="Execution monitor" OnClick="() => Cockpit.OpenAnalysis(PlannerAnalysisView.Execution)" />
-        <MenuButton Label="Create recovery scenario" OnClick="() => Cockpit.RequestCommand(PlannerCockpitCommand.CreateRecoveryScenario)" />
-        <MenuLink Href="/operate/work-orders" Label="Work order register" />
-    </DesktopMenu>
-    <DesktopMenu Label="Configure">
-        <MenuLink Href="/plan/demand" Label="Demand and supply" />
-        <MenuLink Href="/plan/inventory" Label="Inventory" />
-        <MenuLink Href="/plan/master-data" Label="Master data" />
-        <MenuLink Href="/plan/steelmaking" Label="Steelmaking and casting" />
-        <MenuLink Href="/plan/rolling" Label="Rolling and finishing" />
-        <MenuLink Href="/plan/material-flow" Label="Material flow" />
     </DesktopMenu>
     <DesktopMenu Label="Help">
         <div class="px-3 py-2 text-xs text-secondary">APS Planner v@(AppVersion)</div>
@@ -66,7 +46,6 @@
             <div class="px-3 py-2 text-xs text-danger">Update check failed@(Updates.Status.FailureCode is null ? "" : $" ({Updates.Status.FailureCode})")</div>
         }
     </DesktopMenu>
-    <div class="ml-auto px-2 text-[11px] font-semibold tracking-wide text-muted">APS</div>
 </header>
 
 @code {

@@ -3,12 +3,12 @@ namespace APS.UI.Tests;
 public sealed class LayoutThemeContractTests
 {
     [Fact]
-    public void Main_layout_uses_icon_and_single_APS_brand()
+    public void Main_layout_uses_icon_without_right_aligned_brand_text()
     {
         var razor = File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/DesktopMenuBar.razor"));
 
         Assert.Contains("app-icon.png", razor);
-        Assert.Contains(">APS<", razor);
+        Assert.DoesNotContain("ml-auto px-2", razor);
         Assert.DoesNotContain("Steel planning system", razor);
         Assert.DoesNotContain(">A</div>", razor);
     }
@@ -67,7 +67,7 @@ public sealed class LayoutThemeContractTests
         Assert.Contains("@page \"/\"", workbench);
         Assert.Contains("@page \"/control-tower\"", controlTower);
         Assert.Contains("Href=\"/\" Label=\"Planning Workbench\"", menu);
-        Assert.Contains("Label=\"Control overview\"", menu);
+        Assert.Contains("Label=\"Workspaces\"", menu);
     }
 
     [Fact]
