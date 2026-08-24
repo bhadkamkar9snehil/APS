@@ -326,6 +326,92 @@ public sealed class PlanningWorkbenchMarkupTests
     }
 
     [Fact]
+    public void Gantt_command_bar_groups_fixed_window_choices_in_a_native_menu()
+    {
+        var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+
+        Assert.Contains(">Earlier<", page);
+        Assert.Contains(">Window @ZoomLabel(state.Zoom)", page);
+        var windowMenuStart = page.IndexOf(">Window ", StringComparison.Ordinal);
+        var fitMenuStart = page.IndexOf(">Fit<", windowMenuStart, StringComparison.Ordinal);
+        Assert.True(windowMenuStart >= 0 && fitMenuStart > windowMenuStart,
+            "The Window menu must precede the separate Fit menu.");
+        var windowMenu = page[windowMenuStart..fitMenuStart];
+
+        foreach (var (zoom, duration) in new[]
+                 {
+                     ("PlanningWorkbenchZoom.Detail", "30 m"), ("PlanningWorkbenchZoom.Shift", "8 h"),
+                     ("PlanningWorkbenchZoom.Day", "1 d"), ("PlanningWorkbenchZoom.ThreeDays", "3 d"),
+                     ("PlanningWorkbenchZoom.Week", "7 d"), ("PlanningWorkbenchZoom.TwoWeeks", "2 w"),
+                     ("PlanningWorkbenchZoom.Month", "1 mo")
+                 })
+        {
+            Assert.Contains($"SetZoomPreferenceAsync({zoom})", windowMenu);
+            Assert.Contains($">{duration}<", windowMenu);
+        }
+
+        Assert.DoesNotContain("PlanningWorkbenchZoom.Fit", windowMenu);
+        Assert.DoesNotContain(">Detail", windowMenu);
+        Assert.DoesNotContain(">Shift", windowMenu);
+        Assert.DoesNotContain(">ThreeDays", windowMenu);
+        Assert.DoesNotContain(">TwoWeeks", windowMenu);
+        Assert.DoesNotContain("Enum.GetValues<PlanningWorkbenchZoom>()", page);
+        Assert.Contains("state.Zoom == PlanningWorkbenchZoom.Detail", page);
+        Assert.Contains("state.Zoom == PlanningWorkbenchZoom.Month", page);
+        Assert.DoesNotContain("▼", page[windowMenuStart..]);
+    }
+
+    [Fact]
+    public void Gantt_fit_menu_preserves_existing_targets_and_advanced_range_reset()
+    {
+        var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+        var fitMenuStart = page.IndexOf(">Fit<", StringComparison.Ordinal);
+        var fitMenuEnd = page.IndexOf("</details>", fitMenuStart, StringComparison.Ordinal);
+        Assert.True(fitMenuStart >= 0 && fitMenuEnd > fitMenuStart,
+            "Fit must remain one native details menu.");
+        var fitMenu = page[fitMenuStart..fitMenuEnd];
+
+        Assert.Contains(">Fit<", fitMenu);
+        Assert.Contains("@onclick=\"FitAll\"", fitMenu);
+        Assert.Contains("@onclick=\"FitVisibleResources\"", fitMenu);
+        Assert.Contains("disabled=\"@(state.SelectedPlanningKeys.Count == 0)\"", fitMenu);
+        Assert.Contains("@onclick=\"FitSelection\"", fitMenu);
+        Assert.Contains("disabled=\"@(SelectedDetail?.CampaignNumber is null)\"", fitMenu);
+        Assert.Contains("@onclick=\"FitCampaign\"", fitMenu);
+        Assert.Contains("disabled=\"@(SelectedDetail?.ProductionOrderNumbers.Count == 0)\"", fitMenu);
+        Assert.Contains("@onclick=\"FitDemandChain\"", fitMenu);
+        Assert.Contains(">Advanced range<", fitMenu);
+        Assert.Contains(">Start<", fitMenu);
+        Assert.Contains(">End<", fitMenu);
+        Assert.Contains("type=\"datetime-local\"", fitMenu);
+        Assert.Contains("@onclick=\"FitExplicitRange\"", fitMenu);
+        Assert.Contains("state.Zoom == PlanningWorkbenchZoom.Fit", fitMenu);
+        Assert.Contains(">Previous window<", fitMenu);
+        Assert.Contains("@onclick=\"() => SetZoomPreferenceAsync(PlanningWorkbenchZoom.Fit)\"", fitMenu);
+        Assert.DoesNotContain("▼", fitMenu);
+
+        var preferenceMethodStart = page.IndexOf("private async Task SetZoomPreferenceAsync", StringComparison.Ordinal);
+        var preferenceMethodEnd = page.IndexOf("private async Task DensityChangedAsync", preferenceMethodStart, StringComparison.Ordinal);
+        Assert.True(preferenceMethodStart >= 0 && preferenceMethodEnd > preferenceMethodStart,
+            "Window selections must use the persisted zoom preference path.");
+        var preferenceMethod = page[preferenceMethodStart..preferenceMethodEnd];
+        Assert.Contains("state.SetZoom(zoom);", preferenceMethod);
+        Assert.Contains("SaveGanttPreferenceAsync(\"zoom\", state.Zoom.ToString())", preferenceMethod);
+    }
+
+    [Fact]
+    public void Gantt_search_is_a_permanent_flexible_command_bar_control()
+    {
+        var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+
+        Assert.Contains("min-w-[280px]", page);
+        Assert.Contains("max-w-[500px]", page);
+        Assert.Contains("placeholder=\"Find order, campaign, grade or resource\"", page);
+        Assert.Contains(">Reset filters<", page);
+        Assert.Contains("@onclick=\"ClearFocus\"", page);
+    }
+
+    [Fact]
     public void Gantt_is_a_reusable_synchronized_control_not_page_local_markup()
     {
         var root = "src/APS.UI/Components/PlanningWorkbench/Gantt";

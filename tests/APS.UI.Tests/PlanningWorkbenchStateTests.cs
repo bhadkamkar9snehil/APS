@@ -125,6 +125,27 @@ public sealed class PlanningWorkbenchStateTests
     }
 
     [Fact]
+    public void Fixed_zoom_selection_and_second_fit_restore_the_previous_window()
+    {
+        var state = new PlanningWorkbenchState();
+        var start = new DateTime(2026, 8, 21, 0, 0, 0, DateTimeKind.Utc);
+        state.SetPlanWindow(start, start.AddDays(60));
+
+        state.SetZoom(PlanningWorkbenchZoom.ThreeDays);
+        var originalStart = state.VisibleStartUtc;
+        var originalEnd = state.VisibleEndUtc;
+
+        state.SetZoom(PlanningWorkbenchZoom.Fit);
+        Assert.Equal(PlanningWorkbenchZoom.Fit, state.Zoom);
+
+        state.SetZoom(PlanningWorkbenchZoom.Fit);
+
+        Assert.Equal(PlanningWorkbenchZoom.ThreeDays, state.Zoom);
+        Assert.Equal(originalStart, state.VisibleStartUtc);
+        Assert.Equal(originalEnd, state.VisibleEndUtc);
+    }
+
+    [Fact]
     public void Capacity_focus_owns_resource_time_context_and_clear_focus_removes_it()
     {
         var state = new PlanningWorkbenchState();

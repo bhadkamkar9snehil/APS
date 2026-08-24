@@ -167,6 +167,7 @@ public sealed class GanttViewportState
         var beforeAnchor = TimeSpan.FromTicks((long)Math.Round(duration.Ticks * ratio));
         SetVisibleRange(anchor - beforeAnchor, anchor - beforeAnchor + duration);
         Zoom = zoom;
+        fitRestore = null;
     }
 
     public void Fit(DateTime contentStartUtc, DateTime contentEndUtc)

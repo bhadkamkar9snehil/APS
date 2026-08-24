@@ -65,13 +65,20 @@
         <header class="shrink-0 border-b border-border bg-surface px-4 py-2 shadow-soft">
             <div class="flex items-center gap-2 overflow-x-auto pb-0.5">
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="() => state.Pan(-0.75)">Earlier</button>
-                @foreach (var zoom in Enum.GetValues<PlanningWorkbenchZoom>())
-                {
-                    <button class="rounded-control border px-2 py-1 text-xs @(state.Zoom == zoom ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => SetZoomPreferenceAsync(zoom)">@ZoomLabel(zoom)</button>
-                }
-                <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="() => state.Pan(0.75)">Later</button>
                 <details class="relative shrink-0">
-                    <summary class="cursor-pointer rounded-control border border-border px-2 py-1 text-xs">Fit range</summary>
+                    <summary class="cursor-pointer rounded-control border border-border px-2 py-1 text-xs">Window @ZoomLabel(state.Zoom)</summary>
+                    <div class="absolute left-0 top-full z-50 mt-1 w-40 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
+                        <button class="w-full rounded-control border px-2 py-1 text-left text-xs @(state.Zoom == PlanningWorkbenchZoom.Detail ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => SetZoomPreferenceAsync(PlanningWorkbenchZoom.Detail)">30 m</button>
+                        <button class="mt-1 w-full rounded-control border px-2 py-1 text-left text-xs @(state.Zoom == PlanningWorkbenchZoom.Shift ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => SetZoomPreferenceAsync(PlanningWorkbenchZoom.Shift)">8 h</button>
+                        <button class="mt-1 w-full rounded-control border px-2 py-1 text-left text-xs @(state.Zoom == PlanningWorkbenchZoom.Day ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => SetZoomPreferenceAsync(PlanningWorkbenchZoom.Day)">1 d</button>
+                        <button class="mt-1 w-full rounded-control border px-2 py-1 text-left text-xs @(state.Zoom == PlanningWorkbenchZoom.ThreeDays ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => SetZoomPreferenceAsync(PlanningWorkbenchZoom.ThreeDays)">3 d</button>
+                        <button class="mt-1 w-full rounded-control border px-2 py-1 text-left text-xs @(state.Zoom == PlanningWorkbenchZoom.Week ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => SetZoomPreferenceAsync(PlanningWorkbenchZoom.Week)">7 d</button>
+                        <button class="mt-1 w-full rounded-control border px-2 py-1 text-left text-xs @(state.Zoom == PlanningWorkbenchZoom.TwoWeeks ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => SetZoomPreferenceAsync(PlanningWorkbenchZoom.TwoWeeks)">2 w</button>
+                        <button class="mt-1 w-full rounded-control border px-2 py-1 text-left text-xs @(state.Zoom == PlanningWorkbenchZoom.Month ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => SetZoomPreferenceAsync(PlanningWorkbenchZoom.Month)">1 mo</button>
+                    </div>
+                </details>
+                <details class="relative shrink-0">
+                    <summary class="cursor-pointer rounded-control border border-border px-2 py-1 text-xs">Fit</summary>
                     <div class="absolute left-0 top-full z-50 mt-1 w-64 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
                         <div class="grid grid-cols-2 gap-1">
                             <button class="rounded-control border border-border px-2 py-1 text-left text-xs" @onclick="FitAll">All schedule</button>
@@ -80,16 +87,21 @@
                             <button class="rounded-control border border-border px-2 py-1 text-left text-xs disabled:opacity-50" disabled="@(SelectedDetail?.CampaignNumber is null)" @onclick="FitCampaign">Campaign</button>
                             <button class="rounded-control border border-border px-2 py-1 text-left text-xs disabled:opacity-50" disabled="@(SelectedDetail?.ProductionOrderNumbers.Count == 0)" @onclick="FitDemandChain">Demand chain</button>
                         </div>
+                        @if (state.Zoom == PlanningWorkbenchZoom.Fit)
+                        {
+                            <button class="mt-1 w-full rounded-control border border-border px-2 py-1 text-left text-xs" @onclick="() => SetZoomPreferenceAsync(PlanningWorkbenchZoom.Fit)">Previous window</button>
+                        }
                         <div class="mt-2 border-t border-border pt-2">
-                            <label class="block text-[9px] uppercase text-muted">Explicit UTC range</label>
-                            <input type="datetime-local" value="@fitStartText" @onchange="args => fitStartText = args.Value?.ToString() ?? fitStartText" class="mt-1 w-full rounded-control border border-border px-2 py-1 text-[10px]" />
-                            <input type="datetime-local" value="@fitEndText" @onchange="args => fitEndText = args.Value?.ToString() ?? fitEndText" class="mt-1 w-full rounded-control border border-border px-2 py-1 text-[10px]" />
+                            <div class="text-[11px] font-semibold uppercase text-muted">Advanced range</div>
+                            <label class="mt-1 block text-[11px] text-secondary">Start<input type="datetime-local" value="@fitStartText" @onchange="args => fitStartText = args.Value?.ToString() ?? fitStartText" class="mt-1 w-full rounded-control border border-border px-2 py-1 text-xs" /></label>
+                            <label class="mt-1 block text-[11px] text-secondary">End<input type="datetime-local" value="@fitEndText" @onchange="args => fitEndText = args.Value?.ToString() ?? fitEndText" class="mt-1 w-full rounded-control border border-border px-2 py-1 text-xs" /></label>
                             <button class="mt-1 w-full rounded-control bg-accent px-2 py-1 text-xs text-accent-foreground" @onclick="FitExplicitRange">Apply range</button>
                         </div>
                     </div>
                 </details>
+                <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="() => state.Pan(0.75)">Later</button>
                 <span class="mx-1 h-5 w-px bg-border"></span>
-                <div class="flex min-w-52 flex-1 gap-1 md:max-w-80">
+                <div class="flex min-w-[280px] flex-1 max-w-[500px] gap-1">
                     <input value="@state.SearchText" @oninput="SearchChanged" class="min-w-0 flex-1 rounded-control border border-border bg-surface-raised px-3 py-1.5 text-xs" placeholder="Find order, campaign, grade or resource" />
                     @if (HasFocus)
                     {
