@@ -63,7 +63,8 @@
         </div>
 
         <header class="shrink-0 border-b border-border bg-surface px-4 py-2 shadow-soft">
-            <div class="flex items-center gap-2 overflow-x-auto pb-0.5">
+            <div class="flex items-center gap-2 whitespace-nowrap">
+                <div class="flex shrink-0 items-center gap-1">
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="() => state.Pan(-0.75)">Earlier</button>
                 <details class="relative shrink-0">
                     <summary class="cursor-pointer rounded-control border border-border px-2 py-1 text-xs">Window @ZoomLabel(state.Zoom)</summary>
@@ -100,6 +101,7 @@
                     </div>
                 </details>
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="() => state.Pan(0.75)">Later</button>
+                </div>
                 <span class="mx-1 h-5 w-px bg-border"></span>
                 <div class="flex min-w-[280px] flex-1 max-w-[500px] gap-1">
                     <input value="@state.SearchText" @oninput="SearchChanged" class="min-w-0 flex-1 rounded-control border border-border bg-surface-raised px-3 py-1.5 text-xs" placeholder="Find order, campaign, grade or resource" />
@@ -108,6 +110,8 @@
                         <button type="button" class="rounded-control border border-border px-2 text-xs text-accent" @onclick="ClearFocus">Reset filters</button>
                     }
                 </div>
+                <span class="mx-1 h-5 w-px bg-border"></span>
+                <div class="flex shrink-0 items-center gap-1">
                 <details class="relative shrink-0">
                     <summary class="cursor-pointer rounded-control border border-border px-2 py-1 text-xs">Baseline · @BaselineLabel</summary>
                     <div class="absolute right-0 top-full z-50 mt-1 w-44 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
@@ -155,12 +159,23 @@
                         <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@state.ShowFrozenFence" @onchange="ToggleFrozenFenceAsync" />Frozen fence</label>
                     </div>
                 </details>
-                <button type="button" class="rounded-control border px-2 py-1 text-xs @(state.CapacityPanelOpen ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="ToggleCapacityPanelAsync">@(state.CapacityPanelOpen ? "Hide load" : "Resource load")</button>
-                <button type="button" class="shrink-0 rounded-control border px-2 py-1 text-xs @(state.OperationListOpen ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => state.ToggleOperationList()">@(state.OperationListOpen ? "Hide list" : "Schedule list")</button>
-                <button type="button" class="shrink-0 rounded-control border px-2 py-1 text-xs @(state.ShortcutPanelOpen ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => state.ToggleShortcutPanel()">Shortcuts</button>
-                <button type="button" class="shrink-0 rounded-control border border-border px-2 py-1 text-xs" @onclick="async () => await ToggleFullscreenAsync()">@(isFullscreen ? "Exit full screen" : "Full screen")</button>
-                <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="Cockpit.ToggleQueue">@(Cockpit.QueueOpen ? "Hide queue" : "Demand queue")</button>
-                <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="Cockpit.ToggleInspector">@(Cockpit.InspectorOpen ? "Hide inspector" : "Inspector")</button>
+                <details class="relative shrink-0">
+                    <summary class="cursor-pointer rounded-control border px-2 py-1 text-xs @(state.CapacityPanelOpen || state.OperationListOpen || Cockpit.QueueOpen || Cockpit.InspectorOpen ? "border-accent bg-accent-soft text-accent" : "border-border")">Panels</summary>
+                    <div class="absolute right-0 top-full z-50 mt-1 w-48 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
+                        <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@state.CapacityPanelOpen" @onchange="ToggleCapacityPanelAsync" />Resource load</label>
+                        <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@state.OperationListOpen" @onchange="() => state.ToggleOperationList()" />Schedule list</label>
+                        <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@Cockpit.QueueOpen" @onchange="Cockpit.ToggleQueue" />Demand queue</label>
+                        <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@Cockpit.InspectorOpen" @onchange="Cockpit.ToggleInspector" />Inspector</label>
+                    </div>
+                </details>
+                <details class="relative shrink-0">
+                    <summary aria-label="More workbench commands" title="More workbench commands" class="cursor-pointer rounded-control border border-border px-2 py-1 text-xs">•••</summary>
+                    <div class="absolute right-0 top-full z-50 mt-1 w-44 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
+                        <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@state.ShortcutPanelOpen" @onchange="() => state.ToggleShortcutPanel()" />Shortcuts</label>
+                        <button type="button" class="mt-1 w-full rounded-control border border-border px-2 py-1 text-left text-xs" @onclick="async () => await ToggleFullscreenAsync()">@(isFullscreen ? "Exit full screen" : "Full screen")</button>
+                    </div>
+                </details>
+                </div>
             </div>
         </header>
 

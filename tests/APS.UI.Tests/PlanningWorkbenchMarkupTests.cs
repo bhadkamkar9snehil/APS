@@ -305,15 +305,63 @@ public sealed class PlanningWorkbenchMarkupTests
     }
 
     [Fact]
-    public void Workbench_has_compact_fullscreen_chrome_and_a_synchronized_schedule_table()
+    public void Workbench_has_one_non_scrolling_command_row_that_groups_auxiliary_panels()
     {
         var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
         var gantt = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/WorkbenchGantt.razor"));
         var list = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttOperationList.razor"));
         var script = File.ReadAllText(Repo.File("src/APS.UI/wwwroot/planning-workbench.js"));
 
-        Assert.Contains("overflow-x-auto", page);
-        Assert.DoesNotContain("flex flex-wrap items-center gap-2", page);
+        var commandBarStart = page.IndexOf("<header class=\"shrink-0 border-b", StringComparison.Ordinal);
+        var commandBarEnd = page.IndexOf("</header>", commandBarStart, StringComparison.Ordinal);
+        Assert.True(commandBarStart >= 0 && commandBarEnd > commandBarStart,
+            "The workbench must retain a bounded command-bar header.");
+        var commandBar = page[commandBarStart..commandBarEnd];
+
+        Assert.Contains("flex items-center gap-2 whitespace-nowrap", commandBar);
+        Assert.DoesNotContain("overflow-x-auto", commandBar);
+        Assert.DoesNotContain("flex-wrap", commandBar);
+        Assert.Contains("min-w-[280px]", commandBar);
+        Assert.Contains("max-w-[500px]", commandBar);
+        Assert.Contains("min-w-0 flex-1", commandBar);
+        Assert.Contains(">Earlier<", commandBar);
+        Assert.Contains(">Window @ZoomLabel(state.Zoom)<", commandBar);
+        Assert.Contains(">Fit<", commandBar);
+        Assert.Contains(">Later<", commandBar);
+
+        foreach (var trigger in new[] { ">Baseline · @BaselineLabel<", ">View<", ">Panels", ">•••<" })
+            Assert.Contains(trigger, commandBar);
+
+        var panelsStart = commandBar.IndexOf(">Panels", StringComparison.Ordinal);
+        var panelsEnd = commandBar.IndexOf("</details>", panelsStart, StringComparison.Ordinal);
+        Assert.True(panelsStart >= 0 && panelsEnd > panelsStart,
+            "Panels must be one native details popover.");
+        var panels = commandBar[panelsStart..panelsEnd];
+        Assert.Contains("state.CapacityPanelOpen || state.OperationListOpen || Cockpit.QueueOpen || Cockpit.InspectorOpen", commandBar);
+        Assert.Contains("checked=\"@state.CapacityPanelOpen\"", panels);
+        Assert.Contains("@onchange=\"ToggleCapacityPanelAsync\"", panels);
+        Assert.Contains("checked=\"@state.OperationListOpen\"", panels);
+        Assert.Contains("@onchange=\"() => state.ToggleOperationList()\"", panels);
+        Assert.Contains("checked=\"@Cockpit.QueueOpen\"", panels);
+        Assert.Contains("@onchange=\"Cockpit.ToggleQueue\"", panels);
+        Assert.Contains("checked=\"@Cockpit.InspectorOpen\"", panels);
+        Assert.Contains("@onchange=\"Cockpit.ToggleInspector\"", panels);
+
+        var moreStart = commandBar.IndexOf("aria-label=\"More workbench commands\"", StringComparison.Ordinal);
+        var moreEnd = commandBar.IndexOf("</details>", moreStart, StringComparison.Ordinal);
+        Assert.True(moreStart >= 0 && moreEnd > moreStart,
+            "More workbench commands must be one native details popover.");
+        var more = commandBar[moreStart..moreEnd];
+        Assert.Contains("title=\"More workbench commands\"", more);
+        Assert.Contains("•••", more);
+        Assert.Contains("checked=\"@state.ShortcutPanelOpen\"", more);
+        Assert.Contains("@onchange=\"() => state.ToggleShortcutPanel()\"", more);
+        Assert.Contains("@onclick=\"async () => await ToggleFullscreenAsync()\"", more);
+        Assert.Contains("@(isFullscreen ? \"Exit full screen\" : \"Full screen\")", more);
+
+        foreach (var removedPeer in new[] { "Hide load", "Hide list", "Hide queue", "Hide inspector" })
+            Assert.DoesNotContain(removedPeer, commandBar);
+
         Assert.Contains("ToggleFullscreenAsync", page);
         Assert.Contains("FullscreenChanged", page);
         Assert.Contains("toggleFullscreen", script);
