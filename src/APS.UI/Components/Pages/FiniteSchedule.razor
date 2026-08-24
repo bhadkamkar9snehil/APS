@@ -445,7 +445,7 @@
     private string ScenarioStateClass => workbench!.Plan.Status == PlanVersionStatus.Feasible ? "bg-success-soft text-success" : workbench.Plan.IsReleased ? "bg-info-soft text-info" : "bg-warning-soft text-warning";
     private DateTime FrozenFenceEndUtc => workbench?.Plan.ReferenceTimeUtc.AddMinutes(frozenMinutes) ?? DateTime.MinValue;
 
-    protected override async Task OnInitializedAsync() { WorkspaceState.Changed += OnWorkspaceChanged; state.Changed += OnStateChanged; Cockpit.Changed += OnStateChanged; Cockpit.CommandRequested += OnCockpitCommandRequested; await LoadAsync(); }
+    protected override async Task OnInitializedAsync() { WorkspaceState.Changed += OnWorkspaceChanged; state.Changed += OnStateChanged; Cockpit.Changed += OnStateChanged; await LoadAsync(); }
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (workbench is not null && !dragInitialized)
@@ -471,17 +471,6 @@
 
     private void OnWorkspaceChanged() { if (workbench is not null && WorkspaceState.CurrentPlanVersionId != workbench.Plan.PlanVersionId) _ = InvokeAsync(() => LoadAsync(WorkspaceState.CurrentPlanVersionId, WorkspaceState.BaselinePlanVersionId)); }
     private void OnStateChanged() => _ = InvokeAsync(StateHasChanged);
-    private void OnCockpitCommandRequested(PlannerCockpitCommand command) => _ = InvokeAsync(async () =>
-    {
-        switch (command)
-        {
-            case PlannerCockpitCommand.Optimize: await ReplanAsync(); break;
-            case PlannerCockpitCommand.Validate: ValidateScenario(); break;
-            case PlannerCockpitCommand.Release: await ReleaseAsync(); break;
-            case PlannerCockpitCommand.CreateRecoveryScenario: StartRecovery(); break;
-            case PlannerCockpitCommand.CreateScenario: StartPlanningScenario(); break;
-        }
-    });
     private void SetMode(PlanningWorkbenchMode mode)
     {
         state.SetMode(mode);
@@ -937,7 +926,6 @@
         WorkspaceState.Changed -= OnWorkspaceChanged;
         state.Changed -= OnStateChanged;
         Cockpit.Changed -= OnStateChanged;
-        Cockpit.CommandRequested -= OnCockpitCommandRequested;
         try { await JS.InvokeVoidAsync("apsPlanningWorkbench.dispose", workbenchRoot); }
         catch (JSDisconnectedException) { }
         catch (InvalidOperationException) { }

@@ -8,11 +8,6 @@ public enum PlannerAnalysisView
     ScenarioComparison, Execution, Traceability
 }
 
-public enum PlannerCockpitCommand
-{
-    Optimize, Validate, Release, CreateScenario, CreateRecoveryScenario
-}
-
 public sealed class PlannerCockpitState
 {
     public PlannerCockpitDrawer OpenDrawer { get; private set; }
@@ -22,7 +17,6 @@ public sealed class PlannerCockpitState
     public bool InspectorOpen => OpenDrawer == PlannerCockpitDrawer.Inspector;
 
     public event Action? Changed;
-    public event Action<PlannerCockpitCommand>? CommandRequested;
 
     public void ToggleQueue() => SetDrawer(QueueOpen ? PlannerCockpitDrawer.None : PlannerCockpitDrawer.Queue);
     public void ToggleInspector() => SetDrawer(InspectorOpen ? PlannerCockpitDrawer.None : PlannerCockpitDrawer.Inspector);
@@ -41,8 +35,6 @@ public sealed class PlannerCockpitState
         AnalysisDockOpen = !AnalysisDockOpen;
         NotifyChanged();
     }
-
-    public void RequestCommand(PlannerCockpitCommand command) => CommandRequested?.Invoke(command);
 
     private void SetDrawer(PlannerCockpitDrawer drawer)
     {

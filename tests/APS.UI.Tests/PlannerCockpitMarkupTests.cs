@@ -30,4 +30,20 @@ public sealed class PlannerCockpitMarkupTests
         Assert.DoesNotContain("BodyGridClass", page);
         Assert.DoesNotContain("grid-cols-[16rem_minmax(0,1fr)_20rem]", page);
     }
+
+    [Fact]
+    public void Cockpit_keeps_drawer_and_analysis_ownership_without_a_command_bridge()
+    {
+        var state = File.ReadAllText(Repo.File("src/APS.UI/State/PlannerCockpitState.cs"));
+        var page = File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/FiniteSchedule.razor"));
+
+        Assert.Contains("OpenDrawer", state);
+        Assert.Contains("AnalysisDockOpen", state);
+        Assert.Contains("AnalysisView", state);
+        Assert.DoesNotContain("PlannerCockpitCommand", state);
+        Assert.DoesNotContain("CommandRequested", state);
+        Assert.DoesNotContain("RequestCommand", state);
+        Assert.DoesNotContain("CommandRequested", page);
+        Assert.DoesNotContain("OnCockpitCommandRequested", page);
+    }
 }
