@@ -14,6 +14,17 @@ public sealed class PlanningWorkbenchMarkupTests
     }
 
     [Fact]
+    public void Lifecycle_rail_groups_modes_as_a_control_deck_and_separates_scenario_actions()
+    {
+        var rail = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/WorkbenchLifecycleRail.razor"));
+
+        Assert.Contains("bg-surface-inset", rail);
+        Assert.Contains("shadow-inner", rail);
+        Assert.Contains("aria-current", rail);
+        Assert.Contains("border-l border-border", rail);
+    }
+
+    [Fact]
     public void Scenario_header_uses_planner_language_and_primary_actions()
     {
         var header = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/WorkbenchScenarioHeader.razor"));

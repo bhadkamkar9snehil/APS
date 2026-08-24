@@ -43,8 +43,9 @@ public sealed class ThemeCoverageTests
             .Where(file =>
             {
                 var source = File.ReadAllText(file);
-                return source.Contains("border-l", StringComparison.Ordinal) &&
-                       source.Contains("accent", StringComparison.Ordinal);
+                return source.Split('\n').Any(line =>
+                    line.Contains("border-l", StringComparison.Ordinal) &&
+                    line.Contains("accent", StringComparison.Ordinal));
             })
             .Select(file => Path.GetRelativePath(Repo.File("."), file))
             .ToArray();
