@@ -1,12 +1,12 @@
 @using APS.UI.State
 
-<nav class="flex min-w-0 items-stretch gap-3 py-1" aria-label="Planning lifecycle">
-    <div class="flex min-w-0 items-stretch gap-1 border border-border-strong bg-surface-inset p-1 shadow-inner">
+<nav class="flex min-w-0 items-stretch py-1" aria-label="Planning lifecycle">
+    <div class="flex min-w-0 w-full max-w-3xl items-stretch gap-1 border border-border-strong bg-surface-inset p-1 shadow-inner">
         @foreach (var item in items)
         {
             var selected = Mode == item.Mode;
             <button type="button"
-                    class="group min-w-24 rounded-sm border px-3 py-1.5 text-left transition-colors focus-visible:z-10 @(selected ? "border-accent bg-surface-raised text-primary shadow-soft" : "border-transparent text-secondary hover:border-border-strong hover:bg-surface-hover")"
+                    class="group min-w-24 flex-1 rounded-sm border px-3 py-1.5 text-left transition-colors focus-visible:z-10 @(selected ? "border-accent bg-surface-raised text-primary shadow-soft" : "border-transparent text-secondary hover:border-border-strong hover:bg-surface-hover")"
                     aria-current="@(selected ? "step" : null)"
                     title="@item.Description"
                     @onclick="() => SelectAsync(item.Mode)">
@@ -15,30 +15,11 @@
         }
     </div>
 
-    @if (IsReleased && Mode == PlanningWorkbenchMode.Execution)
-    {
-        <div class="flex shrink-0 items-center border-l border-border pl-3">
-            <button type="button" class="rounded-sm border border-accent-border bg-surface-raised px-3 py-1.5 text-xs font-semibold text-accent shadow-soft transition-colors hover:bg-surface-hover" @onclick="() => StartRecovery.InvokeAsync()">
-                Create recovery scenario
-            </button>
-        </div>
-    }
-    else if (IsReleased && Mode is PlanningWorkbenchMode.Plan or PlanningWorkbenchMode.Campaigns)
-    {
-        <div class="flex shrink-0 items-center border-l border-border pl-3">
-            <button type="button" class="rounded-sm border border-accent-border bg-surface-raised px-3 py-1.5 text-xs font-semibold text-accent shadow-soft transition-colors hover:bg-surface-hover" @onclick="() => StartPlanning.InvokeAsync()">
-                Create planning scenario
-            </button>
-        </div>
-    }
 </nav>
 
 @code {
     [Parameter, EditorRequired] public PlanningWorkbenchMode Mode { get; set; }
-    [Parameter] public bool IsReleased { get; set; }
     [Parameter] public EventCallback<PlanningWorkbenchMode> ModeChanged { get; set; }
-    [Parameter] public EventCallback StartRecovery { get; set; }
-    [Parameter] public EventCallback StartPlanning { get; set; }
 
     private readonly LifecycleItem[] items =
     [

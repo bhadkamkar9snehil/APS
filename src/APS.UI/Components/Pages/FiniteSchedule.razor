@@ -37,6 +37,7 @@
         <WorkbenchScenarioHeader ScenarioName="@ScenarioName"
                                  StateLabel="@ScenarioStateLabel"
                                  StateClass="@ScenarioStateClass"
+                                 Mode="@state.Mode"
                                  IsReleased="@workbench.Plan.IsReleased"
                                  CanEdit="@(state.CanEditSchedule && !acting)"
                                  IsBusy="@acting"
@@ -52,13 +53,12 @@
                                  Redo="RedoAsync"
                                  Optimize="ReplanAsync"
                                  Validate="ValidateScenario"
-                                 Release="ReleaseAsync" />
+                                 Release="ReleaseAsync"
+                                 StartPlanning="StartPlanningScenario"
+                                 StartRecovery="StartRecovery" />
 
         <div class="flex shrink-0 items-center border-b border-border bg-surface-raised px-3">
-            <WorkbenchLifecycleRail Mode="@state.Mode" IsReleased="@workbench.Plan.IsReleased" ModeChanged="SetMode" StartPlanning="StartPlanningScenario" StartRecovery="StartRecovery" />
-            <div class="ml-auto hidden text-right text-[10px] text-muted xl:block">
-                <span class="block">Objective profile</span><strong class="text-primary">Delivery reliability</strong>
-            </div>
+            <WorkbenchLifecycleRail Mode="@state.Mode" ModeChanged="SetMode" />
         </div>
 
         <header class="shrink-0 border-b border-border bg-surface px-4 py-2 shadow-soft">

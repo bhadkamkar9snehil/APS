@@ -6,22 +6,28 @@ public sealed class PlanningWorkbenchMarkupTests
     public void Workbench_exposes_the_complete_planner_lifecycle()
     {
         var rail = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/WorkbenchLifecycleRail.razor"));
+        var header = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/WorkbenchScenarioHeader.razor"));
 
         foreach (var label in new[] { "Plan", "Campaigns", "Execution", "Recovery" })
             Assert.Contains(label, rail);
 
-        Assert.Contains("Create recovery scenario", rail);
+        Assert.DoesNotContain("Create planning scenario", rail);
+        Assert.DoesNotContain("Create recovery scenario", rail);
+        Assert.Contains("Create planning scenario", header);
+        Assert.Contains("Create recovery scenario", header);
+        Assert.Contains("StartPlanning", header);
+        Assert.Contains("StartRecovery", header);
     }
 
     [Fact]
-    public void Lifecycle_rail_groups_modes_as_a_control_deck_and_separates_scenario_actions()
+    public void Lifecycle_rail_groups_modes_as_a_control_deck()
     {
         var rail = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/WorkbenchLifecycleRail.razor"));
 
         Assert.Contains("bg-surface-inset", rail);
         Assert.Contains("shadow-inner", rail);
         Assert.Contains("aria-current", rail);
-        Assert.Contains("border-l border-border", rail);
+        Assert.Contains("max-w-3xl", rail);
     }
 
     [Fact]
@@ -91,12 +97,32 @@ public sealed class PlanningWorkbenchMarkupTests
     }
 
     [Fact]
-    public void Released_baseline_offers_a_real_working_scenario_transition()
+    public void Released_baseline_offers_a_real_working_scenario_transition_from_the_scenario_action_area()
     {
-        var rail = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/WorkbenchLifecycleRail.razor"));
+        var header = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/WorkbenchScenarioHeader.razor"));
 
-        Assert.Contains("Create planning scenario", rail);
-        Assert.Contains("Create recovery scenario", rail);
+        Assert.Contains("Mode == PlanningWorkbenchMode.Execution", header);
+        Assert.Contains("Mode is PlanningWorkbenchMode.Plan or PlanningWorkbenchMode.Campaigns", header);
+        Assert.Contains("StartPlanning.InvokeAsync", header);
+        Assert.Contains("StartRecovery.InvokeAsync", header);
+    }
+
+    [Fact]
+    public void Persistent_workbench_chrome_uses_semantic_type_tiers_instead_of_microscopic_text()
+    {
+        var grid = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttResourceGrid.razor"));
+        var scale = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttTimeScale.razor"));
+        var gantt = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/WorkbenchGantt.razor"));
+
+        Assert.Contains("aps-text-heading", grid);
+        Assert.Contains("aps-text-caption", grid);
+        Assert.Contains("aps-text-figure", grid);
+        Assert.DoesNotContain("text-[9px]", grid);
+        Assert.DoesNotContain("text-[10px]", grid);
+        Assert.Contains("aps-text-label", scale);
+        Assert.Contains("aps-text-caption", scale);
+        Assert.DoesNotContain("text-[9px]", scale);
+        Assert.Contains("aps-text-caption", gantt);
     }
 
     [Fact]

@@ -3,11 +3,11 @@
         @foreach (var definition in VisibleDefinitions)
         {
             <div class="relative min-w-0 border-r border-border/80 last:border-r-0">
-                <button type="button" class="w-full truncate text-center text-[9px] font-semibold uppercase tracking-normal @(IsSorted(definition) ? "text-accent" : "text-muted")" aria-label="@SortTitle(definition)" title="@SortTitle(definition)" @onclick="() => SortAsync(definition)">@HeaderLabel(definition.Column)@SortGlyph(definition)</button>
+                <button type="button" class="w-full truncate text-center aps-text-label @(IsSorted(definition) ? "text-accent" : "text-muted")" aria-label="@SortTitle(definition)" title="@SortTitle(definition)" @onclick="() => SortAsync(definition)">@HeaderLabel(definition.Column)@SortGlyph(definition)</button>
                 <span class="absolute -right-1 top-0 h-full w-2 cursor-col-resize" role="separator" aria-orientation="vertical" aria-label="Resize @definition.Label column" data-gantt-column-resizer data-column-key="@definition.Key" data-column-min="@definition.MinimumWidthPx" data-column-max="@definition.MaximumWidthPx"></span>
             </div>
         }
-        <button type="button" class="absolute right-1 top-1 rounded-control border border-border bg-surface px-1.5 py-0.5 text-[9px] text-secondary hover:bg-surface-hover" aria-expanded="@State.GridColumnChooserOpen" @onclick="State.ToggleGridColumnChooser">Columns</button>
+        <button type="button" class="absolute right-1 top-1 rounded-control border border-border bg-surface px-1.5 py-0.5 aps-text-caption text-secondary hover:bg-surface-hover" aria-expanded="@State.GridColumnChooserOpen" @onclick="State.ToggleGridColumnChooser">Columns</button>
     </div>
     @if (State.GridColumnChooserOpen)
     {
@@ -21,8 +21,8 @@
                 </label>
             }
             <div class="mt-2 flex justify-between border-t border-border pt-2">
-                <button type="button" class="text-[10px] text-accent" @onclick="ResetColumnsAsync">Reset</button>
-                <button type="button" class="text-[10px] text-secondary" @onclick="() => State.SetGridColumnChooser(false)">Close</button>
+                <button type="button" class="aps-text-caption text-accent" @onclick="ResetColumnsAsync">Reset</button>
+                <button type="button" class="aps-text-caption text-secondary" @onclick="() => State.SetGridColumnChooser(false)">Close</button>
             </div>
         </div>
     }
@@ -34,8 +34,8 @@
             {
                 <button type="button" class="flex w-full items-center gap-2 border-b border-border bg-surface-inset px-2 text-left hover:bg-surface-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent" style="height:var(--aps-gantt-row-height);padding-left:@($"{8 + (int)group.Level * 14}px")" aria-expanded="@(!group.IsCollapsed)" data-gantt-grid-row data-scene-index="@group.SceneIndex" tabindex="@(group.SceneIndex == FirstMountedSceneIndex ? 0 : -1)" title="@(group.IsCollapsed ? $"Expand {group.Label}" : $"Collapse {group.Label}")" @onclick="() => GroupToggled.InvokeAsync(group)">
                     <span aria-hidden="true" class="w-3 text-center text-xs text-accent">@(group.IsCollapsed ? "▸" : "▾")</span>
-                    <span class="min-w-0 flex-1"><strong class="block truncate text-xs">@group.Code</strong><span class="block truncate text-[9px] text-muted">@group.Label</span></span>
-                    <span class="aps-text-figure text-[10px] text-secondary">@group.ResourceCount</span>
+                    <span class="min-w-0 flex-1"><strong class="block truncate aps-text-heading">@group.Code</strong><span class="block truncate aps-text-caption">@group.Label</span></span>
+                    <span class="aps-text-figure text-secondary">@group.ResourceCount</span>
                 </button>
             }
             else if (RowsByIndex.TryGetValue(sceneIndex, out var row))
@@ -45,13 +45,13 @@
                     {
                         @switch (definition.Column)
                         {
-                            case GanttGridColumn.Resource: <span class="min-w-0 pl-8 pr-2"><strong class="block truncate text-xs">@row.Lane.ResourceCode</strong><span class="block truncate text-[9px] text-muted">@HierarchyLabel(row.Lane)</span></span> break;
-                            case GanttGridColumn.State: <span class="truncate text-[9px] @OperatingStateClass(row.Lane.OperatingState)">@StateLabel(row.Lane.OperatingState)</span> break;
-                            case GanttGridColumn.Busy: <span class="aps-text-figure truncate text-[10px]">@row.Lane.OccupiedHours.ToString("0.#")h</span> break;
-                            case GanttGridColumn.Load: <span class="aps-text-figure truncate text-[10px]">@row.VisibleUtilization.ToString("P0")</span> break;
-                            case GanttGridColumn.Operations: <span class="aps-text-figure truncate text-[10px]">@row.Lane.Operations.Count</span> break;
-                            case GanttGridColumn.Next: <span class="truncate text-[9px] text-secondary">@(row.NextOperation?.StartUtc.ToString("HH:mm") ?? "—")</span> break;
-                            case GanttGridColumn.Exceptions: <span class="aps-text-figure truncate text-[10px] @(row.ExceptionCount > 0 ? "text-danger" : "text-muted")">@row.ExceptionCount</span> break;
+                            case GanttGridColumn.Resource: <span class="min-w-0 pl-8 pr-2"><strong class="block truncate aps-text-heading">@row.Lane.ResourceCode</strong><span class="block truncate aps-text-caption">@HierarchyLabel(row.Lane)</span></span> break;
+                            case GanttGridColumn.State: <span class="truncate aps-text-caption @OperatingStateClass(row.Lane.OperatingState)">@StateLabel(row.Lane.OperatingState)</span> break;
+                            case GanttGridColumn.Busy: <span class="aps-text-figure truncate">@row.Lane.OccupiedHours.ToString("0.#")h</span> break;
+                            case GanttGridColumn.Load: <span class="aps-text-figure truncate">@row.VisibleUtilization.ToString("P0")</span> break;
+                            case GanttGridColumn.Operations: <span class="aps-text-figure truncate">@row.Lane.Operations.Count</span> break;
+                            case GanttGridColumn.Next: <span class="truncate aps-text-caption text-secondary">@(row.NextOperation?.StartUtc.ToString("HH:mm") ?? "—")</span> break;
+                            case GanttGridColumn.Exceptions: <span class="aps-text-figure truncate @(row.ExceptionCount > 0 ? "text-danger" : "text-muted")">@row.ExceptionCount</span> break;
                         }
                     }
                 </button>

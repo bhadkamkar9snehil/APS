@@ -1,13 +1,13 @@
 @inject IJSRuntime JS
 
 <section class="relative flex h-full min-h-0 flex-col" aria-label="Finite-capacity schedule">
-    <div class="flex shrink-0 items-center justify-between border-b border-border bg-surface-raised px-3 py-2 text-xs">
+    <div class="flex shrink-0 items-center justify-between border-b border-border bg-surface-raised px-3 py-1.5 text-xs">
         <div class="flex flex-wrap gap-x-4 gap-y-1">
             <span><span class="text-muted">Visible </span><strong>@State.VisibleStartUtc.ToString("dd MMM HH:mm") → @State.VisibleEndUtc.ToString("dd MMM HH:mm")</strong></span>
             <span><span class="text-muted">Mode </span><strong>@ModeLabel(State.Mode)</strong></span>
             <span><strong>@Scene.VisibleOperationCount</strong> mounted · <strong>@Scene.ResourceCount</strong> of <strong>@Scene.TotalResourceCount</strong> resources shown</span>
         </div>
-        <div class="hidden flex-wrap items-center gap-3 text-[10px] text-muted xl:flex" aria-label="Process legend">
+        <div class="hidden flex-wrap items-center gap-3 aps-text-caption xl:flex" aria-label="Process legend">
             @foreach (var entry in ProcessLegend)
             {
                 <span class="flex items-center gap-1"><span class="h-2 w-2 rounded-full @entry.ColorClass"></span>@entry.Label</span>
@@ -16,7 +16,7 @@
     </div>
     @if (Scene.HiddenCriticalExceptionCount > 0)
     {
-        <div class="shrink-0 border-b border-danger bg-danger-soft px-3 py-1 text-[10px] font-semibold text-danger" role="status">
+        <div class="shrink-0 border-b border-danger bg-danger-soft px-3 py-1 aps-text-caption text-danger" role="status">
             @Scene.HiddenCriticalExceptionCount critical exception@(Scene.HiddenCriticalExceptionCount == 1 ? " is" : "s are") outside the filtered resource view.
         </div>
     }

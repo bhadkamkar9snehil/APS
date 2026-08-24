@@ -1,21 +1,38 @@
 @using APS.Domain
+@using APS.UI.State
 
 <header class="border-b border-border bg-surface px-3 py-1.5">
-    <div class="flex min-h-9 flex-wrap items-center gap-2">
-        <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                <span class="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted">Scenario</span>
-                <h1 class="max-w-72 truncate text-sm font-semibold">@ScenarioName</h1>
-                <span class="rounded px-2 py-0.5 text-xs font-semibold @StateClass">@StateLabel</span>
-                @if (IsReleased) { <span class="rounded border border-border-strong px-2 py-0.5 text-xs text-secondary">Execution baseline</span> }
-            <div class="ml-2 hidden gap-x-3 text-[10px] text-muted lg:flex">
-                <span>@OperationCount operations</span>
-                <span>@ResourceCount resources</span>
-                <span>@ScheduleStartUtc.ToString("dd MMM HH:mm") → @ScheduleEndUtc.ToString("dd MMM HH:mm")</span>
-                <span>Actuals @ActualsTimeUtc.ToString("dd MMM HH:mm") UTC</span>
-            </div>
+    <div class="flex min-h-9 items-center gap-3 overflow-x-auto">
+        <div class="flex min-w-0 items-center gap-2">
+            <span class="shrink-0 aps-text-label">Scenario</span>
+            <h1 class="max-w-72 truncate aps-text-heading">@ScenarioName</h1>
+            <span class="shrink-0 rounded-sm px-2 py-0.5 text-xs font-semibold @StateClass">@StateLabel</span>
+            @if (IsReleased) { <span class="shrink-0 rounded-sm border border-border-strong px-2 py-0.5 text-xs text-secondary">Execution baseline</span> }
         </div>
 
-        <div class="flex items-center gap-1.5" aria-label="Scenario actions">
+        <div class="hidden shrink-0 items-center gap-3 border-l border-border pl-3 lg:flex">
+            <span class="aps-text-caption"><strong class="aps-text-figure">@OperationCount</strong> operations</span>
+            <span class="aps-text-caption"><strong class="aps-text-figure">@ResourceCount</strong> resources</span>
+            <span class="aps-text-caption"><strong class="aps-text-figure">@ScheduleStartUtc.ToString("dd MMM HH:mm") → @ScheduleEndUtc.ToString("dd MMM HH:mm")</strong></span>
+            <span class="aps-text-caption">Actuals <strong class="aps-text-figure">@ActualsTimeUtc.ToString("dd MMM HH:mm") UTC</strong></span>
+        </div>
+
+        <div class="hidden shrink-0 items-center gap-2 border-l border-border pl-3 xl:flex">
+            <span class="aps-text-label">Objective</span>
+            <strong class="aps-text-label text-primary">Delivery reliability</strong>
+        </div>
+
+        <div class="ml-auto flex shrink-0 items-center gap-1.5" aria-label="Scenario actions">
+            @if (IsReleased && Mode == PlanningWorkbenchMode.Execution)
+            {
+                <span class="mx-1 h-5 w-px bg-border"></span>
+                <button class="rounded-sm border border-accent-border bg-surface-raised px-2.5 py-1 text-xs font-semibold text-accent shadow-soft hover:bg-surface-hover" @onclick="() => StartRecovery.InvokeAsync()">Create recovery scenario</button>
+            }
+            else if (IsReleased && Mode is PlanningWorkbenchMode.Plan or PlanningWorkbenchMode.Campaigns)
+            {
+                <span class="mx-1 h-5 w-px bg-border"></span>
+                <button class="rounded-sm border border-accent-border bg-surface-raised px-2.5 py-1 text-xs font-semibold text-accent shadow-soft hover:bg-surface-hover" @onclick="() => StartPlanning.InvokeAsync()">Create planning scenario</button>
+            }
             <button class="rounded-control border border-border-strong px-2.5 py-1 text-xs disabled:opacity-40" disabled="@(!CanUndo)" @onclick="Undo">Undo</button>
             <button class="rounded-control border border-border-strong px-2.5 py-1 text-xs disabled:opacity-40" disabled="@(!CanRedo)" @onclick="Redo">Redo</button>
             <button class="rounded-control border border-accent-border bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent disabled:opacity-40" disabled="@(!CanEdit || IsBusy)" @onclick="Optimize">
@@ -40,6 +57,7 @@
     [Parameter, EditorRequired] public string ScenarioName { get; set; } = "Scenario";
     [Parameter, EditorRequired] public string StateLabel { get; set; } = "Draft";
     [Parameter] public string StateClass { get; set; } = "bg-surface-inset text-secondary";
+    [Parameter] public PlanningWorkbenchMode Mode { get; set; }
     [Parameter] public bool IsReleased { get; set; }
     [Parameter] public bool CanEdit { get; set; }
     [Parameter] public bool CanUndo { get; set; }
@@ -56,4 +74,6 @@
     [Parameter] public EventCallback Optimize { get; set; }
     [Parameter] public EventCallback Validate { get; set; }
     [Parameter] public EventCallback Release { get; set; }
+    [Parameter] public EventCallback StartPlanning { get; set; }
+    [Parameter] public EventCallback StartRecovery { get; set; }
 }
