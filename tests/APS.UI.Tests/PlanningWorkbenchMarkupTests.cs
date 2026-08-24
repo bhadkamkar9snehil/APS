@@ -185,6 +185,20 @@ public sealed class PlanningWorkbenchMarkupTests
     }
 
     [Fact]
+    public void Gantt_status_context_reports_visible_operations_without_duplicate_mode_status()
+    {
+        var gantt = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/WorkbenchGantt.razor"));
+
+        Assert.Contains("@State.VisibleStartUtc.ToString(\"dd MMM HH:mm\")", gantt);
+        Assert.Contains("@State.VisibleEndUtc.ToString(\"dd MMM HH:mm\")", gantt);
+        Assert.Contains("<span><strong>@Scene.VisibleOperationCount</strong> visible operations · <strong>@Scene.ResourceCount</strong> of <strong>@Scene.TotalResourceCount</strong> resources shown</span>", gantt);
+        Assert.Contains("Process legend", gantt);
+        Assert.DoesNotContain("<span><strong>@Scene.VisibleOperationCount</strong> mounted · <strong>@Scene.ResourceCount</strong> of <strong>@Scene.TotalResourceCount</strong> resources shown</span>", gantt);
+        Assert.DoesNotContain("ModeLabel", gantt);
+        Assert.DoesNotContain("<span><span class=\"text-muted\">Mode </span>", gantt);
+    }
+
+    [Fact]
     public void Dependency_rendering_is_focused_on_the_selected_chain()
     {
         var gantt = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttTimelineViewport.razor"));

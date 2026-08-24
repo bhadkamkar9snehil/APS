@@ -4,8 +4,7 @@
     <div class="flex shrink-0 items-center justify-between border-b border-border bg-surface-raised px-3 py-1.5 text-xs">
         <div class="flex flex-wrap gap-x-4 gap-y-1">
             <span><span class="text-muted">Visible </span><strong>@State.VisibleStartUtc.ToString("dd MMM HH:mm") → @State.VisibleEndUtc.ToString("dd MMM HH:mm")</strong></span>
-            <span><span class="text-muted">Mode </span><strong>@ModeLabel(State.Mode)</strong></span>
-            <span><strong>@Scene.VisibleOperationCount</strong> mounted · <strong>@Scene.ResourceCount</strong> of <strong>@Scene.TotalResourceCount</strong> resources shown</span>
+            <span><strong>@Scene.VisibleOperationCount</strong> visible operations · <strong>@Scene.ResourceCount</strong> of <strong>@Scene.TotalResourceCount</strong> resources shown</span>
         </div>
         <div class="hidden flex-wrap items-center gap-3 text-xs text-muted xl:flex" aria-label="Process legend">
             @foreach (var entry in ProcessLegend)
@@ -197,13 +196,6 @@
         State.ToggleResourceGroup(group.Key);
         await CollapsedGroupsChanged.InvokeAsync(State.CollapsedResourceGroups.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray());
     }
-    private static string ModeLabel(PlanningWorkbenchMode value) => value switch
-    {
-        PlanningWorkbenchMode.Campaigns => "Campaigns",
-        PlanningWorkbenchMode.Execution => "Execution",
-        PlanningWorkbenchMode.Recovery => "Recovery",
-        _ => "Plan"
-    };
     private static readonly (string Label, string ColorClass)[] ProcessLegend =
     [
         ("EAF", "bg-process-eaf"), ("LRF", "bg-process-lrf"), ("VD", "bg-process-vd"),
