@@ -2,24 +2,22 @@
 @using APS.UI.State
 
 <header class="border-b border-border bg-surface px-3 py-1.5">
-    <div class="flex min-h-9 items-center gap-3 overflow-x-auto">
-        <div class="flex min-w-0 items-center gap-2">
+    <div class="flex min-h-9 min-w-0 items-center gap-3">
+        <div class="flex shrink-0 items-center gap-2">
             <span class="shrink-0 aps-text-label">Scenario</span>
-            <h1 class="max-w-72 truncate aps-text-heading">@ScenarioName</h1>
+            <h1 class="w-56 max-w-[28vw] truncate text-sm font-bold tracking-tight">@ScenarioName</h1>
             <span class="shrink-0 rounded-sm px-2 py-0.5 text-xs font-semibold @StateClass">@StateLabel</span>
             @if (IsReleased) { <span class="shrink-0 rounded-sm border border-border-strong px-2 py-0.5 text-xs text-secondary">Execution baseline</span> }
         </div>
 
-        <div class="hidden shrink-0 items-center gap-3 border-l border-border pl-3 lg:flex">
-            <span class="aps-text-caption"><strong class="aps-text-figure">@OperationCount</strong> operations</span>
-            <span class="aps-text-caption"><strong class="aps-text-figure">@ResourceCount</strong> resources</span>
-            <span class="aps-text-caption"><strong class="aps-text-figure">@ScheduleStartUtc.ToString("dd MMM HH:mm") → @ScheduleEndUtc.ToString("dd MMM HH:mm")</strong></span>
-            <span class="aps-text-caption">Actuals <strong class="aps-text-figure">@ActualsTimeUtc.ToString("dd MMM HH:mm") UTC</strong></span>
+        <div class="hidden min-w-0 items-center gap-2 border-l border-border pl-3 min-[1440px]:flex">
+            <span class="whitespace-nowrap text-xs text-secondary"><strong class="aps-text-figure">@OperationCount</strong> operations · <strong class="aps-text-figure">@ResourceCount</strong> resources</span>
+            <span class="hidden whitespace-nowrap text-xs text-secondary min-[1700px]:inline"><strong class="aps-text-figure">@ScheduleStartUtc.ToString("dd MMM HH:mm") → @ScheduleEndUtc.ToString("dd MMM HH:mm")</strong></span>
+            <span class="hidden whitespace-nowrap text-xs text-secondary min-[1900px]:inline">Actuals <strong class="aps-text-figure">@ActualsTimeUtc.ToString("dd MMM HH:mm") UTC</strong></span>
         </div>
 
-        <div class="hidden shrink-0 items-center gap-2 border-l border-border pl-3 xl:flex">
-            <span class="aps-text-label">Objective</span>
-            <strong class="aps-text-label text-primary">Delivery reliability</strong>
+        <div class="hidden shrink-0 items-center border-l border-border pl-3 xl:flex">
+            <span class="whitespace-nowrap text-xs text-secondary"><span class="aps-text-label">Objective</span>: <strong class="font-semibold text-primary">Delivery reliability</strong></span>
         </div>
 
         <div class="ml-auto flex shrink-0 items-center gap-1.5" aria-label="Scenario actions">
@@ -33,8 +31,8 @@
                 <span class="mx-1 h-5 w-px bg-border"></span>
                 <button class="rounded-sm border border-accent-border bg-surface-raised px-2.5 py-1 text-xs font-semibold text-accent shadow-soft hover:bg-surface-hover" @onclick="() => StartPlanning.InvokeAsync()">Create planning scenario</button>
             }
-            <button class="rounded-control border border-border-strong px-2.5 py-1 text-xs disabled:opacity-40" disabled="@(!CanUndo)" @onclick="Undo">Undo</button>
-            <button class="rounded-control border border-border-strong px-2.5 py-1 text-xs disabled:opacity-40" disabled="@(!CanRedo)" @onclick="Redo">Redo</button>
+            <button class="hidden rounded-control border border-border-strong px-2.5 py-1 text-xs disabled:opacity-40 min-[1440px]:inline-flex" disabled="@(!CanUndo)" @onclick="Undo">Undo</button>
+            <button class="hidden rounded-control border border-border-strong px-2.5 py-1 text-xs disabled:opacity-40 min-[1440px]:inline-flex" disabled="@(!CanRedo)" @onclick="Redo">Redo</button>
             <button class="rounded-control border border-accent-border bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent disabled:opacity-40" disabled="@(!CanEdit || IsBusy)" @onclick="Optimize">
                 @if (IsBusy) { <span class="aps-pulse-dot mr-1 inline-block h-1.5 w-1.5 rounded-full bg-accent"></span> }
                 Optimize

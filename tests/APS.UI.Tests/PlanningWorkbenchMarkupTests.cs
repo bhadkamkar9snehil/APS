@@ -27,7 +27,20 @@ public sealed class PlanningWorkbenchMarkupTests
         Assert.Contains("bg-surface-inset", rail);
         Assert.Contains("shadow-inner", rail);
         Assert.Contains("aria-current", rail);
-        Assert.Contains("max-w-3xl", rail);
+        Assert.Contains("w-full", rail);
+        Assert.Contains("grid-cols-4", rail);
+    }
+
+    [Fact]
+    public void Scenario_header_preserves_identity_without_horizontal_scrolling()
+    {
+        var header = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/WorkbenchScenarioHeader.razor"));
+
+        Assert.DoesNotContain("overflow-x-auto", header);
+        Assert.Contains("w-56", header);
+        Assert.Contains("shrink-0", header);
+        Assert.Contains("Objective", header);
+        Assert.Contains("Delivery reliability", header);
     }
 
     [Fact]
@@ -108,21 +121,21 @@ public sealed class PlanningWorkbenchMarkupTests
     }
 
     [Fact]
-    public void Persistent_workbench_chrome_uses_semantic_type_tiers_instead_of_microscopic_text()
+    public void Persistent_workbench_chrome_uses_readable_local_type_floors_instead_of_microscopic_text()
     {
         var grid = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttResourceGrid.razor"));
         var scale = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/GanttTimeScale.razor"));
         var gantt = File.ReadAllText(Repo.File("src/APS.UI/Components/PlanningWorkbench/Gantt/WorkbenchGantt.razor"));
 
-        Assert.Contains("aps-text-heading", grid);
-        Assert.Contains("aps-text-caption", grid);
-        Assert.Contains("aps-text-figure", grid);
+        Assert.Contains("text-sm font-semibold leading-tight", grid);
+        Assert.Contains("text-[13px] leading-tight", grid);
+        Assert.Contains("aps-text-figure text-sm", grid);
         Assert.DoesNotContain("text-[9px]", grid);
         Assert.DoesNotContain("text-[10px]", grid);
-        Assert.Contains("aps-text-label", scale);
-        Assert.Contains("aps-text-caption", scale);
+        Assert.Contains("text-xs font-semibold", scale);
+        Assert.Contains("text-xs", scale);
         Assert.DoesNotContain("text-[9px]", scale);
-        Assert.Contains("aps-text-caption", gantt);
+        Assert.Contains("text-xs", gantt);
     }
 
     [Fact]

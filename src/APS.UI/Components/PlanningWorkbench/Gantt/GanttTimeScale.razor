@@ -2,14 +2,14 @@
     <div class="absolute inset-x-0 top-0 h-6 border-b border-border/70">
         @foreach (var tick in Scene.Ticks.Where(x => x.IsMajor))
         {
-            <span class="absolute top-1 whitespace-nowrap pl-1 aps-text-label text-secondary" style="left:@tick.LeftPercent%">@tick.PrimaryLabel</span>
+            <span class="absolute top-1 whitespace-nowrap pl-1 text-xs font-semibold leading-none text-secondary" style="left:@tick.LeftPercent%">@tick.PrimaryLabel</span>
         }
     </div>
     <div class="absolute inset-x-0 bottom-0 top-6">
         @foreach (var tick in Scene.Ticks)
         {
             <div class="absolute inset-y-0 w-px @(tick.IsMajor ? "bg-border-strong" : "bg-border")" style="left:@tick.LeftPercent%">
-                <span class="ml-1 whitespace-nowrap aps-text-caption">@tick.SecondaryLabel</span>
+                <span class="ml-1 whitespace-nowrap text-xs leading-none text-muted">@tick.SecondaryLabel</span>
             </div>
         }
         @if (State.ShowDueMarkers)
@@ -19,17 +19,17 @@
         @if (State.ShowNowMarker && NowUtc >= State.VisibleStartUtc && NowUtc <= State.VisibleEndUtc)
         {
             <div class="absolute inset-y-0 w-px" style="left:@GanttModels.Percent(State, NowUtc)%;background:repeating-linear-gradient(to bottom,var(--aps-success) 0 4px,transparent 4px 7px)" title="Wall-clock now @NowUtc.ToString("dd MMM HH:mm") UTC"></div>
-            <span class="absolute top-0.5 -translate-x-1/2 rounded-sm bg-success-soft px-1 aps-text-caption text-success" style="left:@GanttModels.Percent(State, NowUtc)%">Now</span>
+            <span class="absolute top-0.5 -translate-x-1/2 rounded-sm bg-success-soft px-1 text-[11px] font-semibold leading-none text-success" style="left:@GanttModels.Percent(State, NowUtc)%">Now</span>
         }
         @if (State.ShowReferenceMarker && ReferenceTimeUtc >= State.VisibleStartUtc && ReferenceTimeUtc <= State.VisibleEndUtc)
         {
             <div class="absolute inset-y-0 w-px bg-accent" style="left:@GanttModels.Percent(State, ReferenceTimeUtc)%" title="Plan reference @ReferenceTimeUtc.ToString("dd MMM HH:mm") UTC"></div>
-            <span class="absolute bottom-0.5 -translate-x-1/2 rounded-sm bg-accent-soft px-1 aps-text-caption text-accent" style="left:@GanttModels.Percent(State, ReferenceTimeUtc)%">Reference</span>
+            <span class="absolute bottom-0.5 -translate-x-1/2 rounded-sm bg-accent-soft px-1 text-[11px] font-semibold leading-none text-accent" style="left:@GanttModels.Percent(State, ReferenceTimeUtc)%">Reference</span>
         }
         @if (State.ShowFrozenFence && FrozenFenceEndUtc >= State.VisibleStartUtc && FrozenFenceEndUtc <= State.VisibleEndUtc)
         {
             <div class="absolute inset-y-0 w-px bg-danger" style="left:@GanttModels.Percent(State, FrozenFenceEndUtc)%" title="Frozen fence ends @FrozenFenceEndUtc.ToString("dd MMM HH:mm")"></div>
-            <span class="absolute top-0.5 -translate-x-1/2 whitespace-nowrap rounded-sm bg-danger px-1 aps-text-caption text-inverted" style="left:@GanttModels.Percent(State, FrozenFenceEndUtc)%">Fence</span>
+            <span class="absolute top-0.5 -translate-x-1/2 whitespace-nowrap rounded-sm bg-danger px-1 text-[11px] font-semibold leading-none text-inverted" style="left:@GanttModels.Percent(State, FrozenFenceEndUtc)%">Fence</span>
         }
     </div>
 </div>
