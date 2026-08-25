@@ -68,7 +68,7 @@
                 <button class="rounded-control border border-border px-2 py-1 text-xs" @onclick="() => state.Pan(-0.75)">Earlier</button>
                 <details class="relative shrink-0">
                     <summary class="cursor-pointer rounded-control border border-border px-2 py-1 text-xs">Window @ZoomLabel(state.Zoom)</summary>
-                    <div class="absolute left-0 top-full z-50 mt-1 w-40 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
+                    <div class="absolute left-0 top-full z-50 mt-1 whitespace-normal w-40 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
                         <button class="w-full rounded-control border px-2 py-1 text-left text-xs @(state.Zoom == PlanningWorkbenchZoom.Detail ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => SetZoomPreferenceAsync(PlanningWorkbenchZoom.Detail)">30 m</button>
                         <button class="mt-1 w-full rounded-control border px-2 py-1 text-left text-xs @(state.Zoom == PlanningWorkbenchZoom.Shift ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => SetZoomPreferenceAsync(PlanningWorkbenchZoom.Shift)">8 h</button>
                         <button class="mt-1 w-full rounded-control border px-2 py-1 text-left text-xs @(state.Zoom == PlanningWorkbenchZoom.Day ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => SetZoomPreferenceAsync(PlanningWorkbenchZoom.Day)">1 d</button>
@@ -80,7 +80,7 @@
                 </details>
                 <details class="relative shrink-0">
                     <summary class="cursor-pointer rounded-control border border-border px-2 py-1 text-xs">Fit</summary>
-                    <div class="absolute left-0 top-full z-50 mt-1 w-64 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
+                    <div class="absolute left-0 top-full z-50 mt-1 whitespace-normal w-64 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
                         <div class="grid grid-cols-2 gap-1">
                             <button class="rounded-control border border-border px-2 py-1 text-left text-xs" @onclick="FitAll">All schedule</button>
                             <button class="rounded-control border border-border px-2 py-1 text-left text-xs" @onclick="FitVisibleResources">Visible resources</button>
@@ -114,7 +114,7 @@
                 <div class="flex shrink-0 items-center gap-1">
                 <details class="relative shrink-0">
                     <summary class="cursor-pointer rounded-control border border-border px-2 py-1 text-xs">Baseline · @BaselineLabel</summary>
-                    <div class="absolute right-0 top-full z-50 mt-1 w-44 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
+                    <div class="absolute right-0 top-full z-50 mt-1 whitespace-normal w-44 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
                         <fieldset>
                             <legend class="sr-only">Baseline display</legend>
                             <label class="flex items-center gap-2 py-1 text-xs"><input type="radio" name="gantt-baseline-mode" checked="@(!state.ShowBaseline)" @onchange="DisableBaselineAsync" />Off</label>
@@ -126,7 +126,7 @@
                 </details>
                 <details class="relative shrink-0">
                     <summary class="cursor-pointer rounded-control border border-border px-2 py-1 text-xs">View</summary>
-                    <div class="absolute right-0 top-full z-50 mt-1 w-64 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
+                    <div class="absolute right-0 top-full z-50 mt-1 whitespace-normal w-64 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
                         <div class="text-[11px] font-semibold uppercase text-muted">ROW LAYOUT</div>
                         <label class="mt-1 block text-[11px] text-secondary">Density
                             <select aria-label="Row density" value="@state.Viewport.Density" @onchange="DensityChangedAsync" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-1 text-xs">
@@ -161,7 +161,7 @@
                 </details>
                 <details class="relative shrink-0">
                     <summary class="cursor-pointer rounded-control border px-2 py-1 text-xs @(state.CapacityPanelOpen || state.OperationListOpen || Cockpit.QueueOpen || Cockpit.InspectorOpen ? "border-accent bg-accent-soft text-accent" : "border-border")">Panels</summary>
-                    <div class="absolute right-0 top-full z-50 mt-1 w-48 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
+                    <div class="absolute right-0 top-full z-50 mt-1 whitespace-normal w-48 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
                         <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@state.CapacityPanelOpen" @onchange="ToggleCapacityPanelAsync" />Resource load</label>
                         <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@state.OperationListOpen" @onchange="() => state.ToggleOperationList()" />Schedule list</label>
                         <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@Cockpit.QueueOpen" @onchange="Cockpit.ToggleQueue" />Demand queue</label>
@@ -170,7 +170,7 @@
                 </details>
                 <details class="relative shrink-0">
                     <summary aria-label="More workbench commands" title="More workbench commands" class="cursor-pointer rounded-control border border-border px-2 py-1 text-xs">•••</summary>
-                    <div class="absolute right-0 top-full z-50 mt-1 w-44 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
+                    <div class="absolute right-0 top-full z-50 mt-1 whitespace-normal w-44 rounded-surface border border-border bg-surface-raised p-2 shadow-popover">
                         <label class="flex items-center gap-2 py-1 text-xs"><input type="checkbox" checked="@state.ShortcutPanelOpen" @onchange="() => state.ToggleShortcutPanel()" />Shortcuts</label>
                         <button type="button" class="mt-1 w-full rounded-control border border-border px-2 py-1 text-left text-xs" @onclick="async () => await ToggleFullscreenAsync()">@(isFullscreen ? "Exit full screen" : "Full screen")</button>
                     </div>
