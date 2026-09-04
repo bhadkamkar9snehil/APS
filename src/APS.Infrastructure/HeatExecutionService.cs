@@ -36,12 +36,6 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
             .OrderByDescending(x => x.ChangedOnUtc)
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (!update.IsCorrection && previous is not null && !CanTransition(previous.Status, update.Status))
-        {
-            throw new InvalidOperationException(
-                $"Heat {update.PlanningKey} cannot move from {previous.Status} to {update.Status} without an explicit correction.");
-        }
-
         var outputs = update.MaterialOutputs ?? Array.Empty<StrandMaterialActualInput>();
         var outputQuantity = outputs.Sum(x => x.QuantityMt);
         var actualQuantity = update.ActualQuantityMt ?? (outputs.Count > 0 ? outputQuantity : previous?.ActualQuantityMt ?? 0m);
@@ -69,33 +63,25 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
         if (actual.ActualStartUtc.HasValue && actual.ActualEndUtc.HasValue && actual.ActualEndUtc < actual.ActualStartUtc)
             throw new InvalidOperationException("Heat actual end cannot be before actual start.");
 
-        // The specialized casting actual and the generic operation actual are one execution truth.
-        planned.ExecutionStatus = update.Status switch
-        {
-            HeatExecutionStatus.Planned => OperationExecutionStatus.Planned,
-            HeatExecutionStatus.Ready => OperationExecutionStatus.Ready,
-            HeatExecutionStatus.Running => OperationExecutionStatus.Running,
-            HeatExecutionStatus.Held => OperationExecutionStatus.Held,
-            HeatExecutionStatus.Completed => OperationExecutionStatus.Completed,
-            HeatExecutionStatus.Cancelled => OperationExecutionStatus.Cancelled,
-            _ => OperationExecutionStatus.Planned
-        };
-        planned.ActualStartUtc = actual.ActualStartUtc;
-        planned.ActualEndUtc = actual.ActualEndUtc;
-        planned.ActualQuantityMt = actual.ActualQuantityMt;
-        planned.LastExecutionChangedOnUtc = update.ChangedOnUtc;
-        if (update.Status is HeatExecutionStatus.Ready or HeatExecutionStatus.Running or HeatExecutionStatus.Completed)
-        {
-            planned.CommittedResourceId = actualResource;
-            planned.AssignmentCommitmentState = update.Status switch
-            {
-                HeatExecutionStatus.Running => OperationAssignmentCommitmentState.Running,
-                HeatExecutionStatus.Completed => OperationAssignmentCommitmentState.Completed,
-                _ => OperationAssignmentCommitmentState.Committed
-            };
-        }
-        if (update.Status is HeatExecutionStatus.Running or HeatExecutionStatus.Completed)
-            planned.ActualResourceId = actualResource;
+        // Casting-specific material evidence is specialized, but operation status/resource/commitment
+        // semantics are not. Reuse the canonical operation execution path so heat events cannot drift
+        // from generic operation history, off-plan-resource handling, or downstream commitment rules.
+        await new OperationExecutionService(db).ApplyCoreAsync(
+            new OperationExecutionUpdate(
+                update.PlanVersionId,
+                update.PlanningKey,
+                ToOperationStatus(update.Status),
+                update.ChangedOnUtc,
+                update.Source,
+                actualResource,
+                actual.ActualStartUtc,
+                actual.ActualEndUtc,
+                actual.ActualQuantityMt,
+                update.ExternalEventId,
+                update.Comment,
+                update.IsCorrection),
+            saveChanges: false,
+            cancellationToken);
 
         db.HeatExecutionActuals.Add(actual);
         foreach (var output in outputs)
@@ -205,18 +191,14 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
         }
     }
 
-    private static bool CanTransition(HeatExecutionStatus from, HeatExecutionStatus to)
+    private static OperationExecutionStatus ToOperationStatus(HeatExecutionStatus status) => status switch
     {
-        if (from == to) return true;
-        return from switch
-        {
-            HeatExecutionStatus.Planned => to is HeatExecutionStatus.Ready or HeatExecutionStatus.Running or HeatExecutionStatus.Held or HeatExecutionStatus.Cancelled,
-            HeatExecutionStatus.Ready => to is HeatExecutionStatus.Running or HeatExecutionStatus.Held or HeatExecutionStatus.Cancelled,
-            HeatExecutionStatus.Running => to is HeatExecutionStatus.Held or HeatExecutionStatus.Completed,
-            HeatExecutionStatus.Held => to is HeatExecutionStatus.Ready or HeatExecutionStatus.Running or HeatExecutionStatus.Cancelled,
-            HeatExecutionStatus.Completed => false,
-            HeatExecutionStatus.Cancelled => false,
-            _ => false
-        };
-    }
+        HeatExecutionStatus.Planned => OperationExecutionStatus.Planned,
+        HeatExecutionStatus.Ready => OperationExecutionStatus.Ready,
+        HeatExecutionStatus.Running => OperationExecutionStatus.Running,
+        HeatExecutionStatus.Held => OperationExecutionStatus.Held,
+        HeatExecutionStatus.Completed => OperationExecutionStatus.Completed,
+        HeatExecutionStatus.Cancelled => OperationExecutionStatus.Cancelled,
+        _ => OperationExecutionStatus.Planned
+    };
 }
