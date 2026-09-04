@@ -7,9 +7,12 @@
 <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
     <div>
         <h1 class="mb-1 text-lg font-semibold">Plan Compare</h1>
-        <p class="text-sm text-secondary">See exactly what moved, changed resource, appeared or disappeared between two persisted schedules.</p>
+        <p class="text-sm text-secondary">See what planning controls changed, then inspect exactly what moved, changed resource, appeared or disappeared in the resulting schedule.</p>
     </div>
-    <NavLink href="/plan/versions" class="rounded border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Plan Versions</NavLink>
+    <div class="flex gap-2">
+        <NavLink href="/plan/constraints" class="rounded border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Planning controls</NavLink>
+        <NavLink href="/plan/versions" class="rounded border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Plan Versions</NavLink>
+    </div>
 </div>
 
 @if (loading)
@@ -64,7 +67,7 @@ else
 
     @if (comparing)
     {
-        <p class="text-sm text-muted">Comparing persisted operations…</p>
+        <p class="text-sm text-muted">Comparing persisted assumptions and operations…</p>
     }
     else if (comparison is not null)
     {
@@ -86,38 +89,73 @@ else
             </div>
         </div>
 
-        @if (comparison.Changes.Count == 0)
-        {
-            <div class="rounded border border-dashed border-border-strong bg-surface-raised p-6 text-center text-sm text-muted">No persisted operation differences were found between these versions.</div>
-        }
-        else
-        {
-            <section class="overflow-x-auto rounded border border-border bg-surface-raised">
-                <table class="w-full min-w-[860px] text-sm">
-                    <thead>
-                        <tr class="border-b border-border text-left text-xs text-muted">
-                            <th class="px-3 py-2 font-medium">Operation</th>
-                            <th class="px-3 py-2 font-medium">Change</th>
-                            <th class="px-3 py-2 font-medium">Resource</th>
-                            <th class="px-3 py-2 font-medium">Start</th>
-                            <th class="px-3 py-2 font-medium text-right">Movement</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var change in comparison.Changes)
-                        {
-                            <tr class="border-b border-border last:border-0 @(change.ChangeType == PlanOperationChangeType.Unchanged ? "text-muted" : "")">
-                                <td class="px-3 py-1.5"><strong>@change.PlanningKey</strong><div class="text-xs text-muted">@change.TaskType</div></td>
-                                <td class="px-3 py-1.5"><span class="rounded px-1.5 py-0.5 text-xs @ChangeClass(change.ChangeType)">@change.ChangeType</span></td>
-                                <td class="px-3 py-1.5 text-xs">@Display(change.BaselineResourceCode) &rarr; <strong>@Display(change.NewResourceCode)</strong></td>
-                                <td class="px-3 py-1.5 text-xs">@Time(change.BaselineStartUtc) &rarr; <strong>@Time(change.NewStartUtc)</strong></td>
-                                <td class="px-3 py-1.5 text-right font-medium @MovementClass(change.StartMovementMinutes)">@Movement(change.StartMovementMinutes)</td>
+        var assumptionChanges = comparison.AssumptionChanges ?? Array.Empty<PlanAssumptionChangeView>();
+        <section class="mb-6 rounded border border-border bg-surface-raised">
+            <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
+                <div>
+                    <h2 class="text-sm font-semibold">Planning control changes</h2>
+                    <p class="mt-0.5 text-xs text-secondary">Explains whether the schedule moved because the planner changed policy, an operating scenario changed the effective plant, or both.</p>
+                </div>
+                <span class="rounded bg-surface-inset px-2 py-1 text-xs font-semibold @(assumptionChanges.Count == 0 ? "text-success" : "text-warning")">@(assumptionChanges.Count == 0 ? "No captured control changes" : $"{assumptionChanges.Count} change(s)")</span>
+            </div>
+            @if (assumptionChanges.Count == 0)
+            {
+                <div class="p-4 text-sm text-secondary">The captured planning controls are the same between these versions, or both versions predate the relevant assumption snapshot.</div>
+            }
+            else
+            {
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-[720px] text-sm">
+                        <thead><tr class="border-b border-border text-left text-xs text-muted"><th class="px-3 py-2 font-medium">Area</th><th class="px-3 py-2 font-medium">Setting</th><th class="px-3 py-2 font-medium">Baseline</th><th class="px-3 py-2 font-medium">New plan</th></tr></thead>
+                        <tbody>
+                            @foreach (var change in assumptionChanges)
+                            {
+                                <tr class="border-b border-border last:border-0"><td class="px-3 py-2"><span class="rounded bg-surface-inset px-1.5 py-0.5 text-xs">@change.Area</span></td><td class="px-3 py-2 font-medium">@change.Setting</td><td class="px-3 py-2 text-secondary">@change.BaselineValue</td><td class="px-3 py-2"><strong>@change.NewValue</strong></td></tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <section class="rounded border border-border bg-surface-raised">
+            <div class="border-b border-border px-4 py-3">
+                <h2 class="text-sm font-semibold">Schedule consequences</h2>
+                <p class="mt-0.5 text-xs text-secondary">Operation-level result after demand, constraints, execution state and planner controls were resolved.</p>
+            </div>
+            @if (comparison.Changes.Count == 0)
+            {
+                <div class="p-6 text-center text-sm text-muted">No persisted operation differences were found between these versions.</div>
+            }
+            else
+            {
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-[860px] text-sm">
+                        <thead>
+                            <tr class="border-b border-border text-left text-xs text-muted">
+                                <th class="px-3 py-2 font-medium">Operation</th>
+                                <th class="px-3 py-2 font-medium">Change</th>
+                                <th class="px-3 py-2 font-medium">Resource</th>
+                                <th class="px-3 py-2 font-medium">Start</th>
+                                <th class="px-3 py-2 font-medium text-right">Movement</th>
                             </tr>
-                        }
-                    </tbody>
-                </table>
-            </section>
-        }
+                        </thead>
+                        <tbody>
+                            @foreach (var change in comparison.Changes)
+                            {
+                                <tr class="border-b border-border last:border-0 @(change.ChangeType == PlanOperationChangeType.Unchanged ? "text-muted" : "")">
+                                    <td class="px-3 py-1.5"><strong>@change.PlanningKey</strong><div class="text-xs text-muted">@change.TaskType</div></td>
+                                    <td class="px-3 py-1.5"><span class="rounded px-1.5 py-0.5 text-xs @ChangeClass(change.ChangeType)">@change.ChangeType</span></td>
+                                    <td class="px-3 py-1.5 text-xs">@Display(change.BaselineResourceCode) &rarr; <strong>@Display(change.NewResourceCode)</strong></td>
+                                    <td class="px-3 py-1.5 text-xs">@Time(change.BaselineStartUtc) &rarr; <strong>@Time(change.NewStartUtc)</strong></td>
+                                    <td class="px-3 py-1.5 text-right font-medium @MovementClass(change.StartMovementMinutes)">@Movement(change.StartMovementMinutes)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
     }
 }
 
