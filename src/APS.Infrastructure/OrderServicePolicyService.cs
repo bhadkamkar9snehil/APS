@@ -44,7 +44,13 @@ public sealed class OrderServicePolicyService(ApsDbContext db) : IOrderServicePo
             ?? throw new KeyNotFoundException($"Sales Order {request.SalesOrderId} has no demand state. Reconcile the order before editing its service policy.");
 
         var target = state.ConfirmedDeliveryDate ?? state.CustomerRequiredDate;
-        Validate(request, target);
+        var validationError = OrderServicePolicyRules.ValidationError(
+            request.ServiceCommitment,
+            target,
+            request.EarliestAcceptableDeliveryDate,
+            request.LatestAcceptableDeliveryDate);
+        if (validationError is not null)
+            throw new ArgumentException(validationError, nameof(request));
 
         state.ServiceCommitment = request.ServiceCommitment;
         state.EarliestAcceptableDeliveryDate = request.EarliestAcceptableDeliveryDate;
@@ -54,29 +60,6 @@ public sealed class OrderServicePolicyService(ApsDbContext db) : IOrderServicePo
 
         await db.SaveChangesAsync(cancellationToken);
         return ToPolicy(state);
-    }
-
-    private static void Validate(UpdateOrderServicePolicyRequest request, DateTime target)
-    {
-        if (request.EarliestAcceptableDeliveryDate > target)
-            throw new ArgumentException("Earliest acceptable delivery must be on or before the requested/confirmed target date.");
-
-        if (request.LatestAcceptableDeliveryDate < target)
-            throw new ArgumentException("Latest acceptable delivery must be on or after the requested/confirmed target date.");
-
-        if (request.ServiceCommitment == ServiceCommitmentClass.Hard &&
-            request.LatestAcceptableDeliveryDate.HasValue &&
-            request.LatestAcceptableDeliveryDate.Value != target)
-        {
-            throw new ArgumentException("Hard commitments cannot move later than the requested/confirmed target date.");
-        }
-
-        if (request.ServiceCommitment == ServiceCommitmentClass.Flexible &&
-            request.EarliestAcceptableDeliveryDate is null &&
-            request.LatestAcceptableDeliveryDate is null)
-        {
-            throw new ArgumentException("Flexible commitments require at least one acceptable delivery boundary.");
-        }
     }
 
     private static OrderServicePolicy ToPolicy(SalesOrderDemandState state)
