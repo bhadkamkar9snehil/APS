@@ -82,6 +82,28 @@ public sealed class PlannerConstraintWorkspaceMarkupTests
     }
 
     [Fact]
+    public void Demand_workspace_exposes_rush_cancellation_and_confirmed_service_date_controls()
+    {
+        var source = System.IO.File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/DemandSupply.razor"));
+
+        Assert.Contains("Rush order", source, StringComparison.Ordinal);
+        Assert.Contains("Confirmed delivery date", source, StringComparison.Ordinal);
+        Assert.Contains("value=\"CANCELLED\"", source, StringComparison.Ordinal);
+        Assert.Contains("EffectiveOpenQuantity", source, StringComparison.Ordinal);
+        Assert.Contains("Priority: EffectivePriority", source, StringComparison.Ordinal);
+        Assert.Contains("ProductionRequiredByDate", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Shared_schedule_uses_only_defined_theme_fallback_classes()
+    {
+        var source = System.IO.File.ReadAllText(Repo.File("src/APS.UI/Components/Shared/ScheduleGantt.razor"));
+
+        Assert.DoesNotContain("bg-surface0", source, StringComparison.Ordinal);
+        Assert.Contains("bg-border-strong text-primary", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Process_constraint_workspace_edits_sequence_and_thermal_constraints()
     {
         var source = System.IO.File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/ProcessConstraints.razor"));
