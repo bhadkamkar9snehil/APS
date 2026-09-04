@@ -15,6 +15,17 @@ public sealed class PlannerConstraintWorkspaceMarkupTests
     }
 
     [Fact]
+    public void Plan_version_replan_preserves_selected_baseline_horizon_and_repair_scope()
+    {
+        var source = System.IO.File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/PlanVersions.razor"));
+
+        Assert.Contains("BuildCalculationRequest(baseline.HorizonStartUtc, baseline.HorizonEndUtc)", source, StringComparison.Ordinal);
+        Assert.Contains("RepairScope: Constraints.BuildRepairScopePolicy()", source, StringComparison.Ordinal);
+        Assert.Contains("UseBaselinePlanningControls: false", source, StringComparison.Ordinal);
+        Assert.Contains("preserve horizon", source, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Resource_constraint_workspace_edits_authoritative_eligibility_and_calendars()
     {
         var source = System.IO.File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/ResourceConstraints.razor"));
