@@ -50,6 +50,35 @@ public sealed record PlanScenarioDemandSummaryView(
     public decimal IntermediateAllocatedMt => ExistingIntermediateAllocatedMt + ExternalIntermediateAllocatedMt;
 }
 
+/// <summary>One order's immutable service policy and derived manufacturing window in a Plan Version.</summary>
+public sealed record PlanOrderServiceView(
+    Guid SalesOrderId,
+    string SalesOrderNumber,
+    string SalesOrderItemNumber,
+    string? CustomerCode,
+    DateTime CustomerRequiredDate,
+    DateTime? ConfirmedDeliveryDate,
+    DateTime ProductionRequiredByDate,
+    ServiceCommitmentClass ServiceCommitment,
+    DateTime? EarliestAcceptableDeliveryDate,
+    DateTime? LatestAcceptableDeliveryDate,
+    DateTime? ProductionEarliestAcceptableDate,
+    DateTime? ProductionLatestAcceptableDate,
+    int Priority)
+{
+    public DateTime TargetDeliveryDate => ConfirmedDeliveryDate ?? CustomerRequiredDate;
+    public DateTime EffectiveProductionDeadline => ProductionLatestAcceptableDate ?? ProductionRequiredByDate;
+}
+
+/// <summary>
+/// Side-by-side service evidence for a Sales Order. Either side may be null when demand was added or
+/// removed between Plan Versions; no UI inference is required.
+/// </summary>
+public sealed record PlanOrderServiceComparisonView(
+    Guid SalesOrderId,
+    PlanOrderServiceView? Baseline,
+    PlanOrderServiceView? NewPlan);
+
 /// <summary>One immutable persisted operation projected for side-by-side scenario visualization.</summary>
 public sealed record PlanScenarioOperationView(
     string PlanningKey,
@@ -87,4 +116,5 @@ public sealed record PlanComparisonWorkspaceView(
     IReadOnlyCollection<PlanScenarioOperationView>? BaselineOperations = null,
     IReadOnlyCollection<PlanScenarioOperationView>? NewPlanOperations = null,
     PlanScenarioDemandSummaryView? BaselineDemand = null,
-    PlanScenarioDemandSummaryView? NewPlanDemand = null);
+    PlanScenarioDemandSummaryView? NewPlanDemand = null,
+    IReadOnlyCollection<PlanOrderServiceComparisonView>? OrderService = null);
