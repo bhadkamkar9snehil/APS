@@ -7,7 +7,7 @@
 <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
     <div>
         <h1 class="mb-1 text-lg font-semibold">What-if Analysis</h1>
-        <p class="text-sm text-secondary">Compare two immutable Plan Versions side by side: planning assumptions, schedule footprint, resource loading and every operation-level consequence.</p>
+        <p class="text-sm text-secondary">Compare two immutable Plan Versions side by side: demand and sourcing, production structure, planning assumptions, schedule footprint, resource loading and every operation-level consequence.</p>
     </div>
     <div class="flex flex-wrap gap-2">
         <NavLink href="/plan/what-if" class="rounded border border-accent-border bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent">Create what-if</NavLink>
@@ -68,7 +68,7 @@ else
 
     @if (comparing)
     {
-        <p class="text-sm text-muted">Comparing persisted assumptions and operations…</p>
+        <p class="text-sm text-muted">Comparing persisted assumptions, demand, structure and operations…</p>
     }
     else if (comparison is not null)
     {
@@ -90,11 +90,18 @@ else
                 <div class="grid gap-3 border-t border-border p-4 sm:grid-cols-2 lg:grid-cols-4">
                     <DeltaTile Label="Plan span" Baseline="@($"{comparison.BaselineSummary.SpanHours:0.0} h")" NewValue="@($"{comparison.NewPlanSummary.SpanHours:0.0} h")" Delta="@Signed(comparison.NewPlanSummary.SpanHours - comparison.BaselineSummary.SpanHours, "h")" />
                     <DeltaTile Label="Scheduled work content" Baseline="@($"{comparison.BaselineSummary.ScheduledHours:0.0} h")" NewValue="@($"{comparison.NewPlanSummary.ScheduledHours:0.0} h")" Delta="@Signed(comparison.NewPlanSummary.ScheduledHours - comparison.BaselineSummary.ScheduledHours, "h")" />
-                    <DeltaTile Label="Resources used" Baseline="@comparison.BaselineSummary.ResourceCount.ToString()" NewValue="@comparison.NewPlanSummary.ResourceCount.ToString()" Delta="@Signed(comparison.NewPlanSummary.ResourceCount - comparison.BaselineSummary.ResourceCount, string.Empty)" />
+                    <DeltaTile Label="Resources used" Baseline="@comparison.BaselineSummary.ResourceCount.ToString()" NewValue="@comparison.NewPlanSummary.ResourceCount.ToString()" Delta="@Signed((long)comparison.NewPlanSummary.ResourceCount - comparison.BaselineSummary.ResourceCount, string.Empty)" />
                     <DeltaTile Label="Solver objective" Baseline="@(comparison.BaselineSummary.ObjectiveValue?.ToString("N0") ?? "—")" NewValue="@(comparison.NewPlanSummary.ObjectiveValue?.ToString("N0") ?? "—")" Delta="@ObjectiveDelta" />
                 </div>
             }
         </section>
+
+        @if (comparison.BaselineDemand is not null && comparison.NewPlanDemand is not null)
+        {
+            <div class="mb-6">
+                <ScenarioDemandComparison Baseline="@comparison.BaselineDemand" NewPlan="@comparison.NewPlanDemand" />
+            </div>
+        }
 
         @if (comparison.BaselineSummary is not null && comparison.NewPlanSummary is not null)
         {
