@@ -1,0 +1,407 @@
+@page "/plan/process-constraints"
+@inject IPlanningMasterDataProvider MasterDataProvider
+@inject IMasterDataAdminService Admin
+
+<PageTitle>Process Constraints - APS</PageTitle>
+
+<div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+    <div class="max-w-3xl">
+        <h1 class="mb-1 text-lg font-semibold">Process Constraints</h1>
+        <p class="text-sm text-secondary">Maintain sequence/changeover rules and metallurgy temperature envelopes used by campaign formation, route projection and finite scheduling.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+        <NavLink href="/plan/constraints" class="rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Planning controls</NavLink>
+        <NavLink href="/plan/resource-constraints" class="rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Resource constraints</NavLink>
+        <NavLink href="/plan/versions" class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground">Plans</NavLink>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div role="status" class="mb-4 rounded border border-border px-3 py-2 text-sm @(messageIsError ? "bg-danger-soft text-danger" : "bg-success-soft text-success")">@message</div>
+}
+
+@if (loading)
+{
+    <p class="text-sm text-muted">Loading process constraints…</p>
+}
+else if (masters is null)
+{
+    <div class="rounded border border-danger/30 bg-danger-soft p-4 text-sm text-danger">Process constraints could not be loaded.</div>
+}
+else
+{
+    <div class="mb-4 grid gap-3 sm:grid-cols-3">
+        <div class="rounded-surface border border-border bg-surface-raised p-3"><div class="text-xs text-muted">SEQUENCE / CHANGEOVER RULES</div><strong class="text-lg">@masters.TransitionRules.Count</strong></div>
+        <div class="rounded-surface border border-border bg-surface-raised p-3"><div class="text-xs text-muted">GRADE TEMPERATURE ENVELOPES</div><strong class="text-lg">@masters.EffectiveGradeTemperatureRequirements.Count</strong></div>
+        <div class="rounded-surface border border-border bg-surface-raised p-3"><div class="text-xs text-muted">RESOURCE THERMAL CAPABILITIES</div><strong class="text-lg">@masters.EffectiveResourceTemperatureCapabilities.Count</strong></div>
+    </div>
+
+    <section class="rounded-surface border border-border bg-surface-raised shadow-soft">
+        <div class="flex flex-wrap items-start justify-between gap-2 border-b border-border px-4 py-3">
+            <div><h2 class="text-sm font-semibold">Sequence and changeover rules</h2><p class="mt-0.5 text-xs text-secondary">Controls legal grade/section transitions, forced sequence breaks, transition time and transition penalty.</p></div>
+            <button type="button" class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground" @onclick="BeginNewTransition">Add rule</button>
+        </div>
+        @if (masters.TransitionRules.Count == 0)
+        {
+            <div class="p-5 text-sm text-warning">No transition rules are configured. Grade/section changeovers will not carry explicit plant sequence restrictions or setup time.</div>
+        }
+        else
+        {
+            <div class="max-h-[380px] overflow-auto">
+                <table class="w-full min-w-[1100px] text-sm">
+                    <thead class="sticky top-0 bg-surface-raised"><tr class="border-b border-border text-left text-xs text-muted"><th class="px-3 py-2">Applies to</th><th class="px-3 py-2">Operation</th><th class="px-3 py-2">Dimension</th><th class="px-3 py-2">Scope</th><th class="px-3 py-2">Transition</th><th class="px-3 py-2">Rule</th><th class="px-3 py-2">Time</th><th class="px-3 py-2">Penalty</th><th class="px-3 py-2">Reason</th><th class="px-3 py-2"></th></tr></thead>
+                    <tbody>
+                        @foreach (var rule in masters.TransitionRules.OrderBy(x => x.Dimension).ThenBy(x => x.ProcessOperationType).ThenBy(x => x.FromCode).ThenBy(x => x.ToCode))
+                        {
+                            <tr class="border-b border-border last:border-0 @(editingTransition?.Id == rule.Id ? "bg-accent-soft" : "")">
+                                <td class="px-3 py-2 text-xs">@TransitionOwner(rule)</td>
+                                <td class="px-3 py-2">@(rule.ProcessOperationType?.ToString() ?? "Any")</td>
+                                <td class="px-3 py-2">@rule.Dimension</td>
+                                <td class="px-3 py-2 text-xs">@rule.Scope</td>
+                                <td class="px-3 py-2"><strong>@rule.FromCode</strong> → <strong>@rule.ToCode</strong></td>
+                                <td class="px-3 py-2"><span class="rounded px-1.5 py-0.5 text-xs @(rule.IsAllowed && !rule.RequiresSequenceBreak ? "bg-success-soft text-success" : "bg-danger-soft text-danger")">@(rule.IsAllowed ? rule.RequiresSequenceBreak ? "BREAK" : "ALLOWED" : "FORBIDDEN")</span></td>
+                                <td class="px-3 py-2 text-xs">@rule.TransitionTime.TotalMinutes.ToString("0.##") min</td>
+                                <td class="px-3 py-2 text-xs">@rule.Penalty</td>
+                                <td class="px-3 py-2 text-xs text-secondary">@(rule.ReasonCode ?? "—")</td>
+                                <td class="whitespace-nowrap px-3 py-2 text-right"><button type="button" class="mr-3 text-xs font-semibold text-accent hover:underline" @onclick="() => BeginEditTransition(rule)">Edit</button><button type="button" class="text-xs font-semibold text-danger hover:underline" @onclick="() => ArmTransitionDelete(rule.Id)">@(transitionDeleteArmed == rule.Id ? "Confirm delete" : "Delete")</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        @if (editingTransition is not null)
+        {
+            <div class="border-t border-accent-border bg-surface p-4">
+                <div class="mb-3 flex items-start justify-between gap-3"><div><h3 class="text-sm font-semibold">@(creatingTransition ? "New transition rule" : "Edit transition rule")</h3><p class="text-xs text-secondary">Specific resource rules outrank broader defaults; exact-code rules outrank family/class rules.</p></div><button class="text-xs text-muted hover:underline" @onclick="CancelTransitionEdit">Cancel</button></div>
+                <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <label class="text-xs text-secondary">Physical resource<select class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" value="@transitionResourceText" @onchange="TransitionResourceChanged"><option value="">Any resource</option>@foreach (var resource in masters.Resources.OrderBy(x => x.Code)) { <option value="@resource.Id">@resource.Code · @resource.Name</option> }</select></label>
+                    <label class="text-xs text-secondary">Process operation<select class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" value="@transitionOperationText" @onchange="TransitionOperationChanged"><option value="">Any operation</option>@foreach (var value in Enum.GetValues<ProcessOperationType>().Where(x => x != ProcessOperationType.Unknown)) { <option value="@value">@value</option> }</select></label>
+                    <label class="text-xs text-secondary">Dimension<select class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingTransition.Dimension">@foreach (var value in Enum.GetValues<TransitionDimension>()) { <option value="@value">@value</option> }</select></label>
+                    <label class="text-xs text-secondary">Scope<select class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingTransition.Scope">@foreach (var value in Enum.GetValues<TransitionRuleScope>()) { <option value="@value">@value</option> }</select></label>
+                    <label class="text-xs text-secondary">From code<input class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingTransition.FromCode" placeholder="* for default" /></label>
+                    <label class="text-xs text-secondary">To code<input class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingTransition.ToCode" placeholder="* for default" /></label>
+                    <label class="text-xs text-secondary">Transition minutes<input type="number" min="0" step="1" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="transitionMinutes" /></label>
+                    <label class="text-xs text-secondary">Penalty<input type="number" min="0" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingTransition.Penalty" /></label>
+                    <label class="text-xs text-secondary sm:col-span-2 xl:col-span-3">Reason code / note<input class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingTransition.ReasonCode" /></label>
+                    <div class="flex flex-wrap items-end gap-4 pb-2"><label class="flex items-center gap-2 text-sm"><input type="checkbox" @bind="editingTransition.IsAllowed" />Allowed</label><label class="flex items-center gap-2 text-sm"><input type="checkbox" @bind="editingTransition.RequiresSequenceBreak" />Requires sequence break</label></div>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(TransitionEditError)) { <p class="mt-3 text-xs text-danger">@TransitionEditError</p> }
+                <div class="mt-3 flex justify-end gap-2"><button class="rounded-control border border-border-strong px-3 py-1.5 text-xs" @onclick="CancelTransitionEdit">Cancel</button><button class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-50" disabled="@(saving || !string.IsNullOrWhiteSpace(TransitionEditError))" @onclick="SaveTransitionAsync">@(saving ? "Saving…" : creatingTransition ? "Add rule" : "Save rule")</button></div>
+            </div>
+        }
+    </section>
+
+    <div class="mt-4 grid grid-cols-1 gap-4 2xl:grid-cols-2">
+        <section class="rounded-surface border border-border bg-surface-raised shadow-soft">
+            <div class="flex flex-wrap items-start justify-between gap-2 border-b border-border px-4 py-3"><div><h2 class="text-sm font-semibold">Grade temperature envelopes</h2><p class="mt-0.5 text-xs text-secondary">Metallurgy limits for entry/exit temperature and maximum holding time at each process operation.</p></div><button type="button" class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-50" disabled="@(masters.EffectiveSteelGrades.Count == 0)" @onclick="BeginNewGradeTemperature">Add envelope</button></div>
+            @if (masters.EffectiveGradeTemperatureRequirements.Count == 0)
+            {
+                <div class="p-5 text-sm text-secondary">No grade-specific thermal envelopes are configured.</div>
+            }
+            else
+            {
+                <div class="max-h-[360px] overflow-auto"><table class="w-full min-w-[820px] text-sm"><thead class="sticky top-0 bg-surface-raised"><tr class="border-b border-border text-left text-xs text-muted"><th class="px-3 py-2">Grade</th><th class="px-3 py-2">Operation</th><th class="px-3 py-2">Entry °C</th><th class="px-3 py-2">Exit °C</th><th class="px-3 py-2">Max hold</th><th class="px-3 py-2"></th></tr></thead><tbody>
+                    @foreach (var row in masters.EffectiveGradeTemperatureRequirements.OrderBy(x => GradeCode(x.SteelGradeId)).ThenBy(x => x.ProcessOperationType))
+                    {
+                        <tr class="border-b border-border last:border-0 @(editingGradeTemperature?.Id == row.Id ? "bg-accent-soft" : "")"><td class="px-3 py-2"><strong>@GradeCode(row.SteelGradeId)</strong></td><td class="px-3 py-2">@row.ProcessOperationType</td><td class="px-3 py-2 text-xs">@Envelope(row.MinimumEntryTemperatureC, row.TargetEntryTemperatureC, row.MaximumEntryTemperatureC)</td><td class="px-3 py-2 text-xs">@Envelope(row.MinimumExitTemperatureC, row.TargetExitTemperatureC, row.MaximumExitTemperatureC)</td><td class="px-3 py-2 text-xs">@(row.MaximumHoldingMinutesAfterExit.HasValue ? $"{row.MaximumHoldingMinutesAfterExit} min" : "—")</td><td class="whitespace-nowrap px-3 py-2 text-right"><button class="mr-3 text-xs font-semibold text-accent hover:underline" @onclick="() => BeginEditGradeTemperature(row)">Edit</button><button class="text-xs font-semibold text-danger hover:underline" @onclick="() => ArmGradeTemperatureDelete(row.Id)">@(gradeTemperatureDeleteArmed == row.Id ? "Confirm delete" : "Delete")</button></td></tr>
+                    }
+                </tbody></table></div>
+            }
+
+            @if (editingGradeTemperature is not null)
+            {
+                <div class="border-t border-accent-border bg-surface p-4">
+                    <div class="mb-3 flex justify-between"><h3 class="text-sm font-semibold">@(creatingGradeTemperature ? "New grade temperature envelope" : "Edit grade temperature envelope")</h3><button class="text-xs text-muted hover:underline" @onclick="CancelGradeTemperatureEdit">Cancel</button></div>
+                    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <label class="text-xs text-secondary">Grade<select class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingGradeTemperature.SteelGradeId">@foreach (var grade in masters.EffectiveSteelGrades.OrderBy(x => x.GradeCode)) { <option value="@grade.Id">@grade.GradeCode</option> }</select></label>
+                        <label class="text-xs text-secondary">Operation<select class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingGradeTemperature.ProcessOperationType">@foreach (var value in Enum.GetValues<ProcessOperationType>().Where(x => x != ProcessOperationType.Unknown)) { <option value="@value">@value</option> }</select></label>
+                        <label class="text-xs text-secondary">Entry min °C<input type="number" step="1" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5" @bind="editingGradeTemperature.MinimumEntryTemperatureC" /></label>
+                        <label class="text-xs text-secondary">Entry target °C<input type="number" step="1" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5" @bind="editingGradeTemperature.TargetEntryTemperatureC" /></label>
+                        <label class="text-xs text-secondary">Entry max °C<input type="number" step="1" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5" @bind="editingGradeTemperature.MaximumEntryTemperatureC" /></label>
+                        <label class="text-xs text-secondary">Exit min °C<input type="number" step="1" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5" @bind="editingGradeTemperature.MinimumExitTemperatureC" /></label>
+                        <label class="text-xs text-secondary">Exit target °C<input type="number" step="1" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5" @bind="editingGradeTemperature.TargetExitTemperatureC" /></label>
+                        <label class="text-xs text-secondary">Exit max °C<input type="number" step="1" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5" @bind="editingGradeTemperature.MaximumExitTemperatureC" /></label>
+                        <label class="text-xs text-secondary">Maximum hold minutes<input type="number" min="0" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5" @bind="editingGradeTemperature.MaximumHoldingMinutesAfterExit" /></label>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(GradeTemperatureEditError)) { <p class="mt-3 text-xs text-danger">@GradeTemperatureEditError</p> }
+                    <div class="mt-3 flex justify-end gap-2"><button class="rounded-control border border-border-strong px-3 py-1.5 text-xs" @onclick="CancelGradeTemperatureEdit">Cancel</button><button class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-50" disabled="@(saving || !string.IsNullOrWhiteSpace(GradeTemperatureEditError))" @onclick="SaveGradeTemperatureAsync">@(saving ? "Saving…" : creatingGradeTemperature ? "Add envelope" : "Save envelope")</button></div>
+                </div>
+            }
+        </section>
+
+        <section class="rounded-surface border border-border bg-surface-raised shadow-soft">
+            <div class="flex flex-wrap items-start justify-between gap-2 border-b border-border px-4 py-3"><div><h2 class="text-sm font-semibold">Resource thermal capability</h2><p class="mt-0.5 text-xs text-secondary">What each physical resource can thermally deliver or correct for a process operation.</p></div><button type="button" class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-50" disabled="@(masters.Resources.Count == 0)" @onclick="BeginNewResourceTemperature">Add capability</button></div>
+            @if (masters.EffectiveResourceTemperatureCapabilities.Count == 0)
+            {
+                <div class="p-5 text-sm text-secondary">No resource thermal capabilities are configured.</div>
+            }
+            else
+            {
+                <div class="max-h-[360px] overflow-auto"><table class="w-full min-w-[820px] text-sm"><thead class="sticky top-0 bg-surface-raised"><tr class="border-b border-border text-left text-xs text-muted"><th class="px-3 py-2">Resource</th><th class="px-3 py-2">Operation</th><th class="px-3 py-2">Exit °C</th><th class="px-3 py-2">Heat rate</th><th class="px-3 py-2">Hold loss</th><th class="px-3 py-2">Correction</th><th class="px-3 py-2"></th></tr></thead><tbody>
+                    @foreach (var row in masters.EffectiveResourceTemperatureCapabilities.OrderBy(x => ResourceCode(x.ResourceId)).ThenBy(x => x.ProcessOperationType))
+                    {
+                        <tr class="border-b border-border last:border-0 @(editingResourceTemperature?.Id == row.Id ? "bg-accent-soft" : "")"><td class="px-3 py-2"><strong>@ResourceCode(row.ResourceId)</strong></td><td class="px-3 py-2">@row.ProcessOperationType</td><td class="px-3 py-2 text-xs">@Envelope(row.MinimumAchievableExitTemperatureC, row.NominalExitTemperatureC, row.MaximumAchievableExitTemperatureC)</td><td class="px-3 py-2 text-xs">@(row.MaximumHeatingRateCPerMinute.HasValue ? $"{row.MaximumHeatingRateCPerMinute:0.##} °C/min" : "—")</td><td class="px-3 py-2 text-xs">@(row.NominalTemperatureLossCPerMinuteWhileHolding.HasValue ? $"{row.NominalTemperatureLossCPerMinuteWhileHolding:0.##} °C/min" : "—")</td><td class="px-3 py-2 text-xs">@(row.CanCorrectTemperature ? "Yes" : "No")</td><td class="whitespace-nowrap px-3 py-2 text-right"><button class="mr-3 text-xs font-semibold text-accent hover:underline" @onclick="() => BeginEditResourceTemperature(row)">Edit</button><button class="text-xs font-semibold text-danger hover:underline" @onclick="() => ArmResourceTemperatureDelete(row.Id)">@(resourceTemperatureDeleteArmed == row.Id ? "Confirm delete" : "Delete")</button></td></tr>
+                    }
+                </tbody></table></div>
+            }
+
+            @if (editingResourceTemperature is not null)
+            {
+                <div class="border-t border-accent-border bg-surface p-4">
+                    <div class="mb-3 flex justify-between"><h3 class="text-sm font-semibold">@(creatingResourceTemperature ? "New resource thermal capability" : "Edit resource thermal capability")</h3><button class="text-xs text-muted hover:underline" @onclick="CancelResourceTemperatureEdit">Cancel</button></div>
+                    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <label class="text-xs text-secondary">Resource<select class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingResourceTemperature.ResourceId">@foreach (var resource in masters.Resources.OrderBy(x => x.Code)) { <option value="@resource.Id">@resource.Code · @resource.Name</option> }</select></label>
+                        <label class="text-xs text-secondary">Operation<select class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingResourceTemperature.ProcessOperationType">@foreach (var value in Enum.GetValues<ProcessOperationType>().Where(x => x != ProcessOperationType.Unknown)) { <option value="@value">@value</option> }</select></label>
+                        <label class="text-xs text-secondary">Exit min °C<input type="number" step="1" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5" @bind="editingResourceTemperature.MinimumAchievableExitTemperatureC" /></label>
+                        <label class="text-xs text-secondary">Exit nominal °C<input type="number" step="1" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5" @bind="editingResourceTemperature.NominalExitTemperatureC" /></label>
+                        <label class="text-xs text-secondary">Exit max °C<input type="number" step="1" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5" @bind="editingResourceTemperature.MaximumAchievableExitTemperatureC" /></label>
+                        <label class="text-xs text-secondary">Max heating °C/min<input type="number" min="0" step="0.1" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5" @bind="editingResourceTemperature.MaximumHeatingRateCPerMinute" /></label>
+                        <label class="text-xs text-secondary">Holding loss °C/min<input type="number" min="0" step="0.1" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5" @bind="editingResourceTemperature.NominalTemperatureLossCPerMinuteWhileHolding" /></label>
+                        <label class="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" @bind="editingResourceTemperature.CanCorrectTemperature" />Can correct temperature</label>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(ResourceTemperatureEditError)) { <p class="mt-3 text-xs text-danger">@ResourceTemperatureEditError</p> }
+                    <div class="mt-3 flex justify-end gap-2"><button class="rounded-control border border-border-strong px-3 py-1.5 text-xs" @onclick="CancelResourceTemperatureEdit">Cancel</button><button class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-50" disabled="@(saving || !string.IsNullOrWhiteSpace(ResourceTemperatureEditError))" @onclick="SaveResourceTemperatureAsync">@(saving ? "Saving…" : creatingResourceTemperature ? "Add capability" : "Save capability")</button></div>
+                </div>
+            }
+        </section>
+    </div>
+
+    <div class="mt-4 rounded-surface border border-border bg-surface-inset p-4 text-xs text-secondary"><strong class="text-primary">Planner rule:</strong> changeover and thermal master edits affect future calculations only. Existing Plan Versions retain their persisted decisions/assumptions and are not rewritten.</div>
+}
+
+@code {
+    private PlanningMasterDataSnapshot? masters;
+    private bool loading = true;
+    private bool saving;
+    private string? message;
+    private bool messageIsError;
+
+    private TransitionRule? editingTransition;
+    private bool creatingTransition;
+    private Guid? transitionDeleteArmed;
+    private string transitionResourceText = string.Empty;
+    private string transitionOperationText = string.Empty;
+    private int transitionMinutes;
+
+    private GradeProcessTemperatureRequirement? editingGradeTemperature;
+    private bool creatingGradeTemperature;
+    private Guid? gradeTemperatureDeleteArmed;
+
+    private ResourceTemperatureCapability? editingResourceTemperature;
+    private bool creatingResourceTemperature;
+    private Guid? resourceTemperatureDeleteArmed;
+
+    private string? TransitionEditError
+    {
+        get
+        {
+            if (editingTransition is null) return null;
+            if (string.IsNullOrWhiteSpace(editingTransition.FromCode) || string.IsNullOrWhiteSpace(editingTransition.ToCode)) return "From and To codes are required.";
+            if (transitionMinutes < 0) return "Transition time cannot be negative.";
+            if (editingTransition.Penalty < 0) return "Transition penalty cannot be negative.";
+            if (!editingTransition.IsAllowed && editingTransition.RequiresSequenceBreak) return "A forbidden transition does not also need a sequence-break flag.";
+            return null;
+        }
+    }
+
+    private string? GradeTemperatureEditError => editingGradeTemperature is null ? null : ValidateEnvelope(
+        editingGradeTemperature.SteelGradeId != Guid.Empty,
+        editingGradeTemperature.ProcessOperationType,
+        editingGradeTemperature.MinimumEntryTemperatureC,
+        editingGradeTemperature.TargetEntryTemperatureC,
+        editingGradeTemperature.MaximumEntryTemperatureC,
+        editingGradeTemperature.MinimumExitTemperatureC,
+        editingGradeTemperature.TargetExitTemperatureC,
+        editingGradeTemperature.MaximumExitTemperatureC,
+        editingGradeTemperature.MaximumHoldingMinutesAfterExit);
+
+    private string? ResourceTemperatureEditError => editingResourceTemperature is null ? null : ValidateResourceThermal(editingResourceTemperature);
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        try { masters = await MasterDataProvider.GetAsync(); }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { loading = false; }
+    }
+
+    private void BeginNewTransition()
+    {
+        editingTransition = new TransitionRule { FromCode = "*", ToCode = "*", Scope = TransitionRuleScope.Default, Dimension = TransitionDimension.Grade, IsAllowed = true };
+        creatingTransition = true;
+        transitionResourceText = string.Empty;
+        transitionOperationText = string.Empty;
+        transitionMinutes = 0;
+        transitionDeleteArmed = null;
+        message = null;
+    }
+
+    private void BeginEditTransition(TransitionRule x)
+    {
+        editingTransition = CloneTransition(x);
+        creatingTransition = false;
+        transitionResourceText = x.ResourceId?.ToString() ?? string.Empty;
+        transitionOperationText = x.ProcessOperationType?.ToString() ?? string.Empty;
+        transitionMinutes = (int)Math.Round(x.TransitionTime.TotalMinutes);
+        transitionDeleteArmed = null;
+        message = null;
+    }
+
+    private void TransitionResourceChanged(ChangeEventArgs args) => transitionResourceText = args.Value?.ToString() ?? string.Empty;
+    private void TransitionOperationChanged(ChangeEventArgs args) => transitionOperationText = args.Value?.ToString() ?? string.Empty;
+    private void CancelTransitionEdit() { editingTransition = null; creatingTransition = false; }
+
+    private async Task SaveTransitionAsync()
+    {
+        if (editingTransition is null || !string.IsNullOrWhiteSpace(TransitionEditError)) return;
+        saving = true;
+        try
+        {
+            editingTransition.ResourceId = Guid.TryParse(transitionResourceText, out var resourceId) ? resourceId : null;
+            editingTransition.ProcessOperationType = Enum.TryParse<ProcessOperationType>(transitionOperationText, out var operation) ? operation : null;
+            editingTransition.FromCode = editingTransition.FromCode.Trim();
+            editingTransition.ToCode = editingTransition.ToCode.Trim();
+            editingTransition.ReasonCode = Normalize(editingTransition.ReasonCode);
+            editingTransition.TransitionTime = TimeSpan.FromMinutes(transitionMinutes);
+            if (creatingTransition) await Admin.CreateAsync(editingTransition); else await Admin.UpdateAsync(editingTransition);
+            editingTransition = null;
+            creatingTransition = false;
+            await LoadAsync();
+            SetMessage("Transition rule saved. Future campaign and schedule calculations will use the updated sequence constraint.", false);
+        }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { saving = false; }
+    }
+
+    private async Task ArmTransitionDelete(Guid id)
+    {
+        if (transitionDeleteArmed != id) { transitionDeleteArmed = id; SetMessage("Click Confirm delete again to remove this transition rule.", true); return; }
+        saving = true;
+        try { await Admin.DeleteAsync<TransitionRule>(id); transitionDeleteArmed = null; editingTransition = editingTransition?.Id == id ? null : editingTransition; await LoadAsync(); SetMessage("Transition rule deleted. Recalculate affected plans before release.", false); }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { saving = false; }
+    }
+
+    private void BeginNewGradeTemperature()
+    {
+        if (masters is null) return;
+        editingGradeTemperature = new GradeProcessTemperatureRequirement { SteelGradeId = masters.EffectiveSteelGrades.OrderBy(x => x.GradeCode).FirstOrDefault()?.Id ?? Guid.Empty, ProcessOperationType = ProcessOperationType.Eaf };
+        creatingGradeTemperature = true; gradeTemperatureDeleteArmed = null; message = null;
+    }
+
+    private void BeginEditGradeTemperature(GradeProcessTemperatureRequirement x)
+    {
+        editingGradeTemperature = new GradeProcessTemperatureRequirement { Id = x.Id, SteelGradeId = x.SteelGradeId, ProcessOperationType = x.ProcessOperationType, MinimumEntryTemperatureC = x.MinimumEntryTemperatureC, TargetEntryTemperatureC = x.TargetEntryTemperatureC, MaximumEntryTemperatureC = x.MaximumEntryTemperatureC, MinimumExitTemperatureC = x.MinimumExitTemperatureC, TargetExitTemperatureC = x.TargetExitTemperatureC, MaximumExitTemperatureC = x.MaximumExitTemperatureC, MaximumHoldingMinutesAfterExit = x.MaximumHoldingMinutesAfterExit };
+        creatingGradeTemperature = false; gradeTemperatureDeleteArmed = null; message = null;
+    }
+
+    private void CancelGradeTemperatureEdit() { editingGradeTemperature = null; creatingGradeTemperature = false; }
+    private async Task SaveGradeTemperatureAsync()
+    {
+        if (editingGradeTemperature is null || !string.IsNullOrWhiteSpace(GradeTemperatureEditError)) return;
+        saving = true;
+        try { if (creatingGradeTemperature) await Admin.CreateAsync(editingGradeTemperature); else await Admin.UpdateAsync(editingGradeTemperature); editingGradeTemperature = null; creatingGradeTemperature = false; await LoadAsync(); SetMessage("Grade temperature envelope saved. Future planning runs will enforce the updated thermal limits.", false); }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { saving = false; }
+    }
+
+    private async Task ArmGradeTemperatureDelete(Guid id)
+    {
+        if (gradeTemperatureDeleteArmed != id) { gradeTemperatureDeleteArmed = id; SetMessage("Click Confirm delete again to remove this grade temperature envelope.", true); return; }
+        saving = true;
+        try { await Admin.DeleteAsync<GradeProcessTemperatureRequirement>(id); gradeTemperatureDeleteArmed = null; editingGradeTemperature = editingGradeTemperature?.Id == id ? null : editingGradeTemperature; await LoadAsync(); SetMessage("Grade temperature envelope deleted. Recalculate affected plans before release.", false); }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { saving = false; }
+    }
+
+    private void BeginNewResourceTemperature()
+    {
+        if (masters is null) return;
+        editingResourceTemperature = new ResourceTemperatureCapability { ResourceId = masters.Resources.OrderBy(x => x.Code).FirstOrDefault()?.Id ?? Guid.Empty, ProcessOperationType = ProcessOperationType.Eaf };
+        creatingResourceTemperature = true; resourceTemperatureDeleteArmed = null; message = null;
+    }
+
+    private void BeginEditResourceTemperature(ResourceTemperatureCapability x)
+    {
+        editingResourceTemperature = new ResourceTemperatureCapability { Id = x.Id, ResourceId = x.ResourceId, ProcessOperationType = x.ProcessOperationType, MinimumAchievableExitTemperatureC = x.MinimumAchievableExitTemperatureC, NominalExitTemperatureC = x.NominalExitTemperatureC, MaximumAchievableExitTemperatureC = x.MaximumAchievableExitTemperatureC, MaximumHeatingRateCPerMinute = x.MaximumHeatingRateCPerMinute, NominalTemperatureLossCPerMinuteWhileHolding = x.NominalTemperatureLossCPerMinuteWhileHolding, CanCorrectTemperature = x.CanCorrectTemperature };
+        creatingResourceTemperature = false; resourceTemperatureDeleteArmed = null; message = null;
+    }
+
+    private void CancelResourceTemperatureEdit() { editingResourceTemperature = null; creatingResourceTemperature = false; }
+    private async Task SaveResourceTemperatureAsync()
+    {
+        if (editingResourceTemperature is null || !string.IsNullOrWhiteSpace(ResourceTemperatureEditError)) return;
+        saving = true;
+        try { if (creatingResourceTemperature) await Admin.CreateAsync(editingResourceTemperature); else await Admin.UpdateAsync(editingResourceTemperature); editingResourceTemperature = null; creatingResourceTemperature = false; await LoadAsync(); SetMessage("Resource thermal capability saved. Future planning runs will use the updated resource envelope.", false); }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { saving = false; }
+    }
+
+    private async Task ArmResourceTemperatureDelete(Guid id)
+    {
+        if (resourceTemperatureDeleteArmed != id) { resourceTemperatureDeleteArmed = id; SetMessage("Click Confirm delete again to remove this resource thermal capability.", true); return; }
+        saving = true;
+        try { await Admin.DeleteAsync<ResourceTemperatureCapability>(id); resourceTemperatureDeleteArmed = null; editingResourceTemperature = editingResourceTemperature?.Id == id ? null : editingResourceTemperature; await LoadAsync(); SetMessage("Resource thermal capability deleted. Recalculate affected plans before release.", false); }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { saving = false; }
+    }
+
+    private string TransitionOwner(TransitionRule x) => x.ResourceId.HasValue ? ResourceCode(x.ResourceId.Value) : x.ProcessUnitType?.ToString() ?? x.ResourceType?.ToString() ?? "Plant default";
+    private string ResourceCode(Guid id) => masters?.Resources.FirstOrDefault(x => x.Id == id)?.Code ?? id.ToString("N")[..8];
+    private string GradeCode(Guid id) => masters?.EffectiveSteelGrades.FirstOrDefault(x => x.Id == id)?.GradeCode ?? id.ToString("N")[..8];
+    private static string Envelope(decimal? minimum, decimal? target, decimal? maximum) => minimum.HasValue || target.HasValue || maximum.HasValue ? $"{minimum?.ToString("0.#") ?? "—"} / {target?.ToString("0.#") ?? "—"} / {maximum?.ToString("0.#") ?? "—"}" : "—";
+
+    private static string? ValidateEnvelope(bool ownerSelected, ProcessOperationType operation, decimal? entryMin, decimal? entryTarget, decimal? entryMax, decimal? exitMin, decimal? exitTarget, decimal? exitMax, int? maxHold)
+    {
+        if (!ownerSelected) return "Select a steel grade.";
+        if (operation == ProcessOperationType.Unknown) return "Select a real process operation.";
+        var entryError = ValidateOrdered("entry", entryMin, entryTarget, entryMax); if (entryError is not null) return entryError;
+        var exitError = ValidateOrdered("exit", exitMin, exitTarget, exitMax); if (exitError is not null) return exitError;
+        if (maxHold is < 0) return "Maximum holding time cannot be negative.";
+        return null;
+    }
+
+    private static string? ValidateResourceThermal(ResourceTemperatureCapability x)
+    {
+        if (x.ResourceId == Guid.Empty) return "Select a physical resource.";
+        if (x.ProcessOperationType == ProcessOperationType.Unknown) return "Select a real process operation.";
+        var rangeError = ValidateOrdered("resource exit", x.MinimumAchievableExitTemperatureC, x.NominalExitTemperatureC, x.MaximumAchievableExitTemperatureC); if (rangeError is not null) return rangeError;
+        if (x.MaximumHeatingRateCPerMinute is < 0m) return "Heating rate cannot be negative.";
+        if (x.NominalTemperatureLossCPerMinuteWhileHolding is < 0m) return "Holding temperature loss cannot be negative.";
+        return null;
+    }
+
+    private static string? ValidateOrdered(string label, decimal? minimum, decimal? target, decimal? maximum)
+    {
+        if (minimum.HasValue && target.HasValue && target < minimum) return $"{label} target must be at least the minimum.";
+        if (target.HasValue && maximum.HasValue && maximum < target) return $"{label} maximum must be at least the target.";
+        if (minimum.HasValue && maximum.HasValue && maximum < minimum) return $"{label} maximum must be at least the minimum.";
+        return null;
+    }
+
+    private static TransitionRule CloneTransition(TransitionRule x) => new()
+    {
+        Id = x.Id,
+        ResourceId = x.ResourceId,
+        ResourceType = x.ResourceType,
+        ProcessUnitType = x.ProcessUnitType,
+        ProcessOperationType = x.ProcessOperationType,
+        Scope = x.Scope,
+        Dimension = x.Dimension,
+        FromCode = x.FromCode,
+        ToCode = x.ToCode,
+        IsAllowed = x.IsAllowed,
+        RequiresSequenceBreak = x.RequiresSequenceBreak,
+        Penalty = x.Penalty,
+        TransitionTime = x.TransitionTime,
+        ReasonCode = x.ReasonCode
+    };
+
+    private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private void SetMessage(string value, bool error) { message = value; messageIsError = error; }
+}
