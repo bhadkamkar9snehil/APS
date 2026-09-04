@@ -31,6 +31,25 @@ public sealed record PlanScenarioSummaryView(
     double SpanHours,
     long? ObjectiveValue);
 
+/// <summary>
+/// Persisted demand/supply and production-structure footprint for one Plan Version. These values are
+/// copied from immutable plan snapshots; the comparison UI does not recalculate demand or sourcing.
+/// </summary>
+public sealed record PlanScenarioDemandSummaryView(
+    int ProductionOrders,
+    int MakeToOrderCount,
+    int MakeToStockCount,
+    decimal RemainingDemandMt,
+    decimal FinishedGoodsAllocatedMt,
+    decimal ExistingIntermediateAllocatedMt,
+    decimal ExternalIntermediateAllocatedMt,
+    decimal FreshSteelRequirementMt,
+    int CampaignCount,
+    int HeatCount)
+{
+    public decimal IntermediateAllocatedMt => ExistingIntermediateAllocatedMt + ExternalIntermediateAllocatedMt;
+}
+
 /// <summary>One immutable persisted operation projected for side-by-side scenario visualization.</summary>
 public sealed record PlanScenarioOperationView(
     string PlanningKey,
@@ -66,4 +85,6 @@ public sealed record PlanComparisonWorkspaceView(
     PlanScenarioSummaryView? NewPlanSummary = null,
     IReadOnlyCollection<PlanResourceLoadComparisonView>? ResourceLoads = null,
     IReadOnlyCollection<PlanScenarioOperationView>? BaselineOperations = null,
-    IReadOnlyCollection<PlanScenarioOperationView>? NewPlanOperations = null);
+    IReadOnlyCollection<PlanScenarioOperationView>? NewPlanOperations = null,
+    PlanScenarioDemandSummaryView? BaselineDemand = null,
+    PlanScenarioDemandSummaryView? NewPlanDemand = null);
