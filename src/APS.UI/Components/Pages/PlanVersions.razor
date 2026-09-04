@@ -98,7 +98,8 @@
                     <div class="mt-2 flex flex-wrap gap-3">
                         @if (CalculateErrorLooksLikeMasterData)
                         {
-                            <NavLink href="/plan/master-data" class="font-semibold underline">Review technical master data</NavLink>
+                            <NavLink href="/plan/routes" class="font-semibold underline">Review routes and capabilities</NavLink>
+                            <NavLink href="/plan/master-data" class="font-semibold underline">All master data</NavLink>
                         }
                         <NavLink href="/plan/constraints" class="font-semibold underline">Review planning controls</NavLink>
                     </div>
@@ -284,7 +285,8 @@
                     request,
                     Constraints.BuildTimeFencePolicy(),
                     Trigger: PlanTriggerType.Manual,
-                    Reason: "Planner replan using current planning controls"));
+                    Reason: "Planner replan using current planning controls",
+                    UseBaselinePlanningControls: false));
             await LoadAsync();
             await SelectPlanAsync(outcome.Version.PlanVersionId);
             actionSuccess = $"Replanned as {outcome.Version.VersionNumber}. Review the child plan against its baseline before approval.";
