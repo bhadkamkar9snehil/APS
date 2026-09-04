@@ -15,6 +15,19 @@ public sealed class PlannerConstraintWorkspaceMarkupTests
     }
 
     [Fact]
+    public void What_if_analysis_renders_both_schedules_on_one_comparison_axis()
+    {
+        var source = System.IO.File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/PlanCompare.razor"));
+        var visual = System.IO.File.ReadAllText(Repo.File("src/APS.UI/Components/Shared/ScenarioScheduleComparison.razor"));
+
+        Assert.Contains("ScenarioScheduleComparison", source, StringComparison.Ordinal);
+        Assert.Contains("Resource loading impact", source, StringComparison.Ordinal);
+        Assert.Contains("Planning assumption changes", source, StringComparison.Ordinal);
+        Assert.Contains("HorizonStartUtc=\"@CommonStart\"", visual, StringComparison.Ordinal);
+        Assert.Contains("HorizonEndUtc=\"@CommonEnd\"", visual, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Plan_version_replan_preserves_selected_baseline_horizon_and_repair_scope()
     {
         var source = System.IO.File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/PlanVersions.razor"));
@@ -53,6 +66,22 @@ public sealed class PlannerConstraintWorkspaceMarkupTests
     }
 
     [Fact]
+    public void Capability_calendar_combines_qualification_context_week_view_and_calendar_crud()
+    {
+        var page = System.IO.File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/CapabilityCalendar.razor"));
+        var calendar = System.IO.File.ReadAllText(Repo.File("src/APS.UI/Components/Shared/ResourceCapabilityCalendar.razor"));
+
+        Assert.Contains("@page \"/plan/capability-calendar\"", page, StringComparison.Ordinal);
+        Assert.Contains("ResourceCapabilityCalendar", page, StringComparison.Ordinal);
+        Assert.Contains("Admin.CreateAsync(editing)", page, StringComparison.Ordinal);
+        Assert.Contains("Admin.UpdateAsync(editing)", page, StringComparison.Ordinal);
+        Assert.Contains("Admin.DeleteAsync<ResourceCalendar>", page, StringComparison.Ordinal);
+        Assert.Contains("Qualified work", calendar, StringComparison.Ordinal);
+        Assert.Contains("Add downtime", calendar, StringComparison.Ordinal);
+        Assert.Contains("Add derating", calendar, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Process_constraint_workspace_edits_sequence_and_thermal_constraints()
     {
         var source = System.IO.File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/ProcessConstraints.razor"));
@@ -75,6 +104,7 @@ public sealed class PlannerConstraintWorkspaceMarkupTests
         Assert.Contains("Href=\"/plan/preflight\"", source, StringComparison.Ordinal);
         Assert.Contains("Href=\"/plan/what-if\"", source, StringComparison.Ordinal);
         Assert.Contains("Href=\"/plan/resource-constraints\"", source, StringComparison.Ordinal);
+        Assert.Contains("Href=\"/plan/capability-calendar\"", source, StringComparison.Ordinal);
         Assert.Contains("Href=\"/plan/process-constraints\"", source, StringComparison.Ordinal);
     }
 }
