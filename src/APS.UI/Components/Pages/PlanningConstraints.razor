@@ -1,0 +1,472 @@
+@page "/plan/constraints"
+@inject IPlanningMasterDataProvider MasterDataProvider
+@inject IMasterDataAdminService Admin
+@inject IPlanVersionRepository PlanVersions
+@inject PlannerWorkspaceState WorkspaceState
+
+<PageTitle>Planning Controls - APS</PageTitle>
+
+<div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+    <div class="max-w-3xl">
+        <h1 class="mb-1 text-lg font-semibold">Planning Controls</h1>
+        <p class="text-sm text-secondary">Tune the planner's run policy without changing technical plant truth. These controls feed the next Calculate or Replan; routes, grade rules, capabilities, calendars and thermal limits remain authoritative master data.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+        @if (WorkspaceState.CurrentPlanVersionId.HasValue)
+        {
+            <button type="button" class="rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover disabled:opacity-50" disabled="@busy" @onclick="LoadSelectedPlanControlsAsync">Load selected plan settings</button>
+        }
+        <button type="button" class="rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover" @onclick="ResetControls">Reset planner defaults</button>
+        <NavLink href="/plan/versions" class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground">Calculate / Replan</NavLink>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(statusMessage))
+{
+    <div role="status" class="mb-4 rounded border border-border px-3 py-2 text-sm @(statusIsError ? "bg-danger-soft text-danger" : "bg-success-soft text-success")">@statusMessage</div>
+}
+
+@if (ConstraintErrors.Count > 0)
+{
+    <div role="alert" class="mb-4 rounded border border-danger/30 bg-danger-soft p-3 text-sm text-danger">
+        <strong class="block">The current control profile is not valid yet</strong>
+        <ul class="mt-1 list-disc space-y-0.5 pl-5">
+            @foreach (var issue in ConstraintErrors) { <li>@issue</li> }
+        </ul>
+    </div>
+}
+else
+{
+    <div class="mb-4 flex flex-wrap items-center gap-x-5 gap-y-1 rounded border border-border bg-success-soft px-3 py-2 text-xs text-success">
+        <strong>Profile ready</strong>
+        <span>Heat @Constraints.MinimumHeatSizeMt.ToString("0.##")–@Constraints.MaximumHeatSizeMt.ToString("0.##") MT</span>
+        <span>Campaign ≤ @Constraints.MaximumCampaignQuantityMt.ToString("0.##") MT</span>
+        <span>Frozen @Constraints.FrozenMinutes min</span>
+        <span>Slushy @Constraints.SlushyMinutes min</span>
+        <span>Solver @Constraints.MaxSolverSeconds s</span>
+        <span>Plant: @ActiveScenarioLabel</span>
+    </div>
+}
+
+<div class="grid grid-cols-1 gap-4 2xl:grid-cols-[minmax(0,1fr)_380px]">
+    <main class="min-w-0 space-y-4">
+        <section class="rounded-surface border border-border bg-surface-raised shadow-soft">
+            <div class="border-b border-border px-4 py-3">
+                <h2 class="text-sm font-semibold">1. Heat and campaign policy</h2>
+                <p class="mt-0.5 text-xs text-secondary">Controls how demand may be grouped before physical structure and finite scheduling are built. Furnace/resource envelopes still remain hard feasibility limits.</p>
+            </div>
+            <div class="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-5">
+                <NumberField Label="Minimum heat MT" @bind-Value="Constraints.MinimumHeatSizeMt" Step="0.1" />
+                <NumberField Label="Nominal heat MT" @bind-Value="Constraints.NominalHeatSizeMt" Step="0.1" />
+                <NumberField Label="Maximum heat MT" @bind-Value="Constraints.MaximumHeatSizeMt" Step="0.1" />
+                <NumberField Label="Target campaign MT" @bind-Value="Constraints.TargetCampaignQuantityMt" Step="1" />
+                <NumberField Label="Maximum campaign MT" @bind-Value="Constraints.MaximumCampaignQuantityMt" Step="1" />
+            </div>
+            <div class="grid gap-3 border-t border-border px-4 py-3 sm:grid-cols-3">
+                <label class="flex items-center gap-2 text-sm"><input type="checkbox" @bind="Constraints.AllowMtoMtsMixing" /><span>Allow MTO and MTS in one compatible campaign</span></label>
+                <label class="flex items-center gap-2 text-sm"><input type="checkbox" @bind="Constraints.AllowMixedGradesWithinSequenceClass" /><span>Allow compatible grades within a sequence class</span></label>
+                <label class="flex items-center gap-2 text-sm"><span class="text-secondary">Expected casting yield %</span><input type="number" min="0.01" max="100" step="0.1" class="w-24 rounded-control border border-border-strong bg-surface px-2 py-1" @bind="Constraints.ExpectedCastingYieldPct" /></label>
+            </div>
+        </section>
+
+        <section class="rounded-surface border border-border bg-surface-raised shadow-soft">
+            <div class="border-b border-border px-4 py-3">
+                <h2 class="text-sm font-semibold">2. Optimization priorities</h2>
+                <p class="mt-0.5 text-xs text-secondary">Weights trade efficiency and stability after service feasibility. Customer service risk remains a dominant objective tier; reducing an efficiency weight cannot make the solver intentionally buy lateness.</p>
+            </div>
+            <div class="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
+                <NumberField Label="Late service / MT-day" @bind-Value="Constraints.ServiceRiskPerMtDay" Step="1" />
+                <NumberField Label="Early production / MT-day" @bind-Value="Constraints.EarlyProductionPerMtDay" Step="0.1" />
+                <NumberField Label="Campaign setup cost" @bind-Value="Constraints.CampaignSetupCost" Step="1" />
+                <NumberField Label="Residual heat / MT" @bind-Value="Constraints.ResidualHeatPerMt" Step="0.1" />
+                <NumberField Label="Below-min campaign / MT" @bind-Value="Constraints.BelowMinimumCampaignPerMt" Step="0.1" />
+                <NumberField Label="Grade transition weight" @bind-Value="Constraints.GradeTransitionCostWeight" Step="0.1" />
+                <NumberField Label="Heat target deviation / MT" @bind-Value="Constraints.HeatTargetDeviationPerMt" Step="0.1" />
+                <NumberField Label="Campaign stability / MT" @bind-Value="Constraints.CampaignStabilityChangePerMt" Step="0.1" />
+            </div>
+        </section>
+
+        <section class="rounded-surface border border-border bg-surface-raised shadow-soft">
+            <div class="border-b border-border px-4 py-3">
+                <h2 class="text-sm font-semibold">3. Physical structure policy</h2>
+                <p class="mt-0.5 text-xs text-secondary">Controls campaign-to-cast/rolling structure where the configured route does not provide a more specific physical value.</p>
+            </div>
+            <div class="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-5">
+                <IntField Label="Max heats / cast sequence" @bind-Value="Constraints.MaximumHeatsPerCastSequence" />
+                <IntField Label="Casting min / heat" @bind-Value="Constraints.DefaultCastingMinutesPerHeat" />
+                <IntField Label="Sequence break penalty" @bind-Value="Constraints.SequenceBreakPenalty" />
+                <NumberField Label="Casting yield %" @bind-Value="Constraints.CastingYieldPct" Step="0.1" />
+                <IntField Label="Rolling min / 100 MT" @bind-Value="Constraints.DefaultRollingMinutesPer100Mt" />
+            </div>
+            <div class="flex flex-wrap gap-x-6 gap-y-2 border-t border-border px-4 py-3 text-sm">
+                <label class="flex items-center gap-2"><input type="checkbox" @bind="Constraints.AllowCrossCampaignCastSequences" /><span>Allow compatible campaigns to share cast sequences</span></label>
+                <label class="flex items-center gap-2"><input type="checkbox" @bind="Constraints.AllowCrossCampaignRollingPlans" /><span>Allow compatible campaigns to share rolling plans</span></label>
+            </div>
+        </section>
+
+        <section class="rounded-surface border border-border bg-surface-raised shadow-soft">
+            <div class="border-b border-border px-4 py-3">
+                <h2 class="text-sm font-semibold">4. Replan stability and repair</h2>
+                <p class="mt-0.5 text-xs text-secondary">Frozen work is protected; slushy work may move at a penalty; liquid work is freely optimized. Bounded repair limits the blast radius of local disruption recovery.</p>
+            </div>
+            <div class="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
+                <IntField Label="Frozen minutes" @bind-Value="Constraints.FrozenMinutes" />
+                <IntField Label="Slushy minutes" @bind-Value="Constraints.SlushyMinutes" />
+                <IntField Label="Slushy movement penalty / min" @bind-Value="Constraints.SlushyMovementPenaltyPerMinute" />
+                <IntField Label="Slushy resource-change penalty" @bind-Value="Constraints.SlushyResourceChangePenalty" />
+                <IntField Label="Repair successor depth" @bind-Value="Constraints.RepairSuccessorDepth" />
+                <IntField Label="Repair horizon minutes" @bind-Value="Constraints.RepairHorizonMinutes" />
+                <label class="flex items-center gap-2 self-end pb-1 text-sm"><input type="checkbox" @bind="Constraints.FreezeUnaffectedOperations" /><span>Freeze unaffected work</span></label>
+                <label class="flex items-center gap-2 self-end pb-1 text-sm"><input type="checkbox" @bind="Constraints.IncludeSameResourceNeighbors" /><span>Include same-resource neighbors</span></label>
+            </div>
+        </section>
+
+        <section class="rounded-surface border border-border bg-surface-raised shadow-soft">
+            <div class="border-b border-border px-4 py-3">
+                <h2 class="text-sm font-semibold">5. Dispatch commitment policy</h2>
+                <p class="mt-0.5 text-xs text-secondary">Optional advanced policy for when planned resource assignments become firm/committed. Disabled preserves the current unconstrained assignment-commitment behavior.</p>
+            </div>
+            <div class="p-4">
+                <label class="mb-3 flex items-center gap-2 text-sm font-medium"><input type="checkbox" @bind="Constraints.UseAssignmentCommitmentPolicy" /><span>Apply commitment windows to process operations</span></label>
+                <fieldset disabled="@(!Constraints.UseAssignmentCommitmentPolicy)" class="grid gap-3 disabled:opacity-50 sm:grid-cols-2 xl:grid-cols-4">
+                    <IntField Label="Firm minutes before start" @bind-Value="Constraints.FirmMinutesBeforeStart" />
+                    <IntField Label="Commit minutes before start" @bind-Value="Constraints.CommitMinutesBeforeStart" />
+                    <label class="flex items-center gap-2 text-sm"><input type="checkbox" @bind="Constraints.AllowRedispatchWhenFirm" /><span>Allow redispatch while firm</span></label>
+                    <label class="flex items-center gap-2 text-sm"><input type="checkbox" @bind="Constraints.AllowRedispatchWhenCommittedForDisruption" /><span>Allow committed redispatch for disruption</span></label>
+                    <label class="flex items-center gap-2 text-sm"><input type="checkbox" @bind="Constraints.CommitWhenPredecessorRunning" /><span>Commit when predecessor runs</span></label>
+                    <label class="flex items-center gap-2 text-sm"><input type="checkbox" @bind="Constraints.CommitWhenPredecessorCompleted" /><span>Commit when predecessor completes</span></label>
+                    <label class="flex items-center gap-2 text-sm"><input type="checkbox" @bind="Constraints.RequireDispatchAcknowledgement" /><span>Require dispatch acknowledgement</span></label>
+                </fieldset>
+            </div>
+        </section>
+
+        <section class="rounded-surface border border-border bg-surface-raised shadow-soft">
+            <div class="flex flex-wrap items-center justify-between gap-3 p-4">
+                <div>
+                    <h2 class="text-sm font-semibold">6. Solver effort</h2>
+                    <p class="mt-0.5 text-xs text-secondary">Maximum solve time is an effort budget, not a relaxation of technical feasibility.</p>
+                </div>
+                <label class="flex items-center gap-2 text-sm"><span class="text-secondary">Max solver seconds</span><input type="number" min="1" class="w-24 rounded-control border border-border-strong bg-surface px-2 py-1" @bind="Constraints.MaxSolverSeconds" /></label>
+            </div>
+        </section>
+    </main>
+
+    <aside class="min-w-0 space-y-4">
+        <section class="rounded-surface border border-border bg-surface-raised shadow-soft">
+            <div class="border-b border-border px-4 py-3">
+                <h2 class="text-sm font-semibold">Operating scenario</h2>
+                <p class="mt-0.5 text-xs text-secondary">Plan against an outage, derating or grade restriction without mutating the baseline plant.</p>
+            </div>
+            <div class="p-4">
+                @if (loadingMasters)
+                {
+                    <p class="text-sm text-muted">Loading scenarios…</p>
+                }
+                else
+                {
+                    <label class="block text-xs text-secondary">Scenario used by next run
+                        <select class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" @bind="Constraints.ScenarioCode">
+                            <option value="">Configured plant (baseline)</option>
+                            @foreach (var scenario in Scenarios.Where(x => !x.IsBaseline))
+                            {
+                                <option value="@scenario.ScenarioCode">@scenario.Name (@scenario.ScenarioCode)</option>
+                            }
+                        </select>
+                    </label>
+
+                    @if (ActiveScenario is { } active)
+                    {
+                        <div class="mt-3 rounded border border-border bg-surface-inset p-3 text-xs">
+                            <div class="flex items-center justify-between gap-2"><strong>@active.Name</strong><span class="text-muted">@active.ResourceOverrides.Count override(s)</span></div>
+                            @if (!string.IsNullOrWhiteSpace(active.Description)) { <p class="mt-1 text-secondary">@active.Description</p> }
+                            <div class="mt-2 space-y-1.5">
+                                @foreach (var item in active.ResourceOverrides.OrderBy(x => ResourceCode(x.ResourceId)))
+                                {
+                                    <div class="rounded border border-border bg-surface-raised p-2">
+                                        <div class="flex justify-between gap-2"><strong>@ResourceCode(item.ResourceId)</strong><span class="@OperatingStateClass(item.OperatingState)">@item.OperatingState</span></div>
+                                        <div class="mt-0.5 text-muted">@OverrideSummary(item)</div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </section>
+
+        <details class="rounded-surface border border-border bg-surface-raised shadow-soft">
+            <summary class="cursor-pointer px-4 py-3 text-sm font-semibold hover:bg-surface-hover">Create operating scenario</summary>
+            <div class="space-y-2 border-t border-border p-4 text-sm">
+                <label class="block text-xs text-secondary">Code<input class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1" @bind="newScenarioCode" /></label>
+                <label class="block text-xs text-secondary">Name<input class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1" @bind="newScenarioName" /></label>
+                <label class="block text-xs text-secondary">Description<textarea rows="2" class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1" @bind="newScenarioDescription"></textarea></label>
+                <button type="button" class="w-full rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-50" disabled="@(busy || string.IsNullOrWhiteSpace(newScenarioCode) || string.IsNullOrWhiteSpace(newScenarioName))" @onclick="CreateScenarioAsync">Create scenario</button>
+            </div>
+        </details>
+
+        @if (ActiveScenario is { IsBaseline: false } selectedScenario)
+        {
+            <details class="rounded-surface border border-border bg-surface-raised shadow-soft" open>
+                <summary class="cursor-pointer px-4 py-3 text-sm font-semibold hover:bg-surface-hover">Add resource override</summary>
+                <div class="space-y-2 border-t border-border p-4 text-sm">
+                    <label class="block text-xs text-secondary">Resource
+                        <select class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1" @bind="overrideResourceId">
+                            @foreach (var resource in Resources.OrderBy(x => x.Code)) { <option value="@resource.Id">@resource.Code · @resource.Name</option> }
+                        </select>
+                    </label>
+                    <label class="block text-xs text-secondary">Operating state
+                        <select class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1" @bind="overrideOperatingState">
+                            @foreach (var state in Enum.GetValues<ResourceOperatingState>()) { <option value="@state">@state</option> }
+                        </select>
+                    </label>
+                    <label class="block text-xs text-secondary">Capacity factor % (optional)<input type="number" min="0" max="100" step="0.1" class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1" @bind="overrideCapacityFactorPct" /></label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="block text-xs text-secondary">Effective from<input type="datetime-local" class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1" @bind="overrideFrom" /></label>
+                        <label class="block text-xs text-secondary">Effective to<input type="datetime-local" class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1" @bind="overrideTo" /></label>
+                    </div>
+                    <label class="block text-xs text-secondary">Restrict process operation (optional)
+                        <select class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1" @bind="restrictedOperationText">
+                            <option value="">All applicable operations</option>
+                            @foreach (var op in Enum.GetValues<ProcessOperationType>().Where(x => x != ProcessOperationType.Unknown)) { <option value="@op">@op</option> }
+                        </select>
+                    </label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <label class="block text-xs text-secondary">Only allow grade<input class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1" @bind="allowedGradeCode" /></label>
+                        <label class="block text-xs text-secondary">Forbid grade<input class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1" @bind="forbiddenGradeCode" /></label>
+                    </div>
+                    <label class="block text-xs text-secondary">Reason<input class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1" @bind="overrideReason" /></label>
+                    @if (!string.IsNullOrWhiteSpace(OverrideInputError)) { <p class="text-xs text-danger">@OverrideInputError</p> }
+                    <button type="button" class="w-full rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-50" disabled="@(busy || !string.IsNullOrWhiteSpace(OverrideInputError))" @onclick="() => CreateOverrideAsync(selectedScenario.Id)">Add override</button>
+                </div>
+            </details>
+
+            <section class="rounded-surface border border-border bg-surface-raised shadow-soft">
+                <div class="border-b border-border px-4 py-3"><h2 class="text-sm font-semibold">Scenario overrides</h2></div>
+                @if (selectedScenario.ResourceOverrides.Count == 0)
+                {
+                    <p class="p-4 text-xs text-muted">No overrides. This scenario currently behaves like the configured plant.</p>
+                }
+                else
+                {
+                    <div class="divide-y divide-border">
+                        @foreach (var item in selectedScenario.ResourceOverrides.OrderBy(x => ResourceCode(x.ResourceId)))
+                        {
+                            <div class="p-3 text-xs">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div><strong>@ResourceCode(item.ResourceId)</strong><div class="text-secondary">@OverrideSummary(item)</div></div>
+                                    @if (pendingDeleteOverrideId == item.Id)
+                                    {
+                                        <div class="flex gap-1"><button class="text-danger underline" @onclick="() => DeleteOverrideAsync(item.Id)">Confirm</button><button class="text-muted underline" @onclick="() => pendingDeleteOverrideId = null">Cancel</button></div>
+                                    }
+                                    else
+                                    {
+                                        <button class="text-danger hover:underline" @onclick="() => pendingDeleteOverrideId = item.Id">Delete</button>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </section>
+        }
+
+        <section class="rounded-surface border border-border bg-surface-raised p-4 shadow-soft">
+            <h2 class="text-sm font-semibold">Technical constraints</h2>
+            <p class="mt-1 text-xs text-secondary">These remain configuration truth and are intentionally not relaxed by planner weights.</p>
+            <div class="mt-3 grid gap-2 text-xs">
+                <NavLink href="/plan/master-data" class="rounded-control border border-border px-3 py-2 hover:bg-surface-hover"><strong>Routes &amp; operations</strong><span class="block text-muted">Topology, required/optional steps, input/output sections</span></NavLink>
+                <NavLink href="/plan/master-data" class="rounded-control border border-border px-3 py-2 hover:bg-surface-hover"><strong>Resource capabilities</strong><span class="block text-muted">Eligible equipment, quantity/throughput limits, grade/route qualification</span></NavLink>
+                <NavLink href="/plan/master-data" class="rounded-control border border-border px-3 py-2 hover:bg-surface-hover"><strong>Grades, materials &amp; sections</strong><span class="block text-muted">Product and metallurgical compatibility</span></NavLink>
+                <NavLink href="/control-tower" class="rounded-control border border-border px-3 py-2 hover:bg-surface-hover"><strong>Capacity evidence</strong><span class="block text-muted">Inspect effective resource pressure before changing a scenario</span></NavLink>
+            </div>
+        </section>
+    </aside>
+</div>
+
+@code {
+    private PlannerConstraintState Constraints => WorkspaceState.Constraints;
+    private PlanningMasterDataSnapshot? masters;
+    private bool loadingMasters = true;
+    private bool busy;
+    private string? statusMessage;
+    private bool statusIsError;
+
+    private string newScenarioCode = "";
+    private string newScenarioName = "";
+    private string newScenarioDescription = "";
+
+    private Guid overrideResourceId;
+    private ResourceOperatingState overrideOperatingState = ResourceOperatingState.PlannedMaintenance;
+    private decimal? overrideCapacityFactorPct;
+    private DateTime? overrideFrom;
+    private DateTime? overrideTo;
+    private string restrictedOperationText = "";
+    private string allowedGradeCode = "";
+    private string forbiddenGradeCode = "";
+    private string overrideReason = "";
+    private Guid? pendingDeleteOverrideId;
+
+    private IReadOnlyList<string> ConstraintErrors => Constraints.Validate();
+    private IReadOnlyCollection<PlanningScenario> Scenarios => masters?.EffectivePlanningScenarios ?? Array.Empty<PlanningScenario>();
+    private IReadOnlyCollection<Resource> Resources => masters?.Resources ?? Array.Empty<Resource>();
+    private PlanningScenario? ActiveScenario => string.IsNullOrWhiteSpace(Constraints.ScenarioCode)
+        ? null
+        : Scenarios.FirstOrDefault(x => string.Equals(x.ScenarioCode, Constraints.ScenarioCode, StringComparison.OrdinalIgnoreCase));
+    private string ActiveScenarioLabel => ActiveScenario?.Name ?? "Configured baseline";
+
+    private string? OverrideInputError
+    {
+        get
+        {
+            if (overrideResourceId == Guid.Empty) return "Select a resource.";
+            if (overrideCapacityFactorPct is < 0m or > 100m) return "Capacity factor must be between 0 and 100 percent.";
+            if (overrideFrom.HasValue && overrideTo.HasValue && overrideTo <= overrideFrom) return "Effective-to must be after effective-from.";
+            if (!string.IsNullOrWhiteSpace(allowedGradeCode) && !string.IsNullOrWhiteSpace(forbiddenGradeCode)) return "Use either an allowed-grade or forbidden-grade restriction, not both.";
+            return null;
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadMastersAsync();
+
+    private async Task LoadMastersAsync()
+    {
+        loadingMasters = true;
+        try
+        {
+            masters = await MasterDataProvider.GetAsync();
+            if (overrideResourceId == Guid.Empty)
+                overrideResourceId = Resources.OrderBy(x => x.Code).FirstOrDefault()?.Id ?? Guid.Empty;
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, true);
+        }
+        finally
+        {
+            loadingMasters = false;
+        }
+    }
+
+    private void ResetControls()
+    {
+        Constraints.Reset();
+        SetStatus("Planner controls reset to APS defaults. Technical master data was not changed.", false);
+    }
+
+    private async Task LoadSelectedPlanControlsAsync()
+    {
+        if (WorkspaceState.CurrentPlanVersionId is not { } planId) return;
+        busy = true;
+        try
+        {
+            var plan = await PlanVersions.GetAsync(planId);
+            if (plan?.Assumptions is null)
+            {
+                SetStatus("The selected Plan Version predates persisted planning assumptions, so there are no controls to load.", true);
+                return;
+            }
+            Constraints.ApplyAssumptions(plan.Assumptions);
+            SetStatus($"Loaded persisted settings from {plan.VersionNumber}. You can now adjust them before the next replan.", false);
+        }
+        catch (Exception ex) { SetStatus(ex.Message, true); }
+        finally { busy = false; }
+    }
+
+    private async Task CreateScenarioAsync()
+    {
+        busy = true;
+        try
+        {
+            var code = newScenarioCode.Trim();
+            if (Scenarios.Any(x => x.ScenarioCode.Equals(code, StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException($"Scenario code {code} already exists.");
+            var scenario = await Admin.CreateAsync(new PlanningScenario
+            {
+                ScenarioCode = code,
+                Name = newScenarioName.Trim(),
+                Description = string.IsNullOrWhiteSpace(newScenarioDescription) ? null : newScenarioDescription.Trim(),
+                IsBaseline = false
+            });
+            Constraints.ScenarioCode = scenario.ScenarioCode;
+            newScenarioCode = newScenarioName = newScenarioDescription = "";
+            await LoadMastersAsync();
+            SetStatus($"Operating scenario {scenario.ScenarioCode} created and selected for the next plan.", false);
+        }
+        catch (Exception ex) { SetStatus(ex.Message, true); }
+        finally { busy = false; }
+    }
+
+    private async Task CreateOverrideAsync(Guid scenarioId)
+    {
+        if (!string.IsNullOrWhiteSpace(OverrideInputError)) return;
+        busy = true;
+        try
+        {
+            ProcessOperationType? restrictedOperation = Enum.TryParse<ProcessOperationType>(restrictedOperationText, out var parsed) ? parsed : null;
+            await Admin.CreateAsync(new ResourceScenarioOverride
+            {
+                PlanningScenarioId = scenarioId,
+                ResourceId = overrideResourceId,
+                OperatingState = overrideOperatingState,
+                CapacityFactorPct = overrideCapacityFactorPct,
+                EffectiveFromUtc = overrideFrom.HasValue ? DateTime.SpecifyKind(overrideFrom.Value, DateTimeKind.Utc) : null,
+                EffectiveToUtc = overrideTo.HasValue ? DateTime.SpecifyKind(overrideTo.Value, DateTimeKind.Utc) : null,
+                RestrictedProcessOperationType = restrictedOperation,
+                AllowedGradeCode = string.IsNullOrWhiteSpace(allowedGradeCode) ? null : allowedGradeCode.Trim(),
+                ForbiddenGradeCode = string.IsNullOrWhiteSpace(forbiddenGradeCode) ? null : forbiddenGradeCode.Trim(),
+                Reason = string.IsNullOrWhiteSpace(overrideReason) ? null : overrideReason.Trim()
+            });
+            overrideCapacityFactorPct = null;
+            overrideFrom = overrideTo = null;
+            restrictedOperationText = allowedGradeCode = forbiddenGradeCode = overrideReason = "";
+            await LoadMastersAsync();
+            SetStatus("Resource scenario override added. The baseline resource master was not modified.", false);
+        }
+        catch (Exception ex) { SetStatus(ex.Message, true); }
+        finally { busy = false; }
+    }
+
+    private async Task DeleteOverrideAsync(Guid id)
+    {
+        busy = true;
+        try
+        {
+            await Admin.DeleteAsync<ResourceScenarioOverride>(id);
+            pendingDeleteOverrideId = null;
+            await LoadMastersAsync();
+            SetStatus("Scenario override removed.", false);
+        }
+        catch (Exception ex) { SetStatus(ex.Message, true); }
+        finally { busy = false; }
+    }
+
+    private string ResourceCode(Guid id) => Resources.FirstOrDefault(x => x.Id == id)?.Code ?? id.ToString("N")[..8];
+
+    private static string OverrideSummary(ResourceScenarioOverride value)
+    {
+        var parts = new List<string>();
+        if (value.CapacityFactorPct.HasValue) parts.Add($"capacity {value.CapacityFactorPct:0.#}%");
+        if (value.EffectiveFromUtc.HasValue || value.EffectiveToUtc.HasValue)
+            parts.Add($"{FormatTime(value.EffectiveFromUtc)} → {FormatTime(value.EffectiveToUtc)}");
+        if (value.RestrictedProcessOperationType.HasValue) parts.Add($"operation {value.RestrictedProcessOperationType}");
+        if (!string.IsNullOrWhiteSpace(value.AllowedGradeCode)) parts.Add($"only grade {value.AllowedGradeCode}");
+        if (!string.IsNullOrWhiteSpace(value.ForbiddenGradeCode)) parts.Add($"forbid grade {value.ForbiddenGradeCode}");
+        if (!string.IsNullOrWhiteSpace(value.Reason)) parts.Add(value.Reason!);
+        return parts.Count == 0 ? "Full-horizon operating-state override" : string.Join(" · ", parts);
+    }
+
+    private static string FormatTime(DateTime? value) => value.HasValue ? value.Value.ToString("dd MMM HH:mm") : "horizon";
+    private static string OperatingStateClass(ResourceOperatingState state) => state switch
+    {
+        ResourceOperatingState.Available => "text-success",
+        ResourceOperatingState.CapacityDerated or ResourceOperatingState.QualityRestricted => "text-warning",
+        ResourceOperatingState.PlannedMaintenance or ResourceOperatingState.Breakdown or ResourceOperatingState.Disabled => "text-danger",
+        _ => "text-secondary"
+    };
+
+    private void SetStatus(string value, bool error)
+    {
+        statusMessage = value;
+        statusIsError = error;
+    }
+}
