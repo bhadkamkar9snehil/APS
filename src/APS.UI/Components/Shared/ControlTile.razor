@@ -1,0 +1,11 @@
+<div class="rounded-control border border-border bg-surface-inset p-3">
+    <div class="text-xs font-semibold uppercase tracking-wide text-muted">@Label</div>
+    <div class="mt-1 text-sm font-semibold text-primary">@Value</div>
+    <div class="mt-2 border-t border-border pt-2 text-xs text-secondary"><span class="text-muted">Baseline:</span> @Baseline</div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Value { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Baseline { get; set; } = string.Empty;
+}
