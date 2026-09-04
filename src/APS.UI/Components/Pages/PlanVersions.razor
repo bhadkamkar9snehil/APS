@@ -6,11 +6,22 @@
 
 <PageTitle>Plan Versions - APS</PageTitle>
 
-<h1 class="mb-1 text-lg font-semibold">Plan Versions</h1>
-<p class="mb-6 text-sm text-secondary">Plan Version history, and the Calculate / Replan / Approve / Release actions that create and progress them.</p>
+<div class="mb-5 flex flex-wrap items-end justify-between gap-3">
+    <div>
+        <h1 class="mb-1 text-lg font-semibold">Plan Versions</h1>
+        <p class="text-sm text-secondary">Create a plan, review its readiness, approve it, then release work orders.</p>
+    </div>
+    <div class="flex items-center gap-2 text-xs text-muted" aria-label="Plan lifecycle">
+        <span class="rounded bg-surface-inset px-2 py-1">1. Calculate</span>
+        <span aria-hidden="true">→</span>
+        <span class="rounded bg-surface-inset px-2 py-1">2. Approve</span>
+        <span aria-hidden="true">→</span>
+        <span class="rounded bg-surface-inset px-2 py-1">3. Release</span>
+    </div>
+</div>
 
-<div class="grid grid-cols-[1fr_360px] gap-4">
-    <section class="rounded border border-border bg-surface-raised">
+<div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+    <section class="min-w-0 rounded border border-border bg-surface-raised">
         <div class="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted">Plan Version register</div>
         @if (loading)
         {
@@ -18,61 +29,85 @@
         }
         else if (plans.Count == 0)
         {
-            <p class="p-4 text-sm text-muted">No Plan Versions yet. Use Calculate to create the first one.</p>
+            <div class="p-6 text-center">
+                <strong class="text-sm text-primary">No Plan Versions yet</strong>
+                <p class="mt-1 text-sm text-secondary">Configure the planning horizon and use Calculate to create the first plan.</p>
+            </div>
         }
         else
         {
-            <Table Headers="@(new[] {"Version", "Status", "Trigger", "Created", "Horizon", ""})">
-                @foreach (var plan in plans)
-                {
-                    <tr class="cursor-pointer border-b border-border last:border-0 hover:bg-surface-hover @(selectedPlanId == plan.PlanVersionId ? "bg-accent-soft" : "")" @onclick="() => SelectPlanAsync(plan.PlanVersionId)">
-                        <td class="px-3 py-1.5"><strong>@plan.VersionNumber</strong></td>
-                        <td class="px-3 py-1.5"><span class="rounded px-1.5 py-0.5 text-xs @StatusClass(plan.Status)">@plan.Status</span></td>
-                        <td class="px-3 py-1.5">@plan.Trigger</td>
-                        <td class="px-3 py-1.5 text-xs text-secondary">@plan.CreatedOnUtc.ToString("dd MMM HH:mm")</td>
-                        <td class="px-3 py-1.5 text-xs text-secondary">@plan.HorizonStartUtc.ToString("dd MMM") &rarr; @plan.HorizonEndUtc.ToString("dd MMM")</td>
-                        <td class="px-3 py-1.5">
-                            @if (plan.IsActive) { <span class="rounded bg-surface-inset px-1.5 py-0.5 text-xs">ACTIVE</span> }
-                            @if (plan.IsReleased) { <span class="ml-1 rounded bg-success-soft px-1.5 py-0.5 text-xs text-success">RELEASED</span> }
-                        </td>
-                    </tr>
-                }
-            </Table>
+            <div class="overflow-x-auto">
+                <Table Headers="@(new[] {"Version", "Status", "Trigger", "Created", "Horizon", ""})">
+                    @foreach (var plan in plans)
+                    {
+                        <tr class="cursor-pointer border-b border-border last:border-0 hover:bg-surface-hover @(selectedPlanId == plan.PlanVersionId ? "bg-accent-soft" : "")" @onclick="() => SelectPlanAsync(plan.PlanVersionId)">
+                            <td class="px-3 py-1.5"><strong>@plan.VersionNumber</strong></td>
+                            <td class="px-3 py-1.5"><span class="rounded px-1.5 py-0.5 text-xs @StatusClass(plan.Status)">@plan.Status</span></td>
+                            <td class="px-3 py-1.5">@plan.Trigger</td>
+                            <td class="whitespace-nowrap px-3 py-1.5 text-xs text-secondary">@plan.CreatedOnUtc.ToString("dd MMM HH:mm")</td>
+                            <td class="whitespace-nowrap px-3 py-1.5 text-xs text-secondary">@plan.HorizonStartUtc.ToString("dd MMM") &rarr; @plan.HorizonEndUtc.ToString("dd MMM")</td>
+                            <td class="whitespace-nowrap px-3 py-1.5">
+                                @if (plan.IsActive) { <span class="rounded bg-surface-inset px-1.5 py-0.5 text-xs">ACTIVE</span> }
+                                @if (plan.IsReleased) { <span class="ml-1 rounded bg-success-soft px-1.5 py-0.5 text-xs text-success">RELEASED</span> }
+                            </td>
+                        </tr>
+                    }
+                </Table>
+            </div>
         }
     </section>
 
     <aside class="space-y-4">
         <section class="rounded border border-border bg-surface-raised p-4">
-            <h2 class="mb-3 text-sm font-semibold">Calculate new plan</h2>
+            <h2 class="mb-1 text-sm font-semibold">Calculate new plan</h2>
+            <p class="mb-3 text-xs text-secondary">Uses current demand and master data. A failed feasibility check does not release anything.</p>
             <div class="space-y-2 text-sm">
                 <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Horizon start</span><input type="date" class="rounded border border-border-strong px-2 py-1" @bind="horizonStart" /></label>
                 <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Horizon end</span><input type="date" class="rounded border border-border-strong px-2 py-1" @bind="horizonEnd" /></label>
                 <div class="grid grid-cols-2 gap-2">
-                    <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Nominal heat MT</span><input type="number" class="rounded border border-border-strong px-2 py-1" @bind="nominalHeatSizeMt" /></label>
-                    <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Max campaign MT</span><input type="number" class="rounded border border-border-strong px-2 py-1" @bind="maximumCampaignQuantityMt" /></label>
+                    <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Nominal heat MT</span><input type="number" min="0.01" step="0.01" class="rounded border border-border-strong px-2 py-1" @bind="nominalHeatSizeMt" /></label>
+                    <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Max campaign MT</span><input type="number" min="0.01" step="0.01" class="rounded border border-border-strong px-2 py-1" @bind="maximumCampaignQuantityMt" /></label>
                 </div>
-                <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Max solver seconds</span><input type="number" class="rounded border border-border-strong px-2 py-1" @bind="maxSolverSeconds" /></label>
+                <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Max solver seconds</span><input type="number" min="1" class="rounded border border-border-strong px-2 py-1" @bind="maxSolverSeconds" /></label>
             </div>
+
+            @if (!string.IsNullOrWhiteSpace(CalculationInputError))
+            {
+                <div role="alert" class="mt-3 rounded border border-border bg-surface-inset px-3 py-2 text-xs text-danger">@CalculationInputError</div>
+            }
+
             @if (!string.IsNullOrWhiteSpace(calculateError))
             {
-                <p class="mt-2 text-xs text-danger">@calculateError</p>
+                <div role="alert" class="mt-3 rounded border border-border bg-danger-soft px-3 py-2 text-xs text-danger">
+                    <strong class="block">Plan could not be calculated</strong>
+                    <span class="mt-1 block break-words">@calculateError</span>
+                    @if (CalculateErrorLooksLikeMasterData)
+                    {
+                        <NavLink href="/plan/master-data" class="mt-2 inline-block font-semibold underline">Review master data and routes</NavLink>
+                    }
+                </div>
             }
-            <button type="button" class="mt-3 w-full rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground disabled:opacity-50" disabled="@calculating" @onclick="CalculateAsync">
-                @(calculating ? "Calculating…" : "Calculate")
+
+            <button type="button"
+                    class="mt-3 w-full rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled="@(calculating || !string.IsNullOrWhiteSpace(CalculationInputError))"
+                    @onclick="CalculateAsync">
+                @(calculating ? "Calculating…" : "Calculate new plan")
             </button>
         </section>
 
         @if (selectedPlanId is { } selected)
         {
             <section class="rounded border border-border bg-surface-raised p-4">
-                <h2 class="mb-3 text-sm font-semibold">Selected plan actions</h2>
+                <h2 class="mb-1 text-sm font-semibold">Selected plan actions</h2>
+                <p class="mb-3 text-xs text-secondary">Actions apply only to the selected Plan Version in the register.</p>
                 @if (!string.IsNullOrWhiteSpace(actionError))
                 {
-                    <p class="mb-2 text-xs text-danger">@actionError</p>
+                    <div role="alert" class="mb-3 rounded border border-border bg-danger-soft px-3 py-2 text-xs text-danger">@actionError</div>
                 }
                 @if (!string.IsNullOrWhiteSpace(actionSuccess))
                 {
-                    <p class="mb-2 text-xs text-success">@actionSuccess</p>
+                    <div role="status" class="mb-3 rounded border border-border bg-success-soft px-3 py-2 text-xs text-success">@actionSuccess</div>
                 }
 
                 @if (readiness is not null)
@@ -101,16 +136,21 @@
                 }
 
                 <div class="flex flex-col gap-2">
-                    <button type="button" class="rounded border border-border-strong px-3 py-1.5 text-sm disabled:opacity-50" disabled="@acting" @onclick="() => ReplanAsync(selected)">
+                    <button type="button" class="rounded border border-border-strong px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50" disabled="@(acting || !string.IsNullOrWhiteSpace(CalculationInputError))" @onclick="() => ReplanAsync(selected)">
                         Replan from this baseline
                     </button>
-                    <button type="button" class="rounded border border-border-strong px-3 py-1.5 text-sm disabled:opacity-50" disabled="@(acting || readiness is null || readiness.Status != PlanVersionStatus.Feasible || !readiness.IsReleaseReady)" @onclick="() => ApproveAsync(selected)">
-                        Approve
+                    <button type="button" class="rounded border border-border-strong px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50" disabled="@(acting || readiness is null || readiness.Status != PlanVersionStatus.Feasible || !readiness.IsReleaseReady)" @onclick="() => ApproveAsync(selected)">
+                        Approve selected plan
                     </button>
-                    <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground disabled:opacity-50" disabled="@(acting || readiness?.Status != PlanVersionStatus.Approved)" @onclick="() => ReleaseAsync(selected)">
-                        Release
+                    <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled="@(acting || readiness?.Status != PlanVersionStatus.Approved)" @onclick="() => ReleaseAsync(selected)">
+                        Release work orders
                     </button>
                 </div>
+
+                @if (readiness?.Status == PlanVersionStatus.Released)
+                {
+                    <NavLink href="/operate/work-orders" class="mt-3 block text-center text-xs font-semibold text-accent hover:underline">Open released work orders</NavLink>
+                }
             </section>
         }
     </aside>
@@ -133,6 +173,25 @@
     private bool acting;
     private string? actionError;
     private string? actionSuccess;
+
+    private string? CalculationInputError
+    {
+        get
+        {
+            if (horizonEnd <= horizonStart) return "Horizon end must be after horizon start.";
+            if (nominalHeatSizeMt <= 0m) return "Nominal heat quantity must be greater than zero.";
+            if (maximumCampaignQuantityMt < nominalHeatSizeMt) return "Maximum campaign quantity must be at least one nominal heat.";
+            if (maxSolverSeconds <= 0) return "Solver time must be greater than zero seconds.";
+            return null;
+        }
+    }
+
+    private bool CalculateErrorLooksLikeMasterData =>
+        calculateError?.Contains("route", StringComparison.OrdinalIgnoreCase) == true
+        || calculateError?.Contains("master", StringComparison.OrdinalIgnoreCase) == true
+        || calculateError?.Contains("configuration", StringComparison.OrdinalIgnoreCase) == true
+        || calculateError?.Contains("cross-section", StringComparison.OrdinalIgnoreCase) == true
+        || calculateError?.Contains("cross section", StringComparison.OrdinalIgnoreCase) == true;
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -164,18 +223,15 @@
 
     private async Task CalculateAsync()
     {
+        if (!string.IsNullOrWhiteSpace(CalculationInputError))
+            return;
+
         calculating = true;
         calculateError = null;
         StateHasChanged();
         try
         {
-            var request = new PlanningCalculationRequest(
-                new PlanningDemandSelection(),
-                new CampaignPlanningPolicy(nominalHeatSizeMt, nominalHeatSizeMt * 0.7m, nominalHeatSizeMt * 1.15m, maximumCampaignQuantityMt, maximumCampaignQuantityMt),
-                new ProductionStructurePlanningPolicy(),
-                horizonStart,
-                horizonEnd,
-                maxSolverSeconds);
+            var request = CreateCalculationRequest();
             var outcome = await Lifecycle.CalculateAsync(request);
             await LoadAsync();
             await SelectPlanAsync(outcome.Version.PlanVersionId);
@@ -194,19 +250,16 @@
 
     private async Task ReplanAsync(Guid baselinePlanVersionId)
     {
+        if (!string.IsNullOrWhiteSpace(CalculationInputError))
+            return;
+
         acting = true;
         actionError = null;
         actionSuccess = null;
         StateHasChanged();
         try
         {
-            var request = new PlanningCalculationRequest(
-                new PlanningDemandSelection(),
-                new CampaignPlanningPolicy(nominalHeatSizeMt, nominalHeatSizeMt * 0.7m, nominalHeatSizeMt * 1.15m, maximumCampaignQuantityMt, maximumCampaignQuantityMt),
-                new ProductionStructurePlanningPolicy(),
-                horizonStart,
-                horizonEnd,
-                maxSolverSeconds);
+            var request = CreateCalculationRequest();
             var outcome = await Lifecycle.ReplanAsync(baselinePlanVersionId, new PlanningRecalculationRequest(request, new PlanningTimeFencePolicy()));
             await LoadAsync();
             await SelectPlanAsync(outcome.Version.PlanVersionId);
@@ -222,6 +275,14 @@
             StateHasChanged();
         }
     }
+
+    private PlanningCalculationRequest CreateCalculationRequest() => new(
+        new PlanningDemandSelection(),
+        new CampaignPlanningPolicy(nominalHeatSizeMt, nominalHeatSizeMt * 0.7m, nominalHeatSizeMt * 1.15m, maximumCampaignQuantityMt, maximumCampaignQuantityMt),
+        new ProductionStructurePlanningPolicy(),
+        horizonStart,
+        horizonEnd,
+        maxSolverSeconds);
 
     private async Task ApproveAsync(Guid planVersionId)
     {
