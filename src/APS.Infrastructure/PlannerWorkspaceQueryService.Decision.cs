@@ -23,6 +23,7 @@ public sealed partial class PlannerWorkspaceQueryService
         var baselineOperations = BuildOperations(difference, resources, useBaseline: true);
         var newOperations = BuildOperations(difference, resources, useBaseline: false);
         var demand = await DemandSummariesAsync(baselinePlanVersionId, newPlanVersionId, cancellationToken);
+        var orderService = await OrderServiceComparisonAsync(baselinePlanVersionId, newPlanVersionId, cancellationToken);
 
         var baselineAssumptions = await GetPlanningAssumptionsAsync(baselinePlanVersionId, cancellationToken);
         var newAssumptions = await GetPlanningAssumptionsAsync(newPlanVersionId, cancellationToken);
@@ -45,7 +46,8 @@ public sealed partial class PlannerWorkspaceQueryService
             baselineOperations,
             newOperations,
             demand[baselinePlanVersionId],
-            demand[newPlanVersionId]);
+            demand[newPlanVersionId],
+            orderService);
     }
 
     private async Task<IReadOnlyDictionary<Guid, string>> ResourceCodesAsync(
@@ -142,6 +144,49 @@ public sealed partial class PlannerWorkspaceQueryService
                 campaignPlanIds.Count(x => x == id),
                 heatPlanIds.Count(x => x == id)));
     }
+
+    private async Task<IReadOnlyCollection<PlanOrderServiceComparisonView>> OrderServiceComparisonAsync(
+        Guid baselinePlanVersionId,
+        Guid newPlanVersionId,
+        CancellationToken cancellationToken)
+    {
+        var ids = new[] { baselinePlanVersionId, newPlanVersionId };
+        var snapshots = await db.PlanDemandSnapshots.AsNoTracking()
+            .Where(x => ids.Contains(x.PlanVersionId))
+            .ToArrayAsync(cancellationToken);
+
+        var baseline = snapshots
+            .Where(x => x.PlanVersionId == baselinePlanVersionId)
+            .ToDictionary(x => x.SalesOrderId);
+        var next = snapshots
+            .Where(x => x.PlanVersionId == newPlanVersionId)
+            .ToDictionary(x => x.SalesOrderId);
+
+        return baseline.Keys
+            .Union(next.Keys)
+            .Select(salesOrderId => new PlanOrderServiceComparisonView(
+                salesOrderId,
+                baseline.TryGetValue(salesOrderId, out var left) ? ToOrderService(left) : null,
+                next.TryGetValue(salesOrderId, out var right) ? ToOrderService(right) : null))
+            .OrderBy(x => x.NewPlan?.TargetDeliveryDate ?? x.Baseline?.TargetDeliveryDate ?? DateTime.MaxValue)
+            .ThenBy(x => x.NewPlan?.SalesOrderNumber ?? x.Baseline?.SalesOrderNumber, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static PlanOrderServiceView ToOrderService(PlanDemandSnapshot row) => new(
+        row.SalesOrderId,
+        row.SalesOrderNumber,
+        row.SalesOrderItemNumber,
+        row.CustomerCode,
+        row.CustomerRequiredDate,
+        row.ConfirmedDeliveryDate,
+        row.ProductionRequiredByDate,
+        row.ServiceCommitment,
+        row.EarliestAcceptableDeliveryDate,
+        row.LatestAcceptableDeliveryDate,
+        row.ProductionEarliestAcceptableDate,
+        row.ProductionLatestAcceptableDate,
+        row.Priority);
 
     private static PlanScenarioDemandSummaryView DemandSummary(
         IEnumerable<PlanProductionOrderSnapshot> source,
