@@ -9,18 +9,18 @@
 <div class="mb-5 flex flex-wrap items-end justify-between gap-3">
     <div>
         <h1 class="mb-1 text-lg font-semibold">Plan Versions</h1>
-        <p class="text-sm text-secondary">Create a plan, review its readiness, approve it, then release work orders.</p>
+        <p class="text-sm text-secondary">Create a scenario, inspect the schedule and consequences, approve it, then release work orders.</p>
     </div>
-    <div class="flex items-center gap-2 text-xs text-muted" aria-label="Plan lifecycle">
-        <span class="rounded bg-surface-inset px-2 py-1">1. Calculate</span>
-        <span aria-hidden="true">→</span>
-        <span class="rounded bg-surface-inset px-2 py-1">2. Approve</span>
-        <span aria-hidden="true">→</span>
-        <span class="rounded bg-surface-inset px-2 py-1">3. Release</span>
+    <div class="flex flex-wrap items-center gap-1 text-xs text-muted" aria-label="Plan lifecycle">
+        <span class="rounded bg-surface-inset px-2 py-1">1. Controls</span><span aria-hidden="true">→</span>
+        <span class="rounded bg-surface-inset px-2 py-1">2. Calculate</span><span aria-hidden="true">→</span>
+        <span class="rounded bg-surface-inset px-2 py-1">3. Review</span><span aria-hidden="true">→</span>
+        <span class="rounded bg-surface-inset px-2 py-1">4. Approve</span><span aria-hidden="true">→</span>
+        <span class="rounded bg-surface-inset px-2 py-1">5. Release</span>
     </div>
 </div>
 
-<div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+<div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
     <section class="min-w-0 rounded border border-border bg-surface-raised">
         <div class="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted">Plan Version register</div>
         @if (loading)
@@ -31,7 +31,8 @@
         {
             <div class="p-6 text-center">
                 <strong class="text-sm text-primary">No Plan Versions yet</strong>
-                <p class="mt-1 text-sm text-secondary">Configure the planning horizon and use Calculate to create the first plan.</p>
+                <p class="mt-1 text-sm text-secondary">Set the planning controls and horizon, then Calculate the first scenario.</p>
+                <NavLink href="/plan/constraints" class="mt-3 inline-block text-xs font-semibold text-accent hover:underline">Review planning controls</NavLink>
             </div>
         }
         else
@@ -59,16 +60,29 @@
 
     <aside class="space-y-4">
         <section class="rounded border border-border bg-surface-raised p-4">
-            <h2 class="mb-1 text-sm font-semibold">Calculate new plan</h2>
-            <p class="mb-3 text-xs text-secondary">Uses current demand and master data. A failed feasibility check does not release anything.</p>
+            <div class="mb-3 flex items-start justify-between gap-3">
+                <div>
+                    <h2 class="text-sm font-semibold">Planning controls</h2>
+                    <p class="mt-0.5 text-xs text-secondary">Session profile used by the next Calculate/Replan.</p>
+                </div>
+                <NavLink href="/plan/constraints" class="shrink-0 text-xs font-semibold text-accent hover:underline">Edit controls</NavLink>
+            </div>
+            <div class="grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                <div><div class="text-muted">Plant scenario</div><strong>@ConstraintScenarioLabel</strong></div>
+                <div><div class="text-muted">Heat envelope</div><strong>@Constraints.MinimumHeatSizeMt.ToString("0.##")–@Constraints.MaximumHeatSizeMt.ToString("0.##") MT</strong></div>
+                <div><div class="text-muted">Campaign cap</div><strong>@Constraints.MaximumCampaignQuantityMt.ToString("0.##") MT</strong></div>
+                <div><div class="text-muted">Time fence</div><strong>@Constraints.FrozenMinutes m + @Constraints.SlushyMinutes m</strong></div>
+                <div><div class="text-muted">Solver effort</div><strong>@Constraints.MaxSolverSeconds s</strong></div>
+                <div><div class="text-muted">Commitment policy</div><strong>@(Constraints.UseAssignmentCommitmentPolicy ? "Enabled" : "Default flexible")</strong></div>
+            </div>
+        </section>
+
+        <section class="rounded border border-border bg-surface-raised p-4">
+            <h2 class="mb-1 text-sm font-semibold">Calculate new scenario</h2>
+            <p class="mb-3 text-xs text-secondary">Uses current demand, authoritative master data and the planning controls above. Nothing is released automatically.</p>
             <div class="space-y-2 text-sm">
                 <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Horizon start</span><input type="date" class="rounded border border-border-strong px-2 py-1" @bind="horizonStart" /></label>
                 <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Horizon end</span><input type="date" class="rounded border border-border-strong px-2 py-1" @bind="horizonEnd" /></label>
-                <div class="grid grid-cols-2 gap-2">
-                    <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Nominal heat MT</span><input type="number" min="0.01" step="0.01" class="rounded border border-border-strong px-2 py-1" @bind="nominalHeatSizeMt" /></label>
-                    <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Max campaign MT</span><input type="number" min="0.01" step="0.01" class="rounded border border-border-strong px-2 py-1" @bind="maximumCampaignQuantityMt" /></label>
-                </div>
-                <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Max solver seconds</span><input type="number" min="1" class="rounded border border-border-strong px-2 py-1" @bind="maxSolverSeconds" /></label>
             </div>
 
             @if (!string.IsNullOrWhiteSpace(CalculationInputError))
@@ -81,10 +95,13 @@
                 <div role="alert" class="mt-3 rounded border border-border bg-danger-soft px-3 py-2 text-xs text-danger">
                     <strong class="block">Plan could not be calculated</strong>
                     <span class="mt-1 block break-words">@calculateError</span>
-                    @if (CalculateErrorLooksLikeMasterData)
-                    {
-                        <NavLink href="/plan/master-data" class="mt-2 inline-block font-semibold underline">Review master data and routes</NavLink>
-                    }
+                    <div class="mt-2 flex flex-wrap gap-3">
+                        @if (CalculateErrorLooksLikeMasterData)
+                        {
+                            <NavLink href="/plan/master-data" class="font-semibold underline">Review technical master data</NavLink>
+                        }
+                        <NavLink href="/plan/constraints" class="font-semibold underline">Review planning controls</NavLink>
+                    </div>
                 </div>
             }
 
@@ -92,15 +109,23 @@
                     class="mt-3 w-full rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
                     disabled="@(calculating || !string.IsNullOrWhiteSpace(CalculationInputError))"
                     @onclick="CalculateAsync">
-                @(calculating ? "Calculating…" : "Calculate new plan")
+                @(calculating ? "Calculating…" : "Calculate scenario")
             </button>
         </section>
 
         @if (selectedPlanId is { } selected)
         {
             <section class="rounded border border-border bg-surface-raised p-4">
-                <h2 class="mb-1 text-sm font-semibold">Selected plan actions</h2>
-                <p class="mb-3 text-xs text-secondary">Actions apply only to the selected Plan Version in the register.</p>
+                <h2 class="mb-1 text-sm font-semibold">Review selected plan</h2>
+                <p class="mb-3 text-xs text-secondary">Review schedule, demand consequences and assumptions before approval. Actions apply only to the selected immutable Plan Version.</p>
+
+                <div class="mb-3 grid grid-cols-2 gap-2 text-xs">
+                    <NavLink href="/" class="rounded-control border border-border px-2 py-2 text-center font-semibold hover:bg-surface-hover">Planning Workbench</NavLink>
+                    <NavLink href="/plan/demand" class="rounded-control border border-border px-2 py-2 text-center font-semibold hover:bg-surface-hover">Demand &amp; delivery</NavLink>
+                    <NavLink href="/control-tower" class="rounded-control border border-border px-2 py-2 text-center font-semibold hover:bg-surface-hover">Capacity / Control Tower</NavLink>
+                    <NavLink href="/decide/compare" class="rounded-control border border-border px-2 py-2 text-center font-semibold hover:bg-surface-hover">Compare versions</NavLink>
+                </div>
+
                 @if (!string.IsNullOrWhiteSpace(actionError))
                 {
                     <div role="alert" class="mb-3 rounded border border-border bg-danger-soft px-3 py-2 text-xs text-danger">@actionError</div>
@@ -115,9 +140,7 @@
                     <div class="mb-3 rounded border border-border bg-surface-inset p-2 text-xs">
                         <div class="flex items-center justify-between gap-2">
                             <span class="font-semibold">Release readiness</span>
-                            <span class="font-semibold @(readiness.IsReleaseReady ? "text-success" : "text-danger")">
-                                @(readiness.IsReleaseReady ? "READY" : "BLOCKED")
-                            </span>
+                            <span class="font-semibold @(readiness.IsReleaseReady ? "text-success" : "text-danger")">@(readiness.IsReleaseReady ? "READY" : "BLOCKED")</span>
                         </div>
                         @if (readiness.Findings.Count > 0)
                         {
@@ -126,10 +149,7 @@
                                 {
                                     <p><strong>@finding.Code:</strong> @finding.Message</p>
                                 }
-                                @if (readiness.Findings.Count > 6)
-                                {
-                                    <p>+ @(readiness.Findings.Count - 6) more blocking finding(s)</p>
-                                }
+                                @if (readiness.Findings.Count > 6) { <p>+ @(readiness.Findings.Count - 6) more blocking finding(s)</p> }
                             </div>
                         }
                     </div>
@@ -137,7 +157,7 @@
 
                 <div class="flex flex-col gap-2">
                     <button type="button" class="rounded border border-border-strong px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50" disabled="@(acting || !string.IsNullOrWhiteSpace(CalculationInputError))" @onclick="() => ReplanAsync(selected)">
-                        Replan from this baseline
+                        Replan with current controls
                     </button>
                     <button type="button" class="rounded border border-border-strong px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50" disabled="@(acting || readiness is null || readiness.Status != PlanVersionStatus.Feasible || !readiness.IsReleaseReady)" @onclick="() => ApproveAsync(selected)">
                         Approve selected plan
@@ -149,7 +169,7 @@
 
                 @if (readiness?.Status == PlanVersionStatus.Released)
                 {
-                    <NavLink href="/operate/work-orders" class="mt-3 block text-center text-xs font-semibold text-accent hover:underline">Open released work orders</NavLink>
+                    <NavLink href="/operate/work-orders" class="mt-3 block text-center text-xs font-semibold text-accent hover:underline">Open released work orders →</NavLink>
                 }
             </section>
         }
@@ -157,6 +177,7 @@
 </div>
 
 @code {
+    private PlannerConstraintState Constraints => WorkspaceState.Constraints;
     private IReadOnlyCollection<PlanVersionListItemView> plans = Array.Empty<PlanVersionListItemView>();
     private bool loading = true;
     private Guid? selectedPlanId;
@@ -164,9 +185,6 @@
 
     private DateTime horizonStart = DateTime.UtcNow.Date;
     private DateTime horizonEnd = DateTime.UtcNow.Date.AddDays(7);
-    private decimal nominalHeatSizeMt = 90m;
-    private decimal maximumCampaignQuantityMt = 600m;
-    private int maxSolverSeconds = 20;
     private bool calculating;
     private string? calculateError;
 
@@ -174,15 +192,14 @@
     private string? actionError;
     private string? actionSuccess;
 
+    private string ConstraintScenarioLabel => string.IsNullOrWhiteSpace(Constraints.ScenarioCode) ? "Configured baseline" : Constraints.ScenarioCode!;
+
     private string? CalculationInputError
     {
         get
         {
-            if (horizonEnd <= horizonStart) return "Horizon end must be after horizon start.";
-            if (nominalHeatSizeMt <= 0m) return "Nominal heat quantity must be greater than zero.";
-            if (maximumCampaignQuantityMt < nominalHeatSizeMt) return "Maximum campaign quantity must be at least one nominal heat.";
-            if (maxSolverSeconds <= 0) return "Solver time must be greater than zero seconds.";
-            return null;
+            var errors = Constraints.Validate(horizonStart, horizonEnd);
+            return errors.Count == 0 ? null : string.Join(" ", errors);
         }
     }
 
@@ -191,7 +208,9 @@
         || calculateError?.Contains("master", StringComparison.OrdinalIgnoreCase) == true
         || calculateError?.Contains("configuration", StringComparison.OrdinalIgnoreCase) == true
         || calculateError?.Contains("cross-section", StringComparison.OrdinalIgnoreCase) == true
-        || calculateError?.Contains("cross section", StringComparison.OrdinalIgnoreCase) == true;
+        || calculateError?.Contains("cross section", StringComparison.OrdinalIgnoreCase) == true
+        || calculateError?.Contains("resource", StringComparison.OrdinalIgnoreCase) == true
+        || calculateError?.Contains("capability", StringComparison.OrdinalIgnoreCase) == true;
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -223,19 +242,19 @@
 
     private async Task CalculateAsync()
     {
-        if (!string.IsNullOrWhiteSpace(CalculationInputError))
-            return;
+        if (!string.IsNullOrWhiteSpace(CalculationInputError)) return;
 
         calculating = true;
         calculateError = null;
         StateHasChanged();
         try
         {
-            var request = CreateCalculationRequest();
-            var outcome = await Lifecycle.CalculateAsync(request);
+            var outcome = await Lifecycle.CalculateAsync(Constraints.BuildCalculationRequest(horizonStart, horizonEnd));
             await LoadAsync();
             await SelectPlanAsync(outcome.Version.PlanVersionId);
-            actionSuccess = $"Plan {outcome.Version.VersionNumber} created ({(outcome.Plan.IsFeasible ? "feasible" : "infeasible")}).";
+            actionSuccess = outcome.Plan.IsFeasible
+                ? $"Scenario {outcome.Version.VersionNumber} created. Review it before approval."
+                : $"Scenario {outcome.Version.VersionNumber} was persisted as infeasible for diagnosis.";
         }
         catch (Exception ex)
         {
@@ -250,8 +269,7 @@
 
     private async Task ReplanAsync(Guid baselinePlanVersionId)
     {
-        if (!string.IsNullOrWhiteSpace(CalculationInputError))
-            return;
+        if (!string.IsNullOrWhiteSpace(CalculationInputError)) return;
 
         acting = true;
         actionError = null;
@@ -259,11 +277,17 @@
         StateHasChanged();
         try
         {
-            var request = CreateCalculationRequest();
-            var outcome = await Lifecycle.ReplanAsync(baselinePlanVersionId, new PlanningRecalculationRequest(request, new PlanningTimeFencePolicy()));
+            var request = Constraints.BuildCalculationRequest(horizonStart, horizonEnd);
+            var outcome = await Lifecycle.ReplanAsync(
+                baselinePlanVersionId,
+                new PlanningRecalculationRequest(
+                    request,
+                    Constraints.BuildTimeFencePolicy(),
+                    Trigger: PlanTriggerType.Manual,
+                    Reason: "Planner replan using current planning controls"));
             await LoadAsync();
             await SelectPlanAsync(outcome.Version.PlanVersionId);
-            actionSuccess = $"Replanned as {outcome.Version.VersionNumber}.";
+            actionSuccess = $"Replanned as {outcome.Version.VersionNumber}. Review the child plan against its baseline before approval.";
         }
         catch (Exception ex)
         {
@@ -275,14 +299,6 @@
             StateHasChanged();
         }
     }
-
-    private PlanningCalculationRequest CreateCalculationRequest() => new(
-        new PlanningDemandSelection(),
-        new CampaignPlanningPolicy(nominalHeatSizeMt, nominalHeatSizeMt * 0.7m, nominalHeatSizeMt * 1.15m, maximumCampaignQuantityMt, maximumCampaignQuantityMt),
-        new ProductionStructurePlanningPolicy(),
-        horizonStart,
-        horizonEnd,
-        maxSolverSeconds);
 
     private async Task ApproveAsync(Guid planVersionId)
     {
@@ -319,7 +335,7 @@
             var release = await ReleaseService.ReleaseAsync(planVersionId);
             await LoadAsync();
             readiness = await TryGetReadinessAsync(planVersionId);
-            actionSuccess = $"Released {release.WorkOrders.Count} Work Order(s).";
+            actionSuccess = $"Released {release.WorkOrders.Count} Work Order(s). Continue in the execution workspace.";
         }
         catch (Exception ex)
         {
@@ -334,14 +350,8 @@
 
     private async Task<PlanReleaseReadiness?> TryGetReadinessAsync(Guid planVersionId)
     {
-        try
-        {
-            return await ReleaseService.GetReadinessAsync(planVersionId);
-        }
-        catch
-        {
-            return null;
-        }
+        try { return await ReleaseService.GetReadinessAsync(planVersionId); }
+        catch { return null; }
     }
 
     private static string StatusClass(PlanVersionStatus status) => status switch
