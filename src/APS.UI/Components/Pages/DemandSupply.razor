@@ -6,9 +6,12 @@
 
 <PageTitle>Demand & Supply - APS</PageTitle>
 
-<div class="mb-4">
-    <h1 class="text-lg font-semibold">Demand &amp; Supply</h1>
-    <p class="text-sm text-secondary">How each Production Order is covered before fresh steel is created.</p>
+<div class="mb-4 flex flex-wrap items-end justify-between gap-3">
+    <div>
+        <h1 class="text-lg font-semibold">Demand &amp; Supply</h1>
+        <p class="text-sm text-secondary">How each Production Order is covered before fresh steel is created.</p>
+    </div>
+    <NavLink href="/plan/versions" class="rounded border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Plan Versions</NavLink>
 </div>
 
 <details id="reconcile-sales-order" class="mb-6 rounded border border-border bg-surface-raised shadow-soft">
@@ -29,9 +32,9 @@
         </div>
         @if (!string.IsNullOrWhiteSpace(reconcileError))
         {
-            <div role="alert" class="mt-3 rounded border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger">@reconcileError</div>
+            <div role="alert" class="mt-3 rounded border border-border bg-danger-soft px-3 py-2 text-sm text-danger">@reconcileError</div>
         }
-        <div class="mt-3 flex items-center gap-3">
+        <div class="mt-3 flex flex-wrap items-center gap-3">
             <button type="button"
                     class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
                     disabled="@(reconciling || ReconcileInputIncomplete)"
@@ -55,6 +58,7 @@ else if (view is null)
     <div class="rounded border border-dashed border-border-strong bg-surface-raised p-8 text-center">
         <strong class="text-primary">No persisted demand snapshot</strong>
         <p class="mt-1 text-sm text-secondary">Run and persist a Plan Version before using the production Demand &amp; Supply workspace.</p>
+        <NavLink href="/plan/versions" class="mt-3 inline-block text-sm font-semibold text-accent hover:underline">Open Plan Versions</NavLink>
     </div>
 }
 else
