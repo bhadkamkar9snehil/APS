@@ -67,8 +67,21 @@ public sealed class PlanningLifecycleService(
             baselinePlanVersionId,
             cancellationToken);
 
+        // Operational/workbench replans must not silently reset heat/campaign/structure/scenario controls
+        // just because a UI caller still has legacy default fields. The immutable baseline is the source of
+        // truth for those controls unless the caller explicitly says the planner changed the profile.
+        var effectivePlanning = ApplyBaselinePlanningControls(
+            request.Planning,
+            baseline.Assumptions,
+            request.UseBaselinePlanningControls);
+        var effectiveTimeFence = request.UseBaselinePlanningControls
+            ? baseline.Assumptions?.TimeFencePolicy ?? request.TimeFencePolicy
+            : request.TimeFencePolicy;
+        var effectiveRepairScope = request.RepairScope
+            ?? (request.UseBaselinePlanningControls ? baseline.Assumptions?.RepairScopePolicy : null);
+
         var masterData = await _masters.GetAsync(cancellationToken);
-        ValidateProductionConfiguration(request.Planning, masterData);
+        ValidateProductionConfiguration(effectivePlanning, masterData);
 
         var referenceTime = request.ReferenceTimeUtc ?? DateTime.UtcNow;
         var actualState = await _actualState.GetAsync(
@@ -78,11 +91,11 @@ public sealed class PlanningLifecycleService(
             cancellationToken);
 
         var demand = await _demand.PrepareAsync(
-            request.Planning.Demand,
+            effectivePlanning.Demand,
             actualState.Inventory,
             masterData,
             referenceTime,
-            request.Planning.HorizonEndUtc,
+            effectivePlanning.HorizonEndUtc,
             cancellationToken);
         EnsureDemandIsPlannable(demand);
 
@@ -96,15 +109,15 @@ public sealed class PlanningLifecycleService(
         var replanContext = new PlanningReplanContext(
             baselinePlanVersionId,
             referenceTime,
-            request.TimeFencePolicy,
+            effectiveTimeFence,
             actualState.BaselineOperations,
             ResourceOverrides: request.ResourceOverrides,
-            RepairScope: request.RepairScope,
+            RepairScope: effectiveRepairScope,
             BaselineCampaignAllocations: baselineCampaignAllocations,
             ScheduleOverrides: request.ScheduleOverrides);
 
         var planningRequest = BuildPlanningRequest(
-            request.Planning,
+            effectivePlanning,
             demand.ProductionOrders,
             masterData,
             actualState.Inventory,
@@ -128,13 +141,31 @@ public sealed class PlanningLifecycleService(
             demand), cancellationToken);
 
         _logger.LogInformation(
-            "Completed canonical replan. BaselinePlanVersionId={BaselinePlanVersionId} PlanVersionId={PlanVersionId} ProductionOrders={ProductionOrderCount} Feasible={Feasible}",
+            "Completed canonical replan. BaselinePlanVersionId={BaselinePlanVersionId} PlanVersionId={PlanVersionId} ProductionOrders={ProductionOrderCount} Feasible={Feasible} BaselineControlsInherited={BaselineControlsInherited}",
             baselinePlanVersionId,
             result.PlanVersionId,
             demand.ProductionOrders.Count,
-            result.IsFeasible);
+            result.IsFeasible,
+            request.UseBaselinePlanningControls);
 
         return new PersistedPlanningRunResult(result, version, actualState);
+    }
+
+    private static PlanningCalculationRequest ApplyBaselinePlanningControls(
+        PlanningCalculationRequest requested,
+        PlanningAssumptions? assumptions,
+        bool useBaselineControls)
+    {
+        if (!useBaselineControls || assumptions is null) return requested;
+
+        return requested with
+        {
+            CampaignPolicy = assumptions.CampaignPolicy ?? requested.CampaignPolicy,
+            StructurePolicy = assumptions.StructurePolicy ?? requested.StructurePolicy,
+            MaxSolverSeconds = assumptions.MaxSolverSeconds ?? requested.MaxSolverSeconds,
+            AssignmentPolicies = assumptions.AssignmentPolicies ?? requested.AssignmentPolicies,
+            ScenarioCode = assumptions.ScenarioCode ?? requested.ScenarioCode
+        };
     }
 
     private static PlanningRunRequest BuildPlanningRequest(
