@@ -47,6 +47,32 @@ public sealed partial class PlannerWorkspaceQueryService
                 x.StartMovementMinutes))
             .ToArray();
 
+        var baselineOperations = difference.Operations
+            .Where(x => x.BaselineResourceId.HasValue && x.BaselineStartUtc.HasValue && x.BaselineEndUtc.HasValue)
+            .Select(x => new PlanScenarioOperationView(
+                x.PlanningKey,
+                x.TaskType,
+                ResourceCode(x.BaselineResourceId, resources) ?? "Unassigned",
+                x.BaselineStartUtc!.Value,
+                x.BaselineEndUtc!.Value,
+                x.ChangeType))
+            .OrderBy(x => x.StartUtc)
+            .ThenBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        var newOperations = difference.Operations
+            .Where(x => x.NewResourceId.HasValue && x.NewStartUtc.HasValue && x.NewEndUtc.HasValue)
+            .Select(x => new PlanScenarioOperationView(
+                x.PlanningKey,
+                x.TaskType,
+                ResourceCode(x.NewResourceId, resources) ?? "Unassigned",
+                x.NewStartUtc!.Value,
+                x.NewEndUtc!.Value,
+                x.ChangeType))
+            .OrderBy(x => x.StartUtc)
+            .ThenBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
         var baselineAssumptions = await GetPlanningAssumptionsAsync(baselinePlanVersionId, cancellationToken);
         var newAssumptions = await GetPlanningAssumptionsAsync(newPlanVersionId, cancellationToken);
         var assumptionChanges = BuildAssumptionChanges(baselineAssumptions, newAssumptions);
@@ -61,8 +87,59 @@ public sealed partial class PlannerWorkspaceQueryService
             difference.UnchangedCount,
             difference.MaximumStartMovementMinutes,
             changes,
-            assumptionChanges);
+            assumptionChanges,
+            Summary(baselineOperations, baseline.ObjectiveValue),
+            Summary(newOperations, next.ObjectiveValue),
+            ResourceLoads(baselineOperations, newOperations),
+            baselineOperations,
+            newOperations);
     }
+
+    private static PlanScenarioSummaryView Summary(
+        IReadOnlyCollection<PlanScenarioOperationView> operations,
+        long? objectiveValue)
+    {
+        if (operations.Count == 0)
+            return new PlanScenarioSummaryView(0, 0, 0, null, null, 0, objectiveValue);
+
+        var first = operations.Min(x => x.StartUtc);
+        var last = operations.Max(x => x.EndUtc);
+        return new PlanScenarioSummaryView(
+            operations.Count,
+            operations.Select(x => x.ResourceCode).Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+            operations.Sum(x => Math.Max(0, (x.EndUtc - x.StartUtc).TotalHours)),
+            first,
+            last,
+            Math.Max(0, (last - first).TotalHours),
+            objectiveValue);
+    }
+
+    private static IReadOnlyCollection<PlanResourceLoadComparisonView> ResourceLoads(
+        IReadOnlyCollection<PlanScenarioOperationView> baseline,
+        IReadOnlyCollection<PlanScenarioOperationView> next)
+    {
+        var left = LoadByResource(baseline);
+        var right = LoadByResource(next);
+        return left.Keys
+            .Union(right.Keys, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .Select(code => new PlanResourceLoadComparisonView(
+                code,
+                left.TryGetValue(code, out var baselineLoad) ? baselineLoad.Count : 0,
+                right.TryGetValue(code, out var newLoad) ? newLoad.Count : 0,
+                left.TryGetValue(code, out baselineLoad) ? baselineLoad.Hours : 0,
+                right.TryGetValue(code, out newLoad) ? newLoad.Hours : 0))
+            .ToArray();
+    }
+
+    private static Dictionary<string, (int Count, double Hours)> LoadByResource(
+        IEnumerable<PlanScenarioOperationView> operations) =>
+        operations
+            .GroupBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                x => x.Key,
+                x => (x.Count(), x.Sum(operation => Math.Max(0, (operation.EndUtc - operation.StartUtc).TotalHours))),
+                StringComparer.OrdinalIgnoreCase);
 
     private static IReadOnlyCollection<PlanAssumptionChangeView> BuildAssumptionChanges(
         PlanningAssumptions? baseline,
