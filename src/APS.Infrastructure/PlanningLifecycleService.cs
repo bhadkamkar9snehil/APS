@@ -16,6 +16,7 @@ public sealed class PlanningLifecycleService(
     IInventorySnapshotProvider _inventory,
     IReplanningActualStateProvider _actualState,
     IProductionDemandOrchestrationService _demand,
+    IOrderServicePolicyService _orderServicePolicies,
     ILogger<PlanningLifecycleService> _logger) : IPlanningLifecycleService
 {
     public async Task<PersistedPlanningRunResult> CalculateAsync(
@@ -34,6 +35,7 @@ public sealed class PlanningLifecycleService(
             referenceTime,
             request.HorizonEndUtc,
             cancellationToken);
+        demand = await ApplyOrderServiceWindowsAsync(demand, cancellationToken);
         EnsureDemandIsPlannable(demand);
 
         var planningRequest = BuildPlanningRequest(request, demand.ProductionOrders, masterData, inventory);
@@ -97,6 +99,7 @@ public sealed class PlanningLifecycleService(
             referenceTime,
             effectivePlanning.HorizonEndUtc,
             cancellationToken);
+        demand = await ApplyOrderServiceWindowsAsync(demand, cancellationToken);
         EnsureDemandIsPlannable(demand);
 
         var committedSupplies = actualState.EffectiveCommittedFutureSupplies
@@ -149,6 +152,15 @@ public sealed class PlanningLifecycleService(
             request.UseBaselinePlanningControls);
 
         return new PersistedPlanningRunResult(result, version, actualState);
+    }
+
+    private async Task<DemandOrchestrationResult> ApplyOrderServiceWindowsAsync(
+        DemandOrchestrationResult demand,
+        CancellationToken cancellationToken)
+    {
+        var salesOrderIds = demand.MakeToOrderDemand.Select(x => x.SalesOrderId).Distinct().ToArray();
+        var policies = await _orderServicePolicies.GetAsync(salesOrderIds, cancellationToken);
+        return OrderServiceWindow.Apply(demand, policies);
     }
 
     private static PlanningCalculationRequest ApplyBaselinePlanningControls(
