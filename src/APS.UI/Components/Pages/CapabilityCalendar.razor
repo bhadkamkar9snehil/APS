@@ -1,0 +1,286 @@
+@page "/plan/capability-calendar"
+@using APS.Domain
+@using APS.UI.State
+@inject IPlanningMasterDataProvider MasterDataProvider
+@inject IMasterDataAdminService Admin
+
+<PageTitle>Capability Calendar - APS</PageTitle>
+
+<div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+    <div class="max-w-3xl">
+        <h1 class="mb-1 text-lg font-semibold">Capability Calendar</h1>
+        <p class="text-sm text-secondary">See what each physical resource is qualified to run and when it is unavailable or derated. Calendar edits affect future Calculate/Replan runs; historical Plan Versions stay immutable.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+        <NavLink href="/plan/resource-constraints" class="rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Edit qualifications</NavLink>
+        <NavLink href="/plan/preflight" class="rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Planning preflight</NavLink>
+        <NavLink href="/plan/versions" class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground">Plans</NavLink>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div role="status" class="mb-4 rounded border border-border px-3 py-2 text-sm @(messageIsError ? "bg-danger-soft text-danger" : "bg-success-soft text-success")">@message</div>
+}
+
+@if (loading)
+{
+    <p class="text-sm text-muted">Loading capability calendar…</p>
+}
+else if (masters is null)
+{
+    <div class="rounded border border-danger/30 bg-danger-soft p-4 text-sm text-danger">Capability calendar could not be loaded.</div>
+}
+else
+{
+    <ResourceCapabilityCalendar Resources="@masters.Resources"
+                                Capabilities="@masters.RouteResourceCapabilities"
+                                Calendars="@masters.ResourceCalendars"
+                                ResourceId="@selectedResourceId"
+                                WeekStartUtc="@weekStartUtc"
+                                ResourceChangedCallback="SelectResource"
+                                WeekChanged="SetWeek"
+                                EditRequested="BeginEdit"
+                                QuickAddRequested="BeginQuickAdd" />
+
+    <div class="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
+        <section class="min-w-0 rounded-surface border border-border bg-surface-raised shadow-soft">
+            <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
+                <div>
+                    <h2 class="text-sm font-semibold">Exact calendar intervals</h2>
+                    <p class="mt-0.5 text-xs text-secondary">UTC source rows for the focused resource. Use the week view above for visual planning and this table for exact audit detail.</p>
+                </div>
+                <button type="button" class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-50" disabled="@(!selectedResourceId.HasValue)" @onclick="BeginBlank">Add interval</button>
+            </div>
+            @if (FocusedIntervals.Count == 0)
+            {
+                <div class="p-5 text-sm text-secondary">No explicit calendar intervals. The resource follows its configured operating state and capacity.</div>
+            }
+            else
+            {
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-[760px] text-sm">
+                        <thead><tr class="border-b border-border text-left text-xs text-muted"><th class="px-3 py-2">Start UTC</th><th class="px-3 py-2">End UTC</th><th class="px-3 py-2">Effective state</th><th class="px-3 py-2">Reason</th><th class="px-3 py-2"></th></tr></thead>
+                        <tbody>
+                            @foreach (var interval in FocusedIntervals)
+                            {
+                                <tr class="border-b border-border last:border-0 @(editing?.Id == interval.Id ? "bg-accent-soft" : "")">
+                                    <td class="whitespace-nowrap px-3 py-2 text-xs">@interval.Start.ToString("dd MMM yyyy HH:mm")</td>
+                                    <td class="whitespace-nowrap px-3 py-2 text-xs">@interval.End.ToString("dd MMM yyyy HH:mm")</td>
+                                    <td class="px-3 py-2 text-xs"><strong>@StateLabel(interval)</strong></td>
+                                    <td class="px-3 py-2 text-xs text-secondary">@(interval.ReasonCode ?? "—")</td>
+                                    <td class="whitespace-nowrap px-3 py-2 text-right">
+                                        <button type="button" class="mr-3 text-xs font-semibold text-accent hover:underline" @onclick="() => BeginEdit(interval)">Edit</button>
+                                        <button type="button" class="text-xs font-semibold text-danger hover:underline" @onclick="() => DeleteAsync(interval.Id)">@(deleteArmed == interval.Id ? "Confirm delete" : "Delete")</button>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <aside class="rounded-surface border border-border bg-surface-raised shadow-soft">
+            <div class="border-b border-border px-4 py-3">
+                <h2 class="text-sm font-semibold">@(editing is null ? "Calendar entry" : creating ? "New interval" : "Edit interval")</h2>
+                <p class="mt-0.5 text-xs text-secondary">Downtime sets availability off. Derating keeps the resource available with a temporary capacity factor below 100%.</p>
+            </div>
+            @if (editing is null)
+            {
+                <div class="p-5 text-sm text-secondary">Select an interval, or use Add downtime / Add derating in the week view.</div>
+            }
+            else
+            {
+                <div class="space-y-3 p-4">
+                    <label class="block text-xs text-secondary">Resource
+                        <select class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" @bind="editing.ResourceId">
+                            @foreach (var resource in masters.Resources.OrderBy(x => x.Code)) { <option value="@resource.Id">@resource.Code · @resource.Name</option> }
+                        </select>
+                    </label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="text-xs text-secondary">Start UTC<input type="datetime-local" class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" @bind="editing.Start" /></label>
+                        <label class="text-xs text-secondary">End UTC<input type="datetime-local" class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" @bind="editing.End" /></label>
+                    </div>
+                    <label class="flex items-center gap-2 text-sm"><input type="checkbox" @bind="editing.IsAvailable" /><span>Resource available during this interval</span></label>
+                    <label class="block text-xs text-secondary">Capacity factor %<input type="number" min="0" max="100" step="0.1" class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" @bind="editing.CapacityFactorPct" placeholder="blank = configured capacity" /></label>
+                    <label class="block text-xs text-secondary">Reason code / note<input class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" @bind="editing.ReasonCode" placeholder="MAINTENANCE, POWER_LIMIT, SHIFT_STOP…" /></label>
+                    @if (!string.IsNullOrWhiteSpace(EditError)) { <div role="alert" class="rounded bg-danger-soft px-3 py-2 text-xs text-danger">@EditError</div> }
+                    <div class="flex justify-end gap-2">
+                        <button type="button" class="rounded-control border border-border-strong px-3 py-1.5 text-xs" @onclick="CancelEdit">Cancel</button>
+                        <button type="button" class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-50" disabled="@(saving || !string.IsNullOrWhiteSpace(EditError))" @onclick="SaveAsync">@(saving ? "Saving…" : creating ? "Add interval" : "Save interval")</button>
+                    </div>
+                </div>
+            }
+        </aside>
+    </div>
+}
+
+@code {
+    private PlanningMasterDataSnapshot? masters;
+    private Guid? selectedResourceId;
+    private DateTime weekStartUtc = StartOfWeek(DateTime.UtcNow);
+    private ResourceCalendar? editing;
+    private bool creating;
+    private bool loading = true;
+    private bool saving;
+    private Guid? deleteArmed;
+    private string? message;
+    private bool messageIsError;
+
+    private IReadOnlyList<ResourceCalendar> FocusedIntervals => selectedResourceId.HasValue && masters is not null
+        ? masters.ResourceCalendars.Where(x => x.ResourceId == selectedResourceId.Value).OrderBy(x => x.Start).ToArray()
+        : Array.Empty<ResourceCalendar>();
+
+    private string? EditError => Validate(editing);
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        try
+        {
+            masters = await MasterDataProvider.GetAsync();
+            selectedResourceId = ResolveResourceSelection(selectedResourceId, masters.Resources);
+        }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { loading = false; }
+    }
+
+    private Task SelectResource(Guid resourceId)
+    {
+        selectedResourceId = resourceId;
+        editing = null;
+        deleteArmed = null;
+        return Task.CompletedTask;
+    }
+
+    private Task SetWeek(DateTime start)
+    {
+        weekStartUtc = StartOfWeek(start);
+        return Task.CompletedTask;
+    }
+
+    private Task BeginQuickAdd(ResourceCalendarDraftRequest request)
+    {
+        editing = new ResourceCalendar
+        {
+            ResourceId = request.ResourceId,
+            Start = request.StartUtc,
+            End = request.EndUtc,
+            IsAvailable = request.IsAvailable,
+            CapacityFactorPct = request.CapacityFactorPct,
+            ReasonCode = request.ReasonCode
+        };
+        selectedResourceId = request.ResourceId;
+        creating = true;
+        deleteArmed = null;
+        message = null;
+        return Task.CompletedTask;
+    }
+
+    private void BeginBlank()
+    {
+        if (!selectedResourceId.HasValue) return;
+        var start = DateTime.UtcNow.Date.AddHours(8);
+        editing = new ResourceCalendar
+        {
+            ResourceId = selectedResourceId.Value,
+            Start = start,
+            End = start.AddHours(8),
+            IsAvailable = false,
+            CapacityFactorPct = 0m,
+            ReasonCode = "PLANNED_DOWNTIME"
+        };
+        creating = true;
+        deleteArmed = null;
+        message = null;
+    }
+
+    private Task BeginEdit(ResourceCalendar value)
+    {
+        editing = Clone(value);
+        selectedResourceId = value.ResourceId;
+        creating = false;
+        deleteArmed = null;
+        message = null;
+        return Task.CompletedTask;
+    }
+
+    private void CancelEdit() { editing = null; creating = false; }
+
+    private async Task SaveAsync()
+    {
+        if (editing is null || !string.IsNullOrWhiteSpace(EditError)) return;
+        saving = true;
+        try
+        {
+            editing.ReasonCode = Normalize(editing.ReasonCode);
+            if (creating) await Admin.CreateAsync(editing); else await Admin.UpdateAsync(editing);
+            selectedResourceId = editing.ResourceId;
+            editing = null;
+            creating = false;
+            await LoadAsync();
+            SetMessage("Resource calendar saved. Future planning runs will use the updated interval.", false);
+        }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { saving = false; }
+    }
+
+    private async Task DeleteAsync(Guid id)
+    {
+        if (deleteArmed != id)
+        {
+            deleteArmed = id;
+            SetMessage("Click Confirm delete again to remove this calendar interval.", true);
+            return;
+        }
+
+        saving = true;
+        try
+        {
+            await Admin.DeleteAsync<ResourceCalendar>(id);
+            if (editing?.Id == id) editing = null;
+            deleteArmed = null;
+            await LoadAsync();
+            SetMessage("Resource calendar interval deleted. Recalculate affected plans before release.", false);
+        }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { saving = false; }
+    }
+
+    private void SetMessage(string value, bool isError) { message = value; messageIsError = isError; }
+
+    private static Guid? ResolveResourceSelection(Guid? selected, IReadOnlyCollection<Resource> resources) =>
+        selected.HasValue && resources.Any(x => x.Id == selected.Value)
+            ? selected
+            : resources.OrderBy(x => x.Code).Select(x => (Guid?)x.Id).FirstOrDefault();
+
+    private static string? Validate(ResourceCalendar? value)
+    {
+        if (value is null) return null;
+        if (value.ResourceId == Guid.Empty) return "Select a physical resource.";
+        if (value.End <= value.Start) return "End must be after start.";
+        if (value.CapacityFactorPct is < 0m or > 100m) return "Capacity factor must be between 0 and 100 percent.";
+        if (!value.IsAvailable && value.CapacityFactorPct is > 0m) return "Unavailable intervals should use 0% or blank capacity; availability is already off.";
+        return null;
+    }
+
+    private static ResourceCalendar Clone(ResourceCalendar value) => new()
+    {
+        Id = value.Id,
+        ResourceId = value.ResourceId,
+        Start = value.Start,
+        End = value.End,
+        IsAvailable = value.IsAvailable,
+        CapacityFactorPct = value.CapacityFactorPct,
+        ReasonCode = value.ReasonCode
+    };
+
+    private static string StateLabel(ResourceCalendar value) => !value.IsAvailable
+        ? "Unavailable"
+        : value.CapacityFactorPct is < 100m ? $"Derated · {value.CapacityFactorPct:0.##}%" : "Available";
+    private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static DateTime StartOfWeek(DateTime value) => value.Date.AddDays(-(((int)value.DayOfWeek + 6) % 7));
+}
