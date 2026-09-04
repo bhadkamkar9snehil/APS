@@ -1,5 +1,6 @@
 @using APS.Domain
 @using APS.UI.State
+@using System.Globalization
 
 <section class="rounded-surface border border-border bg-surface-raised shadow-soft" aria-label="Resource capability calendar">
     <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border p-3">
@@ -67,16 +68,15 @@
         </div>
 
         <div class="overflow-x-auto p-3">
-            <div class="min-w-[900px]">
+            <div class="min-w-[980px]">
                 <div class="mb-2 flex items-center justify-between gap-3 text-xs">
                     <strong>@WeekStartUtc.ToString("dd MMM") – @WeekStartUtc.AddDays(6).ToString("dd MMM yyyy")</strong>
-                    <div class="flex gap-3 text-muted"><span>Unavailable</span><span>Derated</span><span>Explicit available</span></div>
+                    <div class="flex gap-3 text-muted"><span>24-hour UTC scale</span><span>Unavailable</span><span>Derated</span><span>Explicit available</span></div>
                 </div>
                 <div class="grid grid-cols-7 gap-2">
                     @foreach (var day in Days)
                     {
-                        var intervals = IntervalsFor(day);
-                        <div class="min-h-48 rounded-control border border-border bg-surface p-2 @(day.Date == DateTime.UtcNow.Date ? "ring-1 ring-accent-border" : "")">
+                        <div class="rounded-control border border-border bg-surface p-2 @(day.Date == DateTime.UtcNow.Date ? "ring-1 ring-accent-border" : "")">
                             <div class="mb-2 border-b border-border pb-1">
                                 <div><strong class="text-xs">@day.ToString("ddd")</strong><span class="ml-1 text-xs text-muted">@day.ToString("dd MMM")</span></div>
                                 <div class="mt-1 flex gap-1">
@@ -84,18 +84,26 @@
                                     <button type="button" class="rounded border border-border px-1.5 py-0.5 text-[10px] text-secondary hover:bg-surface-hover" @onclick="() => QuickAdd(day, true)">+ derate</button>
                                 </div>
                             </div>
-                            <div class="space-y-1.5">
-                                @foreach (var interval in intervals)
+
+                            <div class="relative h-72 overflow-hidden rounded border border-border bg-surface-inset">
+                                <div class="pointer-events-none absolute inset-x-0 top-0 border-t border-border"><span class="absolute left-1 top-0 text-[9px] text-muted">00</span></div>
+                                <div class="pointer-events-none absolute inset-x-0 top-1/4 border-t border-border"><span class="absolute left-1 top-0 text-[9px] text-muted">06</span></div>
+                                <div class="pointer-events-none absolute inset-x-0 top-1/2 border-t border-border"><span class="absolute left-1 top-0 text-[9px] text-muted">12</span></div>
+                                <div class="pointer-events-none absolute inset-x-0 top-3/4 border-t border-border"><span class="absolute left-1 top-0 text-[9px] text-muted">18</span></div>
+                                <div class="pointer-events-none absolute inset-x-0 bottom-0 border-t border-border"><span class="absolute bottom-0 left-1 text-[9px] text-muted">24</span></div>
+                                <div class="pointer-events-none absolute inset-0 grid place-items-center text-[10px] text-muted/60">Configured baseline</div>
+
+                                @foreach (var interval in IntervalsFor(day))
                                 {
-                                    <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[11px] @IntervalClass(interval)" title="@IntervalTitle(interval)" @onclick="() => EditRequested.InvokeAsync(interval)">
-                                        <strong class="block">@IntervalState(interval)</strong>
-                                        <span class="block">@IntervalTime(interval, day)</span>
+                                    <button type="button"
+                                            class="absolute left-6 right-1 overflow-hidden rounded px-1.5 py-1 text-left text-[10px] shadow-soft @IntervalClass(interval)"
+                                            style="@DaySegmentStyle(interval, day)"
+                                            title="@IntervalTitle(interval)"
+                                            @onclick="() => EditRequested.InvokeAsync(interval)">
+                                        <strong class="block truncate">@IntervalState(interval)</strong>
+                                        <span class="block truncate">@IntervalTime(interval, day)</span>
                                         @if (!string.IsNullOrWhiteSpace(interval.ReasonCode)) { <span class="block truncate opacity-80">@interval.ReasonCode</span> }
                                     </button>
-                                }
-                                @if (intervals.Count == 0)
-                                {
-                                    <div class="rounded bg-surface-inset px-2 py-3 text-center text-[11px] text-muted">Configured baseline</div>
                                 }
                             </div>
                         </div>
@@ -151,6 +159,17 @@
             ? new ResourceCalendarDraftRequest(FocusedResource.Id, start, start.AddHours(8), true, 50m, "CAPACITY_DERATE")
             : new ResourceCalendarDraftRequest(FocusedResource.Id, start, start.AddHours(8), false, 0m, "PLANNED_DOWNTIME");
         return QuickAddRequested.InvokeAsync(draft);
+    }
+
+    private static string DaySegmentStyle(ResourceCalendar interval, DateTime day)
+    {
+        var dayEnd = day.AddDays(1);
+        var start = interval.Start < day ? day : interval.Start;
+        var end = interval.End > dayEnd ? dayEnd : interval.End;
+        var top = Math.Clamp((start - day).TotalMinutes / 1440d * 100d, 0d, 100d);
+        var rawHeight = Math.Clamp((end - start).TotalMinutes / 1440d * 100d, 0d, 100d);
+        var height = Math.Min(100d - top, Math.Max(2.5d, rawHeight));
+        return FormattableString.Invariant($"top:{top:0.###}%;height:{height:0.###}%;");
     }
 
     private static DateTime StartOfWeek(DateTime value)
