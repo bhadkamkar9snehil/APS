@@ -178,7 +178,13 @@ else
         ? rows
         : rows.Where(x => SearchText(x).Contains(filter.Trim(), StringComparison.OrdinalIgnoreCase));
 
-    private string? EditError => ValidateEdit();
+    private string? EditError => selected is null
+        ? null
+        : OrderServicePolicyRules.ValidationError(
+            editCommitment,
+            selected.TargetDeliveryDate,
+            editEarliest,
+            editCommitment == ServiceCommitmentClass.Hard ? null : editLatest);
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -244,16 +250,6 @@ else
         }
         catch (Exception ex) { SetMessage(ex.Message, true); }
         finally { saving = false; }
-    }
-
-    private string? ValidateEdit()
-    {
-        if (selected is null) return null;
-        var target = selected.TargetDeliveryDate.Date;
-        if (editEarliest.HasValue && editEarliest.Value.Date > target) return "Earliest acceptable delivery must be on or before the target date.";
-        if (editLatest.HasValue && editLatest.Value.Date < target) return "Latest acceptable delivery must be on or after the target date.";
-        if (editCommitment == ServiceCommitmentClass.Flexible && !editEarliest.HasValue && !editLatest.HasValue) return "Flexible orders need at least one acceptable delivery boundary.";
-        return null;
     }
 
     private static string WindowLabel(OrderServicePolicy row)
