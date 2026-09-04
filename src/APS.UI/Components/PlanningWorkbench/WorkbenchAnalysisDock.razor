@@ -76,8 +76,8 @@
     private AnalysisPanel CurrentPanel => View switch
     {
         PlannerAnalysisView.Exceptions => new("Exceptions", "Constraint failures and warnings for the visible scenario.", $"{CriticalCount} critical", $"{WarningCount} warnings"),
-        PlannerAnalysisView.Capacity => new("Capacity", "Resource load, idle windows, and bottleneck exposure stay aligned with the visible Gantt window.", "Inspect loaded lanes", "Use the resource rows above"),
-        PlannerAnalysisView.Delivery => new("Delivery", "Demand-at-risk and due-date consequences of the current sequence.", $"{LateDemand} late orders", "Open Demand queue to focus an order"),
+        PlannerAnalysisView.Capacity => new("Capacity", "Resource load, idle windows, and bottleneck exposure stay aligned with the visible Gantt window.", "Inspect loaded lanes", "Use Control Tower for plant-wide pressure and commitments", "/control-tower", "Open Control Tower"),
+        PlannerAnalysisView.Delivery => new("Delivery", "Demand-at-risk and due-date consequences of the current sequence.", $"{LateDemand} late orders", "Open demand coverage to inspect the affected order", "/plan/demand", "Open demand & supply"),
         PlannerAnalysisView.Material => new("Material", "Supply, reservations, and time-phased material balance for the selected chain.", "Material consequences", "Open detailed material flow only when needed", "/plan/material-flow", "Open material details"),
         PlannerAnalysisView.ScenarioComparison => new("Scenario comparison", "Compare the working scenario against its released baseline before committing it.", "Baseline versus working plan", "Schedule, delivery, and capacity deltas", "/decide/compare", "Open full comparison"),
         PlannerAnalysisView.Execution => new("Execution monitor", "Planned versus actual timing, held work, and recovery triggers.", "Execution status", "Select an operation above for actual timestamps", "/operate/work-orders", "Open work orders"),
