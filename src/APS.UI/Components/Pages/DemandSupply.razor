@@ -17,19 +17,37 @@
 <details id="reconcile-sales-order" class="mb-6 rounded border border-border bg-surface-raised shadow-soft">
     <summary class="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-primary hover:bg-surface-hover">
         Reconcile sales orders
-        <span class="ml-2 font-normal text-secondary">Add or refresh an open sales-order line</span>
+        <span class="ml-2 font-normal text-secondary">Add, refresh, rush or cancel a sales-order line</span>
     </summary>
     <div class="border-t border-border p-4">
         <div class="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
             <label class="flex flex-col gap-1"><span class="text-xs text-secondary">SO number</span><input class="rounded border border-border-strong px-2 py-1" @bind="soNumber" /></label>
             <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Item</span><input class="rounded border border-border-strong px-2 py-1" @bind="soItem" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Customer</span><input class="rounded border border-border-strong px-2 py-1" @bind="customerCode" placeholder="optional" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-secondary">ERP status</span><select class="rounded border border-border-strong px-2 py-1" @bind="externalStatus"><option value="OPEN">OPEN</option><option value="CANCELLED">CANCELLED</option><option value="CLOSED">CLOSED</option><option value="REJECTED">REJECTED</option></select></label>
             <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Material code</span><input class="rounded border border-border-strong px-2 py-1" @bind="materialCode" /></label>
             <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Grade</span><input class="rounded border border-border-strong px-2 py-1" @bind="gradeCode" /></label>
             <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Final section</span><input class="rounded border border-border-strong px-2 py-1" @bind="crossSectionCode" /></label>
             <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Order qty (MT)</span><input type="number" min="0" step="0.01" class="rounded border border-border-strong px-2 py-1" @bind="orderQuantityMt" /></label>
-            <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Open qty (MT)</span><input type="number" min="0" step="0.01" class="rounded border border-border-strong px-2 py-1" @bind="openQuantityMt" /></label>
-            <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Required date</span><input type="date" class="rounded border border-border-strong px-2 py-1" @bind="requiredDate" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Open qty (MT)</span><input type="number" min="0" step="0.01" class="rounded border border-border-strong px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50" disabled="@IsClosedInput" @bind="openQuantityMt" /><span class="text-[11px] text-muted">Closed statuses reconcile as 0 MT open demand.</span></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Customer required date</span><input type="date" class="rounded border border-border-strong px-2 py-1" @bind="requiredDate" /></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Confirmed delivery date</span><input type="date" class="rounded border border-border-strong px-2 py-1" @bind="confirmedDeliveryDate" /><span class="text-[11px] text-muted">Optional negotiated/confirmed date.</span></label>
+            <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Priority (0–10)</span><input type="number" min="0" max="10" class="rounded border border-border-strong px-2 py-1 disabled:cursor-not-allowed disabled:opacity-50" disabled="@rushOrder" @bind="priority" /><span class="text-[11px] text-muted">Higher priority increases tardiness cost.</span></label>
         </div>
+
+        <div class="mt-3 grid gap-2 lg:grid-cols-3">
+            <label class="flex items-center gap-2 rounded border border-border bg-surface-inset px-3 py-2 text-sm">
+                <input type="checkbox" @bind="rushOrder" />
+                <span><strong>Rush order</strong><span class="ml-1 text-xs text-secondary">uses priority 10 while retaining its own due date.</span></span>
+            </label>
+            <div class="rounded border border-border bg-surface-inset px-3 py-2 text-xs text-secondary">
+                <strong class="text-primary">Due-date basis:</strong> confirmed delivery is used when supplied; otherwise the customer-required date is used. Production-required-by is then derived from the configured QA/packing/dispatch lead time.
+            </div>
+            <div class="rounded border border-border bg-surface-inset px-3 py-2 text-xs text-secondary">
+                <strong class="text-primary">Cancellation:</strong> planned MTO demand can be cancelled automatically. Firmed/released production is protected and surfaced for planner attention rather than silently deleted.
+            </div>
+        </div>
+
         @if (!string.IsNullOrWhiteSpace(reconcileError))
         {
             <div role="alert" class="mt-3 rounded border border-border bg-danger-soft px-3 py-2 text-sm text-danger">@reconcileError</div>
@@ -39,11 +57,11 @@
                     class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
                     disabled="@(reconciling || ReconcileInputIncomplete)"
                     @onclick="SubmitReconcileAsync">
-                @(reconciling ? "Reconciling…" : "Submit and reconcile")
+                @(reconciling ? "Reconciling…" : IsClosedInput ? "Submit cancellation" : "Submit and reconcile")
             </button>
             @if (ReconcileInputIncomplete)
             {
-                <span class="text-xs text-muted">Complete SO, material, grade, section and positive quantities to continue.</span>
+                <span class="text-xs text-muted">Complete SO, material, grade, section and quantity fields. Open quantity may be zero only for a closed status.</span>
             }
         </div>
     </div>
@@ -89,6 +107,7 @@ else
                     <tr class="border-b border-border last:border-0">
                         <td class="px-3 py-2">
                             <span class="mr-1 rounded px-1.5 py-0.5 text-xs font-medium @(row.DemandSource == DemandSourceType.MakeToOrder ? "bg-info-soft text-info" : "bg-surface-inset text-secondary")">@(row.DemandSource == DemandSourceType.MakeToOrder ? "MTO" : "MTS")</span>
+                            @if (row.Priority >= RushPriority) { <span class="mr-1 rounded bg-warning-soft px-1.5 py-0.5 text-xs font-semibold text-warning">RUSH</span> }
                             <strong>@row.ProductionOrderNumber</strong>
                             <div class="text-xs text-muted">
                                 @if (!string.IsNullOrWhiteSpace(row.SalesOrderNumber))
@@ -140,10 +159,11 @@ else
     {
         <section class="mt-6 overflow-x-auto rounded border border-border bg-surface-raised">
             <div class="border-b border-border px-3 py-2 text-sm font-semibold">Sales Order coverage (@salesOrders.Count)</div>
-            <table class="w-full min-w-[760px] text-sm">
+            <table class="w-full min-w-[1040px] text-sm">
                 <thead>
                     <tr class="border-b border-border text-left text-xs text-muted">
                         <th class="px-3 py-2 font-medium">SO / Item</th>
+                        <th class="px-3 py-2 font-medium">Service dates</th>
                         <th class="px-3 py-2 font-medium">Open demand</th>
                         <th class="px-3 py-2 font-medium">FG covered</th>
                         <th class="px-3 py-2 font-medium">Mfg requirement</th>
@@ -154,12 +174,14 @@ else
                     @foreach (var so in salesOrders)
                     {
                         <tr class="border-b border-border last:border-0">
-                            <td class="px-3 py-2"><strong>@so.SalesOrderNumber</strong> / @so.SalesOrderItemNumber<div class="text-xs text-muted">@Display(so.CustomerCode)</div></td>
+                            <td class="px-3 py-2"><strong>@so.SalesOrderNumber</strong> / @so.SalesOrderItemNumber @if (so.Priority >= RushPriority) { <span class="ml-1 rounded bg-warning-soft px-1.5 py-0.5 text-xs font-semibold text-warning">RUSH</span> }<div class="text-xs text-muted">@Display(so.CustomerCode) · priority @so.Priority</div></td>
+                            <td class="px-3 py-2 text-xs"><div>Requested <strong>@so.CustomerRequiredDate.ToString("dd MMM yyyy")</strong></div><div class="text-muted">Confirmed @(so.ConfirmedDeliveryDate?.ToString("dd MMM yyyy") ?? "—")</div><div class="text-muted">Production by @so.ProductionRequiredByDate.ToString("dd MMM yyyy HH:mm")</div></td>
                             <td class="px-3 py-2">@so.OpenDemandQuantityMt.ToString("0.##") MT</td>
                             <td class="px-3 py-2">@so.FinishedGoodsCoveredQuantityMt.ToString("0.##") MT</td>
                             <td class="px-3 py-2">@so.ManufacturingRequirementQuantityMt.ToString("0.##") MT</td>
                             <td class="px-3 py-2">
                                 <span class="rounded px-1.5 py-0.5 text-xs @(so.PlannerAttentionRequired ? "bg-warning-soft text-warning" : "bg-surface-inset text-secondary")">@so.Disposition</span>
+                                @if (!string.IsNullOrWhiteSpace(so.ReasonCode)) { <div class="mt-1 max-w-72 text-xs text-muted">@so.ReasonCode</div> }
                             </td>
                         </tr>
                     }
@@ -170,6 +192,8 @@ else
 }
 
 @code {
+    private const int RushPriority = 10;
+
     private DemandSupplyView? view;
     private bool loading = true;
     private bool reconciling;
@@ -177,12 +201,21 @@ else
 
     private string soNumber = "";
     private string soItem = "10";
+    private string customerCode = "";
     private string materialCode = "";
     private string gradeCode = "";
     private string crossSectionCode = "";
+    private string externalStatus = "OPEN";
     private decimal orderQuantityMt;
     private decimal openQuantityMt;
     private DateTime requiredDate = DateTime.UtcNow.Date.AddDays(14);
+    private DateTime? confirmedDeliveryDate;
+    private int priority;
+    private bool rushOrder;
+
+    private bool IsClosedInput => externalStatus is "CANCELLED" or "CLOSED" or "REJECTED";
+    private decimal EffectiveOpenQuantity => IsClosedInput ? 0m : openQuantityMt;
+    private int EffectivePriority => rushOrder ? RushPriority : Math.Clamp(priority, 0, RushPriority);
 
     private bool ReconcileInputIncomplete =>
         string.IsNullOrWhiteSpace(soNumber)
@@ -191,7 +224,8 @@ else
         || string.IsNullOrWhiteSpace(gradeCode)
         || string.IsNullOrWhiteSpace(crossSectionCode)
         || orderQuantityMt <= 0m
-        || openQuantityMt <= 0m;
+        || (!IsClosedInput && openQuantityMt <= 0m)
+        || openQuantityMt > orderQuantityMt;
 
     protected override async Task OnInitializedAsync()
     {
@@ -226,17 +260,20 @@ else
         try
         {
             var input = new SalesOrderDemandInput(
-                soNumber.Trim(), soItem.Trim(), materialCode.Trim(), gradeCode.Trim(), crossSectionCode.Trim(),
-                orderQuantityMt, openQuantityMt, requiredDate);
+                SalesOrderNumber: soNumber.Trim(),
+                ItemNumber: soItem.Trim(),
+                MaterialCode: materialCode.Trim(),
+                GradeCode: gradeCode.Trim(),
+                FinalCrossSectionCode: crossSectionCode.Trim(),
+                OrderQuantityMt: orderQuantityMt,
+                OpenQuantityMt: EffectiveOpenQuantity,
+                CustomerRequiredDate: requiredDate,
+                ConfirmedDeliveryDate: confirmedDeliveryDate,
+                CustomerCode: Normalize(customerCode),
+                ExternalStatus: externalStatus,
+                Priority: EffectivePriority);
             await Demand.ReconcileSalesOrdersAsync(new[] { input });
-            soNumber = "";
-            soItem = "10";
-            materialCode = "";
-            gradeCode = "";
-            crossSectionCode = "";
-            orderQuantityMt = 0m;
-            openQuantityMt = 0m;
-            requiredDate = DateTime.UtcNow.Date.AddDays(14);
+            ResetReconcileForm();
             await LoadAsync();
         }
         catch (Exception ex)
@@ -250,6 +287,23 @@ else
         }
     }
 
+    private void ResetReconcileForm()
+    {
+        soNumber = "";
+        soItem = "10";
+        customerCode = "";
+        materialCode = "";
+        gradeCode = "";
+        crossSectionCode = "";
+        externalStatus = "OPEN";
+        orderQuantityMt = 0m;
+        openQuantityMt = 0m;
+        requiredDate = DateTime.UtcNow.Date.AddDays(14);
+        confirmedDeliveryDate = null;
+        priority = 0;
+        rushOrder = false;
+    }
+
     private RenderFragment CoverageSegment(decimal quantity, decimal total, string cssClass) => builder =>
     {
         if (quantity <= 0m || total <= 0m) return;
@@ -260,6 +314,7 @@ else
         builder.CloseElement();
     };
 
+    private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static string Display(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
     private static string FormatNullable(decimal? value) => value.HasValue ? value.Value.ToString("0.##") : "—";
 
