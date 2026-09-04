@@ -3,10 +3,9 @@ using APS.Domain;
 namespace APS.Application;
 
 /// <summary>
-/// Generic create/update/delete over the master-data entity types the UI editor supports. One
-/// service instead of one per entity type - the entities themselves are plain EF-mapped classes
-/// with no business logic attached, so there is nothing type-specific to add per entity beyond
-/// "which DbSet does this belong to," which the implementation resolves via reflection.
+/// Generic create/update/delete boundary for editable planning master data. Shared persistence stays
+/// generic, while a small number of cross-row invariants that must hold regardless of UI entry point
+/// are enforced centrally by the implementation (for example, non-overlapping resource calendars).
 /// </summary>
 public interface IMasterDataAdminService
 {
