@@ -85,6 +85,29 @@ public sealed class OrderServiceWindowTests
         Assert.Equal(ServiceCommitmentClass.Hard, service.ServiceCommitment);
     }
 
+    [Theory]
+    [InlineData(ServiceCommitmentClass.Flexible, -1, 3, null)]
+    [InlineData(ServiceCommitmentClass.Standard, null, null, null)]
+    [InlineData(ServiceCommitmentClass.Hard, null, null, null)]
+    [InlineData(ServiceCommitmentClass.Flexible, null, null, "Flexible commitments require at least one acceptable delivery boundary.")]
+    [InlineData(ServiceCommitmentClass.Standard, 1, null, "Earliest acceptable delivery must be on or before the requested/confirmed target date.")]
+    [InlineData(ServiceCommitmentClass.Standard, null, -1, "Latest acceptable delivery must be on or after the requested/confirmed target date.")]
+    [InlineData(ServiceCommitmentClass.Hard, null, 1, "Hard commitments cannot move later than the requested/confirmed target date.")]
+    public void Service_window_validation_has_one_shared_rule_set(
+        ServiceCommitmentClass commitment,
+        int? earliestOffsetDays,
+        int? latestOffsetDays,
+        string? expectedError)
+    {
+        var target = new DateTime(2026, 9, 20, 0, 0, 0, DateTimeKind.Utc);
+        var earliest = earliestOffsetDays.HasValue ? target.AddDays(earliestOffsetDays.Value) : null;
+        var latest = latestOffsetDays.HasValue ? target.AddDays(latestOffsetDays.Value) : null;
+
+        var error = OrderServicePolicyRules.ValidationError(commitment, target, earliest, latest);
+
+        Assert.Equal(expectedError, error);
+    }
+
     private static ProductionOrder ProductionOrder(Guid id, Guid salesOrderId, DateTime due, int priority) => new()
     {
         Id = id,
