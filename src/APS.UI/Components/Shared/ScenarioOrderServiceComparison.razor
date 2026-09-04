@@ -1,0 +1,112 @@
+@using APS.Application
+@using APS.Domain
+
+<section class="rounded-surface border border-border bg-surface-raised shadow-soft" aria-label="Order service comparison">
+    <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
+        <div>
+            <h2 class="text-sm font-semibold">Order service commitments</h2>
+            <p class="mt-0.5 text-xs text-secondary">Requested/confirmed delivery remains visible beside the planner-approved flexibility and the resulting manufacturing deadline. Rush is shown separately because urgency is not a service-window class.</p>
+        </div>
+        <span class="rounded bg-surface-inset px-2 py-1 text-xs font-semibold">@ChangedCount changed / @Rows.Count total</span>
+    </div>
+
+    @if (Rows.Count == 0)
+    {
+        <div class="p-4 text-sm text-secondary">Neither Plan Version contains persisted MTO service evidence.</div>
+    }
+    else
+    {
+        <div class="overflow-x-auto">
+            <table class="w-full min-w-[1180px] text-sm">
+                <thead>
+                    <tr class="border-b border-border text-left text-xs text-muted">
+                        <th class="px-3 py-2 font-medium">Sales Order</th>
+                        <th class="px-3 py-2 font-medium">Baseline target</th>
+                        <th class="px-3 py-2 font-medium">Baseline policy / window</th>
+                        <th class="px-3 py-2 font-medium">What-if target</th>
+                        <th class="px-3 py-2 font-medium">What-if policy / window</th>
+                        <th class="px-3 py-2 font-medium">Manufacturing deadline</th>
+                        <th class="px-3 py-2 font-medium">Urgency</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in Rows)
+                    {
+                        var changed = Changed(row);
+                        <tr class="border-b border-border last:border-0 @(changed ? "bg-warning-soft/30" : "")">
+                            <td class="px-3 py-2">
+                                <strong>@OrderLabel(row)</strong>
+                                <div class="text-xs text-muted">@Customer(row)</div>
+                                @if (row.Baseline is null) { <span class="mt-1 inline-block rounded bg-success-soft px-1.5 py-0.5 text-xs text-success">ADDED</span> }
+                                else if (row.NewPlan is null) { <span class="mt-1 inline-block rounded bg-danger-soft px-1.5 py-0.5 text-xs text-danger">REMOVED</span> }
+                            </td>
+                            <td class="px-3 py-2 text-xs">@Target(row.Baseline)</td>
+                            <td class="px-3 py-2 text-xs">@Policy(row.Baseline)</td>
+                            <td class="px-3 py-2 text-xs">@Target(row.NewPlan)</td>
+                            <td class="px-3 py-2 text-xs"><strong>@Policy(row.NewPlan)</strong></td>
+                            <td class="px-3 py-2 text-xs">@Deadline(row.Baseline) &rarr; <strong class="@(DeadlineMovedLater(row) ? "text-warning" : string.Empty)">@Deadline(row.NewPlan)</strong></td>
+                            <td class="px-3 py-2 text-xs">@Priority(row.Baseline) &rarr; <strong>@Priority(row.NewPlan)</strong></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyCollection<PlanOrderServiceComparisonView> Items { get; set; } = Array.Empty<PlanOrderServiceComparisonView>();
+
+    private IReadOnlyList<PlanOrderServiceComparisonView> Rows => Items
+        .OrderBy(x => x.NewPlan?.TargetDeliveryDate ?? x.Baseline?.TargetDeliveryDate ?? DateTime.MaxValue)
+        .ThenBy(x => x.NewPlan?.SalesOrderNumber ?? x.Baseline?.SalesOrderNumber, StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    private int ChangedCount => Rows.Count(Changed);
+
+    private static bool Changed(PlanOrderServiceComparisonView row)
+    {
+        if (row.Baseline is null || row.NewPlan is null) return true;
+        return row.Baseline.TargetDeliveryDate != row.NewPlan.TargetDeliveryDate
+               || row.Baseline.ServiceCommitment != row.NewPlan.ServiceCommitment
+               || row.Baseline.EarliestAcceptableDeliveryDate != row.NewPlan.EarliestAcceptableDeliveryDate
+               || row.Baseline.LatestAcceptableDeliveryDate != row.NewPlan.LatestAcceptableDeliveryDate
+               || row.Baseline.EffectiveProductionDeadline != row.NewPlan.EffectiveProductionDeadline
+               || row.Baseline.Priority != row.NewPlan.Priority;
+    }
+
+    private static string OrderLabel(PlanOrderServiceComparisonView row)
+    {
+        var value = row.NewPlan ?? row.Baseline;
+        return value is null ? row.SalesOrderId.ToString("N")[..8] : $"{value.SalesOrderNumber}/{value.SalesOrderItemNumber}";
+    }
+
+    private static string Customer(PlanOrderServiceComparisonView row) =>
+        row.NewPlan?.CustomerCode ?? row.Baseline?.CustomerCode ?? "—";
+
+    private static string Target(PlanOrderServiceView? value) => value is null
+        ? "—"
+        : $"{value.TargetDeliveryDate:dd MMM yyyy} · {(value.ConfirmedDeliveryDate.HasValue ? "confirmed" : "requested")}";
+
+    private static string Policy(PlanOrderServiceView? value)
+    {
+        if (value is null) return "—";
+        var earliest = value.EarliestAcceptableDeliveryDate?.ToString("dd MMM") ?? "any earlier";
+        var latest = (value.LatestAcceptableDeliveryDate ?? value.TargetDeliveryDate).ToString("dd MMM");
+        return value.ServiceCommitment == ServiceCommitmentClass.Hard
+            ? $"Hard · by {value.TargetDeliveryDate:dd MMM}"
+            : $"{value.ServiceCommitment} · {earliest} → {latest}";
+    }
+
+    private static string Deadline(PlanOrderServiceView? value) => value is null
+        ? "—"
+        : value.EffectiveProductionDeadline.ToString("dd MMM HH:mm");
+
+    private static string Priority(PlanOrderServiceView? value) => value is null
+        ? "—"
+        : value.Priority >= 10 ? "RUSH · 10" : value.Priority.ToString();
+
+    private static bool DeadlineMovedLater(PlanOrderServiceComparisonView row) =>
+        row.Baseline is not null && row.NewPlan is not null &&
+        row.NewPlan.EffectiveProductionDeadline > row.Baseline.EffectiveProductionDeadline;
+}
