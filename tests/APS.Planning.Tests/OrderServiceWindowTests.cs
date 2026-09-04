@@ -7,7 +7,7 @@ namespace APS.Planning.Tests;
 public sealed class OrderServiceWindowTests
 {
     [Fact]
-    public void Flexible_window_moves_effective_planning_due_without_mutating_canonical_order()
+    public void Flexible_window_preserves_target_and_derives_separate_production_boundaries()
     {
         var salesOrderId = Guid.NewGuid();
         var productionOrderId = Guid.NewGuid();
@@ -38,9 +38,8 @@ public sealed class OrderServiceWindowTests
 
         var planned = Assert.Single(projected.ProductionOrders);
         var service = Assert.Single(projected.MakeToOrderDemand);
-        Assert.NotSame(canonical, planned);
-        Assert.Equal(productionTarget, canonical.RequiredDate);
-        Assert.Equal(productionTarget.AddDays(3), planned.RequiredDate);
+        Assert.Same(canonical, planned);
+        Assert.Equal(productionTarget, planned.RequiredDate);
         Assert.Equal(productionTarget.AddDays(3), service.ProductionLatestAcceptableDate);
         Assert.Equal(productionTarget.AddDays(-1), service.ProductionEarliestAcceptableDate);
         Assert.Equal(10, planned.Priority);
@@ -81,6 +80,7 @@ public sealed class OrderServiceWindowTests
         var service = Assert.Single(projected.MakeToOrderDemand);
         Assert.Equal(productionTarget, planned.RequiredDate);
         Assert.Equal(targetDelivery, service.LatestAcceptableDeliveryDate);
+        Assert.Equal(productionTarget, service.ProductionLatestAcceptableDate);
         Assert.Equal(10, planned.Priority);
         Assert.Equal(ServiceCommitmentClass.Hard, service.ServiceCommitment);
     }
