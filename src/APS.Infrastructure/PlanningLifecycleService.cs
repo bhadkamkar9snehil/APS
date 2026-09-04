@@ -16,8 +16,8 @@ public sealed class PlanningLifecycleService(
     IInventorySnapshotProvider _inventory,
     IReplanningActualStateProvider _actualState,
     IProductionDemandOrchestrationService _demand,
-    IOrderServicePolicyService _orderServicePolicies,
-    ILogger<PlanningLifecycleService> _logger) : IPlanningLifecycleService
+    ILogger<PlanningLifecycleService> _logger,
+    IOrderServicePolicyService? _orderServicePolicies = null) : IPlanningLifecycleService
 {
     public async Task<PersistedPlanningRunResult> CalculateAsync(
         PlanningCalculationRequest request,
@@ -158,6 +158,7 @@ public sealed class PlanningLifecycleService(
         DemandOrchestrationResult demand,
         CancellationToken cancellationToken)
     {
+        if (_orderServicePolicies is null || demand.MakeToOrderDemand.Count == 0) return demand;
         var salesOrderIds = demand.MakeToOrderDemand.Select(x => x.SalesOrderId).Distinct().ToArray();
         var policies = await _orderServicePolicies.GetAsync(salesOrderIds, cancellationToken);
         return OrderServiceWindow.Apply(demand, policies);
