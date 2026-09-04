@@ -158,13 +158,19 @@ public sealed class PlanningLifecycleService(
     {
         if (!useBaselineControls || assumptions is null) return requested;
 
+        // Null is meaningful for ScenarioCode and AssignmentPolicies. A persisted null means the plan
+        // used the configured baseline plant / no explicit commitment policy; it must not inherit stale
+        // values from whichever planner session happens to request the replan.
+        var campaignPolicy = assumptions.CampaignPolicy
+            ?? requested.CampaignPolicy with { ObjectiveWeights = assumptions.CampaignObjectiveWeights };
+
         return requested with
         {
-            CampaignPolicy = assumptions.CampaignPolicy ?? requested.CampaignPolicy,
+            CampaignPolicy = campaignPolicy,
             StructurePolicy = assumptions.StructurePolicy ?? requested.StructurePolicy,
             MaxSolverSeconds = assumptions.MaxSolverSeconds ?? requested.MaxSolverSeconds,
-            AssignmentPolicies = assumptions.AssignmentPolicies ?? requested.AssignmentPolicies,
-            ScenarioCode = assumptions.ScenarioCode ?? requested.ScenarioCode
+            AssignmentPolicies = assumptions.AssignmentPolicies,
+            ScenarioCode = assumptions.ScenarioCode
         };
     }
 
@@ -220,7 +226,7 @@ public sealed class PlanningLifecycleService(
         if (string.IsNullOrWhiteSpace(scenarioCode)) return null;
         var scenario = masterData.EffectivePlanningScenarios
             .FirstOrDefault(x => string.Equals(x.ScenarioCode, scenarioCode, StringComparison.OrdinalIgnoreCase));
-        return scenario is null || scenario.IsBaseline ? null : scenario;
+        return scenario?.IsBaseline == true ? null : scenario;
     }
 
     private static void ValidateProductionConfiguration(
@@ -235,6 +241,13 @@ public sealed class PlanningLifecycleService(
             issues.Add("No physical resources are configured in APS master data.");
         if (masterData.RoutePlanning is null)
             issues.Add("No configured manufacturing-route operations are available; production planning cannot use the simplified compatibility structure fallback.");
+
+        if (!string.IsNullOrWhiteSpace(request.ScenarioCode) &&
+            !masterData.EffectivePlanningScenarios.Any(x =>
+                string.Equals(x.ScenarioCode, request.ScenarioCode.Trim(), StringComparison.OrdinalIgnoreCase)))
+        {
+            issues.Add($"Planning scenario '{request.ScenarioCode.Trim()}' was not found. Refresh Planning Controls or select the configured baseline plant.");
+        }
 
         var supplyPolicy = request.MaterialSupplyPolicy;
         if (supplyPolicy is not null &&
