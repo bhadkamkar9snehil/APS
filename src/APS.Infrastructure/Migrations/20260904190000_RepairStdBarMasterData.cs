@@ -6,10 +6,11 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace APS.Infrastructure.Migrations;
 
 /// <summary>
-/// Repairs the persisted demo/master rows behind the September 4 planning blocker.
-/// STD-BAR was configured as a HotRoll step from BLT-150SQ back to BLT-150SQ while
-/// the live manufacturing requirement produces RND-12. The route and its matching
-/// capability rows must describe the actual billet-to-bar transformation.
+/// Repairs the persisted master rows behind the September 4 planning blocker.
+/// STD-BAR incorrectly fixed its HotRoll route output to the incoming billet section
+/// BLT-150SQ. The route is a reusable process chain, so its output must be resolved from
+/// qualified resource capability; the known contradictory capability rows are corrected
+/// to the actual BLT-150SQ -> RND-12 transformation required by current demand.
 ///
 /// This intentionally touches only the known contradictory STD-BAR/HotRoll rows and
 /// leaves historical Plan Version snapshots unchanged.
@@ -24,7 +25,7 @@ public sealed class RepairStdBarMasterData : Migration
 
         migrationBuilder.Sql($"""
             UPDATE ManufacturingRouteOperations
-               SET OutputCrossSectionCode = 'RND-12'
+               SET OutputCrossSectionCode = NULL
              WHERE RouteCode = 'STD-BAR'
                AND ProcessOperationType = {hotRoll}
                AND InputCrossSectionCode = 'BLT-150SQ'
