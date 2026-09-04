@@ -9,8 +9,19 @@ public sealed class OperationExecutionService(ApsDbContext db) : IOperationExecu
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    public async Task<OperationExecutionSnapshot> ApplyAsync(
+    public Task<OperationExecutionSnapshot> ApplyAsync(
         OperationExecutionUpdate update,
+        CancellationToken cancellationToken = default) =>
+        ApplyCoreAsync(update, saveChanges: true, cancellationToken);
+
+    /// <summary>
+    /// Applies the canonical operation-grain execution rules without forcing an immediate database save.
+    /// Specialized execution adapters such as casting can stage their physical evidence in the same
+    /// DbContext transaction and call this method instead of duplicating the operation state machine.
+    /// </summary>
+    internal async Task<OperationExecutionSnapshot> ApplyCoreAsync(
+        OperationExecutionUpdate update,
+        bool saveChanges,
         CancellationToken cancellationToken = default)
     {
         Validate(update);
@@ -118,7 +129,9 @@ public sealed class OperationExecutionService(ApsDbContext db) : IOperationExecu
         // according to their own snapshotted policy.
         await RefreshCommitmentsCoreAsync(update.PlanVersionId, update.ChangedOnUtc, cancellationToken);
 
-        await db.SaveChangesAsync(cancellationToken);
+        if (saveChanges)
+            await db.SaveChangesAsync(cancellationToken);
+
         return Snapshot(operation);
     }
 
