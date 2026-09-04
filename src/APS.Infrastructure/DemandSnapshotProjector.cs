@@ -33,6 +33,11 @@ internal static class DemandSnapshotProjector
                 ConfirmedDeliveryDate = item.ConfirmedDeliveryDate,
                 ProductionRequiredByDate = item.ProductionRequiredByDate,
                 Priority = item.Priority,
+                ServiceCommitment = item.ServiceCommitment,
+                EarliestAcceptableDeliveryDate = item.EarliestAcceptableDeliveryDate,
+                LatestAcceptableDeliveryDate = item.LatestAcceptableDeliveryDate,
+                ProductionEarliestAcceptableDate = item.ProductionEarliestAcceptableDate,
+                ProductionLatestAcceptableDate = item.ProductionLatestAcceptableDate ?? item.ProductionRequiredByDate,
                 Disposition = item.Disposition,
                 PlannerAttentionRequired = item.PlannerAttentionRequired,
                 ReasonCode = item.ReasonCode
