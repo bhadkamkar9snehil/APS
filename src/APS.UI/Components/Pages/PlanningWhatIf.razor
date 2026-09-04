@@ -1,0 +1,219 @@
+@page "/plan/what-if"
+@inject IPlannerWorkspaceQueryService PlannerQuery
+@inject IPlanVersionRepository Plans
+@inject IPlanningLifecycleService Lifecycle
+@inject PlannerWorkspaceState WorkspaceState
+@inject NavigationManager Navigation
+
+<PageTitle>What-if Planning - APS</PageTitle>
+
+<div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+    <div class="max-w-3xl">
+        <h1 class="mb-1 text-lg font-semibold">What-if Planning</h1>
+        <p class="text-sm text-secondary">Clone a persisted baseline, apply the current Planning Controls intentionally, create a child Plan Version, then compare assumptions and schedule consequences before anything is approved or released.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+        <NavLink href="/plan/constraints" class="rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Edit controls</NavLink>
+        <NavLink href="/plan/resource-constraints" class="rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Resource constraints</NavLink>
+        <NavLink href="/plan/versions" class="rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Plan Versions</NavLink>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div role="status" class="mb-4 rounded border border-border px-3 py-2 text-sm @(messageIsError ? "bg-danger-soft text-danger" : "bg-success-soft text-success")">@message</div>
+}
+
+@if (loading)
+{
+    <p class="text-sm text-muted">Loading planning baseline…</p>
+}
+else if (baseline is null)
+{
+    <div class="rounded-surface border border-dashed border-border-strong bg-surface-raised p-8 text-center shadow-soft">
+        <strong>No baseline Plan Version is selected</strong>
+        <p class="mt-2 text-sm text-secondary">Create or select a Plan Version first. What-if planning always creates an immutable child so the baseline remains untouched.</p>
+        <NavLink href="/plan/versions" class="mt-4 inline-flex rounded-control bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground">Open Plan Versions</NavLink>
+    </div>
+}
+else
+{
+    <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_390px]">
+        <main class="space-y-4">
+            <section class="rounded-surface border border-border bg-surface-raised p-4 shadow-soft">
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                        <div class="text-xs font-semibold uppercase tracking-wide text-muted">Baseline</div>
+                        <h2 class="mt-1 text-base font-semibold">@baseline.VersionNumber</h2>
+                        <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-secondary">
+                            <span>Status <strong class="text-primary">@baseline.Status</strong></span>
+                            <span>Created <strong class="text-primary">@baseline.CreatedOnUtc.ToString("dd MMM yyyy HH:mm")</strong></span>
+                            <span>Trigger <strong class="text-primary">@baseline.Trigger</strong></span>
+                        </div>
+                    </div>
+                    <span class="rounded px-2 py-1 text-xs font-semibold @BaselineStatusClass">@baseline.Status</span>
+                </div>
+                <div class="mt-4 grid gap-3 sm:grid-cols-3">
+                    <div class="rounded-control bg-surface-inset p-3"><div class="text-xs text-muted">HORIZON</div><strong class="text-sm">@baseline.HorizonStartUtc.ToString("dd MMM") → @baseline.HorizonEndUtc.ToString("dd MMM")</strong></div>
+                    <div class="rounded-control bg-surface-inset p-3"><div class="text-xs text-muted">BASELINE SCENARIO</div><strong class="text-sm">@BaselineScenario</strong></div>
+                    <div class="rounded-control bg-surface-inset p-3"><div class="text-xs text-muted">OPERATIONS</div><strong class="text-sm">@baseline.Operations.Count</strong></div>
+                </div>
+            </section>
+
+            <section class="rounded-surface border border-border bg-surface-raised p-4 shadow-soft">
+                <div class="flex items-start justify-between gap-3">
+                    <div>
+                        <h2 class="text-sm font-semibold">Controls that will change</h2>
+                        <p class="mt-0.5 text-xs text-secondary">This run deliberately sets <code>UseBaselinePlanningControls = false</code>. The values below replace the baseline planning policy for the child Plan Version.</p>
+                    </div>
+                    <NavLink href="/plan/constraints" class="shrink-0 text-xs font-semibold text-accent hover:underline">Edit</NavLink>
+                </div>
+
+                <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                    <ControlTile Label="Operating scenario" Value="@CurrentScenario" Baseline="@BaselineScenario" />
+                    <ControlTile Label="Heat envelope" Value="@CurrentHeatEnvelope" Baseline="@BaselineHeatEnvelope" />
+                    <ControlTile Label="Campaign target / max" Value="@CurrentCampaign" Baseline="@BaselineCampaign" />
+                    <ControlTile Label="Frozen / slushy" Value="@CurrentFence" Baseline="@BaselineFence" />
+                    <ControlTile Label="Solver effort" Value="@($"{Constraints.MaxSolverSeconds} s")" Baseline="@BaselineSolver" />
+                    <ControlTile Label="Commitment policy" Value="@(Constraints.UseAssignmentCommitmentPolicy ? "Enabled" : "No explicit policy")" Baseline="@BaselineCommitment" />
+                </div>
+
+                <div class="mt-4 rounded-control border border-border bg-surface-inset p-3 text-xs text-secondary">
+                    <strong class="text-primary">Immutable what-if rule:</strong> the baseline is never edited. The child records the new assumptions, and Plan Compare will show both the policy differences and the resulting operation movements/resource changes.
+                </div>
+            </section>
+
+            <section class="rounded-surface border border-border bg-surface-raised p-4 shadow-soft">
+                <h2 class="text-sm font-semibold">What-if intent</h2>
+                <p class="mt-0.5 text-xs text-secondary">Record why the planner is testing this constraint set. This reason is persisted with the child Plan Version.</p>
+                <label class="mt-3 block text-xs text-secondary">Planner reason<textarea rows="3" class="mt-1 w-full resize-y rounded-control border border-border-strong bg-surface px-3 py-2 text-sm" @bind="reason" placeholder="Example: Test CCM-2 outage with tighter frozen fence before tomorrow's dispatch meeting"></textarea></label>
+            </section>
+        </main>
+
+        <aside class="space-y-4">
+            <section class="rounded-surface border border-accent-border bg-surface-raised p-4 shadow-soft">
+                <div class="text-xs font-semibold uppercase tracking-wide text-muted">Run what-if</div>
+                <h2 class="mt-1 text-base font-semibold">Create child and compare</h2>
+                <p class="mt-2 text-xs text-secondary">APS will re-resolve current demand, inventory, committed supply and plant master state, apply the current planner controls, solve a new child Plan Version, and open Plan Compare against this baseline.</p>
+
+                @if (ValidationErrors.Count > 0)
+                {
+                    <div class="mt-3 rounded border border-danger/30 bg-danger-soft p-3 text-xs text-danger">
+                        <strong class="block">Controls need attention</strong>
+                        @foreach (var error in ValidationErrors) { <div class="mt-1">@error</div> }
+                    </div>
+                }
+
+                <button type="button" class="mt-4 w-full rounded-control bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground shadow-soft disabled:cursor-not-allowed disabled:opacity-50" disabled="@(running || ValidationErrors.Count > 0)" @onclick="RunWhatIfAsync">
+                    @(running ? "Calculating child plan…" : "Create what-if & compare")
+                </button>
+
+                <div class="mt-3 grid grid-cols-2 gap-2">
+                    <NavLink href="/" class="rounded-control border border-border px-2 py-2 text-center text-xs font-semibold hover:bg-surface-hover">Baseline workbench</NavLink>
+                    <NavLink href="/decide/compare" class="rounded-control border border-border px-2 py-2 text-center text-xs font-semibold hover:bg-surface-hover">Plan Compare</NavLink>
+                </div>
+            </section>
+
+            <section class="rounded-surface border border-border bg-surface-inset p-4 text-xs text-secondary">
+                <strong class="text-primary">What this does not do</strong>
+                <ul class="mt-2 list-disc space-y-1 pl-4">
+                    <li>does not mutate the selected Plan Version;</li>
+                    <li>does not approve or release the child;</li>
+                    <li>does not bypass current demand, inventory or technical master constraints;</li>
+                    <li>does not turn a missing/deleted operating scenario into baseline silently.</li>
+                </ul>
+            </section>
+        </aside>
+    </div>
+}
+
+@code {
+    private PlannerConstraintState Constraints => WorkspaceState.Constraints;
+    private PlanVersionSnapshot? baseline;
+    private bool loading = true;
+    private bool running;
+    private string? message;
+    private bool messageIsError;
+    private string reason = "Planner what-if using current planning controls";
+
+    private IReadOnlyList<string> ValidationErrors => baseline is null
+        ? new[] { "Select a baseline Plan Version." }
+        : Constraints.Validate(baseline.HorizonStartUtc, baseline.HorizonEndUtc);
+
+    private string CurrentScenario => string.IsNullOrWhiteSpace(Constraints.ScenarioCode) ? "Configured baseline" : Constraints.ScenarioCode!;
+    private string BaselineScenario => string.IsNullOrWhiteSpace(baseline?.Assumptions?.ScenarioCode) ? "Configured baseline" : baseline!.Assumptions!.ScenarioCode!;
+    private string CurrentHeatEnvelope => $"{Constraints.MinimumHeatSizeMt:0.##} / {Constraints.NominalHeatSizeMt:0.##} / {Constraints.MaximumHeatSizeMt:0.##} MT";
+    private string BaselineHeatEnvelope => baseline?.Assumptions?.CampaignPolicy is { } policy ? $"{policy.MinimumHeatSizeMt:0.##} / {policy.NominalHeatSizeMt:0.##} / {policy.MaximumHeatSizeMt:0.##} MT" : "Legacy plan · partial evidence";
+    private string CurrentCampaign => $"{Constraints.TargetCampaignQuantityMt:0.##} / {Constraints.MaximumCampaignQuantityMt:0.##} MT";
+    private string BaselineCampaign => baseline?.Assumptions?.CampaignPolicy is { } policy ? $"{policy.TargetCampaignQuantityMt:0.##} / {policy.MaximumCampaignQuantityMt:0.##} MT" : "Legacy plan · partial evidence";
+    private string CurrentFence => $"{Constraints.FrozenMinutes} / {Constraints.SlushyMinutes} min";
+    private string BaselineFence => baseline?.Assumptions?.TimeFencePolicy is { } fence ? $"{fence.FrozenMinutes} / {fence.SlushyMinutes} min" : "Not recorded";
+    private string BaselineSolver => baseline?.Assumptions?.MaxSolverSeconds is { } seconds ? $"{seconds} s" : "Not recorded";
+    private string BaselineCommitment => baseline?.Assumptions?.AssignmentPolicies is { Count: > 0 } ? "Enabled" : "No explicit policy";
+    private string BaselineStatusClass => baseline?.Status switch
+    {
+        PlanVersionStatus.Feasible or PlanVersionStatus.Approved or PlanVersionStatus.Released => "bg-success-soft text-success",
+        PlanVersionStatus.Failed => "bg-danger-soft text-danger",
+        PlanVersionStatus.Superseded => "bg-surface-inset text-muted",
+        _ => "bg-warning-soft text-warning"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var planId = WorkspaceState.CurrentPlanVersionId;
+            if (!planId.HasValue)
+            {
+                var recent = await PlannerQuery.GetRecentPlanVersionsAsync(40);
+                planId = recent.FirstOrDefault(x => x.IsActive)?.PlanVersionId ?? recent.FirstOrDefault()?.PlanVersionId;
+                if (planId.HasValue) WorkspaceState.SetPlan(planId.Value);
+            }
+
+            if (planId.HasValue) baseline = await Plans.GetAsync(planId.Value);
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            messageIsError = true;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task RunWhatIfAsync()
+    {
+        if (baseline is null || ValidationErrors.Count > 0) return;
+        running = true;
+        message = null;
+        StateHasChanged();
+        try
+        {
+            var request = Constraints.BuildCalculationRequest(baseline.HorizonStartUtc, baseline.HorizonEndUtc);
+            var outcome = await Lifecycle.ReplanAsync(
+                baseline.PlanVersionId,
+                new PlanningRecalculationRequest(
+                    request,
+                    Constraints.BuildTimeFencePolicy(),
+                    Trigger: PlanTriggerType.Manual,
+                    Reason: string.IsNullOrWhiteSpace(reason) ? "Planner what-if using current planning controls" : reason.Trim(),
+                    RepairScope: Constraints.BuildRepairScopePolicy(),
+                    UseBaselinePlanningControls: false));
+
+            WorkspaceState.SetPlan(outcome.Version.PlanVersionId, baseline.PlanVersionId);
+            Navigation.NavigateTo("/decide/compare");
+        }
+        catch (Exception ex)
+        {
+            message = ex.Message;
+            messageIsError = true;
+        }
+        finally
+        {
+            running = false;
+            StateHasChanged();
+        }
+    }
+}
