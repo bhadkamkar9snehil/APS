@@ -103,8 +103,8 @@ public sealed class HeatExecutionTests
         Assert.Equal(OperationExecutionStatus.Completed, operation.ExecutionStatus);
         Assert.Equal(OperationAssignmentCommitmentState.Completed, operation.AssignmentCommitmentState);
         Assert.Equal(resourceId, operation.ActualResourceId);
-        Assert.Contains("HEAT-EVT-1", operation.ExecutionHistoryJson);
-        Assert.Contains("HEAT-EVT-2", operation.ExecutionHistoryJson);
+        Assert.Contains("HEAT-EVT-1", operation.ExecutionHistoryJson ?? string.Empty);
+        Assert.Contains("HEAT-EVT-2", operation.ExecutionHistoryJson ?? string.Empty);
 
         var inventory = await new SqlInventorySnapshotProvider(db).GetInventoryAsync();
         var billet = Assert.Single(inventory);
