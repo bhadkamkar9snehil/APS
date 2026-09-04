@@ -1,15 +1,26 @@
 <section class="aps-page mt-3 p-3">
-    <h2 class="aps-text-heading">Planning controls</h2>
-    <div class="mt-3 grid grid-cols-2 gap-2">
-        <label class="aps-text-label">Heat size MT<input type="number" step="1" value="@NominalHeatMt" @onchange="HeatChanged" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-1.5 aps-text-body" /></label>
-        <label class="aps-text-label">Campaign max MT<input type="number" step="10" value="@MaximumCampaignMt" @onchange="CampaignChanged" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-1.5 aps-text-body" /></label>
-        <label class="aps-text-label">Frozen minutes<input type="number" step="15" value="@FrozenMinutes" @onchange="FrozenChanged" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-1.5 aps-text-body" /></label>
-        <label class="aps-text-label">Solver seconds<input type="number" step="5" value="@SolverSeconds" @onchange="SolverChanged" class="mt-1 w-full rounded-control border border-border bg-surface-raised px-2 py-1.5 aps-text-body" /></label>
+    <div class="flex items-start justify-between gap-3">
+        <div>
+            <h2 class="aps-text-heading">Planning policy</h2>
+            <p class="mt-1 aps-text-caption">This Plan Version keeps the controls it was solved under. Use the central Planning Controls workspace to change heat, campaign, objective, time-fence, scenario or dispatch policy.</p>
+        </div>
+        <NavLink href="/plan/constraints" class="shrink-0 rounded-control border border-accent-border bg-accent-soft px-2 py-1 aps-text-label text-accent hover:bg-surface-hover">Edit controls</NavLink>
     </div>
-    <button type="button" class="mt-3 w-full rounded-control border border-border-strong px-3 py-2 aps-text-heading hover:bg-surface-hover disabled:opacity-40" @onclick="OnRecalculate" disabled="@Disabled">Recalculate with controls</button>
+
+    <div class="mt-3 rounded-control bg-surface-inset p-2 aps-text-caption text-secondary">
+        Optimizing from this workbench preserves the selected plan's captured controls unless you explicitly create a replan from Planning Controls / Plan Versions with a changed profile.
+    </div>
+
+    <div class="mt-3 grid grid-cols-2 gap-2">
+        <button type="button" class="rounded-control border border-border-strong px-3 py-2 aps-text-heading hover:bg-surface-hover disabled:opacity-40" @onclick="OnRecalculate" disabled="@Disabled">Optimize current policy</button>
+        <NavLink href="/decide/compare" class="rounded-control border border-border-strong px-3 py-2 text-center aps-text-heading hover:bg-surface-hover">Compare plans</NavLink>
+    </div>
 </section>
 
 @code {
+    // Kept temporarily for call-site compatibility while FiniteSchedule sheds its legacy local
+    // planning-control fields. They are intentionally not rendered: presenting those defaults as
+    // editable controls could make a planner believe they were the policy persisted with the plan.
     [Parameter] public decimal NominalHeatMt { get; set; }
     [Parameter] public EventCallback<decimal> NominalHeatMtChanged { get; set; }
     [Parameter] public decimal MaximumCampaignMt { get; set; }
@@ -20,9 +31,4 @@
     [Parameter] public EventCallback<int> SolverSecondsChanged { get; set; }
     [Parameter] public EventCallback OnRecalculate { get; set; }
     [Parameter] public bool Disabled { get; set; }
-
-    private Task HeatChanged(ChangeEventArgs e) => decimal.TryParse(e.Value?.ToString(), out var v) ? NominalHeatMtChanged.InvokeAsync(v) : Task.CompletedTask;
-    private Task CampaignChanged(ChangeEventArgs e) => decimal.TryParse(e.Value?.ToString(), out var v) ? MaximumCampaignMtChanged.InvokeAsync(v) : Task.CompletedTask;
-    private Task FrozenChanged(ChangeEventArgs e) => int.TryParse(e.Value?.ToString(), out var v) ? FrozenMinutesChanged.InvokeAsync(v) : Task.CompletedTask;
-    private Task SolverChanged(ChangeEventArgs e) => int.TryParse(e.Value?.ToString(), out var v) ? SolverSecondsChanged.InvokeAsync(v) : Task.CompletedTask;
 }
