@@ -157,6 +157,11 @@ else
 }
 
 @code {
+    private static readonly HashSet<string> ClosedStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "CANCELLED", "CANCELED", "CLOSED", "COMPLETE", "COMPLETED", "DELETED", "REJECTED"
+    };
+
     private readonly List<OrderServicePolicy> rows = [];
     private OrderServicePolicy? selected;
     private ServiceCommitmentClass editCommitment = ServiceCommitmentClass.Standard;
@@ -261,15 +266,8 @@ else
             : $"{earliest} → {latest:dd MMM}";
     }
 
-    private static bool IsClosed(OrderServicePolicy row)
-    {
-        var status = row.ExternalStatus?.Trim();
-        return status is not null && status.Equals("CANCELLED", StringComparison.OrdinalIgnoreCase)
-            || status is not null && status.Equals("CANCELED", StringComparison.OrdinalIgnoreCase)
-            || status is not null && status.Equals("CLOSED", StringComparison.OrdinalIgnoreCase)
-            || status is not null && status.Equals("COMPLETED", StringComparison.OrdinalIgnoreCase)
-            || status is not null && status.Equals("REJECTED", StringComparison.OrdinalIgnoreCase);
-    }
+    private static bool IsClosed(OrderServicePolicy row) =>
+        !string.IsNullOrWhiteSpace(row.ExternalStatus) && ClosedStatuses.Contains(row.ExternalStatus.Trim());
 
     private static string SearchText(OrderServicePolicy row) =>
         $"{row.SalesOrderNumber} {row.ItemNumber} {row.CustomerCode} {row.ExternalStatus} {row.ServiceCommitment}";
