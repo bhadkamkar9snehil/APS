@@ -17,6 +17,12 @@ Canonical code authority is `main`. Historical documents are preserved, but they
 
 `main` code wins if a status document becomes stale.
 
+## 1a. Live defect/verification logs
+
+Dated logs of issues found by actually running the product, kept separate from status/target documents so a defect list doesn't get read as either. Current:
+
+- [`APS_UI_Functional_Audit_2026-09-04.md`](APS_UI_Functional_Audit_2026-09-04.md) — UI defects and confirmed-working behavior, verified by driving the running app, not by reading source alone.
+
 ## 2. Current specifications / target contracts
 
 These remain current target/semantic contracts. Some intentionally include behavior that is still incomplete; use the current-state/status documents to distinguish target from implementation.
