@@ -1,0 +1,41 @@
+@using APS.Application
+
+<section class="min-w-0 rounded-surface border border-border bg-surface-raised shadow-soft">
+    <div class="border-b border-border p-3">
+        <div class="flex items-start justify-between gap-3">
+            <div>
+                <div class="aps-text-label">@Label</div>
+                <h3 class="text-sm font-semibold">@Plan.VersionNumber</h3>
+                <div class="text-xs text-secondary">@Plan.Status · @Plan.CreatedOnUtc.ToString("dd MMM HH:mm")</div>
+            </div>
+            <span class="rounded bg-surface-inset px-2 py-1 text-xs font-semibold">@Summary.ScheduledOperations ops</span>
+        </div>
+        <div class="mt-3 grid grid-cols-4 gap-2 text-xs">
+            <div><span class="block text-muted">Resources</span><strong>@Summary.ResourceCount</strong></div>
+            <div><span class="block text-muted">Work content</span><strong>@Summary.ScheduledHours.ToString("0.0") h</strong></div>
+            <div><span class="block text-muted">Plan span</span><strong>@Summary.SpanHours.ToString("0.0") h</strong></div>
+            <div><span class="block text-muted">Objective</span><strong>@(Summary.ObjectiveValue?.ToString("N0") ?? "—")</strong></div>
+        </div>
+    </div>
+    <div class="overflow-x-auto p-3">
+        <div class="min-w-[640px]">
+            @if (Rows.Count == 0)
+            {
+                <div class="rounded bg-surface-inset p-4 text-center text-xs text-muted">No persisted scheduled operations.</div>
+            }
+            else
+            {
+                <ScheduleGantt HorizonStartUtc="@HorizonStartUtc" HorizonEndUtc="@HorizonEndUtc" Rows="@Rows" />
+            }
+        </div>
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public PlanContextView Plan { get; set; } = null!;
+    [Parameter, EditorRequired] public PlanScenarioSummaryView Summary { get; set; } = null!;
+    [Parameter, EditorRequired] public DateTime HorizonStartUtc { get; set; }
+    [Parameter, EditorRequired] public DateTime HorizonEndUtc { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<ScheduleGantt.GanttRow> Rows { get; set; } = Array.Empty<ScheduleGantt.GanttRow>();
+}
