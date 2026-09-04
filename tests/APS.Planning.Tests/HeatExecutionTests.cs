@@ -99,6 +99,13 @@ public sealed class HeatExecutionTests
         Assert.Equal(2, await db.StrandMaterialActuals.CountAsync());
         Assert.Equal(2, await db.HeatExecutionActuals.CountAsync());
 
+        var operation = await db.PlanOperationSnapshots.SingleAsync();
+        Assert.Equal(OperationExecutionStatus.Completed, operation.ExecutionStatus);
+        Assert.Equal(OperationAssignmentCommitmentState.Completed, operation.AssignmentCommitmentState);
+        Assert.Equal(resourceId, operation.ActualResourceId);
+        Assert.Contains("HEAT-EVT-1", operation.ExecutionHistoryJson);
+        Assert.Contains("HEAT-EVT-2", operation.ExecutionHistoryJson);
+
         var inventory = await new SqlInventorySnapshotProvider(db).GetInventoryAsync();
         var billet = Assert.Single(inventory);
         Assert.Equal(49m, billet.ProjectedAvailableQuantityMt);
