@@ -315,7 +315,13 @@ public sealed class PlanVersionRepository(ApsDbContext db) : IPlanVersionReposit
             result.CampaignPlan.CompositionDecisions ?? Array.Empty<CampaignCompositionDecision>(),
             resourceScheduling,
             result.ProductionStructure.BilletThermalDecisions ?? Array.Empty<BilletThermalDecision>(),
-            resourceCalendars);
+            resourceCalendars,
+            CampaignPolicy: request.CampaignPolicy with { BaselineCampaignAllocations = null },
+            StructurePolicy: request.StructurePolicy,
+            TimeFencePolicy: request.ReplanContext?.TimeFencePolicy,
+            AssignmentPolicies: request.AssignmentPolicies,
+            RepairScopePolicy: request.ReplanContext?.RepairScope,
+            MaxSolverSeconds: request.MaxSolverSeconds);
     }
 
     public async Task<IReadOnlyCollection<BaselinePlanOperation>> GetBaselineOperationsAsync(
