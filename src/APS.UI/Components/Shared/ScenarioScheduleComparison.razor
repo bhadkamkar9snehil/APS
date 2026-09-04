@@ -1,0 +1,91 @@
+@using APS.Application
+
+<div class="grid gap-4 2xl:grid-cols-2" aria-label="Side-by-side scenario schedules">
+    <ScenarioPanel Label="Baseline"
+                   Plan="@BaselinePlan"
+                   Summary="@BaselineSummary"
+                   Rows="@Rows(BaselineOperations)" />
+    <ScenarioPanel Label="What-if"
+                   Plan="@NewPlan"
+                   Summary="@NewPlanSummary"
+                   Rows="@Rows(NewPlanOperations)" />
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PlanContextView BaselinePlan { get; set; } = null!;
+    [Parameter, EditorRequired] public PlanContextView NewPlan { get; set; } = null!;
+    [Parameter, EditorRequired] public PlanScenarioSummaryView BaselineSummary { get; set; } = null!;
+    [Parameter, EditorRequired] public PlanScenarioSummaryView NewPlanSummary { get; set; } = null!;
+    [Parameter, EditorRequired] public IReadOnlyCollection<PlanScenarioOperationView> BaselineOperations { get; set; } = Array.Empty<PlanScenarioOperationView>();
+    [Parameter, EditorRequired] public IReadOnlyCollection<PlanScenarioOperationView> NewPlanOperations { get; set; } = Array.Empty<PlanScenarioOperationView>();
+
+    private DateTime CommonStart => new[] { BaselineSummary.FirstStartUtc, NewPlanSummary.FirstStartUtc }
+        .Where(x => x.HasValue)
+        .Select(x => x!.Value)
+        .DefaultIfEmpty(DateTime.UtcNow.Date)
+        .Min();
+
+    private DateTime CommonEnd
+    {
+        get
+        {
+            var end = new[] { BaselineSummary.LastEndUtc, NewPlanSummary.LastEndUtc }
+                .Where(x => x.HasValue)
+                .Select(x => x!.Value)
+                .DefaultIfEmpty(CommonStart.AddHours(1))
+                .Max();
+            return end > CommonStart ? end : CommonStart.AddHours(1);
+        }
+    }
+
+    private static IReadOnlyList<ScheduleGantt.GanttRow> Rows(IEnumerable<PlanScenarioOperationView> operations) =>
+        operations
+            .GroupBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new ScheduleGantt.GanttRow(
+                group.Key,
+                group.OrderBy(x => x.StartUtc)
+                    .Select(x => new ScheduleGantt.GanttBlock(
+                        x.PlanningKey,
+                        x.TaskType,
+                        x.StartUtc,
+                        x.EndUtc))
+                    .ToArray(),
+                Array.Empty<ScheduleGantt.GanttDowntime>()))
+            .ToArray();
+
+    private RenderFragment ScenarioPanel(
+        string Label,
+        PlanContextView Plan,
+        PlanScenarioSummaryView Summary,
+        IReadOnlyList<ScheduleGantt.GanttRow> Rows) => @<section class="min-w-0 rounded-surface border border-border bg-surface-raised shadow-soft">
+        <div class="border-b border-border p-3">
+            <div class="flex items-start justify-between gap-3">
+                <div>
+                    <div class="aps-text-label">@Label</div>
+                    <h3 class="text-sm font-semibold">@Plan.VersionNumber</h3>
+                    <div class="text-xs text-secondary">@Plan.Status · @Plan.CreatedOnUtc.ToString("dd MMM HH:mm")</div>
+                </div>
+                <span class="rounded bg-surface-inset px-2 py-1 text-xs font-semibold">@Summary.ScheduledOperations ops</span>
+            </div>
+            <div class="mt-3 grid grid-cols-4 gap-2 text-xs">
+                <div><span class="block text-muted">Resources</span><strong>@Summary.ResourceCount</strong></div>
+                <div><span class="block text-muted">Work content</span><strong>@Summary.ScheduledHours.ToString("0.0") h</strong></div>
+                <div><span class="block text-muted">Plan span</span><strong>@Summary.SpanHours.ToString("0.0") h</strong></div>
+                <div><span class="block text-muted">Objective</span><strong>@(Summary.ObjectiveValue?.ToString("N0") ?? "—")</strong></div>
+            </div>
+        </div>
+        <div class="overflow-x-auto p-3">
+            <div class="min-w-[640px]">
+                @if (Rows.Count == 0)
+                {
+                    <div class="rounded bg-surface-inset p-4 text-center text-xs text-muted">No persisted scheduled operations.</div>
+                }
+                else
+                {
+                    <ScheduleGantt HorizonStartUtc="@CommonStart" HorizonEndUtc="@CommonEnd" Rows="@Rows" />
+                }
+            </div>
+        </div>
+    </section>;
+}
