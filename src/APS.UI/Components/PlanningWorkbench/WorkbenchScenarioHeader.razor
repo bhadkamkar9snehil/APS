@@ -27,6 +27,7 @@
                 <span class="mx-1 h-5 w-px bg-border"></span>
                 <button class="rounded-sm border border-accent-border bg-surface-raised px-2.5 py-1 text-xs font-semibold text-accent shadow-soft hover:bg-surface-hover" @onclick="() => StartPlanning.InvokeAsync()">Create planning scenario</button>
             }
+            <NavLink href="/plan/constraints" class="hidden rounded-control border border-border-strong px-2.5 py-1 text-xs font-medium hover:bg-surface-hover min-[1280px]:inline-flex" title="Planning controls used by Calculate and Replan">Controls</NavLink>
             <button class="hidden rounded-control border border-border-strong px-2.5 py-1 text-xs disabled:opacity-40 min-[1440px]:inline-flex" disabled="@(!CanUndo)" @onclick="Undo">Undo</button>
             <button class="hidden rounded-control border border-border-strong px-2.5 py-1 text-xs disabled:opacity-40 min-[1440px]:inline-flex" disabled="@(!CanRedo)" @onclick="Redo">Redo</button>
             <button class="rounded-control border border-accent-border bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent disabled:opacity-40" disabled="@(!CanEdit || IsBusy)" @onclick="Optimize">
