@@ -46,7 +46,7 @@ public sealed class PlanComparisonTests
     }
 
     [Fact]
-    public async Task Comparison_workspace_projects_both_schedule_footprints_and_resource_loads()
+    public async Task Comparison_workspace_projects_schedule_resource_and_demand_consequences()
     {
         var options = new DbContextOptionsBuilder<ApsDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
@@ -72,6 +72,17 @@ public sealed class PlanComparisonTests
             Operation(current, "CAST:A", resource1.Id, start, PlanOperationType.Casting),
             Operation(current, "ROLL:A", resource2.Id, start.AddHours(2.5), PlanOperationType.HotRolling),
             Operation(current, "ROLL:B", resource2.Id, start.AddHours(4), PlanOperationType.HotRolling));
+        db.PlanProductionOrderSnapshots.AddRange(
+            Order(baseline, finishedGoodsMt: 20m, intermediateMt: 30m, freshSteelMt: 50m),
+            Order(current, finishedGoodsMt: 20m, intermediateMt: 40m, freshSteelMt: 40m));
+        db.PlanCampaignSnapshots.AddRange(
+            Campaign(baseline, "CMP-B-1"),
+            Campaign(current, "CMP-N-1"),
+            Campaign(current, "CMP-N-2"));
+        db.PlanHeatSnapshots.AddRange(
+            Heat(baseline, 1),
+            Heat(current, 1),
+            Heat(current, 2));
         await db.SaveChangesAsync();
 
         var query = new PlannerWorkspaceQueryService(db, new PlanVersionRepository(db));
@@ -91,6 +102,15 @@ public sealed class PlanComparisonTests
         var millLoad = Assert.Single(comparison.ResourceLoads!, x => x.ResourceCode == "RM-1");
         Assert.Equal(0, millLoad.BaselineOperations);
         Assert.Equal(2, millLoad.NewOperations);
+
+        Assert.Equal(50m, comparison.BaselineDemand!.FreshSteelRequirementMt);
+        Assert.Equal(40m, comparison.NewPlanDemand!.FreshSteelRequirementMt);
+        Assert.Equal(30m, comparison.BaselineDemand.IntermediateAllocatedMt);
+        Assert.Equal(40m, comparison.NewPlanDemand.IntermediateAllocatedMt);
+        Assert.Equal(1, comparison.BaselineDemand.CampaignCount);
+        Assert.Equal(2, comparison.NewPlanDemand.CampaignCount);
+        Assert.Equal(1, comparison.BaselineDemand.HeatCount);
+        Assert.Equal(2, comparison.NewPlanDemand.HeatCount);
     }
 
     private static PlanVersionState State(Guid id, Guid? parent, DateTime reference, long objective) => new()
@@ -136,5 +156,53 @@ public sealed class PlanComparisonTests
         QuantityMt = 50m,
         GradeCode = "G1",
         CrossSectionCode = "150X150"
+    };
+
+    private static PlanProductionOrderSnapshot Order(
+        Guid planVersionId,
+        decimal finishedGoodsMt,
+        decimal intermediateMt,
+        decimal freshSteelMt) => new()
+    {
+        PlanVersionId = planVersionId,
+        ProductionOrderId = Guid.NewGuid(),
+        ProductionOrderNumber = "PO-1",
+        DemandSource = DemandSourceType.MakeToOrder,
+        MaterialCode = "BAR-12",
+        GradeCode = "G1",
+        FinalCrossSectionCode = "RND-12",
+        CasterSectionCode = "BLT-150SQ",
+        RouteCode = "STD-BAR",
+        PlannedQuantityMt = 100m,
+        RemainingQuantityMt = 100m,
+        RequiredDate = new DateTime(2026, 8, 18, 12, 0, 0, DateTimeKind.Utc),
+        Status = ProductionOrderStatus.Planned,
+        FinishedGoodsAllocatedMt = finishedGoodsMt,
+        ExistingIntermediateAllocatedMt = intermediateMt,
+        FreshSteelRequirementMt = freshSteelMt
+    };
+
+    private static PlanCampaignSnapshot Campaign(Guid planVersionId, string number) => new()
+    {
+        PlanVersionId = planVersionId,
+        CampaignId = Guid.NewGuid(),
+        CampaignNumber = number,
+        GradeSequenceClassCode = "SEQ-1",
+        CasterSectionCode = "BLT-150SQ",
+        RouteCode = "STD-BAR",
+        PlannedQuantityMt = 100m,
+        RequiredDate = new DateTime(2026, 8, 18, 12, 0, 0, DateTimeKind.Utc),
+        Status = CampaignStatus.Planned
+    };
+
+    private static PlanHeatSnapshot Heat(Guid planVersionId, int sequence) => new()
+    {
+        PlanVersionId = planVersionId,
+        CampaignHeatId = Guid.NewGuid(),
+        CampaignId = Guid.NewGuid(),
+        CampaignGradeSequenceId = Guid.NewGuid(),
+        SequenceNumber = sequence,
+        GradeCode = "G1",
+        PlannedQuantityMt = 50m
     };
 }
