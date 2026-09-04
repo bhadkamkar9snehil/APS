@@ -1,0 +1,24 @@
+<label class="flex min-w-0 flex-col gap-1 text-sm">
+    <span class="text-xs text-secondary">@Label</span>
+    <input type="number"
+           min="@Min"
+           max="@Max"
+           step="1"
+           class="w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm"
+           value="@Value"
+           @onchange="OnChanged" />
+</label>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "Value";
+    [Parameter] public int Value { get; set; }
+    [Parameter] public EventCallback<int> ValueChanged { get; set; }
+    [Parameter] public string? Min { get; set; }
+    [Parameter] public string? Max { get; set; }
+
+    private async Task OnChanged(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var value))
+            await ValueChanged.InvokeAsync(value);
+    }
+}
