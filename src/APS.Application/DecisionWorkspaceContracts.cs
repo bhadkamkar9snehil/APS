@@ -14,6 +14,13 @@ public sealed record PlanOperationChangeView(
     DateTime? NewEndUtc,
     int StartMovementMinutes);
 
+/// <summary>A planner-visible change in the assumptions or controls that produced two Plan Versions.</summary>
+public sealed record PlanAssumptionChangeView(
+    string Area,
+    string Setting,
+    string BaselineValue,
+    string NewValue);
+
 public sealed record PlanComparisonWorkspaceView(
     PlanContextView Baseline,
     PlanContextView NewPlan,
@@ -23,4 +30,5 @@ public sealed record PlanComparisonWorkspaceView(
     int ResourceChangedOperations,
     int UnchangedOperations,
     int MaximumStartMovementMinutes,
-    IReadOnlyCollection<PlanOperationChangeView> Changes);
+    IReadOnlyCollection<PlanOperationChangeView> Changes,
+    IReadOnlyCollection<PlanAssumptionChangeView>? AssumptionChanges = null);
