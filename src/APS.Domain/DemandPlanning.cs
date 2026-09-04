@@ -12,6 +12,18 @@ public enum DemandReconciliationDisposition
 }
 
 /// <summary>
+/// Commercial service commitment for one Sales Order item. Urgency is deliberately not encoded here:
+/// rush/priority remains an orthogonal scheduling signal, while this enum describes how much date
+/// movement the customer commitment permits.
+/// </summary>
+public enum ServiceCommitmentClass
+{
+    Hard = 1,
+    Standard = 2,
+    Flexible = 3
+}
+
+/// <summary>
 /// Current authoritative manufacturing-demand derivation for one Sales Order item.
 /// This is demand-orchestration evidence, not a replacement for the time-phased material ledger.
 /// </summary>
@@ -30,6 +42,13 @@ public sealed class SalesOrderDemandState : Entity
     public DateTime? ConfirmedDeliveryDate { get; set; }
     public DateTime ProductionRequiredByDate { get; set; }
     public int Priority { get; set; }
+
+    // Planner-managed service flexibility. Requested/confirmed delivery remains the preferred target.
+    // These boundaries describe acceptable customer delivery; production boundaries are derived for
+    // each plan after its QA/packing/dispatch lead-time policy is applied.
+    public ServiceCommitmentClass ServiceCommitment { get; set; } = ServiceCommitmentClass.Standard;
+    public DateTime? EarliestAcceptableDeliveryDate { get; set; }
+    public DateTime? LatestAcceptableDeliveryDate { get; set; }
 
     public DemandReconciliationDisposition Disposition { get; set; }
     public bool PlannerAttentionRequired { get; set; }
@@ -80,6 +99,13 @@ public sealed class PlanDemandSnapshot : Entity
     public DateTime? ConfirmedDeliveryDate { get; set; }
     public DateTime ProductionRequiredByDate { get; set; }
     public int Priority { get; set; }
+
+    public ServiceCommitmentClass ServiceCommitment { get; set; } = ServiceCommitmentClass.Standard;
+    public DateTime? EarliestAcceptableDeliveryDate { get; set; }
+    public DateTime? LatestAcceptableDeliveryDate { get; set; }
+    public DateTime? ProductionEarliestAcceptableDate { get; set; }
+    public DateTime ProductionLatestAcceptableDate { get; set; }
+
     public DemandReconciliationDisposition Disposition { get; set; }
     public bool PlannerAttentionRequired { get; set; }
     public string? ReasonCode { get; set; }
