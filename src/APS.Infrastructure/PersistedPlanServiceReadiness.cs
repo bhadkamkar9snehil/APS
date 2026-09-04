@@ -27,6 +27,7 @@ internal static class PersistedPlanServiceReadiness
         if (orders.Length == 0) return Array.Empty<PlanReleaseReadinessFinding>();
 
         var orderIds = orders.Select(x => x.ProductionOrderId).ToHashSet();
+        var serviceDeadlines = await LoadServiceDeadlinesAsync(db, planVersionId, orderIds, cancellationToken);
         var sourcesByOrder = orders.ToDictionary(
             x => x.ProductionOrderId,
             _ => new HashSet<Guid>());
@@ -94,15 +95,50 @@ internal static class PersistedPlanServiceReadiness
             }
 
             var plannedCompletionUtc = sources.Max(x => completionBySource[x]);
-            if (plannedCompletionUtc <= order.RequiredDate) continue;
+            var deadline = ResolveDeadline(order, serviceDeadlines);
+            if (plannedCompletionUtc <= deadline.LatestAcceptableProductionDateUtc) continue;
 
             findings.Add(new PlanReleaseReadinessFinding(
                 "SERVICE_LATE",
-                $"{order.ProductionOrderNumber} is planned to complete at {plannedCompletionUtc:O}, after its required date {order.RequiredDate:O}."));
+                $"{order.ProductionOrderNumber} is planned to complete at {plannedCompletionUtc:O}, after its latest acceptable production deadline {deadline.LatestAcceptableProductionDateUtc:O}. Preferred production target was {deadline.TargetProductionDateUtc:O}."));
         }
 
         return findings;
     }
+
+    private static async Task<IReadOnlyDictionary<Guid, ServiceDeadline>> LoadServiceDeadlinesAsync(
+        ApsDbContext db,
+        Guid planVersionId,
+        IReadOnlySet<Guid> productionOrderIds,
+        CancellationToken cancellationToken)
+    {
+        var rows = await db.PlanDemandSnapshots.AsNoTracking()
+            .Where(x => x.PlanVersionId == planVersionId &&
+                        x.ProductionOrderId.HasValue &&
+                        productionOrderIds.Contains(x.ProductionOrderId.Value))
+            .Select(x => new
+            {
+                ProductionOrderId = x.ProductionOrderId!.Value,
+                Target = x.ProductionRequiredByDate,
+                Latest = x.ProductionLatestAcceptableDate
+            })
+            .ToArrayAsync(cancellationToken);
+
+        return rows
+            .GroupBy(x => x.ProductionOrderId)
+            .ToDictionary(
+                x => x.Key,
+                x => new ServiceDeadline(
+                    x.Min(y => y.Target),
+                    x.Min(y => y.Latest ?? y.Target)));
+    }
+
+    private static ServiceDeadline ResolveDeadline(
+        ServiceOrder order,
+        IReadOnlyDictionary<Guid, ServiceDeadline> serviceDeadlines) =>
+        serviceDeadlines.TryGetValue(order.ProductionOrderId, out var deadline)
+            ? deadline
+            : new ServiceDeadline(order.RequiredDate, order.RequiredDate);
 
     private sealed record ServiceOrder(
         Guid ProductionOrderId,
@@ -110,6 +146,10 @@ internal static class PersistedPlanServiceReadiness
         DateTime RequiredDate,
         decimal RemainingQuantityMt,
         decimal FinishedGoodsAllocatedMt);
+
+    private sealed record ServiceDeadline(
+        DateTime TargetProductionDateUtc,
+        DateTime LatestAcceptableProductionDateUtc);
 
     private sealed record SourceOperationEnd(Guid SourceEntityId, DateTime EndUtc);
 }
