@@ -14,7 +14,7 @@
     <div class="flex flex-wrap items-center gap-1 text-xs text-muted" aria-label="Plan lifecycle">
         <span class="rounded bg-surface-inset px-2 py-1">1. Controls</span><span aria-hidden="true">→</span>
         <span class="rounded bg-surface-inset px-2 py-1">2. Calculate</span><span aria-hidden="true">→</span>
-        <span class="rounded bg-surface-inset px-2 py-1">3. Review</span><span aria-hidden="true">→</span>
+        <span class="rounded bg-surface-inset px-2 py-1">3. Review &amp; compare</span><span aria-hidden="true">→</span>
         <span class="rounded bg-surface-inset px-2 py-1">4. Approve</span><span aria-hidden="true">→</span>
         <span class="rounded bg-surface-inset px-2 py-1">5. Release</span>
     </div>
@@ -63,7 +63,7 @@
             <div class="mb-3 flex items-start justify-between gap-3">
                 <div>
                     <h2 class="text-sm font-semibold">Planning controls</h2>
-                    <p class="mt-0.5 text-xs text-secondary">Session profile used by the next Calculate/Replan.</p>
+                    <p class="mt-0.5 text-xs text-secondary">Session profile used by the next Calculate or intentional planner replan.</p>
                 </div>
                 <NavLink href="/plan/constraints" class="shrink-0 text-xs font-semibold text-accent hover:underline">Edit controls</NavLink>
             </div>
@@ -73,7 +73,11 @@
                 <div><div class="text-muted">Campaign cap</div><strong>@Constraints.MaximumCampaignQuantityMt.ToString("0.##") MT</strong></div>
                 <div><div class="text-muted">Time fence</div><strong>@Constraints.FrozenMinutes m + @Constraints.SlushyMinutes m</strong></div>
                 <div><div class="text-muted">Solver effort</div><strong>@Constraints.MaxSolverSeconds s</strong></div>
-                <div><div class="text-muted">Commitment policy</div><strong>@(Constraints.UseAssignmentCommitmentPolicy ? "Enabled" : "Default flexible")</strong></div>
+                <div><div class="text-muted">Commitment policy</div><strong>@(Constraints.UseAssignmentCommitmentPolicy ? "Enabled" : "No explicit policy")</strong></div>
+            </div>
+            <div class="mt-3 grid grid-cols-2 gap-2 border-t border-border pt-3">
+                <NavLink href="/plan/what-if" class="rounded-control border border-accent-border bg-accent-soft px-2 py-1.5 text-center text-xs font-semibold text-accent">What-if &amp; compare</NavLink>
+                <NavLink href="/plan/resource-constraints" class="rounded-control border border-border px-2 py-1.5 text-center text-xs font-semibold hover:bg-surface-hover">Technical constraints</NavLink>
             </div>
         </section>
 
@@ -98,10 +102,12 @@
                     <div class="mt-2 flex flex-wrap gap-3">
                         @if (CalculateErrorLooksLikeMasterData)
                         {
-                            <NavLink href="/plan/routes" class="font-semibold underline">Review routes and capabilities</NavLink>
+                            <NavLink href="/plan/routes" class="font-semibold underline">Routes &amp; operations</NavLink>
+                            <NavLink href="/plan/resource-constraints" class="font-semibold underline">Resource constraints</NavLink>
+                            <NavLink href="/plan/process-constraints" class="font-semibold underline">Process constraints</NavLink>
                             <NavLink href="/plan/master-data" class="font-semibold underline">All master data</NavLink>
                         }
-                        <NavLink href="/plan/constraints" class="font-semibold underline">Review planning controls</NavLink>
+                        <NavLink href="/plan/constraints" class="font-semibold underline">Planning controls</NavLink>
                     </div>
                 </div>
             }
@@ -125,6 +131,7 @@
                     <NavLink href="/plan/demand" class="rounded-control border border-border px-2 py-2 text-center font-semibold hover:bg-surface-hover">Demand &amp; delivery</NavLink>
                     <NavLink href="/control-tower" class="rounded-control border border-border px-2 py-2 text-center font-semibold hover:bg-surface-hover">Capacity / Control Tower</NavLink>
                     <NavLink href="/decide/compare" class="rounded-control border border-border px-2 py-2 text-center font-semibold hover:bg-surface-hover">Compare versions</NavLink>
+                    <NavLink href="/plan/what-if" class="col-span-2 rounded-control border border-accent-border bg-accent-soft px-2 py-2 text-center font-semibold text-accent">Create what-if from selected plan</NavLink>
                 </div>
 
                 @if (!string.IsNullOrWhiteSpace(actionError))
@@ -156,9 +163,14 @@
                     </div>
                 }
 
+                @if (!string.IsNullOrWhiteSpace(SelectedReplanInputError))
+                {
+                    <div class="mb-3 rounded border border-border bg-surface-inset px-3 py-2 text-xs text-danger">@SelectedReplanInputError</div>
+                }
+
                 <div class="flex flex-col gap-2">
-                    <button type="button" class="rounded border border-border-strong px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50" disabled="@(acting || !string.IsNullOrWhiteSpace(CalculationInputError))" @onclick="() => ReplanAsync(selected)">
-                        Replan with current controls
+                    <button type="button" class="rounded border border-border-strong px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50" disabled="@(acting || !string.IsNullOrWhiteSpace(SelectedReplanInputError))" @onclick="() => ReplanAsync(selected)">
+                        Replan with current controls · preserve horizon
                     </button>
                     <button type="button" class="rounded border border-border-strong px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-50" disabled="@(acting || readiness is null || readiness.Status != PlanVersionStatus.Feasible || !readiness.IsReleaseReady)" @onclick="() => ApproveAsync(selected)">
                         Approve selected plan
@@ -204,6 +216,21 @@
         }
     }
 
+    private string? SelectedReplanInputError
+    {
+        get
+        {
+            var plan = SelectedPlan;
+            if (plan is null) return null;
+            var errors = Constraints.Validate(plan.HorizonStartUtc, plan.HorizonEndUtc);
+            return errors.Count == 0 ? null : string.Join(" ", errors);
+        }
+    }
+
+    private PlanVersionListItemView? SelectedPlan => selectedPlanId.HasValue
+        ? plans.FirstOrDefault(x => x.PlanVersionId == selectedPlanId.Value)
+        : null;
+
     private bool CalculateErrorLooksLikeMasterData =>
         calculateError?.Contains("route", StringComparison.OrdinalIgnoreCase) == true
         || calculateError?.Contains("master", StringComparison.OrdinalIgnoreCase) == true
@@ -211,7 +238,9 @@
         || calculateError?.Contains("cross-section", StringComparison.OrdinalIgnoreCase) == true
         || calculateError?.Contains("cross section", StringComparison.OrdinalIgnoreCase) == true
         || calculateError?.Contains("resource", StringComparison.OrdinalIgnoreCase) == true
-        || calculateError?.Contains("capability", StringComparison.OrdinalIgnoreCase) == true;
+        || calculateError?.Contains("capability", StringComparison.OrdinalIgnoreCase) == true
+        || calculateError?.Contains("temperature", StringComparison.OrdinalIgnoreCase) == true
+        || calculateError?.Contains("transition", StringComparison.OrdinalIgnoreCase) == true;
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -270,7 +299,19 @@
 
     private async Task ReplanAsync(Guid baselinePlanVersionId)
     {
-        if (!string.IsNullOrWhiteSpace(CalculationInputError)) return;
+        var baseline = plans.FirstOrDefault(x => x.PlanVersionId == baselinePlanVersionId);
+        if (baseline is null)
+        {
+            actionError = "The selected baseline is no longer present in the Plan Version register. Refresh and select it again.";
+            return;
+        }
+
+        var validation = Constraints.Validate(baseline.HorizonStartUtc, baseline.HorizonEndUtc);
+        if (validation.Count > 0)
+        {
+            actionError = string.Join(" ", validation);
+            return;
+        }
 
         acting = true;
         actionError = null;
@@ -278,7 +319,10 @@
         StateHasChanged();
         try
         {
-            var request = Constraints.BuildCalculationRequest(horizonStart, horizonEnd);
+            // A replan should not silently borrow the unrelated horizon currently typed into the
+            // "Calculate new scenario" card. Preserve the selected immutable baseline horizon here;
+            // a deliberate horizon change belongs in a separately explained what-if decision.
+            var request = Constraints.BuildCalculationRequest(baseline.HorizonStartUtc, baseline.HorizonEndUtc);
             var outcome = await Lifecycle.ReplanAsync(
                 baselinePlanVersionId,
                 new PlanningRecalculationRequest(
@@ -286,10 +330,11 @@
                     Constraints.BuildTimeFencePolicy(),
                     Trigger: PlanTriggerType.Manual,
                     Reason: "Planner replan using current planning controls",
+                    RepairScope: Constraints.BuildRepairScopePolicy(),
                     UseBaselinePlanningControls: false));
             await LoadAsync();
             await SelectPlanAsync(outcome.Version.PlanVersionId);
-            actionSuccess = $"Replanned as {outcome.Version.VersionNumber}. Review the child plan against its baseline before approval.";
+            actionSuccess = $"Replanned as {outcome.Version.VersionNumber}. The baseline horizon was preserved; review the child plan before approval.";
         }
         catch (Exception ex)
         {
