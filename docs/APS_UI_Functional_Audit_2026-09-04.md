@@ -63,3 +63,35 @@ All 8 Master Data tabs (`/plan/master-data`: Plants, Process Stages, Resources, 
 3. Add a confirmation step to Master Data deletes (#4).
 4. Either link Control Tower into the Workspaces menu or remove it if superseded (#5).
 5. Decide whether Capacity/Delivery need a real drill-through page or should stay summary-only by design (#6) — currently ambiguous, worth a product decision rather than a code fix.
+
+## Implementation follow-up on `codex/ui-workbench-chrome-legibility`
+
+The changes below were implemented after the live audit. **They are source-level remediation only until the APS Windows runtime gate is rerun; do not reinterpret this section as live verification.** The original findings above are deliberately preserved as the evidence baseline.
+
+| Area | Implemented change | Commit | Runtime status |
+|---|---|---|---|
+| Control Tower navigation (#5) | Added `/control-tower` to Workspaces menu | `3a59a91` | Pending Windows rerun |
+| Capacity / Delivery drill-through (#6) | Capacity now opens Control Tower; Delivery opens Demand & Supply | `daea34e` | Pending Windows rerun |
+| Demand reconciliation (#2) | Replaced the fragile toggle-only entry with a native disclosure form, validation, trimmed inputs, refresh-after-submit and responsive layout | `3bd966b`, `0c08f4c` | Pending Windows rerun |
+| Demand shortfall bar (#3) | Corrected `bg-danger-soft0` to `bg-danger-soft` | `3bd966b` | Pending Windows rerun |
+| Master Data delete guard (#4) | Added shared browser/desktop confirmation guard for delete actions on `/plan/master-data` | `1ae4d84`, `e2132e8`, `c3a44b8` | Pending Windows rerun |
+| Plan lifecycle | Added explicit Calculate → Approve → Release flow, request validation, actionable master-data error path and released-work-order handoff | `3402030` | Pending Windows rerun |
+| Work Orders | Fixed selection loss after saving Work Order/operation actuals; added input guards, responsive master-detail layout and traceability handoff | `762aa72` | Pending Windows rerun |
+| Steelmaking & Casting | Fixed selected-heat loss after saving heat actuals; added actual validation, responsive layout and execution/material handoffs | `699b7e5` | Pending Windows rerun |
+| Rolling & Finishing | Made register/detail, downstream route, pegging table and packaging units responsive; added material/demand navigation | `afbdf19` | Pending Windows rerun |
+| Inventory | Added inventory KPIs, projected-shortage emphasis, empty/filter states, responsive table and Material Flow handoff | `0d8f810` | Pending Windows rerun |
+| Plan Compare | Fixed potential stuck `Comparing…` state on exceptions, prevented same-version compares, added errors/empty states and responsive comparison UI | `30afb58` | Pending Windows rerun |
+| Control Tower UX | Added workbench/version/execution handoffs, responsive panels/tables and clearer execution/resource navigation | `3257d16` | Pending Windows rerun |
+
+### Newly found during remediation
+
+Source review of the previously unverified execution actions found two concrete state-restoration defects:
+
+1. **Work Orders actual save could jump to the first Work Order.** The old save flow called `LoadAsync()`, which replaced `selectedWorkOrder`, then attempted to restore selection using the already-replaced object. The updated flow captures the Work Order and operation identifiers before save and reloads them explicitly (`762aa72`).
+2. **Steelmaking heat actual save had the same pattern.** `LoadAsync()` replaced `selectedHeat` before the old code attempted to recover its ID. The updated flow captures `CampaignHeatId` before save and restores that heat after refresh (`699b7e5`).
+
+These two findings were identified statically and are **not yet live-verified**. They should be added to the next runtime interaction pass alongside the original not-yet-verified actions.
+
+### Remaining blocker from the original audit
+
+Finding #1 is still a data/configuration problem in the pre-existing local SQLite master data: `STD-BAR` terminates at `BLT-150SQ` while `MTO-SO-1001-10` requires `RND-12`. No source-level auto-repair has been added because silently mutating production master data would be unsafe. The Plan Versions UI now routes this class of failure directly to Master Data, but the authoritative route/order data still needs to be corrected or deliberately reseeded before Calculate can succeed against that dataset.
