@@ -41,8 +41,8 @@ public interface IOrderServicePolicyService
 
 /// <summary>
 /// One small projection owns the translation from commercial delivery flexibility to manufacturing
-/// timing. This prevents campaign, scheduling, release-readiness and UI layers from each inventing a
-/// different meaning for the same order window.
+/// timing. Requested/confirmed delivery remains the optimization target; the latest acceptable date is
+/// a separate feasibility/release boundary. This avoids quietly turning tolerance into the new target.
 /// </summary>
 public static class OrderServiceWindow
 {
@@ -55,29 +55,10 @@ public static class OrderServiceWindow
             .Select(item => Apply(item, policyBySalesOrder.GetValueOrDefault(item.SalesOrderId)))
             .ToArray();
 
-        var effectiveDueByProductionOrder = items
-            .Where(x => x.ProductionOrderId.HasValue && x.ProductionLatestAcceptableDate.HasValue)
-            .ToDictionary(x => x.ProductionOrderId!.Value, x => x.ProductionLatestAcceptableDate!.Value);
-
-        // Planning receives detached projections so a flexible service window cannot overwrite the
-        // canonical ProductionOrder.RequiredDate in the tracked application database. The effective
-        // latest date exists only in this planning run and its immutable Plan Version evidence.
-        var productionOrders = demand.ProductionOrders
-            .Select(order => CloneForPlanning(
-                order,
-                effectiveDueByProductionOrder.GetValueOrDefault(order.Id, order.RequiredDate)))
-            .ToArray();
-        var cloneById = productionOrders.ToDictionary(x => x.Id);
-        var mts = demand.MakeToStockProductionOrders
-            .Select(order => cloneById.GetValueOrDefault(order.Id) ?? CloneForPlanning(order, order.RequiredDate))
-            .ToArray();
-
-        return demand with
-        {
-            ProductionOrders = productionOrders,
-            MakeToOrderDemand = items,
-            MakeToStockProductionOrders = mts
-        };
+        // ProductionOrder.RequiredDate remains the preferred production target. The acceptable latest
+        // boundary travels separately through PlanningOrderServiceDeadline, so commercial master data
+        // and campaign service scoring are never rewritten just because a customer granted tolerance.
+        return demand with { MakeToOrderDemand = items };
     }
 
     public static DemandOrchestrationItem Apply(
@@ -114,31 +95,13 @@ public static class OrderServiceWindow
             ? targetDelivery
             : configuredLatest ?? targetDelivery;
 
-    private static ProductionOrder CloneForPlanning(ProductionOrder source, DateTime effectiveRequiredDate) => new()
-    {
-        Id = source.Id,
-        ProductionOrderNumber = source.ProductionOrderNumber,
-        DemandSource = source.DemandSource,
-        MaterialCode = source.MaterialCode,
-        GradeCode = source.GradeCode,
-        SteelGradeId = source.SteelGradeId,
-        SteelGrade = source.SteelGrade,
-        GradeFamilyCode = source.GradeFamilyCode,
-        GradeSequenceClassCode = source.GradeSequenceClassCode,
-        FinalCrossSectionCode = source.FinalCrossSectionCode,
-        CasterSectionCode = source.CasterSectionCode,
-        RouteCode = source.RouteCode,
-        ProductFamilyCode = source.ProductFamilyCode,
-        PlannedQuantityMt = source.PlannedQuantityMt,
-        RemainingQuantityMt = source.RemainingQuantityMt,
-        RequiredDate = effectiveRequiredDate,
-        Priority = source.Priority,
-        Status = source.Status,
-        SalesOrderId = source.SalesOrderId,
-        SalesOrder = source.SalesOrder,
-        Requirement = source.Requirement,
-        TargetStockMt = source.TargetStockMt,
-        ProjectedAvailableStockMt = source.ProjectedAvailableStockMt,
-        StockPolicyCode = source.StockPolicyCode
-    };
+    public static IReadOnlyCollection<PlanningOrderServiceDeadline> PlanningDeadlines(
+        DemandOrchestrationResult demand) =>
+        demand.MakeToOrderDemand
+            .Where(x => x.ProductionOrderId.HasValue && x.ManufacturingRequirementQuantityMt > 0m)
+            .Select(x => new PlanningOrderServiceDeadline(
+                x.ProductionOrderId!.Value,
+                x.ProductionRequiredByDate,
+                x.ProductionLatestAcceptableDate ?? x.ProductionRequiredByDate))
+            .ToArray();
 }
