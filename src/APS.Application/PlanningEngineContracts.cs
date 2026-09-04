@@ -103,6 +103,16 @@ public sealed record MaterialSupplyPlanningPolicy(
     TimeSpan? DefaultExternalLeadTime = null,
     bool PreserveCustomerQualifiedPools = true);
 
+/// <summary>
+/// Effective manufacturing service window for one Production Order. Target drives service cost and
+/// campaign preference; LatestAcceptable is a hard feasibility/release boundary. Keeping these separate
+/// prevents a customer's tolerance from silently becoming the planner's new target date.
+/// </summary>
+public sealed record PlanningOrderServiceDeadline(
+    Guid ProductionOrderId,
+    DateTime TargetProductionDateUtc,
+    DateTime LatestAcceptableProductionDateUtc);
+
 public sealed record PlanningRunRequest(
     IReadOnlyCollection<ProductionOrder> ProductionOrders,
     IReadOnlyCollection<InventoryPosition> Inventory,
@@ -143,7 +153,9 @@ public sealed record PlanningRunRequest(
     /// applied to the resource/capability/calendar masters before anything else runs. Null plans the
     /// plant as configured.
     /// </summary>
-    PlanningScenario? Scenario = null);
+    PlanningScenario? Scenario = null,
+    /// <summary>Per-order target/latest service deadlines resolved by canonical demand orchestration.</summary>
+    IReadOnlyCollection<PlanningOrderServiceDeadline>? OrderServiceDeadlines = null);
 
 public sealed record PlanningRunResult(
     Guid PlanVersionId,
