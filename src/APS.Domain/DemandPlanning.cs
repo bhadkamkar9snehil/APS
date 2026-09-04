@@ -104,7 +104,7 @@ public sealed class PlanDemandSnapshot : Entity
     public DateTime? EarliestAcceptableDeliveryDate { get; set; }
     public DateTime? LatestAcceptableDeliveryDate { get; set; }
     public DateTime? ProductionEarliestAcceptableDate { get; set; }
-    public DateTime ProductionLatestAcceptableDate { get; set; }
+    public DateTime? ProductionLatestAcceptableDate { get; set; }
 
     public DemandReconciliationDisposition Disposition { get; set; }
     public bool PlannerAttentionRequired { get; set; }
