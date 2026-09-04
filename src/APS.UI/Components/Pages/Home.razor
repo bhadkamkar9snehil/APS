@@ -5,8 +5,17 @@
 
 <PageTitle>Control Tower - APS</PageTitle>
 
-<h1 class="mb-1 aps-text-title">Control Tower</h1>
-<p class="mb-6 aps-text-body text-secondary">Authoritative plan footprint, physical-resource pressure and persisted material commitments.</p>
+<div class="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <div>
+        <h1 class="mb-1 aps-text-title">Control Tower</h1>
+        <p class="aps-text-body text-secondary">Authoritative plan footprint, physical-resource pressure and persisted material commitments.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+        <NavLink href="/" class="rounded-control border border-border-strong px-3 py-1.5 aps-text-caption font-semibold hover:bg-surface-hover">Planning Workbench</NavLink>
+        <NavLink href="/plan/versions" class="rounded-control border border-border-strong px-3 py-1.5 aps-text-caption font-semibold hover:bg-surface-hover">Plan Versions</NavLink>
+        <NavLink href="/operate/work-orders" class="rounded-control border border-border-strong px-3 py-1.5 aps-text-caption font-semibold hover:bg-surface-hover">Work Orders</NavLink>
+    </div>
+</div>
 
 @if (loading)
 {
@@ -22,7 +31,7 @@ else if (view is null)
     <div class="aps-page border border-dashed border-border-strong p-8 text-center">
         <strong class="aps-text-heading">No active persisted Plan Version</strong>
         <p class="mt-1 aps-text-body text-secondary">The production workspace only shows authoritative persisted planning state.</p>
-        <a class="mt-4 inline-flex rounded-control bg-accent px-4 py-2 aps-text-heading text-accent-foreground" href="/plan/versions">Go to Plan Versions &rarr;</a>
+        <NavLink class="mt-4 inline-flex rounded-control bg-accent px-4 py-2 aps-text-heading text-accent-foreground" href="/plan/versions">Go to Plan Versions &rarr;</NavLink>
     </div>
 }
 else
@@ -36,19 +45,22 @@ else
         <StatTile Label="Schedule span" Value="@ScheduleSpan(view.Footprint)" Sub="@ScheduleWindow(view.Footprint)" />
     </div>
 
-    <div class="grid grid-cols-2 gap-4">
-        <section class="aps-page p-4">
-            <h2 class="mb-3 aps-text-heading">Physical resource pressure</h2>
+    <div class="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <section class="aps-page min-w-0 p-4">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 class="aps-text-heading">Physical resource pressure</h2>
+                <NavLink href="/" class="aps-text-caption font-semibold text-accent hover:underline">Open finite schedule</NavLink>
+            </div>
             @if (view.Resources.Count == 0)
             {
                 <p class="aps-text-body text-muted">No persisted scheduled operations for this Plan Version.</p>
             }
             else
             {
-                <div class="space-y-2">
+                <div class="space-y-2 overflow-x-auto">
                     @foreach (var resource in view.Resources)
                     {
-                        <div class="flex w-full items-center gap-3 rounded-control px-2 py-1.5 text-left">
+                        <div class="flex min-w-[560px] items-center gap-3 rounded-control px-2 py-1.5 text-left hover:bg-surface-hover">
                             <div class="w-28 shrink-0">
                                 <div class="aps-text-heading">@resource.ResourceCode</div>
                                 <div class="aps-text-caption">@resource.ProcessUnitType</div>
@@ -56,7 +68,7 @@ else
                             <div class="h-2 flex-1 rounded-full bg-surface-inset">
                                 <div class="h-2 rounded-full @PressureColorClass(resource.OccupiedHours)" style="width:@(PressureWidth(resource.OccupiedHours))%"></div>
                             </div>
-                            <div class="w-20 shrink-0 text-right">
+                            <div class="w-24 shrink-0 text-right">
                                 <div class="aps-text-figure">@resource.OccupiedHours.ToString("0.##") h</div>
                                 @if (resource.SchedulingMode == ResourceSchedulingMode.Cumulative)
                                 {
@@ -71,52 +83,63 @@ else
                         </div>
                     }
                 </div>
-                <p class="mt-2 aps-text-caption">Bar length is relative wall-clock occupancy inside this Plan Version; it is not a utilization percentage. Colour marks proximity to the busiest resource in this plan, not a fixed capacity threshold. Cumulative resources show peak concurrent blocks against their configured capacity, because concurrent work on them is not overload.</p>
+                <p class="mt-2 aps-text-caption">Bar length is relative wall-clock occupancy inside this Plan Version; it is not a utilization percentage. Colour marks proximity to the busiest resource in this plan, not a fixed capacity threshold. Cumulative resources show peak concurrent blocks against configured capacity.</p>
             }
         </section>
 
-        <section class="aps-page p-4">
-            <h2 class="mb-3 aps-text-heading">Material commitment</h2>
+        <section class="aps-page min-w-0 p-4">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 class="aps-text-heading">Material commitment</h2>
+                <NavLink href="/plan/material-flow" class="aps-text-caption font-semibold text-accent hover:underline">Open material flow</NavLink>
+            </div>
             @if (view.MaterialAllocations.Count == 0)
             {
                 <p class="aps-text-body text-muted">No persisted inventory allocations.</p>
             }
             else
             {
-                <table class="w-full aps-text-body">
-                    <thead>
-                        <tr class="border-b border-border text-left">
-                            <th class="pb-1 aps-text-label">Stage</th>
-                            <th class="pb-1 aps-text-label">Quantity</th>
-                            <th class="pb-1 aps-text-label">Allocations</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var material in view.MaterialAllocations)
-                        {
-                            <tr class="border-b border-border last:border-0">
-                                <td class="py-1">@material.Stage</td>
-                                <td class="py-1 aps-text-figure">@material.AllocatedQuantityMt.ToString("0.##") MT</td>
-                                <td class="py-1 text-secondary">@material.AllocationCount</td>
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-[480px] aps-text-body">
+                        <thead>
+                            <tr class="border-b border-border text-left">
+                                <th class="pb-1 aps-text-label">Stage</th>
+                                <th class="pb-1 aps-text-label">Quantity</th>
+                                <th class="pb-1 aps-text-label">Allocations</th>
                             </tr>
-                        }
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            @foreach (var material in view.MaterialAllocations)
+                            {
+                                <tr class="border-b border-border last:border-0">
+                                    <td class="py-1">@material.Stage</td>
+                                    <td class="py-1 aps-text-figure">@material.AllocatedQuantityMt.ToString("0.##") MT</td>
+                                    <td class="py-1 text-secondary">@material.AllocationCount</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
             }
         </section>
 
         <section class="aps-page p-4">
-            <h2 class="mb-3 aps-text-heading">Execution state</h2>
-            <div class="grid grid-cols-4 gap-2 text-center">
-                <div><div class="aps-text-label">Released</div><strong class="aps-text-figure text-lg">@view.Footprint.ReleasedWorkOrderCount</strong></div>
-                <div><div class="aps-text-label">Running</div><strong class="aps-text-figure text-lg">@view.Footprint.RunningWorkOrderCount</strong></div>
-                <div><div class="aps-text-label">Held</div><strong class="aps-text-figure text-lg">@view.Footprint.HeldWorkOrderCount</strong></div>
-                <div><div class="aps-text-label">Completed</div><strong class="aps-text-figure text-lg">@view.Footprint.CompletedWorkOrderCount</strong></div>
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 class="aps-text-heading">Execution state</h2>
+                <NavLink href="/operate/work-orders" class="aps-text-caption font-semibold text-accent hover:underline">Open work orders</NavLink>
+            </div>
+            <div class="grid grid-cols-2 gap-3 text-center sm:grid-cols-4">
+                <div class="rounded-control bg-surface-inset p-2"><div class="aps-text-label">Released</div><strong class="aps-text-figure text-lg">@view.Footprint.ReleasedWorkOrderCount</strong></div>
+                <div class="rounded-control bg-surface-inset p-2"><div class="aps-text-label">Running</div><strong class="aps-text-figure text-lg">@view.Footprint.RunningWorkOrderCount</strong></div>
+                <div class="rounded-control bg-surface-inset p-2"><div class="aps-text-label">Held</div><strong class="aps-text-figure text-lg">@view.Footprint.HeldWorkOrderCount</strong></div>
+                <div class="rounded-control bg-surface-inset p-2"><div class="aps-text-label">Completed</div><strong class="aps-text-figure text-lg">@view.Footprint.CompletedWorkOrderCount</strong></div>
             </div>
         </section>
 
         <section class="aps-page p-4">
-            <h2 class="mb-3 aps-text-heading">Recent Plan Versions</h2>
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h2 class="aps-text-heading">Recent Plan Versions</h2>
+                <NavLink href="/plan/versions" class="aps-text-caption font-semibold text-accent hover:underline">Manage versions</NavLink>
+            </div>
             @if (recentPlans.Count == 0)
             {
                 <p class="aps-text-body text-muted">No Plan Version history.</p>
@@ -127,12 +150,12 @@ else
                     @foreach (var plan in recentPlans)
                     {
                         var isCurrent = plan.PlanVersionId == view.Plan.PlanVersionId;
-                        <button type="button" class="flex w-full items-center justify-between rounded-control px-2 py-1.5 text-left transition-colors @(isCurrent ? "bg-accent-soft" : "hover:bg-surface-hover active:bg-surface-inset")" @onclick="() => SelectPlan(plan.PlanVersionId)">
-                            <div>
+                        <button type="button" class="flex w-full items-center justify-between gap-3 rounded-control px-2 py-1.5 text-left transition-colors @(isCurrent ? "bg-accent-soft" : "hover:bg-surface-hover active:bg-surface-inset")" @onclick="() => SelectPlan(plan.PlanVersionId)">
+                            <div class="min-w-0">
                                 <strong class="aps-text-heading">@plan.VersionNumber</strong>
                                 <span class="ml-2 aps-text-caption">@plan.CreatedOnUtc.ToString("dd MMM HH:mm") &middot; @plan.Trigger</span>
                             </div>
-                            <span class="rounded-control px-1.5 py-0.5 aps-text-caption @PlanStatusClass(plan.Status)">@plan.Status</span>
+                            <span class="shrink-0 rounded-control px-1.5 py-0.5 aps-text-caption @PlanStatusClass(plan.Status)">@plan.Status</span>
                         </button>
                     }
                 </div>
@@ -191,15 +214,6 @@ else
         return Math.Clamp(hours / max * 100d, 3d, 100d).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
     }
 
-    /// <summary>
-    /// Colour carries the same signal as the number next to it, so the row is readable at a glance
-    /// without stopping to read digits: the plan's own busiest resource is the reference, not a fixed
-    /// percentage, because a plant intentionally runs some resources near their limit and others idle.
-    /// If every resource sits at the same occupancy there is nothing to single out - a thin plan where
-    /// each machine runs once looks identical to a genuinely balanced one, and painting the whole board
-    /// red on a tie is a false alarm rather than a signal. Colour only activates once there is a real
-    /// spread to react to.
-    /// </summary>
     private string PressureColorClass(double hours)
     {
         var occupied = view!.Resources.Select(x => x.OccupiedHours).Where(x => x > 0d).ToArray();
