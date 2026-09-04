@@ -14,7 +14,13 @@ public sealed record PlanningRecalculationRequest(
     string? Reason = null,
     IReadOnlyCollection<OperationResourceOverride>? ResourceOverrides = null,
     IReadOnlyCollection<OperationScheduleOverride>? ScheduleOverrides = null,
-    RepairScopePolicy? RepairScope = null);
+    RepairScopePolicy? RepairScope = null,
+    /// <summary>
+    /// True for workbench/operational replans so a child plan keeps the planning policy captured on
+    /// its baseline instead of silently reverting to caller UI defaults. Set false when the planner
+    /// intentionally changed the control profile and wants those new controls applied to the child.
+    /// </summary>
+    bool UseBaselinePlanningControls = true);
 
 public sealed record PersistedPlanningRunResult(
     PlanningRunResult Plan,
