@@ -139,4 +139,54 @@ public sealed class HeatExecutionTests
         Assert.Equal(BilletThermalSourceBasis.ActualMeasurement, allocation.ThermalBasis);
         Assert.Equal(1060m, allocation.EstimatedTemperatureC);
     }
+
+    [Fact]
+    public async Task Running_heat_on_unplanned_caster_records_fact_and_flags_off_plan_resource()
+    {
+        var options = new DbContextOptionsBuilder<ApsDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString("N"))
+            .Options;
+        await using var db = new ApsDbContext(options);
+
+        var planVersionId = Guid.NewGuid();
+        var plannedResourceId = Guid.NewGuid();
+        var actualResourceId = Guid.NewGuid();
+        db.PlanVersions.Add(new PlanVersion
+        {
+            Id = planVersionId,
+            VersionNumber = "PLAN-OFF-PLAN",
+            CreatedOnUtc = DateTime.UtcNow
+        });
+        db.PlanOperationSnapshots.Add(new PlanOperationSnapshot
+        {
+            PlanVersionId = planVersionId,
+            PlanningKey = "CAST:OFFPLAN",
+            SourceEntityId = Guid.NewGuid(),
+            OperationType = PlanOperationType.Casting,
+            ResourceId = plannedResourceId,
+            StartUtc = DateTime.UtcNow,
+            EndUtc = DateTime.UtcNow.AddHours(1),
+            QuantityMt = 40m,
+            GradeCode = "G1",
+            CrossSectionCode = "150X150"
+        });
+        await db.SaveChangesAsync();
+
+        var changedOn = new DateTime(2026, 9, 4, 9, 0, 0, DateTimeKind.Utc);
+        await new HeatExecutionService(db).ApplyAsync(new HeatExecutionUpdate(
+            planVersionId,
+            "CAST:OFFPLAN",
+            HeatExecutionStatus.Running,
+            changedOn,
+            ExecutionUpdateSource.MesApi,
+            "HEAT-OFFPLAN-1",
+            CasterResourceId: actualResourceId));
+
+        var operation = await db.PlanOperationSnapshots.SingleAsync();
+        Assert.Equal(OperationExecutionStatus.Running, operation.ExecutionStatus);
+        Assert.Equal(actualResourceId, operation.ActualResourceId);
+        Assert.True(operation.IsOffPlanActualResource);
+        Assert.Equal("ACTUAL_RESOURCE_NOT_IN_PLANNED_ELIGIBLE_SET", operation.OffPlanActualReasonCode);
+        Assert.Contains("HEAT-OFFPLAN-1", operation.ExecutionHistoryJson ?? string.Empty);
+    }
 }
