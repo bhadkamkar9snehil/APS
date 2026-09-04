@@ -8,7 +8,7 @@
 <PageTitle>Work Orders - APS</PageTitle>
 
 <h1 class="mb-1 text-lg font-semibold">Work Orders</h1>
-<p class="mb-6 text-sm text-secondary">Execution envelopes released from the plan, with the process operations and demand lineage retained inside them.</p>
+<p class="mb-6 text-sm text-secondary">Execution envelopes released from the plan, with process operations and demand lineage retained inside them.</p>
 
 @if (loading)
 {
@@ -16,11 +16,15 @@
 }
 else if (view is null)
 {
-    <div class="rounded border border-dashed border-border-strong bg-surface-raised p-8 text-center text-primary">No persisted Work Order view.</div>
+    <div class="rounded border border-dashed border-border-strong bg-surface-raised p-8 text-center">
+        <strong class="text-primary">No persisted Work Order view</strong>
+        <p class="mt-1 text-sm text-secondary">Release a Plan Version before recording execution actuals.</p>
+        <NavLink href="/plan/versions" class="mt-3 inline-block text-sm font-semibold text-accent hover:underline">Open Plan Versions</NavLink>
+    </div>
 }
 else
 {
-    <div class="mb-6 grid grid-cols-5 gap-3">
+    <div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <StatTile Label="Total" Value="@view.WorkOrderCount.ToString()" />
         <StatTile Label="Released" Value="@view.ReleasedCount.ToString()" />
         <StatTile Label="Running" Value="@view.RunningCount.ToString()" />
@@ -28,25 +32,32 @@ else
         <StatTile Label="Completed" Value="@view.CompletedCount.ToString()" />
     </div>
 
-    <div class="grid grid-cols-[280px_1fr] gap-4">
+    <div class="grid grid-cols-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
         <aside class="rounded border border-border bg-surface-raised">
             <div class="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted">Work Order register</div>
-            <div class="max-h-[70vh] overflow-y-auto">
-                @foreach (var wo in view.WorkOrders.OrderBy(x => x.FirstPlannedStartUtc))
-                {
-                    <button type="button" class="block w-full border-b border-border px-3 py-2 text-left last:border-0 hover:bg-surface-hover @(selectedWorkOrder?.WorkOrderId == wo.WorkOrderId ? "bg-accent-soft" : "")" @onclick="() => SelectWorkOrder(wo)">
-                        <div class="flex items-center justify-between">
-                            <strong>@wo.WorkOrderNumber</strong>
-                            <span class="rounded px-1.5 py-0.5 text-xs @StatusClass(wo.Status)">@wo.Status</span>
-                        </div>
-                        <div class="text-xs text-muted">@wo.WorkOrderType &middot; @TimeRange(wo)</div>
-                        <div class="text-xs text-muted">@wo.PlannedQuantityMt.ToString("0.##") MT</div>
-                    </button>
-                }
-            </div>
+            @if (view.WorkOrders.Count == 0)
+            {
+                <p class="p-4 text-sm text-muted">No released Work Orders in this Plan Version.</p>
+            }
+            else
+            {
+                <div class="max-h-[70vh] overflow-y-auto">
+                    @foreach (var wo in view.WorkOrders.OrderBy(x => x.FirstPlannedStartUtc))
+                    {
+                        <button type="button" class="block w-full border-b border-border px-3 py-2 text-left last:border-0 hover:bg-surface-hover @(selectedWorkOrder?.WorkOrderId == wo.WorkOrderId ? "bg-accent-soft" : "")" @onclick="() => SelectWorkOrder(wo)">
+                            <div class="flex items-center justify-between gap-2">
+                                <strong class="truncate">@wo.WorkOrderNumber</strong>
+                                <span class="shrink-0 rounded px-1.5 py-0.5 text-xs @StatusClass(wo.Status)">@wo.Status</span>
+                            </div>
+                            <div class="text-xs text-muted">@wo.WorkOrderType &middot; @TimeRange(wo)</div>
+                            <div class="text-xs text-muted">@wo.PlannedQuantityMt.ToString("0.##") MT</div>
+                        </button>
+                    }
+                </div>
+            }
         </aside>
 
-        <section>
+        <section class="min-w-0">
             @if (selectedWorkOrder is null)
             {
                 <div class="rounded border border-dashed border-border-strong bg-surface-raised p-8 text-center text-muted">Select a Work Order</div>
@@ -54,12 +65,12 @@ else
             else
             {
                 <div class="mb-4 rounded border border-border bg-surface-raised p-4">
-                    <div class="flex items-start justify-between">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
                         <div>
                             <h2 class="text-base font-semibold">@selectedWorkOrder.WorkOrderNumber</h2>
                             <p class="text-sm text-secondary">@selectedWorkOrder.WorkOrderType &middot; @TimeRange(selectedWorkOrder)</p>
                         </div>
-                        <div class="flex gap-4 text-right text-sm">
+                        <div class="flex flex-wrap gap-4 text-sm sm:text-right">
                             <div><div class="text-xs text-muted">Status</div><strong>@selectedWorkOrder.Status</strong></div>
                             <div><div class="text-xs text-muted">Quantity</div><strong>@selectedWorkOrder.PlannedQuantityMt.ToString("0.##") MT</strong></div>
                             <div><div class="text-xs text-muted">External ref</div><strong>@Display(selectedWorkOrder.ExternalExecutionId)</strong></div>
@@ -68,14 +79,13 @@ else
                 </div>
 
                 <section class="mb-4 rounded border border-border bg-surface-raised p-4">
-                    <div class="mb-3 flex items-center justify-between">
-                        <h3 class="text-sm font-semibold">Record actual</h3>
-                        @if (!string.IsNullOrWhiteSpace(actualError))
-                        {
-                            <span class="text-xs text-danger">@actualError</span>
-                        }
+                    <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <h3 class="text-sm font-semibold">Record Work Order actual</h3>
+                            <p class="text-xs text-secondary">Updates the execution state of the selected Work Order.</p>
+                        </div>
                     </div>
-                    <div class="grid grid-cols-5 gap-3 text-sm">
+                    <div class="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
                         <label class="flex flex-col gap-1">
                             <span class="text-xs text-secondary">Status</span>
                             <select class="rounded border border-border-strong px-2 py-1" @bind="actualStatus">
@@ -87,17 +97,28 @@ else
                         </label>
                         <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Actual start</span><input type="datetime-local" class="rounded border border-border-strong px-2 py-1" @bind="actualStart" /></label>
                         <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Actual end</span><input type="datetime-local" class="rounded border border-border-strong px-2 py-1" @bind="actualEnd" /></label>
-                        <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Actual qty (MT)</span><input type="number" class="rounded border border-border-strong px-2 py-1" @bind="actualQuantity" /></label>
+                        <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Actual qty (MT)</span><input type="number" min="0" step="0.01" class="rounded border border-border-strong px-2 py-1" @bind="actualQuantity" /></label>
                         <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Comment</span><input class="rounded border border-border-strong px-2 py-1" @bind="actualComment" /></label>
                     </div>
-                    <button type="button" class="mt-3 rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground disabled:opacity-50" disabled="@savingActual" @onclick="SaveActualAsync">
-                        @(savingActual ? "Saving…" : "Save actual")
+                    @if (!string.IsNullOrWhiteSpace(ActualInputError))
+                    {
+                        <div role="alert" class="mt-3 rounded border border-border bg-danger-soft px-3 py-2 text-xs text-danger">@ActualInputError</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(actualError))
+                    {
+                        <div role="alert" class="mt-3 rounded border border-border bg-danger-soft px-3 py-2 text-xs text-danger">@actualError</div>
+                    }
+                    <button type="button" class="mt-3 rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled="@(savingActual || !string.IsNullOrWhiteSpace(ActualInputError))" @onclick="SaveActualAsync">
+                        @(savingActual ? "Saving…" : "Save Work Order actual")
                     </button>
                 </section>
 
                 <section class="mb-4 rounded border border-border bg-surface-raised p-4">
                     <div class="mb-3 flex items-center justify-between">
-                        <h3 class="text-sm font-semibold">Process operations</h3>
+                        <div>
+                            <h3 class="text-sm font-semibold">Process operations</h3>
+                            <p class="text-xs text-secondary">Select an operation to record resource-level actuals.</p>
+                        </div>
                         <span class="text-xs text-muted">@selectedWorkOrder.Operations.Count ops</span>
                     </div>
                     @if (selectedWorkOrder.Operations.Count == 0)
@@ -106,41 +127,39 @@ else
                     }
                     else
                     {
-                        <table class="w-full text-sm">
-                            <thead>
-                                <tr class="border-b border-border text-left text-xs text-muted">
-                                    <th class="py-1 font-medium">Operation</th>
-                                    <th class="py-1 font-medium">Resource</th>
-                                    <th class="py-1 font-medium">Grade / Section</th>
-                                    <th class="py-1 font-medium">Window</th>
-                                    <th class="py-1 font-medium text-right">Qty</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var op in selectedWorkOrder.Operations.OrderBy(x => x.PlannedStartUtc))
-                                {
-                                    <tr class="cursor-pointer border-b border-border last:border-0 hover:bg-surface-hover @(selectedOperation?.OperationSnapshotId == op.OperationSnapshotId ? "bg-accent-soft" : "")" @onclick="() => SelectOperation(op)">
-                                        <td class="py-1.5">@op.ProcessOperationType</td>
-                                        <td class="py-1.5">@op.ResourceCode</td>
-                                        <td class="py-1.5">@op.GradeCode / @op.CrossSectionCode</td>
-                                        <td class="py-1.5 text-xs text-secondary">@op.PlannedStartUtc.ToString("dd MMM HH:mm") &rarr; @op.PlannedEndUtc.ToString("HH:mm")</td>
-                                        <td class="py-1.5 text-right">@op.QuantityMt.ToString("0.##") MT</td>
+                        <div class="overflow-x-auto">
+                            <table class="w-full min-w-[760px] text-sm">
+                                <thead>
+                                    <tr class="border-b border-border text-left text-xs text-muted">
+                                        <th class="py-1 font-medium">Operation</th>
+                                        <th class="py-1 font-medium">Resource</th>
+                                        <th class="py-1 font-medium">Grade / Section</th>
+                                        <th class="py-1 font-medium">Window</th>
+                                        <th class="py-1 font-medium text-right">Qty</th>
                                     </tr>
-                                }
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    @foreach (var op in selectedWorkOrder.Operations.OrderBy(x => x.PlannedStartUtc))
+                                    {
+                                        <tr class="cursor-pointer border-b border-border last:border-0 hover:bg-surface-hover @(selectedOperation?.OperationSnapshotId == op.OperationSnapshotId ? "bg-accent-soft" : "")" @onclick="() => SelectOperation(op)">
+                                            <td class="py-1.5">@op.ProcessOperationType</td>
+                                            <td class="py-1.5">@op.ResourceCode</td>
+                                            <td class="py-1.5">@op.GradeCode / @op.CrossSectionCode</td>
+                                            <td class="whitespace-nowrap py-1.5 text-xs text-secondary">@op.PlannedStartUtc.ToString("dd MMM HH:mm") &rarr; @op.PlannedEndUtc.ToString("HH:mm")</td>
+                                            <td class="py-1.5 text-right">@op.QuantityMt.ToString("0.##") MT</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
 
                         @if (selectedOperation is not null)
                         {
                             <div class="mt-3 rounded border border-border bg-surface p-3">
-                                <div class="mb-2 flex items-center justify-between">
-                                    <h4 class="text-xs font-semibold uppercase tracking-wide text-secondary">Record actual &mdash; @selectedOperation.ProcessOperationType @@ @selectedOperation.ResourceCode</h4>
-                                    @if (!string.IsNullOrWhiteSpace(operationActualError))
-                                    {
-                                        <span class="text-xs text-danger">@operationActualError</span>
-                                    }
+                                <div class="mb-2">
+                                    <h4 class="text-xs font-semibold uppercase tracking-wide text-secondary">Record operation actual &mdash; @selectedOperation.ProcessOperationType @@ @selectedOperation.ResourceCode</h4>
                                 </div>
-                                <div class="grid grid-cols-5 gap-3 text-sm">
+                                <div class="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-5">
                                     <label class="flex flex-col gap-1">
                                         <span class="text-xs text-secondary">Status</span>
                                         <select class="rounded border border-border-strong px-2 py-1" @bind="operationActualStatus">
@@ -152,10 +171,18 @@ else
                                     </label>
                                     <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Actual start</span><input type="datetime-local" class="rounded border border-border-strong px-2 py-1" @bind="operationActualStart" /></label>
                                     <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Actual end</span><input type="datetime-local" class="rounded border border-border-strong px-2 py-1" @bind="operationActualEnd" /></label>
-                                    <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Actual qty (MT)</span><input type="number" class="rounded border border-border-strong px-2 py-1" @bind="operationActualQuantity" /></label>
+                                    <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Actual qty (MT)</span><input type="number" min="0" step="0.01" class="rounded border border-border-strong px-2 py-1" @bind="operationActualQuantity" /></label>
                                     <label class="flex flex-col gap-1"><span class="text-xs text-secondary">Comment</span><input class="rounded border border-border-strong px-2 py-1" @bind="operationActualComment" /></label>
                                 </div>
-                                <button type="button" class="mt-3 rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground disabled:opacity-50" disabled="@savingOperationActual" @onclick="SaveOperationActualAsync">
+                                @if (!string.IsNullOrWhiteSpace(OperationActualInputError))
+                                {
+                                    <div role="alert" class="mt-3 rounded border border-border bg-danger-soft px-3 py-2 text-xs text-danger">@OperationActualInputError</div>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(operationActualError))
+                                {
+                                    <div role="alert" class="mt-3 rounded border border-border bg-danger-soft px-3 py-2 text-xs text-danger">@operationActualError</div>
+                                }
+                                <button type="button" class="mt-3 rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled="@(savingOperationActual || !string.IsNullOrWhiteSpace(OperationActualInputError))" @onclick="SaveOperationActualAsync">
                                     @(savingOperationActual ? "Saving…" : "Save operation actual")
                                 </button>
                             </div>
@@ -165,7 +192,10 @@ else
 
                 <section class="rounded border border-border bg-surface-raised p-4">
                     <div class="mb-3 flex items-center justify-between">
-                        <h3 class="text-sm font-semibold">Commercial lineage</h3>
+                        <div>
+                            <h3 class="text-sm font-semibold">Commercial lineage</h3>
+                            <p class="text-xs text-secondary">Production Orders and Sales Orders carried by this Work Order.</p>
+                        </div>
                         <span class="text-xs text-muted">@selectedWorkOrder.DemandReferences.Count PO</span>
                     </div>
                     @if (selectedWorkOrder.DemandReferences.Count == 0)
@@ -174,7 +204,7 @@ else
                     }
                     else
                     {
-                        <div class="grid grid-cols-3 gap-2">
+                        <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                             @foreach (var demand in selectedWorkOrder.DemandReferences)
                             {
                                 <div class="rounded border border-border px-2 py-1.5 text-left text-xs">
@@ -184,6 +214,7 @@ else
                                 </div>
                             }
                         </div>
+                        <NavLink href="/operate/traceability" class="mt-3 inline-block text-xs font-semibold text-accent hover:underline">Open full traceability</NavLink>
                     }
                 </section>
             }
@@ -213,17 +244,47 @@ else
     private bool savingOperationActual;
     private string? operationActualError;
 
+    private string? ActualInputError =>
+        actualQuantity is < 0m ? "Actual quantity cannot be negative."
+        : actualStart.HasValue && actualEnd.HasValue && actualEnd.Value < actualStart.Value ? "Actual end cannot be earlier than actual start."
+        : null;
+
+    private string? OperationActualInputError =>
+        operationActualQuantity is < 0m ? "Actual quantity cannot be negative."
+        : operationActualStart.HasValue && operationActualEnd.HasValue && operationActualEnd.Value < operationActualStart.Value ? "Actual end cannot be earlier than actual start."
+        : null;
+
     protected override async Task OnInitializedAsync()
     {
         WorkspaceState.Changed += OnWorkspaceChanged;
         await LoadAsync();
     }
 
-    private async Task LoadAsync()
+    private async Task LoadAsync(Guid? workOrderId = null, Guid? operationSnapshotId = null)
     {
         loading = true;
         view = await PlannerQuery.GetWorkOrdersAsync(WorkspaceState.CurrentPlanVersionId);
-        selectedWorkOrder = view?.WorkOrders.FirstOrDefault();
+
+        var selected = workOrderId.HasValue
+            ? view?.WorkOrders.FirstOrDefault(x => x.WorkOrderId == workOrderId.Value)
+            : view?.WorkOrders.OrderBy(x => x.FirstPlannedStartUtc).FirstOrDefault();
+
+        if (selected is null)
+        {
+            selectedWorkOrder = null;
+            selectedOperation = null;
+        }
+        else
+        {
+            SelectWorkOrder(selected);
+            if (operationSnapshotId.HasValue)
+            {
+                var operation = selected.Operations.FirstOrDefault(x => x.OperationSnapshotId == operationSnapshotId.Value);
+                if (operation is not null)
+                    SelectOperation(operation);
+            }
+        }
+
         loading = false;
         StateHasChanged();
     }
@@ -231,7 +292,7 @@ else
     private void OnWorkspaceChanged()
     {
         if (view is not null && WorkspaceState.CurrentPlanVersionId != view.Plan.PlanVersionId)
-            _ = InvokeAsync(LoadAsync);
+            _ = InvokeAsync(() => LoadAsync());
     }
 
     private void SelectWorkOrder(WorkOrderView wo)
@@ -244,21 +305,23 @@ else
         actualComment = null;
         actualError = null;
         selectedOperation = null;
+        operationActualError = null;
     }
 
     private async Task SaveActualAsync()
     {
-        if (selectedWorkOrder is null) return;
+        if (selectedWorkOrder is null || !string.IsNullOrWhiteSpace(ActualInputError)) return;
+
+        var workOrderId = selectedWorkOrder.WorkOrderId;
         savingActual = true;
         actualError = null;
         StateHasChanged();
         try
         {
             await WorkOrderExecution.ApplyAsync(new WorkOrderExecutionUpdate(
-                selectedWorkOrder.WorkOrderId, null, actualStatus, actualStart, actualEnd,
+                workOrderId, null, actualStatus, actualStart, actualEnd,
                 actualQuantity, DateTime.UtcNow, ExecutionUpdateSource.Manual, null, actualComment));
-            await LoadAsync();
-            selectedWorkOrder = view?.WorkOrders.FirstOrDefault(x => x.WorkOrderId == selectedWorkOrder.WorkOrderId);
+            await LoadAsync(workOrderId);
         }
         catch (Exception ex)
         {
@@ -284,19 +347,23 @@ else
 
     private async Task SaveOperationActualAsync()
     {
-        if (selectedOperation is null || view is null) return;
+        if (selectedWorkOrder is null || selectedOperation is null || view is null || !string.IsNullOrWhiteSpace(OperationActualInputError)) return;
+
+        var workOrderId = selectedWorkOrder.WorkOrderId;
+        var operationSnapshotId = selectedOperation.OperationSnapshotId;
+        var planningKey = selectedOperation.PlanningKey;
+        var planVersionId = view.Plan.PlanVersionId;
+
         savingOperationActual = true;
         operationActualError = null;
         StateHasChanged();
         try
         {
             await OperationExecution.ApplyAsync(new OperationExecutionUpdate(
-                view.Plan.PlanVersionId, selectedOperation.PlanningKey, operationActualStatus, DateTime.UtcNow,
+                planVersionId, planningKey, operationActualStatus, DateTime.UtcNow,
                 ExecutionUpdateSource.Manual, null, operationActualStart, operationActualEnd,
                 operationActualQuantity, null, operationActualComment));
-            await LoadAsync();
-            selectedWorkOrder = view?.WorkOrders.FirstOrDefault(x => x.WorkOrderId == selectedWorkOrder!.WorkOrderId);
-            selectedOperation = selectedWorkOrder?.Operations.FirstOrDefault(x => x.OperationSnapshotId == selectedOperation.OperationSnapshotId);
+            await LoadAsync(workOrderId, operationSnapshotId);
         }
         catch (Exception ex)
         {
