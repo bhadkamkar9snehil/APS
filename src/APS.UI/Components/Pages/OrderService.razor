@@ -8,7 +8,7 @@
 <div class="mb-5 flex flex-wrap items-start justify-between gap-3">
     <div class="max-w-3xl">
         <h1 class="mb-1 text-lg font-semibold">Order Service</h1>
-        <p class="text-sm text-secondary">Set customer-service flexibility independently from urgency. Rush changes priority; this workspace controls how far an order may move around its requested or confirmed delivery target.</p>
+        <p class="text-sm text-secondary">Set customer-service flexibility independently from urgency. Rush changes priority; this workspace records how much movement is acceptable around the requested or confirmed delivery target without replacing that target.</p>
     </div>
     <div class="flex flex-wrap gap-2">
         <NavLink href="/plan/demand" class="rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Demand &amp; Supply</NavLink>
@@ -48,7 +48,7 @@ else
             <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
                 <div>
                     <h2 class="text-sm font-semibold">Customer commitments</h2>
-                    <p class="mt-0.5 text-xs text-secondary">Target remains the commercial requested/confirmed date. The window tells APS where schedule movement is acceptable.</p>
+                    <p class="mt-0.5 text-xs text-secondary">Target remains the commercial requested/confirmed date. The window records the boundary the customer has explicitly accepted.</p>
                 </div>
                 <label class="flex items-center gap-2 text-xs text-secondary">Filter
                     <input class="w-52 rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" @bind="filter" @bind:event="oninput" placeholder="SO, customer, status" />
@@ -143,7 +143,7 @@ else
 
                     <div class="rounded border border-border bg-surface-inset p-3 text-xs text-secondary">
                         <strong class="text-primary">Planning effect</strong>
-                        <div class="mt-1">APS keeps the requested/confirmed date as service evidence, but campaign composition and finite scheduling may use the latest acceptable production date. Release still blocks a plan that finishes after that boundary.</div>
+                        <div class="mt-1">APS continues to optimize against the requested/confirmed target. The acceptable window is separate service evidence: release may accept a plan that misses the preferred target but still finishes inside the agreed boundary, and blocks completion beyond it.</div>
                     </div>
 
                     <div class="flex justify-end gap-2">
@@ -246,7 +246,7 @@ else
                 editCommitment == ServiceCommitmentClass.Hard ? null : editLatest));
             var id = selected.SalesOrderId;
             await LoadAsync(id);
-            SetMessage("Service window saved. Recalculate or run a what-if plan to see its schedule impact.", false);
+            SetMessage("Service window saved. Recalculate or run a what-if plan to inspect its service-readiness effect.", false);
         }
         catch (Exception ex) { SetMessage(ex.Message, true); }
         finally { saving = false; }
