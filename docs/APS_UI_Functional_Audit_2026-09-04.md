@@ -70,12 +70,15 @@ The changes below were implemented after the live audit. **They are source-level
 
 | Area | Implemented change | Commit | Runtime status |
 |---|---|---|---|
+| Master-data blocker (#1) | Added a targeted EF data migration that corrects the contradictory `STD-BAR` HotRoll transformation and matching route/generic capability rows from `BLT-150SQ→BLT-150SQ` to `BLT-150SQ→RND-12`; historical Plan Version snapshots are not mutated | `a686d9f` | Pending migration + Calculate rerun on Windows |
 | Control Tower navigation (#5) | Added `/control-tower` to Workspaces menu | `3a59a91` | Pending Windows rerun |
 | Capacity / Delivery drill-through (#6) | Capacity now opens Control Tower; Delivery opens Demand & Supply | `daea34e` | Pending Windows rerun |
 | Demand reconciliation (#2) | Replaced the fragile toggle-only entry with a native disclosure form, validation, trimmed inputs, refresh-after-submit and responsive layout | `3bd966b`, `0c08f4c` | Pending Windows rerun |
 | Demand shortfall bar (#3) | Corrected `bg-danger-soft0` to `bg-danger-soft` | `3bd966b` | Pending Windows rerun |
 | Master Data delete guard (#4) | Added shared browser/desktop confirmation guard for delete actions on `/plan/master-data` | `1ae4d84`, `e2132e8`, `c3a44b8` | Pending Windows rerun |
 | Plan lifecycle | Added explicit Calculate → Approve → Release flow, request validation, actionable master-data error path and released-work-order handoff | `3402030` | Pending Windows rerun |
+| What-if analysis | Expanded persisted Plan Version comparison into aligned Baseline/What-if schedule visualizations, schedule footprint deltas, per-resource work-content deltas, assumption changes and exact operation-level consequences | `9338652`–`61230ef` | Pending Windows rerun |
+| Capability calendar | Added a resource-focused week calendar combining route qualifications with time-phased downtime/derating, quick calendar entry, exact UTC interval editing and a central non-overlap invariant | `c48b909`–`7f6f5be` | Pending Windows rerun |
 | Work Orders | Fixed selection loss after saving Work Order/operation actuals; added input guards, responsive master-detail layout and traceability handoff | `762aa72` | Pending Windows rerun |
 | Steelmaking & Casting | Fixed selected-heat loss after saving heat actuals; added actual validation, responsive layout and execution/material handoffs | `699b7e5` | Pending Windows rerun |
 | Rolling & Finishing | Made register/detail, downstream route, pegging table and packaging units responsive; added material/demand navigation | `afbdf19` | Pending Windows rerun |
@@ -92,6 +95,6 @@ Source review of the previously unverified execution actions found two concrete 
 
 These two findings were identified statically and are **not yet live-verified**. They should be added to the next runtime interaction pass alongside the original not-yet-verified actions.
 
-### Remaining blocker from the original audit
+### Original blocker status
 
-Finding #1 is still a data/configuration problem in the pre-existing local SQLite master data: `STD-BAR` terminates at `BLT-150SQ` while `MTO-SO-1001-10` requires `RND-12`. No source-level auto-repair has been added because silently mutating production master data would be unsafe. The Plan Versions UI now routes this class of failure directly to Master Data, but the authoritative route/order data still needs to be corrected or deliberately reseeded before Calculate can succeed against that dataset.
+Finding #1 now has a source-controlled data repair instead of a UI workaround. Migration `20260904190000_RepairStdBarMasterData` updates only the known contradictory current master rows for `STD-BAR` HotRoll and intentionally leaves immutable historical Plan Version snapshots alone. Both desktop and service hosts already run EF migrations at startup, so the persisted local SQLite master data will be corrected when the updated build starts. **The blocker is not marked live-fixed until that migration is applied on the Windows runtime and Calculate is rerun successfully.**
