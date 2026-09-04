@@ -1,0 +1,451 @@
+@page "/plan/resource-constraints"
+@inject IPlanningMasterDataProvider MasterDataProvider
+@inject IMasterDataAdminService Admin
+
+<PageTitle>Resource Constraints - APS</PageTitle>
+
+<div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+    <div class="max-w-3xl">
+        <h1 class="mb-1 text-lg font-semibold">Resource Constraints</h1>
+        <p class="text-sm text-secondary">Maintain route-specific resource eligibility and time-phased resource availability. These are hard technical constraints used by Calculate and Replan, not optimization preferences.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+        <NavLink href="/plan/constraints" class="rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Planning controls</NavLink>
+        <NavLink href="/plan/routes" class="rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Routes</NavLink>
+        <NavLink href="/plan/versions" class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground">Plans</NavLink>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div role="status" class="mb-4 rounded border border-border px-3 py-2 text-sm @(messageIsError ? "bg-danger-soft text-danger" : "bg-success-soft text-success")">@message</div>
+}
+
+@if (loading)
+{
+    <p class="text-sm text-muted">Loading resource constraints…</p>
+}
+else if (masters is null)
+{
+    <div class="rounded border border-danger/30 bg-danger-soft p-4 text-sm text-danger">Resource constraints could not be loaded.</div>
+}
+else
+{
+    <div class="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div class="rounded-surface border border-border bg-surface-raised p-3"><div class="text-xs text-muted">PHYSICAL RESOURCES</div><strong class="text-lg">@masters.Resources.Count</strong></div>
+        <div class="rounded-surface border border-border bg-surface-raised p-3"><div class="text-xs text-muted">ROUTE QUALIFICATIONS</div><strong class="text-lg">@masters.RouteResourceCapabilities.Count</strong></div>
+        <div class="rounded-surface border border-border bg-surface-raised p-3"><div class="text-xs text-muted">CALENDAR INTERVALS</div><strong class="text-lg">@masters.ResourceCalendars.Count</strong></div>
+        <div class="rounded-surface border border-border bg-surface-raised p-3"><div class="text-xs text-muted">UNAVAILABLE / DERATED</div><strong class="text-lg">@ConstraintCalendarCount</strong></div>
+    </div>
+
+    <div class="grid grid-cols-1 gap-4 2xl:grid-cols-2">
+        <section class="min-w-0 rounded-surface border border-border bg-surface-raised shadow-soft">
+            <div class="flex flex-wrap items-start justify-between gap-2 border-b border-border px-4 py-3">
+                <div>
+                    <h2 class="text-sm font-semibold">Route resource eligibility</h2>
+                    <p class="mt-0.5 text-xs text-secondary">Controls which physical resource may execute an operation for a route, grade, section and quantity envelope.</p>
+                </div>
+                <button type="button" class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-50" disabled="@(masters.Routes.Count == 0 || masters.Resources.Count == 0)" @onclick="BeginNewCapability">Add qualification</button>
+            </div>
+
+            <div class="border-b border-border px-4 py-3">
+                <label class="block text-xs text-secondary">Route
+                    <select class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" value="@selectedRouteCode" @onchange="RouteChanged">
+                        @foreach (var route in masters.Routes.OrderBy(x => x.RouteCode))
+                        {
+                            <option value="@route.RouteCode">@route.RouteCode · @route.Name</option>
+                        }
+                    </select>
+                </label>
+            </div>
+
+            @if (SelectedCapabilities.Count == 0)
+            {
+                <div class="p-5 text-sm text-warning">No route-specific resource qualifications exist for this route. Planning may fall back to broader capability masters where permitted, which makes eligibility less explicit.</div>
+            }
+            else
+            {
+                <div class="max-h-[420px] overflow-auto">
+                    <table class="w-full min-w-[900px] text-sm">
+                        <thead class="sticky top-0 bg-surface-raised"><tr class="border-b border-border text-left text-xs text-muted"><th class="px-3 py-2">Resource</th><th class="px-3 py-2">Operation</th><th class="px-3 py-2">Grade</th><th class="px-3 py-2">Section</th><th class="px-3 py-2">Quantity</th><th class="px-3 py-2">Rate / duration</th><th class="px-3 py-2">Preference</th><th class="px-3 py-2"></th></tr></thead>
+                        <tbody>
+                            @foreach (var capability in SelectedCapabilities)
+                            {
+                                <tr class="border-b border-border last:border-0 @(editingCapability?.Id == capability.Id ? "bg-accent-soft" : "")">
+                                    <td class="px-3 py-2"><strong>@ResourceCode(capability.ResourceId)</strong></td>
+                                    <td class="px-3 py-2">@capability.ProcessOperationType</td>
+                                    <td class="px-3 py-2">@(capability.GradeCode ?? capability.GradeFamilyCode ?? "*")</td>
+                                    <td class="px-3 py-2 text-xs">@(capability.InputCrossSectionCode ?? "*") → @(capability.OutputCrossSectionCode ?? "*")</td>
+                                    <td class="px-3 py-2 text-xs">@QuantityRange(capability)</td>
+                                    <td class="px-3 py-2 text-xs">@RateLabel(capability)</td>
+                                    <td class="px-3 py-2 text-xs">@(capability.IsPreferred ? "Preferred" : capability.AssignmentPenalty == 0 ? "Neutral" : $"Penalty {capability.AssignmentPenalty}")</td>
+                                    <td class="whitespace-nowrap px-3 py-2 text-right"><button type="button" class="mr-3 text-xs font-semibold text-accent hover:underline" @onclick="() => BeginEditCapability(capability)">Edit</button><button type="button" class="text-xs font-semibold text-danger hover:underline" @onclick="() => ArmCapabilityDelete(capability.Id)">@(capabilityDeleteArmed == capability.Id ? "Confirm delete" : "Delete")</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            @if (editingCapability is not null)
+            {
+                <div class="border-t border-accent-border bg-surface p-4">
+                    <div class="mb-3 flex items-start justify-between gap-3">
+                        <div><h3 class="text-sm font-semibold">@(creatingCapability ? "New route qualification" : "Edit route qualification")</h3><p class="text-xs text-secondary">@editingCapability.RouteCode · eligibility used directly by the planning engine.</p></div>
+                        <button type="button" class="text-xs text-muted hover:underline" @onclick="CancelCapabilityEdit">Cancel</button>
+                    </div>
+                    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        <label class="text-xs text-secondary">Resource<select class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCapability.ResourceId">@foreach (var resource in masters.Resources.OrderBy(x => x.Code)) { <option value="@resource.Id">@resource.Code · @resource.Name</option> }</select></label>
+                        <label class="text-xs text-secondary">Process operation<select class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCapability.ProcessOperationType">@foreach (var value in Enum.GetValues<ProcessOperationType>()) { <option value="@value">@value</option> }</select></label>
+                        <label class="text-xs text-secondary">Capability class<input class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCapability.CapabilityClassCode" /></label>
+                        <label class="text-xs text-secondary">Grade code<input class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCapability.GradeCode" placeholder="* = any" /></label>
+                        <label class="text-xs text-secondary">Grade family<input class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCapability.GradeFamilyCode" placeholder="optional" /></label>
+                        <label class="text-xs text-secondary">Product family<input class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCapability.ProductFamilyCode" placeholder="optional" /></label>
+                        <label class="text-xs text-secondary">Input section<input class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCapability.InputCrossSectionCode" placeholder="* = any" /></label>
+                        <label class="text-xs text-secondary">Output section<input class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCapability.OutputCrossSectionCode" placeholder="* = any" /></label>
+                        <label class="text-xs text-secondary">Material specification<input class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCapability.MaterialSpecificationCode" /></label>
+                        <label class="text-xs text-secondary">Minimum quantity MT<input type="number" min="0" step="0.01" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCapability.MinimumQuantityMt" /></label>
+                        <label class="text-xs text-secondary">Maximum quantity MT<input type="number" min="0" step="0.01" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCapability.MaximumQuantityMt" /></label>
+                        <label class="text-xs text-secondary">Throughput MT/h<input type="number" min="0.01" step="0.01" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCapability.ThroughputMtPerHour" /></label>
+                        <label class="text-xs text-secondary">Fixed duration minutes<input type="number" min="1" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCapability.FixedDurationMinutes" /></label>
+                        <label class="text-xs text-secondary">Assignment penalty<input type="number" min="0" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCapability.AssignmentPenalty" /></label>
+                        <label class="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" @bind="editingCapability.IsPreferred" /><span>Preferred resource</span></label>
+                    </div>
+                    <details class="mt-3 rounded-control border border-border bg-surface-inset p-3">
+                        <summary class="cursor-pointer text-xs font-semibold">Advanced section-family matching</summary>
+                        <div class="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            <label class="text-xs text-secondary">Input section family<input class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5" @bind="editingCapability.InputSectionFamilyCode" /></label>
+                            <label class="text-xs text-secondary">Output section family<input class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5" @bind="editingCapability.OutputSectionFamilyCode" /></label>
+                            <label class="text-xs text-secondary">Input caster format class<input class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5" @bind="editingCapability.InputCasterFormatClassCode" /></label>
+                            <label class="text-xs text-secondary">Output rolling family<input class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5" @bind="editingCapability.OutputRollingFamilyCode" /></label>
+                        </div>
+                    </details>
+                    @if (!string.IsNullOrWhiteSpace(CapabilityEditError)) { <p class="mt-3 text-xs text-danger">@CapabilityEditError</p> }
+                    <div class="mt-3 flex justify-end gap-2"><button type="button" class="rounded-control border border-border-strong px-3 py-1.5 text-xs" @onclick="CancelCapabilityEdit">Cancel</button><button type="button" class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-50" disabled="@(saving || !string.IsNullOrWhiteSpace(CapabilityEditError))" @onclick="SaveCapabilityAsync">@(saving ? "Saving…" : creatingCapability ? "Add qualification" : "Save qualification")</button></div>
+                </div>
+            }
+        </section>
+
+        <section class="min-w-0 rounded-surface border border-border bg-surface-raised shadow-soft">
+            <div class="flex flex-wrap items-start justify-between gap-2 border-b border-border px-4 py-3">
+                <div>
+                    <h2 class="text-sm font-semibold">Resource calendars</h2>
+                    <p class="mt-0.5 text-xs text-secondary">Model downtime, maintenance windows and temporary derating. These intervals are supplied directly to finite scheduling.</p>
+                </div>
+                <button type="button" class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-50" disabled="@(masters.Resources.Count == 0)" @onclick="BeginNewCalendar">Add interval</button>
+            </div>
+
+            <div class="border-b border-border px-4 py-3">
+                <label class="block text-xs text-secondary">Resource filter<select class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" @bind="calendarResourceFilter"><option value="">All resources</option>@foreach (var resource in masters.Resources.OrderBy(x => x.Code)) { <option value="@resource.Id">@resource.Code · @resource.Name</option> }</select></label>
+            </div>
+
+            @if (FilteredCalendars.Count == 0)
+            {
+                <div class="p-5 text-sm text-secondary">No calendar intervals match this filter. With no calendar restriction, the resource follows its configured operating state and capacity.</div>
+            }
+            else
+            {
+                <div class="max-h-[420px] overflow-auto">
+                    <table class="w-full min-w-[780px] text-sm">
+                        <thead class="sticky top-0 bg-surface-raised"><tr class="border-b border-border text-left text-xs text-muted"><th class="px-3 py-2">Resource</th><th class="px-3 py-2">Start</th><th class="px-3 py-2">End</th><th class="px-3 py-2">State</th><th class="px-3 py-2">Capacity</th><th class="px-3 py-2">Reason</th><th class="px-3 py-2"></th></tr></thead>
+                        <tbody>
+                            @foreach (var interval in FilteredCalendars)
+                            {
+                                <tr class="border-b border-border last:border-0 @(editingCalendar?.Id == interval.Id ? "bg-accent-soft" : "")">
+                                    <td class="px-3 py-2"><strong>@ResourceCode(interval.ResourceId)</strong></td>
+                                    <td class="whitespace-nowrap px-3 py-2 text-xs">@interval.Start.ToString("dd MMM yyyy HH:mm")</td>
+                                    <td class="whitespace-nowrap px-3 py-2 text-xs">@interval.End.ToString("dd MMM yyyy HH:mm")</td>
+                                    <td class="px-3 py-2"><span class="rounded px-1.5 py-0.5 text-xs @(interval.IsAvailable ? "bg-success-soft text-success" : "bg-danger-soft text-danger")">@(interval.IsAvailable ? "AVAILABLE" : "UNAVAILABLE")</span></td>
+                                    <td class="px-3 py-2 text-xs">@(interval.CapacityFactorPct.HasValue ? $"{interval.CapacityFactorPct:0.##}%" : "Default")</td>
+                                    <td class="px-3 py-2 text-xs text-secondary">@(interval.ReasonCode ?? "—")</td>
+                                    <td class="whitespace-nowrap px-3 py-2 text-right"><button type="button" class="mr-3 text-xs font-semibold text-accent hover:underline" @onclick="() => BeginEditCalendar(interval)">Edit</button><button type="button" class="text-xs font-semibold text-danger hover:underline" @onclick="() => ArmCalendarDelete(interval.Id)">@(calendarDeleteArmed == interval.Id ? "Confirm delete" : "Delete")</button></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            @if (editingCalendar is not null)
+            {
+                <div class="border-t border-accent-border bg-surface p-4">
+                    <div class="mb-3 flex items-start justify-between gap-3"><div><h3 class="text-sm font-semibold">@(creatingCalendar ? "New calendar interval" : "Edit calendar interval")</h3><p class="text-xs text-secondary">Use UTC timestamps so plan snapshots remain unambiguous.</p></div><button type="button" class="text-xs text-muted hover:underline" @onclick="CancelCalendarEdit">Cancel</button></div>
+                    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        <label class="text-xs text-secondary">Resource<select class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCalendar.ResourceId">@foreach (var resource in masters.Resources.OrderBy(x => x.Code)) { <option value="@resource.Id">@resource.Code · @resource.Name</option> }</select></label>
+                        <label class="text-xs text-secondary">Start UTC<input type="datetime-local" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCalendar.Start" /></label>
+                        <label class="text-xs text-secondary">End UTC<input type="datetime-local" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCalendar.End" /></label>
+                        <label class="text-xs text-secondary">Capacity factor %<input type="number" min="0" max="100" step="0.1" class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCalendar.CapacityFactorPct" placeholder="blank = configured capacity" /></label>
+                        <label class="text-xs text-secondary sm:col-span-2">Reason code / note<input class="mt-1 w-full rounded-control border border-border-strong bg-surface-raised px-2 py-1.5 text-sm" @bind="editingCalendar.ReasonCode" placeholder="MAINTENANCE, POWER_LIMIT, SHIFT_STOP…" /></label>
+                        <label class="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" @bind="editingCalendar.IsAvailable" /><span>Resource available during interval</span></label>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(CalendarEditError)) { <p class="mt-3 text-xs text-danger">@CalendarEditError</p> }
+                    <div class="mt-3 flex justify-end gap-2"><button type="button" class="rounded-control border border-border-strong px-3 py-1.5 text-xs" @onclick="CancelCalendarEdit">Cancel</button><button type="button" class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-50" disabled="@(saving || !string.IsNullOrWhiteSpace(CalendarEditError))" @onclick="SaveCalendarAsync">@(saving ? "Saving…" : creatingCalendar ? "Add interval" : "Save interval")</button></div>
+                </div>
+            }
+        </section>
+    </div>
+
+    <div class="mt-4 rounded-surface border border-border bg-surface-inset p-4 text-xs text-secondary">
+        <strong class="text-primary">Constraint ownership:</strong> operating scenarios are temporary what-if overlays; resource calendars are authoritative time-phased availability; route qualifications define technical eligibility; Planning Controls tune optimization and stability policy. Historical Plan Versions remain immutable after any master-data edit.
+    </div>
+}
+
+@code {
+    private PlanningMasterDataSnapshot? masters;
+    private bool loading = true;
+    private bool saving;
+    private string? message;
+    private bool messageIsError;
+    private string? selectedRouteCode;
+    private string calendarResourceFilter = string.Empty;
+
+    private RouteResourceCapability? editingCapability;
+    private bool creatingCapability;
+    private Guid? capabilityDeleteArmed;
+
+    private ResourceCalendar? editingCalendar;
+    private bool creatingCalendar;
+    private Guid? calendarDeleteArmed;
+
+    private int ConstraintCalendarCount => masters?.ResourceCalendars.Count(x => !x.IsAvailable || x.CapacityFactorPct is < 100m) ?? 0;
+    private IReadOnlyList<RouteResourceCapability> SelectedCapabilities => masters?.RouteResourceCapabilities
+        .Where(x => string.Equals(x.RouteCode, selectedRouteCode, StringComparison.OrdinalIgnoreCase))
+        .OrderBy(x => x.ProcessOperationType).ThenBy(x => ResourceCode(x.ResourceId), StringComparer.OrdinalIgnoreCase).ToArray()
+        ?? Array.Empty<RouteResourceCapability>();
+    private IReadOnlyList<ResourceCalendar> FilteredCalendars
+    {
+        get
+        {
+            var rows = masters?.ResourceCalendars ?? Array.Empty<ResourceCalendar>();
+            if (Guid.TryParse(calendarResourceFilter, out var resourceId)) rows = rows.Where(x => x.ResourceId == resourceId).ToArray();
+            return rows.OrderBy(x => x.Start).ThenBy(x => ResourceCode(x.ResourceId), StringComparer.OrdinalIgnoreCase).ToArray();
+        }
+    }
+
+    private string? CapabilityEditError
+    {
+        get
+        {
+            if (editingCapability is null) return null;
+            if (editingCapability.ResourceId == Guid.Empty) return "Select a physical resource.";
+            if (editingCapability.ProcessOperationType == ProcessOperationType.Unknown) return "Select a real process operation.";
+            if (editingCapability.MinimumQuantityMt is < 0m) return "Minimum quantity cannot be negative.";
+            if (editingCapability.MaximumQuantityMt is < 0m) return "Maximum quantity cannot be negative.";
+            if (editingCapability.MinimumQuantityMt.HasValue && editingCapability.MaximumQuantityMt.HasValue && editingCapability.MaximumQuantityMt < editingCapability.MinimumQuantityMt) return "Maximum quantity must be at least the minimum quantity.";
+            if (editingCapability.ThroughputMtPerHour.HasValue && editingCapability.ThroughputMtPerHour <= 0m) return "Throughput must be greater than zero when provided.";
+            if (editingCapability.FixedDurationMinutes.HasValue && editingCapability.FixedDurationMinutes <= 0) return "Fixed duration must be greater than zero when provided.";
+            if (editingCapability.AssignmentPenalty < 0) return "Assignment penalty cannot be negative.";
+            return null;
+        }
+    }
+
+    private string? CalendarEditError
+    {
+        get
+        {
+            if (editingCalendar is null) return null;
+            if (editingCalendar.ResourceId == Guid.Empty) return "Select a physical resource.";
+            if (editingCalendar.End <= editingCalendar.Start) return "Calendar end must be after its start.";
+            if (editingCalendar.CapacityFactorPct is < 0m or > 100m) return "Capacity factor must be between 0 and 100 percent.";
+            return null;
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        try
+        {
+            masters = await MasterDataProvider.GetAsync();
+            if (selectedRouteCode is null || !masters.Routes.Any(x => x.RouteCode == selectedRouteCode)) selectedRouteCode = masters.Routes.OrderBy(x => x.RouteCode).FirstOrDefault()?.RouteCode;
+        }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { loading = false; }
+    }
+
+    private void RouteChanged(ChangeEventArgs args)
+    {
+        selectedRouteCode = args.Value?.ToString();
+        editingCapability = null;
+        capabilityDeleteArmed = null;
+    }
+
+    private void BeginNewCapability()
+    {
+        if (masters is null || string.IsNullOrWhiteSpace(selectedRouteCode)) return;
+        editingCapability = new RouteResourceCapability
+        {
+            RouteCode = selectedRouteCode,
+            ResourceId = masters.Resources.OrderBy(x => x.Code).FirstOrDefault()?.Id ?? Guid.Empty,
+            ProcessOperationType = ProcessOperationType.Unknown
+        };
+        creatingCapability = true;
+        capabilityDeleteArmed = null;
+        message = null;
+    }
+
+    private void BeginEditCapability(RouteResourceCapability value)
+    {
+        editingCapability = CloneCapability(value);
+        creatingCapability = false;
+        capabilityDeleteArmed = null;
+        message = null;
+    }
+
+    private void CancelCapabilityEdit() { editingCapability = null; creatingCapability = false; }
+
+    private async Task SaveCapabilityAsync()
+    {
+        if (editingCapability is null || !string.IsNullOrWhiteSpace(CapabilityEditError)) return;
+        saving = true;
+        try
+        {
+            NormalizeCapability(editingCapability);
+            if (creatingCapability) await Admin.CreateAsync(editingCapability); else await Admin.UpdateAsync(editingCapability);
+            var routeCode = editingCapability.RouteCode;
+            editingCapability = null;
+            creatingCapability = false;
+            await LoadAsync();
+            selectedRouteCode = routeCode;
+            SetMessage("Route resource qualification saved. Future planning runs will use the updated eligibility; historical Plan Versions are unchanged.", false);
+        }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { saving = false; }
+    }
+
+    private async Task ArmCapabilityDelete(Guid id)
+    {
+        if (capabilityDeleteArmed != id) { capabilityDeleteArmed = id; SetMessage("Click Confirm delete again to remove this route qualification.", true); return; }
+        saving = true;
+        try
+        {
+            await Admin.DeleteAsync<RouteResourceCapability>(id);
+            capabilityDeleteArmed = null;
+            editingCapability = editingCapability?.Id == id ? null : editingCapability;
+            await LoadAsync();
+            SetMessage("Route qualification deleted. Recalculate affected plans before release.", false);
+        }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { saving = false; }
+    }
+
+    private void BeginNewCalendar()
+    {
+        if (masters is null) return;
+        var start = DateTime.UtcNow.AddMinutes(-DateTime.UtcNow.Minute).AddSeconds(-DateTime.UtcNow.Second).AddMilliseconds(-DateTime.UtcNow.Millisecond);
+        editingCalendar = new ResourceCalendar
+        {
+            ResourceId = masters.Resources.OrderBy(x => x.Code).FirstOrDefault()?.Id ?? Guid.Empty,
+            Start = start,
+            End = start.AddHours(8),
+            IsAvailable = false,
+            ReasonCode = "PLANNER_CALENDAR_OVERRIDE"
+        };
+        creatingCalendar = true;
+        calendarDeleteArmed = null;
+        message = null;
+    }
+
+    private void BeginEditCalendar(ResourceCalendar value)
+    {
+        editingCalendar = new ResourceCalendar
+        {
+            Id = value.Id,
+            ResourceId = value.ResourceId,
+            Start = value.Start,
+            End = value.End,
+            IsAvailable = value.IsAvailable,
+            CapacityFactorPct = value.CapacityFactorPct,
+            ReasonCode = value.ReasonCode
+        };
+        creatingCalendar = false;
+        calendarDeleteArmed = null;
+        message = null;
+    }
+
+    private void CancelCalendarEdit() { editingCalendar = null; creatingCalendar = false; }
+
+    private async Task SaveCalendarAsync()
+    {
+        if (editingCalendar is null || !string.IsNullOrWhiteSpace(CalendarEditError)) return;
+        saving = true;
+        try
+        {
+            editingCalendar.ReasonCode = Normalize(editingCalendar.ReasonCode);
+            if (creatingCalendar) await Admin.CreateAsync(editingCalendar); else await Admin.UpdateAsync(editingCalendar);
+            editingCalendar = null;
+            creatingCalendar = false;
+            await LoadAsync();
+            SetMessage("Resource calendar interval saved. It will constrain future Calculate/Replan runs and workbench move validation.", false);
+        }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { saving = false; }
+    }
+
+    private async Task ArmCalendarDelete(Guid id)
+    {
+        if (calendarDeleteArmed != id) { calendarDeleteArmed = id; SetMessage("Click Confirm delete again to remove this calendar interval.", true); return; }
+        saving = true;
+        try
+        {
+            await Admin.DeleteAsync<ResourceCalendar>(id);
+            calendarDeleteArmed = null;
+            editingCalendar = editingCalendar?.Id == id ? null : editingCalendar;
+            await LoadAsync();
+            SetMessage("Resource calendar interval deleted. Recalculate affected plans before release.", false);
+        }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { saving = false; }
+    }
+
+    private string ResourceCode(Guid id) => masters?.Resources.FirstOrDefault(x => x.Id == id)?.Code ?? id.ToString("N")[..8];
+    private static string QuantityRange(RouteResourceCapability value) => value.MinimumQuantityMt.HasValue || value.MaximumQuantityMt.HasValue ? $"{value.MinimumQuantityMt?.ToString("0.##") ?? "0"}–{value.MaximumQuantityMt?.ToString("0.##") ?? "∞"} MT" : "Any";
+    private static string RateLabel(RouteResourceCapability value) => value.FixedDurationMinutes.HasValue ? $"{value.FixedDurationMinutes} min fixed" : value.ThroughputMtPerHour.HasValue ? $"{value.ThroughputMtPerHour:0.##} MT/h" : "Master/default";
+
+    private static RouteResourceCapability CloneCapability(RouteResourceCapability x) => new()
+    {
+        Id = x.Id,
+        ResourceId = x.ResourceId,
+        RouteCode = x.RouteCode,
+        ProcessOperationType = x.ProcessOperationType,
+        CapabilityClassCode = x.CapabilityClassCode,
+        GradeCode = x.GradeCode,
+        GradeFamilyCode = x.GradeFamilyCode,
+        CastingClassCode = x.CastingClassCode,
+        MaterialSpecificationCode = x.MaterialSpecificationCode,
+        InputCrossSectionCode = x.InputCrossSectionCode,
+        OutputCrossSectionCode = x.OutputCrossSectionCode,
+        InputSectionFamilyCode = x.InputSectionFamilyCode,
+        OutputSectionFamilyCode = x.OutputSectionFamilyCode,
+        InputCasterFormatClassCode = x.InputCasterFormatClassCode,
+        OutputRollingFamilyCode = x.OutputRollingFamilyCode,
+        ProductFamilyCode = x.ProductFamilyCode,
+        MinimumQuantityMt = x.MinimumQuantityMt,
+        MaximumQuantityMt = x.MaximumQuantityMt,
+        ThroughputMtPerHour = x.ThroughputMtPerHour,
+        FixedDurationMinutes = x.FixedDurationMinutes,
+        AssignmentPenalty = x.AssignmentPenalty,
+        IsPreferred = x.IsPreferred
+    };
+
+    private static void NormalizeCapability(RouteResourceCapability x)
+    {
+        x.CapabilityClassCode = Normalize(x.CapabilityClassCode);
+        x.GradeCode = Normalize(x.GradeCode);
+        x.GradeFamilyCode = Normalize(x.GradeFamilyCode);
+        x.CastingClassCode = Normalize(x.CastingClassCode);
+        x.MaterialSpecificationCode = Normalize(x.MaterialSpecificationCode);
+        x.InputCrossSectionCode = Normalize(x.InputCrossSectionCode);
+        x.OutputCrossSectionCode = Normalize(x.OutputCrossSectionCode);
+        x.InputSectionFamilyCode = Normalize(x.InputSectionFamilyCode);
+        x.OutputSectionFamilyCode = Normalize(x.OutputSectionFamilyCode);
+        x.InputCasterFormatClassCode = Normalize(x.InputCasterFormatClassCode);
+        x.OutputRollingFamilyCode = Normalize(x.OutputRollingFamilyCode);
+        x.ProductFamilyCode = Normalize(x.ProductFamilyCode);
+    }
+
+    private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private void SetMessage(string value, bool error) { message = value; messageIsError = error; }
+}
