@@ -1,0 +1,43 @@
+@using APS.Application
+
+<section class="rounded-surface border border-border bg-surface-raised shadow-soft" aria-label="Demand and production structure comparison">
+    <div class="border-b border-border px-4 py-3">
+        <h2 class="text-sm font-semibold">Demand, sourcing and production structure</h2>
+        <p class="mt-0.5 text-xs text-secondary">Persisted Plan Version facts only. This shows whether the scenario changed what must be made, how it is covered, and the campaign/heat structure created to make it.</p>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full min-w-[760px] text-sm">
+            <thead>
+                <tr class="border-b border-border text-left text-xs text-muted">
+                    <th class="px-3 py-2 font-medium">Measure</th>
+                    <th class="px-3 py-2 font-medium">Baseline</th>
+                    <th class="px-3 py-2 font-medium">What-if</th>
+                    <th class="px-3 py-2 text-right font-medium">Delta</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="border-b border-border"><td class="px-3 py-2">Production Orders</td><td class="px-3 py-2">@Baseline.ProductionOrders</td><td class="px-3 py-2 font-semibold">@NewPlan.ProductionOrders</td><td class="px-3 py-2 text-right">@IntDelta(NewPlan.ProductionOrders - Baseline.ProductionOrders)</td></tr>
+                <tr class="border-b border-border"><td class="px-3 py-2">MTO / MTS mix</td><td class="px-3 py-2">@Baseline.MakeToOrderCount / @Baseline.MakeToStockCount</td><td class="px-3 py-2 font-semibold">@NewPlan.MakeToOrderCount / @NewPlan.MakeToStockCount</td><td class="px-3 py-2 text-right text-muted">—</td></tr>
+                <tr class="border-b border-border"><td class="px-3 py-2">Remaining demand</td><td class="px-3 py-2">@Mt(Baseline.RemainingDemandMt)</td><td class="px-3 py-2 font-semibold">@Mt(NewPlan.RemainingDemandMt)</td><td class="px-3 py-2 text-right">@MtDelta(NewPlan.RemainingDemandMt - Baseline.RemainingDemandMt)</td></tr>
+                <tr class="border-b border-border"><td class="px-3 py-2">Finished-goods allocation</td><td class="px-3 py-2">@Mt(Baseline.FinishedGoodsAllocatedMt)</td><td class="px-3 py-2 font-semibold">@Mt(NewPlan.FinishedGoodsAllocatedMt)</td><td class="px-3 py-2 text-right">@MtDelta(NewPlan.FinishedGoodsAllocatedMt - Baseline.FinishedGoodsAllocatedMt)</td></tr>
+                <tr class="border-b border-border"><td class="px-3 py-2">Intermediate allocation</td><td class="px-3 py-2">@Mt(Baseline.IntermediateAllocatedMt)</td><td class="px-3 py-2 font-semibold">@Mt(NewPlan.IntermediateAllocatedMt)</td><td class="px-3 py-2 text-right">@MtDelta(NewPlan.IntermediateAllocatedMt - Baseline.IntermediateAllocatedMt)</td></tr>
+                <tr class="border-b border-border"><td class="px-3 py-2">Fresh steel requirement</td><td class="px-3 py-2">@Mt(Baseline.FreshSteelRequirementMt)</td><td class="px-3 py-2 font-semibold">@Mt(NewPlan.FreshSteelRequirementMt)</td><td class="px-3 py-2 text-right">@MtDelta(NewPlan.FreshSteelRequirementMt - Baseline.FreshSteelRequirementMt)</td></tr>
+                <tr class="border-b border-border"><td class="px-3 py-2">Campaigns</td><td class="px-3 py-2">@Baseline.CampaignCount</td><td class="px-3 py-2 font-semibold">@NewPlan.CampaignCount</td><td class="px-3 py-2 text-right">@IntDelta(NewPlan.CampaignCount - Baseline.CampaignCount)</td></tr>
+                <tr><td class="px-3 py-2">Heats</td><td class="px-3 py-2">@Baseline.HeatCount</td><td class="px-3 py-2 font-semibold">@NewPlan.HeatCount</td><td class="px-3 py-2 text-right">@IntDelta(NewPlan.HeatCount - Baseline.HeatCount)</td></tr>
+            </tbody>
+        </table>
+    </div>
+    @if (Baseline.ExternalIntermediateAllocatedMt > 0m || NewPlan.ExternalIntermediateAllocatedMt > 0m)
+    {
+        <div class="border-t border-border px-4 py-2 text-xs text-secondary">External intermediate allocation: <strong>@Mt(Baseline.ExternalIntermediateAllocatedMt)</strong> baseline → <strong>@Mt(NewPlan.ExternalIntermediateAllocatedMt)</strong> what-if.</div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public PlanScenarioDemandSummaryView Baseline { get; set; } = null!;
+    [Parameter, EditorRequired] public PlanScenarioDemandSummaryView NewPlan { get; set; } = null!;
+
+    private static string Mt(decimal value) => $"{value:0.##} MT";
+    private static string MtDelta(decimal value) => $"{(value > 0 ? "+" : string.Empty)}{value:0.##} MT";
+    private static string IntDelta(int value) => $"{(value > 0 ? "+" : string.Empty)}{value}";
+}
