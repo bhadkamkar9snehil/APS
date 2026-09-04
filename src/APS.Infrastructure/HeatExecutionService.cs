@@ -85,52 +85,57 @@ public sealed class HeatExecutionService(ApsDbContext db) : IHeatExecutionServic
 
         db.HeatExecutionActuals.Add(actual);
         foreach (var output in outputs)
-        {
-            db.StrandMaterialActuals.Add(new StrandMaterialActual
-            {
-                HeatExecutionActualId = actual.Id,
-                HeatExecutionActual = actual,
-                StrandNumber = output.StrandNumber,
-                UnitSequence = output.UnitSequence,
-                ExternalLotNumber = output.ExternalLotNumber,
-                MaterialCode = output.MaterialCode,
-                GradeCode = output.GradeCode,
-                CrossSectionCode = output.CrossSectionCode,
-                QuantityMt = output.QuantityMt,
-                ProducedOnUtc = output.ProducedOnUtc,
-                LocationCode = output.LocationCode,
-                ThermalState = output.ThermalState,
-                MeasuredTemperatureC = output.MeasuredTemperatureC,
-                TemperatureObservedOnUtc = output.TemperatureObservedOnUtc
-            });
-
-            var lotNumber = output.ExternalLotNumber ?? $"{update.PlanningKey}:S{output.StrandNumber:00}:U{output.UnitSequence:000}";
-            var lotExists = await db.MaterialLots.AsNoTracking().AnyAsync(x => x.LotNumber == lotNumber, cancellationToken);
-            if (!lotExists)
-            {
-                db.MaterialLots.Add(new MaterialLot
-                {
-                    LotNumber = lotNumber,
-                    MaterialCode = output.MaterialCode,
-                    GradeCode = output.GradeCode,
-                    CrossSectionCode = output.CrossSectionCode,
-                    Stage = InventoryStage.CastIntermediate,
-                    QuantityMt = output.QuantityMt,
-                    Status = MaterialLotStatus.Available,
-                    LocationCode = output.LocationCode,
-                    HeatNumber = actual.ExternalHeatNumber,
-                    CastNumber = actual.ExternalCastNumber,
-                    StrandNumber = output.StrandNumber,
-                    ProducedOnUtc = output.ProducedOnUtc,
-                    ThermalState = output.ThermalState,
-                    EstimatedTemperatureC = output.MeasuredTemperatureC,
-                    TemperatureObservedOnUtc = output.TemperatureObservedOnUtc
-                });
-            }
-        }
+            await StageMaterialOutputAsync(actual, output, update.PlanningKey, cancellationToken);
 
         await db.SaveChangesAsync(cancellationToken);
         return Snapshot(actual, outputs);
+    }
+
+    private async Task StageMaterialOutputAsync(
+        HeatExecutionActual actual,
+        StrandMaterialActualInput output,
+        string planningKey,
+        CancellationToken cancellationToken)
+    {
+        db.StrandMaterialActuals.Add(new StrandMaterialActual
+        {
+            HeatExecutionActualId = actual.Id,
+            HeatExecutionActual = actual,
+            StrandNumber = output.StrandNumber,
+            UnitSequence = output.UnitSequence,
+            ExternalLotNumber = output.ExternalLotNumber,
+            MaterialCode = output.MaterialCode,
+            GradeCode = output.GradeCode,
+            CrossSectionCode = output.CrossSectionCode,
+            QuantityMt = output.QuantityMt,
+            ProducedOnUtc = output.ProducedOnUtc,
+            LocationCode = output.LocationCode,
+            ThermalState = output.ThermalState,
+            MeasuredTemperatureC = output.MeasuredTemperatureC,
+            TemperatureObservedOnUtc = output.TemperatureObservedOnUtc
+        });
+
+        var lotNumber = output.ExternalLotNumber ?? $"{planningKey}:S{output.StrandNumber:00}:U{output.UnitSequence:000}";
+        if (await db.MaterialLots.AsNoTracking().AnyAsync(x => x.LotNumber == lotNumber, cancellationToken)) return;
+
+        db.MaterialLots.Add(new MaterialLot
+        {
+            LotNumber = lotNumber,
+            MaterialCode = output.MaterialCode,
+            GradeCode = output.GradeCode,
+            CrossSectionCode = output.CrossSectionCode,
+            Stage = InventoryStage.CastIntermediate,
+            QuantityMt = output.QuantityMt,
+            Status = MaterialLotStatus.Available,
+            LocationCode = output.LocationCode,
+            HeatNumber = actual.ExternalHeatNumber,
+            CastNumber = actual.ExternalCastNumber,
+            StrandNumber = output.StrandNumber,
+            ProducedOnUtc = output.ProducedOnUtc,
+            ThermalState = output.ThermalState,
+            EstimatedTemperatureC = output.MeasuredTemperatureC,
+            TemperatureObservedOnUtc = output.TemperatureObservedOnUtc
+        });
     }
 
     private async Task<HeatExecutionSnapshot> SnapshotAsync(HeatExecutionActual actual, CancellationToken cancellationToken)
