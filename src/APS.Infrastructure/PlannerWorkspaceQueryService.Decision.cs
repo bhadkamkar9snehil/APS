@@ -18,60 +18,11 @@ public sealed partial class PlannerWorkspaceQueryService
         var difference = await new PlanComparisonService(db)
             .CompareAsync(baselinePlanVersionId, newPlanVersionId, cancellationToken);
 
-        var resourceIds = difference.Operations
-            .SelectMany(x => new[] { x.BaselineResourceId, x.NewResourceId })
-            .Where(x => x.HasValue)
-            .Select(x => x!.Value)
-            .Distinct()
-            .ToArray();
-        var resources = resourceIds.Length == 0
-            ? new Dictionary<Guid, string>()
-            : await db.Resources.AsNoTracking()
-                .Where(x => resourceIds.Contains(x.Id))
-                .ToDictionaryAsync(x => x.Id, x => x.Code, cancellationToken);
-
-        var changes = difference.Operations
-            .OrderByDescending(x => x.ChangeType != PlanOperationChangeType.Unchanged)
-            .ThenByDescending(x => Math.Abs(x.StartMovementMinutes))
-            .ThenBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
-            .Select(x => new PlanOperationChangeView(
-                x.PlanningKey,
-                x.TaskType,
-                x.ChangeType,
-                ResourceCode(x.BaselineResourceId, resources),
-                ResourceCode(x.NewResourceId, resources),
-                x.BaselineStartUtc,
-                x.NewStartUtc,
-                x.BaselineEndUtc,
-                x.NewEndUtc,
-                x.StartMovementMinutes))
-            .ToArray();
-
-        var baselineOperations = difference.Operations
-            .Where(x => x.BaselineResourceId.HasValue && x.BaselineStartUtc.HasValue && x.BaselineEndUtc.HasValue)
-            .Select(x => new PlanScenarioOperationView(
-                x.PlanningKey,
-                x.TaskType,
-                ResourceCode(x.BaselineResourceId, resources) ?? "Unassigned",
-                x.BaselineStartUtc!.Value,
-                x.BaselineEndUtc!.Value,
-                x.ChangeType))
-            .OrderBy(x => x.StartUtc)
-            .ThenBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        var newOperations = difference.Operations
-            .Where(x => x.NewResourceId.HasValue && x.NewStartUtc.HasValue && x.NewEndUtc.HasValue)
-            .Select(x => new PlanScenarioOperationView(
-                x.PlanningKey,
-                x.TaskType,
-                ResourceCode(x.NewResourceId, resources) ?? "Unassigned",
-                x.NewStartUtc!.Value,
-                x.NewEndUtc!.Value,
-                x.ChangeType))
-            .OrderBy(x => x.StartUtc)
-            .ThenBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        var resources = await ResourceCodesAsync(difference, cancellationToken);
+        var changes = BuildChanges(difference, resources);
+        var baselineOperations = BuildOperations(difference, resources, useBaseline: true);
+        var newOperations = BuildOperations(difference, resources, useBaseline: false);
+        var demand = await DemandSummariesAsync(baselinePlanVersionId, newPlanVersionId, cancellationToken);
 
         var baselineAssumptions = await GetPlanningAssumptionsAsync(baselinePlanVersionId, cancellationToken);
         var newAssumptions = await GetPlanningAssumptionsAsync(newPlanVersionId, cancellationToken);
@@ -88,14 +39,130 @@ public sealed partial class PlannerWorkspaceQueryService
             difference.MaximumStartMovementMinutes,
             changes,
             assumptionChanges,
-            Summary(baselineOperations, baseline.ObjectiveValue),
-            Summary(newOperations, next.ObjectiveValue),
+            ScheduleSummary(baselineOperations, baseline.ObjectiveValue),
+            ScheduleSummary(newOperations, next.ObjectiveValue),
             ResourceLoads(baselineOperations, newOperations),
             baselineOperations,
-            newOperations);
+            newOperations,
+            demand[baselinePlanVersionId],
+            demand[newPlanVersionId]);
     }
 
-    private static PlanScenarioSummaryView Summary(
+    private async Task<IReadOnlyDictionary<Guid, string>> ResourceCodesAsync(
+        PlanVersionDifference difference,
+        CancellationToken cancellationToken)
+    {
+        var ids = difference.Operations
+            .SelectMany(x => new[] { x.BaselineResourceId, x.NewResourceId })
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .Distinct()
+            .ToArray();
+
+        return ids.Length == 0
+            ? new Dictionary<Guid, string>()
+            : await db.Resources.AsNoTracking()
+                .Where(x => ids.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.Code, cancellationToken);
+    }
+
+    private static IReadOnlyCollection<PlanOperationChangeView> BuildChanges(
+        PlanVersionDifference difference,
+        IReadOnlyDictionary<Guid, string> resources) =>
+        difference.Operations
+            .OrderByDescending(x => x.ChangeType != PlanOperationChangeType.Unchanged)
+            .ThenByDescending(x => Math.Abs(x.StartMovementMinutes))
+            .ThenBy(x => x.PlanningKey, StringComparer.OrdinalIgnoreCase)
+            .Select(x => new PlanOperationChangeView(
+                x.PlanningKey,
+                x.TaskType,
+                x.ChangeType,
+                ResourceCode(x.BaselineResourceId, resources),
+                ResourceCode(x.NewResourceId, resources),
+                x.BaselineStartUtc,
+                x.NewStartUtc,
+                x.BaselineEndUtc,
+                x.NewEndUtc,
+                x.StartMovementMinutes))
+            .ToArray();
+
+    private static IReadOnlyCollection<PlanScenarioOperationView> BuildOperations(
+        PlanVersionDifference difference,
+        IReadOnlyDictionary<Guid, string> resources,
+        bool useBaseline) =>
+        difference.Operations
+            .Select(x => ToScenarioOperation(x, resources, useBaseline))
+            .Where(x => x is not null)
+            .Select(x => x!)
+            .OrderBy(x => x.StartUtc)
+            .ThenBy(x => x.ResourceCode, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static PlanScenarioOperationView? ToScenarioOperation(
+        PlanOperationDifference difference,
+        IReadOnlyDictionary<Guid, string> resources,
+        bool useBaseline)
+    {
+        var resourceId = useBaseline ? difference.BaselineResourceId : difference.NewResourceId;
+        var start = useBaseline ? difference.BaselineStartUtc : difference.NewStartUtc;
+        var end = useBaseline ? difference.BaselineEndUtc : difference.NewEndUtc;
+        if (!resourceId.HasValue || !start.HasValue || !end.HasValue) return null;
+
+        return new PlanScenarioOperationView(
+            difference.PlanningKey,
+            difference.TaskType,
+            ResourceCode(resourceId, resources) ?? "Unassigned",
+            start.Value,
+            end.Value,
+            difference.ChangeType);
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, PlanScenarioDemandSummaryView>> DemandSummariesAsync(
+        Guid baselinePlanVersionId,
+        Guid newPlanVersionId,
+        CancellationToken cancellationToken)
+    {
+        var ids = new[] { baselinePlanVersionId, newPlanVersionId };
+        var orders = await db.PlanProductionOrderSnapshots.AsNoTracking()
+            .Where(x => ids.Contains(x.PlanVersionId))
+            .ToArrayAsync(cancellationToken);
+        var campaignPlanIds = await db.PlanCampaignSnapshots.AsNoTracking()
+            .Where(x => ids.Contains(x.PlanVersionId))
+            .Select(x => x.PlanVersionId)
+            .ToArrayAsync(cancellationToken);
+        var heatPlanIds = await db.PlanHeatSnapshots.AsNoTracking()
+            .Where(x => ids.Contains(x.PlanVersionId))
+            .Select(x => x.PlanVersionId)
+            .ToArrayAsync(cancellationToken);
+
+        return ids.ToDictionary(
+            id => id,
+            id => DemandSummary(
+                orders.Where(x => x.PlanVersionId == id),
+                campaignPlanIds.Count(x => x == id),
+                heatPlanIds.Count(x => x == id)));
+    }
+
+    private static PlanScenarioDemandSummaryView DemandSummary(
+        IEnumerable<PlanProductionOrderSnapshot> source,
+        int campaignCount,
+        int heatCount)
+    {
+        var orders = source.ToArray();
+        return new PlanScenarioDemandSummaryView(
+            orders.Length,
+            orders.Count(x => x.DemandSource == DemandSourceType.MakeToOrder),
+            orders.Count(x => x.DemandSource == DemandSourceType.MakeToStock),
+            orders.Sum(x => x.RemainingQuantityMt),
+            orders.Sum(x => x.FinishedGoodsAllocatedMt),
+            orders.Sum(x => x.ExistingIntermediateAllocatedMt),
+            orders.Sum(x => x.ExternalIntermediateAllocatedMt),
+            orders.Sum(x => x.FreshSteelRequirementMt),
+            campaignCount,
+            heatCount);
+    }
+
+    private static PlanScenarioSummaryView ScheduleSummary(
         IReadOnlyCollection<PlanScenarioOperationView> operations,
         long? objectiveValue)
     {
@@ -123,14 +190,24 @@ public sealed partial class PlannerWorkspaceQueryService
         return left.Keys
             .Union(right.Keys, StringComparer.OrdinalIgnoreCase)
             .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
-            .Select(code => new PlanResourceLoadComparisonView(
-                code,
-                left.TryGetValue(code, out var baselineLoad) ? baselineLoad.Count : 0,
-                right.TryGetValue(code, out var newLoad) ? newLoad.Count : 0,
-                left.TryGetValue(code, out baselineLoad) ? baselineLoad.Hours : 0,
-                right.TryGetValue(code, out newLoad) ? newLoad.Hours : 0))
+            .Select(code => BuildResourceLoad(code, left, right))
             .ToArray();
     }
+
+    private static PlanResourceLoadComparisonView BuildResourceLoad(
+        string code,
+        IReadOnlyDictionary<string, (int Count, double Hours)> baseline,
+        IReadOnlyDictionary<string, (int Count, double Hours)> next)
+    {
+        var left = GetLoad(baseline, code);
+        var right = GetLoad(next, code);
+        return new PlanResourceLoadComparisonView(code, left.Count, right.Count, left.Hours, right.Hours);
+    }
+
+    private static (int Count, double Hours) GetLoad(
+        IReadOnlyDictionary<string, (int Count, double Hours)> source,
+        string code) =>
+        source.TryGetValue(code, out var load) ? load : default;
 
     private static Dictionary<string, (int Count, double Hours)> LoadByResource(
         IEnumerable<PlanScenarioOperationView> operations) =>
