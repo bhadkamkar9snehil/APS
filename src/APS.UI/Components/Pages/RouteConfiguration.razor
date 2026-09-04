@@ -1,0 +1,259 @@
+@page "/plan/routes"
+@inject IPlanningMasterDataProvider MasterDataProvider
+@inject IMasterDataAdminService Admin
+
+<PageTitle>Routes & Capabilities - APS</PageTitle>
+
+<div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+    <div class="max-w-3xl">
+        <h1 class="mb-1 text-lg font-semibold">Routes &amp; Capabilities</h1>
+        <p class="text-sm text-secondary">Edit the technical manufacturing path that defines what the plant can actually make. Changes here alter authoritative feasibility, unlike planning-control weights.</p>
+    </div>
+    <div class="flex gap-2">
+        <NavLink href="/plan/constraints" class="rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Planning controls</NavLink>
+        <NavLink href="/plan/master-data" class="rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">All master data</NavLink>
+        <NavLink href="/plan/versions" class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground">Back to plans</NavLink>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div role="status" class="mb-4 rounded border border-border px-3 py-2 text-sm @(messageIsError ? "bg-danger-soft text-danger" : "bg-success-soft text-success")">@message</div>
+}
+
+@if (loading)
+{
+    <p class="text-sm text-muted">Loading route configuration…</p>
+}
+else if (masters is null || masters.Routes.Count == 0)
+{
+    <div class="rounded border border-dashed border-border-strong bg-surface-raised p-8 text-center">
+        <strong>No manufacturing routes are configured</strong>
+        <p class="mt-1 text-sm text-secondary">Create the route master first, then define its operations and eligible resources.</p>
+        <NavLink href="/plan/master-data" class="mt-3 inline-block text-sm font-semibold text-accent hover:underline">Open Master Data</NavLink>
+    </div>
+}
+else
+{
+    <div class="grid grid-cols-1 gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
+        <aside class="rounded-surface border border-border bg-surface-raised shadow-soft">
+            <div class="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted">Manufacturing routes</div>
+            <div class="max-h-[72vh] overflow-y-auto">
+                @foreach (var route in masters.Routes.OrderBy(x => x.RouteCode))
+                {
+                    var operations = Operations(route.RouteCode);
+                    var endSection = RouteEndSection(operations);
+                    <button type="button" class="block w-full border-b border-border px-3 py-2 text-left last:border-0 hover:bg-surface-hover @(selectedRouteCode == route.RouteCode ? "bg-accent-soft" : "")" @onclick="() => SelectRoute(route.RouteCode)">
+                        <div class="flex items-center justify-between gap-2"><strong>@route.RouteCode</strong><span class="text-xs @(route.IsActive ? "text-success" : "text-muted")">@(route.IsActive ? "ACTIVE" : "INACTIVE")</span></div>
+                        <div class="truncate text-xs text-secondary">@route.Name</div>
+                        <div class="mt-1 text-xs text-muted">@operations.Count step(s) · ends @(endSection ?? "unresolved")</div>
+                    </button>
+                }
+            </div>
+        </aside>
+
+        <main class="min-w-0 space-y-4">
+            @if (SelectedRoute is { } route)
+            {
+                var operations = Operations(route.RouteCode);
+                <section class="rounded-surface border border-border bg-surface-raised p-4 shadow-soft">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <div class="text-xs font-semibold uppercase tracking-wide text-muted">Selected route</div>
+                            <h2 class="mt-0.5 text-base font-semibold">@route.RouteCode · @route.Name</h2>
+                            <p class="mt-1 text-xs text-secondary">@RoutePath(operations)</p>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4 text-right text-xs">
+                            <div><div class="text-muted">Configured end</div><strong class="@(RouteEndSection(operations) is null ? "text-warning" : "")">@(RouteEndSection(operations) ?? "Unresolved")</strong></div>
+                            <div><div class="text-muted">Resource rules</div><strong>@Capabilities(route.RouteCode).Count</strong></div>
+                        </div>
+                    </div>
+                    @if (RouteEndSection(operations) is null)
+                    {
+                        <div class="mt-3 rounded border border-warning/30 bg-warning-soft px-3 py-2 text-xs text-warning">No route operation declares a final output cross-section. A demand whose required final section differs from its caster section can therefore become technically infeasible.</div>
+                    }
+                </section>
+
+                <section class="rounded-surface border border-border bg-surface-raised shadow-soft">
+                    <div class="border-b border-border px-4 py-3">
+                        <h2 class="text-sm font-semibold">Route operations</h2>
+                        <p class="mt-0.5 text-xs text-secondary">Ordered process topology and material/section transformation. This is the source to correct when Calculate says a configured route ends at the wrong section.</p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full min-w-[900px] text-sm">
+                            <thead><tr class="border-b border-border text-left text-xs text-muted"><th class="px-3 py-2">Seq</th><th class="px-3 py-2">Operation</th><th class="px-3 py-2">Release WO</th><th class="px-3 py-2">Section transform</th><th class="px-3 py-2">Requirement</th><th class="px-3 py-2">Queue</th><th class="px-3 py-2"></th></tr></thead>
+                            <tbody>
+                                @foreach (var operation in operations)
+                                {
+                                    <tr class="border-b border-border last:border-0 @(editingOperation?.Id == operation.Id ? "bg-accent-soft" : "")">
+                                        <td class="px-3 py-2 font-medium">@operation.SequenceNumber</td>
+                                        <td class="px-3 py-2"><strong>@operation.ProcessOperationType</strong>@if (operation.IsInventoryDecouplingPoint) { <span class="ml-1 rounded bg-warning-soft px-1 text-xs text-warning">BUFFER</span> }</td>
+                                        <td class="px-3 py-2">@operation.ReleaseWorkOrderType</td>
+                                        <td class="px-3 py-2"><span class="text-secondary">@(operation.InputCrossSectionCode ?? "*")</span> → <strong>@(operation.OutputCrossSectionCode ?? "same")</strong></td>
+                                        <td class="px-3 py-2">@operation.Requirement</td>
+                                        <td class="px-3 py-2 text-xs text-secondary">@QueueLabel(operation)</td>
+                                        <td class="px-3 py-2 text-right"><button type="button" class="text-xs font-semibold text-accent hover:underline" @onclick="() => BeginEditOperation(operation)">Edit</button></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                @if (editingOperation is not null)
+                {
+                    <section class="rounded-surface border border-accent-border bg-surface-raised shadow-soft">
+                        <div class="flex items-center justify-between border-b border-border px-4 py-3">
+                            <div><h2 class="text-sm font-semibold">Edit route operation</h2><p class="text-xs text-secondary">@route.RouteCode · step @editingOperation.SequenceNumber</p></div>
+                            <button type="button" class="text-xs text-muted hover:underline" @onclick="CancelOperationEdit">Cancel</button>
+                        </div>
+                        <div class="grid gap-3 p-4 sm:grid-cols-2 xl:grid-cols-4">
+                            <label class="text-xs text-secondary">Sequence<input type="number" min="1" class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" @bind="editingOperation.SequenceNumber" /></label>
+                            <label class="text-xs text-secondary">Process operation<select class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" @bind="editingOperation.ProcessOperationType">@foreach (var value in Enum.GetValues<ProcessOperationType>()) { <option value="@value">@value</option> }</select></label>
+                            <label class="text-xs text-secondary">Release work-order type<select class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" @bind="editingOperation.ReleaseWorkOrderType">@foreach (var value in Enum.GetValues<WorkOrderType>()) { <option value="@value">@value</option> }</select></label>
+                            <label class="text-xs text-secondary">Requirement<select class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" @bind="editingOperation.Requirement">@foreach (var value in Enum.GetValues<RequirementDisposition>()) { <option value="@value">@value</option> }</select></label>
+                            <label class="text-xs text-secondary">Input section<input class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" @bind="editingOperation.InputCrossSectionCode" /></label>
+                            <label class="text-xs text-secondary">Output section<input class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" @bind="editingOperation.OutputCrossSectionCode" /></label>
+                            <label class="text-xs text-secondary">Minimum queue minutes<input type="number" min="0" class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" @bind="editMinimumQueueMinutes" /></label>
+                            <label class="text-xs text-secondary">Maximum queue minutes (optional)<input type="number" min="0" class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" @bind="editMaximumQueueMinutes" /></label>
+                            <label class="text-xs text-secondary">Yield %<input type="number" min="0.01" max="100" step="0.1" class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" @bind="editingOperation.YieldPct" /></label>
+                            <label class="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" @bind="editingOperation.IsInventoryDecouplingPoint" /><span>Inventory decoupling point</span></label>
+                            <label class="flex items-center gap-2 self-end pb-2 text-sm"><input type="checkbox" @bind="editingOperation.RequiresHotMaterial" /><span>Requires hot material</span></label>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(OperationEditError)) { <p class="px-4 pb-2 text-xs text-danger">@OperationEditError</p> }
+                        <div class="flex justify-end gap-2 border-t border-border px-4 py-3"><button type="button" class="rounded-control border border-border-strong px-3 py-1.5 text-xs" @onclick="CancelOperationEdit">Cancel</button><button type="button" class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-50" disabled="@(saving || !string.IsNullOrWhiteSpace(OperationEditError))" @onclick="SaveOperationAsync">@(saving ? "Saving…" : "Save technical constraint")</button></div>
+                    </section>
+                }
+
+                <section class="rounded-surface border border-border bg-surface-raised shadow-soft">
+                    <div class="border-b border-border px-4 py-3"><h2 class="text-sm font-semibold">Route resource capabilities</h2><p class="mt-0.5 text-xs text-secondary">Which physical resources may execute each route operation, including grade, section, quantity and throughput qualification.</p></div>
+                    @if (Capabilities(route.RouteCode).Count == 0)
+                    {
+                        <div class="p-4 text-sm text-warning">No route-specific resource capabilities are configured. Check the general resource capabilities in Master Data before relying on fallback eligibility.</div>
+                    }
+                    else
+                    {
+                        <div class="overflow-x-auto"><table class="w-full min-w-[760px] text-sm"><thead><tr class="border-b border-border text-left text-xs text-muted"><th class="px-3 py-2">Resource</th><th class="px-3 py-2">Operation</th><th class="px-3 py-2">Grade</th><th class="px-3 py-2">Input → Output</th><th class="px-3 py-2">Quantity</th><th class="px-3 py-2">Throughput</th><th class="px-3 py-2">Preference</th></tr></thead><tbody>
+                            @foreach (var capability in Capabilities(route.RouteCode))
+                            {
+                                <tr class="border-b border-border last:border-0"><td class="px-3 py-2"><strong>@ResourceCode(capability.ResourceId)</strong></td><td class="px-3 py-2">@capability.ProcessOperationType</td><td class="px-3 py-2">@(capability.GradeCode ?? capability.GradeFamilyCode ?? "*")</td><td class="px-3 py-2">@(capability.InputCrossSectionCode ?? "*") → @(capability.OutputCrossSectionCode ?? "*")</td><td class="px-3 py-2 text-xs">@QuantityRange(capability)</td><td class="px-3 py-2">@(capability.ThroughputMtPerHour?.ToString("0.##") ?? "—")</td><td class="px-3 py-2">@(capability.IsPreferred ? "Preferred" : capability.AssignmentPenalty.ToString())</td></tr>
+                            }
+                        </tbody></table></div>
+                    }
+                </section>
+            }
+        </main>
+    </div>
+}
+
+@code {
+    private PlanningMasterDataSnapshot? masters;
+    private bool loading = true;
+    private bool saving;
+    private string? selectedRouteCode;
+    private ManufacturingRouteOperation? editingOperation;
+    private int editMinimumQueueMinutes;
+    private int? editMaximumQueueMinutes;
+    private string? message;
+    private bool messageIsError;
+
+    private ManufacturingRoute? SelectedRoute => masters?.Routes.FirstOrDefault(x => x.RouteCode == selectedRouteCode);
+    private string? OperationEditError
+    {
+        get
+        {
+            if (editingOperation is null) return null;
+            if (editingOperation.SequenceNumber <= 0) return "Sequence must be greater than zero.";
+            if (editingOperation.ProcessOperationType == ProcessOperationType.Unknown) return "Select a real process operation.";
+            if (editingOperation.YieldPct <= 0m || editingOperation.YieldPct > 100m) return "Yield must be greater than 0 and at most 100 percent.";
+            if (editMinimumQueueMinutes < 0) return "Minimum queue cannot be negative.";
+            if (editMaximumQueueMinutes.HasValue && editMaximumQueueMinutes < editMinimumQueueMinutes) return "Maximum queue must be at least the minimum queue.";
+            var duplicate = masters?.RouteOperations.Any(x => x.RouteCode == editingOperation.RouteCode && x.Id != editingOperation.Id && x.SequenceNumber == editingOperation.SequenceNumber) == true;
+            if (duplicate) return $"Sequence {editingOperation.SequenceNumber} is already used on this route.";
+            return null;
+        }
+    }
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        try
+        {
+            masters = await MasterDataProvider.GetAsync();
+            if (selectedRouteCode is null || !masters.Routes.Any(x => x.RouteCode == selectedRouteCode))
+                selectedRouteCode = masters.Routes.OrderBy(x => x.RouteCode).FirstOrDefault()?.RouteCode;
+        }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { loading = false; }
+    }
+
+    private void SelectRoute(string routeCode)
+    {
+        selectedRouteCode = routeCode;
+        editingOperation = null;
+    }
+
+    private IReadOnlyList<ManufacturingRouteOperation> Operations(string routeCode) => masters?.RouteOperations.Where(x => x.RouteCode == routeCode).OrderBy(x => x.SequenceNumber).ToArray() ?? Array.Empty<ManufacturingRouteOperation>();
+    private IReadOnlyList<RouteResourceCapability> Capabilities(string routeCode) => masters?.RouteResourceCapabilities.Where(x => x.RouteCode == routeCode).OrderBy(x => x.ProcessOperationType).ThenBy(x => ResourceCode(x.ResourceId)).ToArray() ?? Array.Empty<RouteResourceCapability>();
+
+    private void BeginEditOperation(ManufacturingRouteOperation value)
+    {
+        editingOperation = new ManufacturingRouteOperation
+        {
+            Id = value.Id,
+            ManufacturingRouteId = value.ManufacturingRouteId,
+            RouteCode = value.RouteCode,
+            SequenceNumber = value.SequenceNumber,
+            ProcessOperationType = value.ProcessOperationType,
+            ReleaseWorkOrderType = value.ReleaseWorkOrderType,
+            Requirement = value.Requirement,
+            CapabilityClassCode = value.CapabilityClassCode,
+            InputMaterialSpecificationCode = value.InputMaterialSpecificationCode,
+            OutputMaterialSpecificationCode = value.OutputMaterialSpecificationCode,
+            InputCrossSectionCode = value.InputCrossSectionCode,
+            OutputCrossSectionCode = value.OutputCrossSectionCode,
+            IsInventoryDecouplingPoint = value.IsInventoryDecouplingPoint,
+            RequiresHotMaterial = value.RequiresHotMaterial,
+            RequiredChargeMode = value.RequiredChargeMode,
+            MinimumQueueTime = value.MinimumQueueTime,
+            MaximumQueueTime = value.MaximumQueueTime,
+            YieldPct = value.YieldPct
+        };
+        editMinimumQueueMinutes = (int)Math.Round(value.MinimumQueueTime.TotalMinutes);
+        editMaximumQueueMinutes = value.MaximumQueueTime.HasValue ? (int)Math.Round(value.MaximumQueueTime.Value.TotalMinutes) : null;
+        message = null;
+    }
+
+    private void CancelOperationEdit() => editingOperation = null;
+
+    private async Task SaveOperationAsync()
+    {
+        if (editingOperation is null || !string.IsNullOrWhiteSpace(OperationEditError)) return;
+        saving = true;
+        try
+        {
+            editingOperation.MinimumQueueTime = TimeSpan.FromMinutes(editMinimumQueueMinutes);
+            editingOperation.MaximumQueueTime = editMaximumQueueMinutes.HasValue ? TimeSpan.FromMinutes(editMaximumQueueMinutes.Value) : null;
+            editingOperation.InputCrossSectionCode = Normalize(editingOperation.InputCrossSectionCode);
+            editingOperation.OutputCrossSectionCode = Normalize(editingOperation.OutputCrossSectionCode);
+            await Admin.UpdateAsync(editingOperation);
+            var routeCode = editingOperation.RouteCode;
+            editingOperation = null;
+            await LoadAsync();
+            selectedRouteCode = routeCode;
+            SetMessage("Route operation updated. Future Calculate/Replan runs will use this technical constraint; historical Plan Versions remain unchanged.", false);
+        }
+        catch (Exception ex) { SetMessage(ex.Message, true); }
+        finally { saving = false; }
+    }
+
+    private string ResourceCode(Guid id) => masters?.Resources.FirstOrDefault(x => x.Id == id)?.Code ?? id.ToString("N")[..8];
+    private static string? RouteEndSection(IReadOnlyList<ManufacturingRouteOperation> operations) => operations.OrderByDescending(x => x.SequenceNumber).Select(x => Normalize(x.OutputCrossSectionCode)).FirstOrDefault(x => x is not null);
+    private static string RoutePath(IReadOnlyList<ManufacturingRouteOperation> operations) => operations.Count == 0 ? "No operations configured" : string.Join(" → ", operations.Select(x => x.ProcessOperationType));
+    private static string QueueLabel(ManufacturingRouteOperation value) => value.MaximumQueueTime.HasValue ? $"{value.MinimumQueueTime.TotalMinutes:0}–{value.MaximumQueueTime.Value.TotalMinutes:0} min" : value.MinimumQueueTime > TimeSpan.Zero ? $"≥ {value.MinimumQueueTime.TotalMinutes:0} min" : "—";
+    private static string QuantityRange(RouteResourceCapability value) => value.MinimumQuantityMt.HasValue || value.MaximumQuantityMt.HasValue ? $"{value.MinimumQuantityMt?.ToString("0.##") ?? "0"}–{value.MaximumQuantityMt?.ToString("0.##") ?? "∞"} MT" : "—";
+    private static string? Normalize(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private void SetMessage(string value, bool error) { message = value; messageIsError = error; }
+}
