@@ -35,7 +35,22 @@
                 Optimize
             </button>
             <button class="rounded-control border border-border-strong px-2.5 py-1 text-xs disabled:opacity-40" disabled="@(!CanEdit || IsBusy)" @onclick="Validate">Validate</button>
-            <button class="rounded-control bg-accent px-2.5 py-1 text-xs font-semibold text-accent-foreground disabled:opacity-40" disabled="@(!CanRelease || IsBusy)" @onclick="Release">Release</button>
+
+            @* ReleaseService intentionally requires an active Approved Plan Version. The workbench used
+               to enable Release for Feasible plans, guaranteeing a backend rejection. Keep approval as an
+               explicit planner decision and route feasible plans to the lifecycle review instead. *@
+            @if (!IsReleased && IsApproved)
+            {
+                <button class="rounded-control bg-accent px-2.5 py-1 text-xs font-semibold text-accent-foreground disabled:opacity-40" disabled="@IsBusy" @onclick="Release">Release</button>
+            }
+            else if (!IsReleased && IsFeasible)
+            {
+                <NavLink href="/plan/versions" class="rounded-control bg-accent px-2.5 py-1 text-xs font-semibold text-accent-foreground">Review &amp; approve</NavLink>
+            }
+            else if (IsReleased)
+            {
+                <NavLink href="/operate/work-orders" class="rounded-control border border-border-strong px-2.5 py-1 text-xs font-semibold hover:bg-surface-hover">Work orders</NavLink>
+            }
         </div>
     </div>
     @* A CP-SAT solver runs behind Optimize/Validate/Release and can take real time - disabling the
@@ -72,4 +87,7 @@
     [Parameter] public EventCallback Release { get; set; }
     [Parameter] public EventCallback StartPlanning { get; set; }
     [Parameter] public EventCallback StartRecovery { get; set; }
+
+    private bool IsApproved => string.Equals(StateLabel, PlanVersionStatus.Approved.ToString(), StringComparison.OrdinalIgnoreCase);
+    private bool IsFeasible => string.Equals(StateLabel, PlanVersionStatus.Feasible.ToString(), StringComparison.OrdinalIgnoreCase);
 }
