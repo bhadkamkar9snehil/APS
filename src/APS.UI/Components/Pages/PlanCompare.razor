@@ -7,10 +7,11 @@
 <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
     <div>
         <h1 class="mb-1 text-lg font-semibold">What-if Analysis</h1>
-        <p class="text-sm text-secondary">Compare two immutable Plan Versions side by side: demand and sourcing, production structure, planning assumptions, schedule footprint, resource loading and every operation-level consequence.</p>
+        <p class="text-sm text-secondary">Compare two immutable Plan Versions side by side: customer commitments, demand and sourcing, production structure, planning assumptions, schedule footprint, resource loading and every operation-level consequence.</p>
     </div>
     <div class="flex flex-wrap gap-2">
         <NavLink href="/plan/what-if" class="rounded border border-accent-border bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent">Create what-if</NavLink>
+        <NavLink href="/plan/order-service" class="rounded border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Order service</NavLink>
         <NavLink href="/plan/constraints" class="rounded border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Planning controls</NavLink>
         <NavLink href="/plan/versions" class="rounded border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Plan Versions</NavLink>
     </div>
@@ -68,7 +69,7 @@ else
 
     @if (comparing)
     {
-        <p class="text-sm text-muted">Comparing persisted assumptions, demand, structure and operations…</p>
+        <p class="text-sm text-muted">Comparing persisted commitments, assumptions, demand, structure and operations…</p>
     }
     else if (comparison is not null)
     {
@@ -102,6 +103,10 @@ else
                 <ScenarioDemandComparison Baseline="@comparison.BaselineDemand" NewPlan="@comparison.NewPlanDemand" />
             </div>
         }
+
+        <div class="mb-6">
+            <ScenarioOrderServiceComparison Items="@(comparison.OrderService ?? Array.Empty<PlanOrderServiceComparisonView>())" />
+        </div>
 
         @if (comparison.BaselineSummary is not null && comparison.NewPlanSummary is not null)
         {
