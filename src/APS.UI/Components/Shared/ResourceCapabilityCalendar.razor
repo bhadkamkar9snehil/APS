@@ -1,0 +1,166 @@
+@using APS.Domain
+@using APS.UI.State
+
+<section class="rounded-surface border border-border bg-surface-raised shadow-soft" aria-label="Resource capability calendar">
+    <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border p-3">
+        <div>
+            <h3 class="text-sm font-semibold">Capability calendar</h3>
+            <p class="mt-0.5 text-xs text-secondary">One physical resource, its route qualifications and its time-phased availability in the same view.</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+            <button type="button" class="rounded-control border border-border-strong px-2.5 py-1 text-xs font-semibold hover:bg-surface-hover disabled:opacity-50" disabled="@(FocusedResource is null)" @onclick="() => QuickAdd(false)">Add downtime</button>
+            <button type="button" class="rounded-control border border-accent-border bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent disabled:opacity-50" disabled="@(FocusedResource is null)" @onclick="() => QuickAdd(true)">Add derating</button>
+        </div>
+    </div>
+
+    <div class="grid gap-3 border-b border-border p-3 lg:grid-cols-[minmax(240px,1fr)_auto]">
+        <label class="text-xs text-secondary">Focused resource
+            <select class="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm" value="@ResourceId" @onchange="ResourceChanged">
+                @foreach (var resource in Resources.OrderBy(x => x.Code))
+                {
+                    <option value="@resource.Id">@resource.Code · @resource.Name</option>
+                }
+            </select>
+        </label>
+        <div class="flex items-end gap-1">
+            <button type="button" class="rounded-control border border-border-strong px-2.5 py-1.5 text-xs hover:bg-surface-hover" @onclick="PreviousWeek">← Week</button>
+            <button type="button" class="rounded-control border border-border-strong px-2.5 py-1.5 text-xs font-semibold hover:bg-surface-hover" @onclick="CurrentWeek">Today</button>
+            <button type="button" class="rounded-control border border-border-strong px-2.5 py-1.5 text-xs hover:bg-surface-hover" @onclick="NextWeek">Week →</button>
+        </div>
+    </div>
+
+    @if (FocusedResource is { } resource)
+    {
+        <div class="border-b border-border p-3">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                    <strong class="text-sm">@resource.Code · @resource.Name</strong>
+                    <div class="mt-0.5 text-xs text-secondary">@resource.ProcessUnitType · @resource.OperatingState · @resource.SchedulingMode</div>
+                </div>
+                <div class="flex flex-wrap gap-2 text-xs">
+                    <span class="rounded bg-surface-inset px-2 py-1">Configured capacity @resource.CapacityFactorPct.ToString("0.##")%</span>
+                    @if (resource.NominalConcurrentCapacity.HasValue)
+                    {
+                        <span class="rounded bg-surface-inset px-2 py-1">Nominal @resource.NominalConcurrentCapacity.Value.ToString("0.##") @resource.CapacityBasis</span>
+                    }
+                </div>
+            </div>
+
+            <div class="mt-3">
+                <div class="aps-text-label mb-1.5">Qualified work</div>
+                @if (FocusedCapabilities.Count == 0)
+                {
+                    <p class="text-xs text-warning">No route-specific qualification is configured for this resource.</p>
+                }
+                else
+                {
+                    <div class="flex flex-wrap gap-1.5">
+                        @foreach (var capability in FocusedCapabilities)
+                        {
+                            <span class="rounded border border-border bg-surface px-2 py-1 text-xs" title="@CapabilityTitle(capability)">
+                                <strong>@capability.RouteCode</strong> · @capability.ProcessOperationType · @(capability.InputCrossSectionCode ?? "*")→@(capability.OutputCrossSectionCode ?? "*")
+                            </span>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="overflow-x-auto p-3">
+            <div class="min-w-[900px]">
+                <div class="mb-2 flex items-center justify-between gap-3 text-xs">
+                    <strong>@WeekStartUtc.ToString("dd MMM") – @WeekStartUtc.AddDays(6).ToString("dd MMM yyyy")</strong>
+                    <div class="flex gap-3 text-muted"><span>Unavailable</span><span>Derated</span><span>Explicit available</span></div>
+                </div>
+                <div class="grid grid-cols-7 gap-2">
+                    @foreach (var day in Days)
+                    {
+                        <div class="min-h-44 rounded-control border border-border bg-surface p-2 @(day.Date == DateTime.UtcNow.Date ? "ring-1 ring-accent-border" : "")">
+                            <div class="mb-2 border-b border-border pb-1">
+                                <strong class="text-xs">@day.ToString("ddd")</strong>
+                                <span class="ml-1 text-xs text-muted">@day.ToString("dd MMM")</span>
+                            </div>
+                            <div class="space-y-1.5">
+                                @foreach (var interval in IntervalsFor(day))
+                                {
+                                    <button type="button" class="block w-full rounded px-2 py-1.5 text-left text-[11px] @IntervalClass(interval)" title="@IntervalTitle(interval)" @onclick="() => EditRequested.InvokeAsync(interval)">
+                                        <strong class="block">@IntervalState(interval)</strong>
+                                        <span class="block">@IntervalTime(interval, day)</span>
+                                        @if (!string.IsNullOrWhiteSpace(interval.ReasonCode)) { <span class="block truncate opacity-80">@interval.ReasonCode</span> }
+                                    </button>
+                                }
+                                @if (IntervalsFor(day).Count == 0)
+                                {
+                                    <div class="rounded bg-surface-inset px-2 py-3 text-center text-[11px] text-muted">Configured baseline</div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="p-5 text-sm text-secondary">No physical resource is available to display.</div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyCollection<Resource> Resources { get; set; } = Array.Empty<Resource>();
+    [Parameter, EditorRequired] public IReadOnlyCollection<RouteResourceCapability> Capabilities { get; set; } = Array.Empty<RouteResourceCapability>();
+    [Parameter, EditorRequired] public IReadOnlyCollection<ResourceCalendar> Calendars { get; set; } = Array.Empty<ResourceCalendar>();
+    [Parameter] public Guid? ResourceId { get; set; }
+    [Parameter, EditorRequired] public DateTime WeekStartUtc { get; set; }
+    [Parameter] public EventCallback<Guid> ResourceChangedCallback { get; set; }
+    [Parameter] public EventCallback<DateTime> WeekChanged { get; set; }
+    [Parameter] public EventCallback<ResourceCalendar> EditRequested { get; set; }
+    [Parameter] public EventCallback<ResourceCalendarDraftRequest> QuickAddRequested { get; set; }
+
+    private Resource? FocusedResource => ResourceId.HasValue ? Resources.FirstOrDefault(x => x.Id == ResourceId.Value) : Resources.OrderBy(x => x.Code).FirstOrDefault();
+    private IReadOnlyList<RouteResourceCapability> FocusedCapabilities => FocusedResource is null
+        ? Array.Empty<RouteResourceCapability>()
+        : Capabilities.Where(x => x.ResourceId == FocusedResource.Id).OrderBy(x => x.RouteCode).ThenBy(x => x.ProcessOperationType).ToArray();
+    private IReadOnlyList<DateTime> Days => Enumerable.Range(0, 7).Select(WeekStartUtc.AddDays).ToArray();
+
+    private IReadOnlyList<ResourceCalendar> IntervalsFor(DateTime day) => FocusedResource is null
+        ? Array.Empty<ResourceCalendar>()
+        : Calendars
+            .Where(x => x.ResourceId == FocusedResource.Id && x.Start < day.AddDays(1) && x.End > day)
+            .OrderBy(x => x.Start)
+            .ToArray();
+
+    private Task ResourceChanged(ChangeEventArgs args) =>
+        Guid.TryParse(args.Value?.ToString(), out var id) ? ResourceChangedCallback.InvokeAsync(id) : Task.CompletedTask;
+    private Task PreviousWeek() => WeekChanged.InvokeAsync(WeekStartUtc.AddDays(-7));
+    private Task NextWeek() => WeekChanged.InvokeAsync(WeekStartUtc.AddDays(7));
+    private Task CurrentWeek() => WeekChanged.InvokeAsync(StartOfWeek(DateTime.UtcNow));
+
+    private Task QuickAdd(bool derating)
+    {
+        if (FocusedResource is null) return Task.CompletedTask;
+        var start = WeekStartUtc.Date.AddHours(8);
+        var draft = derating
+            ? new ResourceCalendarDraftRequest(FocusedResource.Id, start, start.AddHours(8), true, 50m, "CAPACITY_DERATE")
+            : new ResourceCalendarDraftRequest(FocusedResource.Id, start, start.AddHours(8), false, 0m, "PLANNED_DOWNTIME");
+        return QuickAddRequested.InvokeAsync(draft);
+    }
+
+    private static DateTime StartOfWeek(DateTime value)
+    {
+        var daysFromMonday = ((int)value.DayOfWeek + 6) % 7;
+        return value.Date.AddDays(-daysFromMonday);
+    }
+
+    private static string CapabilityTitle(RouteResourceCapability value) =>
+        $"{value.RouteCode} · {value.ProcessOperationType} · grade {value.GradeCode ?? value.GradeFamilyCode ?? "*"} · {value.MinimumQuantityMt?.ToString("0.##") ?? "0"}–{value.MaximumQuantityMt?.ToString("0.##") ?? "∞"} MT";
+    private static string IntervalState(ResourceCalendar value) => !value.IsAvailable ? "Unavailable" : value.CapacityFactorPct is < 100m ? $"Derated · {value.CapacityFactorPct:0.##}%" : "Available";
+    private static string IntervalClass(ResourceCalendar value) => !value.IsAvailable ? "bg-danger-soft text-danger" : value.CapacityFactorPct is < 100m ? "bg-warning-soft text-warning" : "bg-success-soft text-success";
+    private static string IntervalTitle(ResourceCalendar value) => $"{IntervalState(value)} · {value.Start:dd MMM HH:mm} → {value.End:dd MMM HH:mm} · {value.ReasonCode ?? "No reason"}";
+    private static string IntervalTime(ResourceCalendar value, DateTime day)
+    {
+        var start = value.Start < day ? day : value.Start;
+        var end = value.End > day.AddDays(1) ? day.AddDays(1) : value.End;
+        return $"{start:HH:mm}–{end:HH:mm}";
+    }
+}
