@@ -2,14 +2,15 @@
 @inject IPlannerWorkspaceQueryService PlannerQuery
 @inject PlannerWorkspaceState WorkspaceState
 
-<PageTitle>Plan Compare - APS</PageTitle>
+<PageTitle>What-if Analysis - APS</PageTitle>
 
 <div class="mb-6 flex flex-wrap items-end justify-between gap-3">
     <div>
-        <h1 class="mb-1 text-lg font-semibold">Plan Compare</h1>
-        <p class="text-sm text-secondary">See what planning controls changed, then inspect exactly what moved, changed resource, appeared or disappeared in the resulting schedule.</p>
+        <h1 class="mb-1 text-lg font-semibold">What-if Analysis</h1>
+        <p class="text-sm text-secondary">Compare two immutable Plan Versions side by side: planning assumptions, schedule footprint, resource loading and every operation-level consequence.</p>
     </div>
-    <div class="flex gap-2">
+    <div class="flex flex-wrap gap-2">
+        <NavLink href="/plan/what-if" class="rounded border border-accent-border bg-accent-soft px-3 py-1.5 text-xs font-semibold text-accent">Create what-if</NavLink>
         <NavLink href="/plan/constraints" class="rounded border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Planning controls</NavLink>
         <NavLink href="/plan/versions" class="rounded border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Plan Versions</NavLink>
     </div>
@@ -23,8 +24,8 @@ else if (plans.Count < 2)
 {
     <div class="rounded border border-dashed border-border-strong bg-surface-raised p-8 text-center">
         <strong class="text-primary">At least two Plan Versions are required</strong>
-        <p class="mt-1 text-sm text-secondary">Replanning or scenario runs create the history needed for comparison.</p>
-        <NavLink href="/plan/versions" class="mt-3 inline-block text-sm font-semibold text-accent hover:underline">Create or replan a version</NavLink>
+        <p class="mt-1 text-sm text-secondary">Create a what-if or replan to produce a child Plan Version that can be compared with its baseline.</p>
+        <NavLink href="/plan/what-if" class="mt-3 inline-block text-sm font-semibold text-accent hover:underline">Create what-if scenario</NavLink>
     </div>
 }
 else
@@ -42,7 +43,7 @@ else
             </label>
             <span class="pb-1.5 text-muted" aria-hidden="true">&rarr;</span>
             <label class="flex min-w-60 flex-1 flex-col gap-1 text-sm">
-                <span class="text-xs text-secondary">New plan</span>
+                <span class="text-xs text-secondary">What-if / comparison plan</span>
                 <select class="rounded border border-border-strong px-2 py-1" @bind="newSelection">
                     @foreach (var plan in plans)
                     {
@@ -71,34 +72,89 @@ else
     }
     else if (comparison is not null)
     {
-        <div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-            <div class="rounded border border-border bg-surface-raised p-3">
-                <div class="text-xs text-muted">BASELINE</div>
-                <strong>@comparison.Baseline.VersionNumber</strong>
-                <div class="text-xs text-muted">@comparison.Baseline.CreatedOnUtc.ToString("dd MMM HH:mm") &middot; @comparison.Baseline.Status</div>
+        <section class="mb-6 rounded-surface border border-border bg-surface-raised shadow-soft">
+            <div class="border-b border-border px-4 py-3">
+                <h2 class="text-sm font-semibold">Decision summary</h2>
+                <p class="mt-0.5 text-xs text-secondary">A compact statement of how far the what-if moved away from its baseline before you inspect the detailed evidence below.</p>
             </div>
-            <StatTile Label="Added" Value="@comparison.AddedOperations.ToString()" />
-            <StatTile Label="Removed" Value="@comparison.RemovedOperations.ToString()" />
-            <StatTile Label="Moved" Value="@comparison.MovedOperations.ToString()" />
-            <StatTile Label="Resource changes" Value="@comparison.ResourceChangedOperations.ToString()" />
-            <StatTile Label="Max movement" Value="@($"{comparison.MaximumStartMovementMinutes} min")" />
-            <div class="rounded border border-border bg-surface-raised p-3">
-                <div class="text-xs text-muted">NEW</div>
-                <strong>@comparison.NewPlan.VersionNumber</strong>
-                <div class="text-xs text-muted">@comparison.NewPlan.CreatedOnUtc.ToString("dd MMM HH:mm") &middot; @comparison.NewPlan.Status</div>
+            <div class="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+                <StatTile Label="Changed operations" Value="@ChangedOperationCount.ToString()" />
+                <StatTile Label="Added / removed" Value="@($"{comparison.AddedOperations} / {comparison.RemovedOperations}")" />
+                <StatTile Label="Moved" Value="@comparison.MovedOperations.ToString()" />
+                <StatTile Label="Resource changes" Value="@comparison.ResourceChangedOperations.ToString()" />
+                <StatTile Label="Max start movement" Value="@($"{comparison.MaximumStartMovementMinutes} min")" />
+                <StatTile Label="Captured control changes" Value="@AssumptionChanges.Count.ToString()" />
             </div>
-        </div>
+            @if (comparison.BaselineSummary is not null && comparison.NewPlanSummary is not null)
+            {
+                <div class="grid gap-3 border-t border-border p-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <DeltaTile Label="Plan span" Baseline="@($"{comparison.BaselineSummary.SpanHours:0.0} h")" NewValue="@($"{comparison.NewPlanSummary.SpanHours:0.0} h")" Delta="@Signed(comparison.NewPlanSummary.SpanHours - comparison.BaselineSummary.SpanHours, "h")" />
+                    <DeltaTile Label="Scheduled work content" Baseline="@($"{comparison.BaselineSummary.ScheduledHours:0.0} h")" NewValue="@($"{comparison.NewPlanSummary.ScheduledHours:0.0} h")" Delta="@Signed(comparison.NewPlanSummary.ScheduledHours - comparison.BaselineSummary.ScheduledHours, "h")" />
+                    <DeltaTile Label="Resources used" Baseline="@comparison.BaselineSummary.ResourceCount.ToString()" NewValue="@comparison.NewPlanSummary.ResourceCount.ToString()" Delta="@Signed(comparison.NewPlanSummary.ResourceCount - comparison.BaselineSummary.ResourceCount, string.Empty)" />
+                    <DeltaTile Label="Solver objective" Baseline="@(comparison.BaselineSummary.ObjectiveValue?.ToString("N0") ?? "—")" NewValue="@(comparison.NewPlanSummary.ObjectiveValue?.ToString("N0") ?? "—")" Delta="@ObjectiveDelta" />
+                </div>
+            }
+        </section>
 
-        var assumptionChanges = comparison.AssumptionChanges ?? Array.Empty<PlanAssumptionChangeView>();
+        @if (comparison.BaselineSummary is not null && comparison.NewPlanSummary is not null)
+        {
+            <section class="mb-6">
+                <div class="mb-2">
+                    <h2 class="text-sm font-semibold">Schedule side by side</h2>
+                    <p class="mt-0.5 text-xs text-secondary">Both timelines use the same time axis. This makes compression, expansion, resource reassignment and sequencing changes visually comparable instead of presenting two independently scaled charts.</p>
+                </div>
+                <ScenarioScheduleComparison BaselinePlan="@comparison.Baseline"
+                                            NewPlan="@comparison.NewPlan"
+                                            BaselineSummary="@comparison.BaselineSummary"
+                                            NewPlanSummary="@comparison.NewPlanSummary"
+                                            BaselineOperations="@(comparison.BaselineOperations ?? Array.Empty<PlanScenarioOperationView>())"
+                                            NewPlanOperations="@(comparison.NewPlanOperations ?? Array.Empty<PlanScenarioOperationView>())" />
+            </section>
+        }
+
+        var resourceLoads = comparison.ResourceLoads ?? Array.Empty<PlanResourceLoadComparisonView>();
         <section class="mb-6 rounded border border-border bg-surface-raised">
             <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
                 <div>
-                    <h2 class="text-sm font-semibold">Planning control changes</h2>
-                    <p class="mt-0.5 text-xs text-secondary">Explains whether the schedule moved because the planner changed policy, an operating scenario changed the effective plant, or both.</p>
+                    <h2 class="text-sm font-semibold">Resource loading impact</h2>
+                    <p class="mt-0.5 text-xs text-secondary">Scheduled work content by resource. This is operation-duration work content, not inferred utilization or capacity occupancy.</p>
                 </div>
-                <span class="rounded bg-surface-inset px-2 py-1 text-xs font-semibold @(assumptionChanges.Count == 0 ? "text-success" : "text-warning")">@(assumptionChanges.Count == 0 ? "No captured control changes" : $"{assumptionChanges.Count} change(s)")</span>
+                <span class="rounded bg-surface-inset px-2 py-1 text-xs font-semibold">@resourceLoads.Count resource(s)</span>
             </div>
-            @if (assumptionChanges.Count == 0)
+            @if (resourceLoads.Count == 0)
+            {
+                <div class="p-4 text-sm text-secondary">No persisted resource loading is available for these versions.</div>
+            }
+            else
+            {
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-[760px] text-sm">
+                        <thead><tr class="border-b border-border text-left text-xs text-muted"><th class="px-3 py-2 font-medium">Resource</th><th class="px-3 py-2 font-medium">Baseline</th><th class="px-3 py-2 font-medium">What-if</th><th class="px-3 py-2 font-medium text-right">Delta</th></tr></thead>
+                        <tbody>
+                            @foreach (var load in resourceLoads)
+                            {
+                                <tr class="border-b border-border last:border-0">
+                                    <td class="px-3 py-2 font-semibold">@load.ResourceCode</td>
+                                    <td class="px-3 py-2"><strong>@load.BaselineScheduledHours.ToString("0.0") h</strong><span class="ml-2 text-xs text-muted">@load.BaselineOperations ops</span></td>
+                                    <td class="px-3 py-2"><strong>@load.NewScheduledHours.ToString("0.0") h</strong><span class="ml-2 text-xs text-muted">@load.NewOperations ops</span></td>
+                                    <td class="px-3 py-2 text-right font-semibold @DeltaClass(load.ScheduledHoursDelta)">@Signed(load.ScheduledHoursDelta, "h")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </section>
+
+        <section class="mb-6 rounded border border-border bg-surface-raised">
+            <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3">
+                <div>
+                    <h2 class="text-sm font-semibold">Planning assumption changes</h2>
+                    <p class="mt-0.5 text-xs text-secondary">Explains whether the schedule moved because planner policy changed, an operating scenario changed the effective plant, or both.</p>
+                </div>
+                <span class="rounded bg-surface-inset px-2 py-1 text-xs font-semibold @(AssumptionChanges.Count == 0 ? "text-success" : "text-warning")">@(AssumptionChanges.Count == 0 ? "No captured changes" : $"{AssumptionChanges.Count} change(s)")</span>
+            </div>
+            @if (AssumptionChanges.Count == 0)
             {
                 <div class="p-4 text-sm text-secondary">The captured planning controls are the same between these versions, or both versions predate the relevant assumption snapshot.</div>
             }
@@ -106,9 +162,9 @@ else
             {
                 <div class="overflow-x-auto">
                     <table class="w-full min-w-[720px] text-sm">
-                        <thead><tr class="border-b border-border text-left text-xs text-muted"><th class="px-3 py-2 font-medium">Area</th><th class="px-3 py-2 font-medium">Setting</th><th class="px-3 py-2 font-medium">Baseline</th><th class="px-3 py-2 font-medium">New plan</th></tr></thead>
+                        <thead><tr class="border-b border-border text-left text-xs text-muted"><th class="px-3 py-2 font-medium">Area</th><th class="px-3 py-2 font-medium">Setting</th><th class="px-3 py-2 font-medium">Baseline</th><th class="px-3 py-2 font-medium">What-if</th></tr></thead>
                         <tbody>
-                            @foreach (var change in assumptionChanges)
+                            @foreach (var change in AssumptionChanges)
                             {
                                 <tr class="border-b border-border last:border-0"><td class="px-3 py-2"><span class="rounded bg-surface-inset px-1.5 py-0.5 text-xs">@change.Area</span></td><td class="px-3 py-2 font-medium">@change.Setting</td><td class="px-3 py-2 text-secondary">@change.BaselineValue</td><td class="px-3 py-2"><strong>@change.NewValue</strong></td></tr>
                             }
@@ -120,8 +176,8 @@ else
 
         <section class="rounded border border-border bg-surface-raised">
             <div class="border-b border-border px-4 py-3">
-                <h2 class="text-sm font-semibold">Schedule consequences</h2>
-                <p class="mt-0.5 text-xs text-secondary">Operation-level result after demand, constraints, execution state and planner controls were resolved.</p>
+                <h2 class="text-sm font-semibold">Operation-level consequences</h2>
+                <p class="mt-0.5 text-xs text-secondary">Exact persisted changes after demand, constraints, execution state and planner controls were resolved.</p>
             </div>
             @if (comparison.Changes.Count == 0)
             {
@@ -172,6 +228,22 @@ else
         Guid.TryParse(baselineSelection, out var baselineId)
         && Guid.TryParse(newSelection, out var newId)
         && baselineId != newId;
+
+    private IReadOnlyCollection<PlanAssumptionChangeView> AssumptionChanges =>
+        comparison?.AssumptionChanges ?? Array.Empty<PlanAssumptionChangeView>();
+
+    private int ChangedOperationCount =>
+        comparison?.Changes.Count(x => x.ChangeType != PlanOperationChangeType.Unchanged) ?? 0;
+
+    private string ObjectiveDelta
+    {
+        get
+        {
+            var baseline = comparison?.BaselineSummary?.ObjectiveValue;
+            var next = comparison?.NewPlanSummary?.ObjectiveValue;
+            return baseline.HasValue && next.HasValue ? Signed(next.Value - baseline.Value, string.Empty) : "—";
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -235,13 +307,15 @@ else
     private static string Time(DateTime? value) => value.HasValue ? value.Value.ToString("dd MMM HH:mm") : "—";
     private static string Movement(int minutes) => minutes == 0 ? "—" : minutes > 0 ? $"+{minutes}m" : $"{minutes}m";
     private static string MovementClass(int minutes) => minutes > 0 ? "text-warning" : minutes < 0 ? "text-info" : "text-muted";
+    private static string DeltaClass(double value) => value > 0.001 ? "text-warning" : value < -0.001 ? "text-info" : "text-muted";
+    private static string Signed(double value, string unit) => $"{(value > 0 ? "+" : string.Empty)}{value:0.0}{unit}";
+    private static string Signed(long value, string unit) => $"{(value > 0 ? "+" : string.Empty)}{value:N0}{unit}";
     private static string ChangeClass(PlanOperationChangeType change) => change switch
     {
         PlanOperationChangeType.Added => "bg-success-soft text-success",
         PlanOperationChangeType.Removed => "bg-danger-soft text-danger",
         PlanOperationChangeType.Moved => "bg-warning-soft text-warning",
-        PlanOperationChangeType.ResourceChanged => "bg-accent-soft text-accent",
-        PlanOperationChangeType.MovedAndResourceChanged => "bg-accent-soft text-accent",
+        PlanOperationChangeType.ResourceChanged or PlanOperationChangeType.MovedAndResourceChanged => "bg-accent-soft text-accent",
         _ => "bg-surface-inset text-secondary"
     };
 }
