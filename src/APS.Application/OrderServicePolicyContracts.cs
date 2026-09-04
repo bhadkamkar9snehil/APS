@@ -40,6 +40,38 @@ public interface IOrderServicePolicyService
 }
 
 /// <summary>
+/// Shared validation for planner service-window edits. UI feedback and persistence enforcement use the
+/// same rules so there is only one definition of a valid customer-service window.
+/// </summary>
+public static class OrderServicePolicyRules
+{
+    public static string? ValidationError(
+        ServiceCommitmentClass commitment,
+        DateTime targetDelivery,
+        DateTime? earliestAcceptableDeliveryDate,
+        DateTime? latestAcceptableDeliveryDate)
+    {
+        var target = targetDelivery.Date;
+        var earliest = earliestAcceptableDeliveryDate?.Date;
+        var latest = latestAcceptableDeliveryDate?.Date;
+
+        if (earliest > target)
+            return "Earliest acceptable delivery must be on or before the requested/confirmed target date.";
+
+        if (latest < target)
+            return "Latest acceptable delivery must be on or after the requested/confirmed target date.";
+
+        if (commitment == ServiceCommitmentClass.Hard && latest.HasValue && latest.Value != target)
+            return "Hard commitments cannot move later than the requested/confirmed target date.";
+
+        if (commitment == ServiceCommitmentClass.Flexible && !earliest.HasValue && !latest.HasValue)
+            return "Flexible commitments require at least one acceptable delivery boundary.";
+
+        return null;
+    }
+}
+
+/// <summary>
 /// One small projection owns the translation from commercial delivery flexibility to manufacturing
 /// timing. Requested/confirmed delivery remains the optimization target; the latest acceptable date is
 /// a separate release boundary. This avoids quietly turning tolerance into the new target.
