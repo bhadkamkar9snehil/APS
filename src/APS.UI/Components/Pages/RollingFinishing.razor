@@ -5,8 +5,16 @@
 
 <PageTitle>Rolling & Finishing - APS</PageTitle>
 
-<h1 class="mb-1 text-lg font-semibold">Rolling &amp; Finishing</h1>
-<p class="mb-6 text-sm text-secondary">Billet feed, RHF/RM assignment, downstream transformation chain and planned finished-unit output.</p>
+<div class="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <div>
+        <h1 class="mb-1 text-lg font-semibold">Rolling &amp; Finishing</h1>
+        <p class="text-sm text-secondary">Billet feed, RHF/RM assignment, downstream transformation chain and planned finished-unit output.</p>
+    </div>
+    <div class="flex gap-2">
+        <NavLink href="/plan/material-flow" class="rounded border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Material flow</NavLink>
+        <NavLink href="/plan/demand" class="rounded border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Demand &amp; supply</NavLink>
+    </div>
+</div>
 
 @if (loading)
 {
@@ -14,11 +22,15 @@
 }
 else if (view is null)
 {
-    <div class="rounded border border-dashed border-border-strong bg-surface-raised p-8 text-center text-primary">No persisted rolling-plan snapshot.</div>
+    <div class="rounded border border-dashed border-border-strong bg-surface-raised p-8 text-center">
+        <strong class="text-primary">No persisted rolling-plan snapshot</strong>
+        <p class="mt-1 text-sm text-secondary">Calculate and persist a Plan Version before inspecting billet-to-finished-product flow.</p>
+        <NavLink href="/plan/versions" class="mt-3 inline-block text-sm font-semibold text-accent hover:underline">Open Plan Versions</NavLink>
+    </div>
 }
 else
 {
-    <div class="mb-6 grid grid-cols-5 gap-3">
+    <div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <StatTile Label="Rolling plans" Value="@view.RollingPlanCount.ToString()" />
         <StatTile Label="Rolling qty" Value="@($"{view.PlannedRollingQuantityMt:0.##} MT")" />
         <StatTile Label="Existing billet" Value="@($"{view.ExistingIntermediateQuantityMt:0.##} MT")" />
@@ -26,25 +38,32 @@ else
         <StatTile Label="Planned units" Value="@($"{view.PlannedBundleCount} bundles / {view.PlannedCoilCount} coils")" />
     </div>
 
-    <div class="grid grid-cols-[280px_1fr] gap-4">
+    <div class="grid grid-cols-1 gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
         <aside class="rounded border border-border bg-surface-raised">
             <div class="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted">Rolling register</div>
-            <div class="max-h-[70vh] overflow-y-auto">
-                @foreach (var plan in view.RollingPlans)
-                {
-                    <button type="button" class="block w-full border-b border-border px-3 py-2 text-left last:border-0 hover:bg-surface-hover @(selectedPlan?.RollingPlanId == plan.RollingPlanId ? "bg-accent-soft" : "")" @onclick="() => SelectPlan(plan)">
-                        <strong>RP-@(plan.SequenceNumber.ToString("00")) &middot; @plan.GradeCode</strong>
-                        <div class="text-xs text-muted">@plan.InputCrossSectionCode &rarr; @plan.OutputCrossSectionCode</div>
-                        <div class="mt-1 flex items-center justify-between text-xs text-muted">
-                            <span>@(plan.RollingMillResourceCode ?? "mill in schedule")</span>
-                            <strong>@plan.PlannedQuantityMt.ToString("0.#") MT</strong>
-                        </div>
-                    </button>
-                }
-            </div>
+            @if (view.RollingPlans.Count == 0)
+            {
+                <p class="p-4 text-sm text-muted">No rolling plans exist in this Plan Version.</p>
+            }
+            else
+            {
+                <div class="max-h-[70vh] overflow-y-auto">
+                    @foreach (var plan in view.RollingPlans)
+                    {
+                        <button type="button" class="block w-full border-b border-border px-3 py-2 text-left last:border-0 hover:bg-surface-hover @(selectedPlan?.RollingPlanId == plan.RollingPlanId ? "bg-accent-soft" : "")" @onclick="() => SelectPlan(plan)">
+                            <strong>RP-@(plan.SequenceNumber.ToString("00")) &middot; @plan.GradeCode</strong>
+                            <div class="text-xs text-muted">@plan.InputCrossSectionCode &rarr; @plan.OutputCrossSectionCode</div>
+                            <div class="mt-1 flex items-center justify-between gap-2 text-xs text-muted">
+                                <span class="truncate">@(plan.RollingMillResourceCode ?? "mill in schedule")</span>
+                                <strong class="shrink-0">@plan.PlannedQuantityMt.ToString("0.#") MT</strong>
+                            </div>
+                        </button>
+                    }
+                </div>
+            }
         </aside>
 
-        <section>
+        <section class="min-w-0">
             @if (selectedPlan is null)
             {
                 <div class="rounded border border-dashed border-border-strong bg-surface-raised p-8 text-center text-muted">Select a rolling plan</div>
@@ -52,12 +71,12 @@ else
             else
             {
                 <div class="mb-4 rounded border border-border bg-surface-raised p-4">
-                    <div class="flex items-start justify-between">
+                    <div class="flex flex-wrap items-start justify-between gap-4">
                         <div>
                             <h2 class="text-base font-semibold">RP-@(selectedPlan.SequenceNumber.ToString("00")) &middot; @selectedPlan.GradeCode</h2>
                             <p class="text-sm text-secondary">@selectedPlan.RouteCode &middot; @selectedPlan.InputCrossSectionCode &rarr; @selectedPlan.OutputCrossSectionCode</p>
                         </div>
-                        <div class="flex gap-4 text-right text-sm">
+                        <div class="flex flex-wrap gap-4 text-sm sm:text-right">
                             <div><div class="text-xs text-muted">Existing billet</div><strong>@selectedPlan.ExistingIntermediateInventoryMt.ToString("0.##")</strong></div>
                             <div><div class="text-xs text-muted">Fresh steel</div><strong>@selectedPlan.FreshSteelQuantityMt.ToString("0.##")</strong></div>
                             <div><div class="text-xs text-muted">Total</div><strong>@selectedPlan.PlannedQuantityMt.ToString("0.##") MT</strong></div>
@@ -88,7 +107,7 @@ else
                 </section>
 
                 <section class="mb-4 rounded border border-border bg-surface-raised p-4">
-                    <div class="mb-3 flex items-center justify-between">
+                    <div class="mb-3 flex items-center justify-between gap-2">
                         <h3 class="text-sm font-semibold">Downstream route &mdash; configured operations after casting</h3>
                         <span class="text-xs text-muted">@selectedPlan.DownstreamOperations.Count steps</span>
                     </div>
@@ -98,7 +117,7 @@ else
                     }
                     else
                     {
-                        <div class="grid grid-cols-2 gap-2">
+                        <div class="grid gap-2 md:grid-cols-2">
                             @foreach (var route in selectedPlan.DownstreamOperations.OrderBy(x => x.SequenceNumber))
                             {
                                 var scheduledBlocks = route.ScheduledOperations.OrderBy(x => x.StartUtc).ToArray();
@@ -110,7 +129,7 @@ else
                                 var lastEnd = scheduledBlocks.Length == 0 ? (DateTime?)null : scheduledBlocks.Max(x => x.EndUtc);
 
                                 <div class="rounded border px-3 py-2 text-left text-xs @(route.IsInventoryDecouplingPoint ? "border-warning bg-warning-soft" : "border-border")">
-                                    <div class="flex items-center justify-between">
+                                    <div class="flex items-center justify-between gap-2">
                                         <span class="text-muted">@route.SequenceNumber.ToString("00") &middot; @route.ProcessOperationType</span>
                                         @if (route.IsInventoryDecouplingPoint) { <span class="rounded bg-warning-soft px-1 text-warning">BUFFER</span> }
                                     </div>
@@ -122,7 +141,7 @@ else
                                     }
                                     else
                                     {
-                                        <div class="text-muted">Not scheduled</div>
+                                        <div class="text-warning">Not scheduled</div>
                                     }
                                 </div>
                             }
@@ -130,65 +149,67 @@ else
                     }
                 </section>
 
-                <section class="mb-4 rounded border border-border bg-surface-raised">
+                <section class="mb-4 overflow-hidden rounded border border-border bg-surface-raised">
                     <div class="border-b border-border px-4 py-2 text-sm font-semibold">Demand pegging &amp; billet supply trace</div>
-                    <table class="w-full text-sm">
-                        <thead>
-                            <tr class="border-b border-border text-left text-xs text-muted">
-                                <th class="px-4 py-2 font-medium">Production Order</th>
-                                <th class="px-4 py-2 font-medium text-right">Qty</th>
-                                <th class="px-4 py-2 font-medium text-right">Existing</th>
-                                <th class="px-4 py-2 font-medium text-right">Fresh</th>
-                                <th class="px-4 py-2 font-medium">Supply trace</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var allocation in selectedPlan.Allocations)
-                            {
-                                <tr class="border-b border-border last:border-0">
-                                    <td class="px-4 py-2"><strong>@allocation.ProductionOrderNumber</strong><div class="text-xs text-muted">@(allocation.SalesOrderNumber is null ? "Stock replenishment" : $"SO {allocation.SalesOrderNumber}")</div></td>
-                                    <td class="px-4 py-2 text-right font-medium">@allocation.PlannedQuantityMt.ToString("0.##")</td>
-                                    <td class="px-4 py-2 text-right">@allocation.ExistingIntermediateInventoryMt.ToString("0.##")</td>
-                                    <td class="px-4 py-2 text-right">@allocation.FreshSteelQuantityMt.ToString("0.##")</td>
-                                    <td class="px-4 py-2 text-xs">
-                                        @if (allocation.SupplyTrace is { } trace)
-                                        {
-                                            <div class="flex flex-wrap items-center gap-1">
-                                                @if (trace.Status is not null)
-                                                {
-                                                    <span class="rounded px-1.5 py-0.5 @(trace.ShortfallQuantityMt > 0m ? "bg-danger-soft text-danger" : "bg-success-soft text-success")">@trace.Status</span>
-                                                }
-                                                @if (trace.RequiresReheat)
-                                                {
-                                                    <span class="rounded bg-warning-soft px-1.5 py-0.5 text-warning">RHF</span>
-                                                }
-                                                @if (trace.ShortfallQuantityMt > 0m)
-                                                {
-                                                    <span class="text-danger">short @trace.ShortfallQuantityMt.ToString("0.##") MT</span>
-                                                }
-                                                @if (trace.Sources.Count > 0)
-                                                {
-                                                    <span class="text-muted">&middot; @trace.Sources.Count source(s)</span>
-                                                }
-                                            </div>
-                                            @if (!string.IsNullOrWhiteSpace(trace.Explanation))
-                                            {
-                                                <div class="mt-0.5 text-muted">@trace.Explanation</div>
-                                            }
-                                        }
-                                        else
-                                        {
-                                            <span class="text-muted">—</span>
-                                        }
-                                    </td>
+                    <div class="overflow-x-auto">
+                        <table class="w-full min-w-[820px] text-sm">
+                            <thead>
+                                <tr class="border-b border-border text-left text-xs text-muted">
+                                    <th class="px-4 py-2 font-medium">Production Order</th>
+                                    <th class="px-4 py-2 font-medium text-right">Qty</th>
+                                    <th class="px-4 py-2 font-medium text-right">Existing</th>
+                                    <th class="px-4 py-2 font-medium text-right">Fresh</th>
+                                    <th class="px-4 py-2 font-medium">Supply trace</th>
                                 </tr>
-                            }
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody>
+                                @foreach (var allocation in selectedPlan.Allocations)
+                                {
+                                    <tr class="border-b border-border last:border-0">
+                                        <td class="px-4 py-2"><strong>@allocation.ProductionOrderNumber</strong><div class="text-xs text-muted">@(allocation.SalesOrderNumber is null ? "Stock replenishment" : $"SO {allocation.SalesOrderNumber}")</div></td>
+                                        <td class="px-4 py-2 text-right font-medium">@allocation.PlannedQuantityMt.ToString("0.##")</td>
+                                        <td class="px-4 py-2 text-right">@allocation.ExistingIntermediateInventoryMt.ToString("0.##")</td>
+                                        <td class="px-4 py-2 text-right">@allocation.FreshSteelQuantityMt.ToString("0.##")</td>
+                                        <td class="px-4 py-2 text-xs">
+                                            @if (allocation.SupplyTrace is { } trace)
+                                            {
+                                                <div class="flex flex-wrap items-center gap-1">
+                                                    @if (trace.Status is not null)
+                                                    {
+                                                        <span class="rounded px-1.5 py-0.5 @(trace.ShortfallQuantityMt > 0m ? "bg-danger-soft text-danger" : "bg-success-soft text-success")">@trace.Status</span>
+                                                    }
+                                                    @if (trace.RequiresReheat)
+                                                    {
+                                                        <span class="rounded bg-warning-soft px-1.5 py-0.5 text-warning">RHF</span>
+                                                    }
+                                                    @if (trace.ShortfallQuantityMt > 0m)
+                                                    {
+                                                        <span class="text-danger">short @trace.ShortfallQuantityMt.ToString("0.##") MT</span>
+                                                    }
+                                                    @if (trace.Sources.Count > 0)
+                                                    {
+                                                        <span class="text-muted">&middot; @trace.Sources.Count source(s)</span>
+                                                    }
+                                                </div>
+                                                @if (!string.IsNullOrWhiteSpace(trace.Explanation))
+                                                {
+                                                    <div class="mt-0.5 text-muted">@trace.Explanation</div>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">—</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
                 </section>
 
                 <section class="rounded border border-border bg-surface-raised p-4">
-                    <div class="mb-3 flex items-center justify-between">
+                    <div class="mb-3 flex items-center justify-between gap-2">
                         <h3 class="text-sm font-semibold">Planned unitization</h3>
                         <span class="text-xs text-muted">@selectedPlan.PackagingUnits.Count units</span>
                     </div>
@@ -198,7 +219,7 @@ else
                     }
                     else
                     {
-                        <div class="grid grid-cols-6 gap-2">
+                        <div class="grid gap-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
                             @foreach (var unit in selectedPlan.PackagingUnits.Take(80))
                             {
                                 <div class="rounded border border-border p-2 text-left text-xs">
