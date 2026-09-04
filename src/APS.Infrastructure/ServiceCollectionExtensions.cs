@@ -47,6 +47,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IPlanningMasterDataProvider, SqlPlanningMasterDataProvider>();
         services.AddScoped<IPlanningConfigurationDiagnosticsService, PlanningConfigurationDiagnosticsService>();
         services.AddScoped<IProductionDemandOrchestrationService, ProductionDemandOrchestrationService>();
+        services.AddScoped<IOrderServicePolicyService, OrderServicePolicyService>();
         services.AddScoped<IPlanningLifecycleService, PlanningLifecycleService>();
         services.AddScoped<IPlanningWorkbenchCommandService, PlanningWorkbenchCommandService>();
         services.AddScoped<IMasterDataAdminService, MasterDataAdminService>();
