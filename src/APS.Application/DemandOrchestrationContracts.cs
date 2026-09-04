@@ -120,7 +120,12 @@ public sealed record DemandOrchestrationItem(
     string? ReasonCode,
     IReadOnlyCollection<DemandCoverageEvidence> FinishedGoodsCoverage,
     string? RequirementQualificationFingerprint = null,
-    bool RequiresCertifiedFinishedGoodsMatch = false);
+    bool RequiresCertifiedFinishedGoodsMatch = false,
+    ServiceCommitmentClass ServiceCommitment = ServiceCommitmentClass.Standard,
+    DateTime? EarliestAcceptableDeliveryDate = null,
+    DateTime? LatestAcceptableDeliveryDate = null,
+    DateTime? ProductionEarliestAcceptableDate = null,
+    DateTime? ProductionLatestAcceptableDate = null);
 
 public sealed record DemandOrchestrationResult(
     IReadOnlyCollection<ProductionOrder> ProductionOrders,
