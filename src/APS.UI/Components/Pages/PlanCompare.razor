@@ -4,8 +4,13 @@
 
 <PageTitle>Plan Compare - APS</PageTitle>
 
-<h1 class="mb-1 text-lg font-semibold">Plan Compare</h1>
-<p class="mb-6 text-sm text-secondary">See exactly what moved, changed resource, appeared or disappeared between two persisted schedules.</p>
+<div class="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <div>
+        <h1 class="mb-1 text-lg font-semibold">Plan Compare</h1>
+        <p class="text-sm text-secondary">See exactly what moved, changed resource, appeared or disappeared between two persisted schedules.</p>
+    </div>
+    <NavLink href="/plan/versions" class="rounded border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Plan Versions</NavLink>
+</div>
 
 @if (loading)
 {
@@ -16,32 +21,46 @@ else if (plans.Count < 2)
     <div class="rounded border border-dashed border-border-strong bg-surface-raised p-8 text-center">
         <strong class="text-primary">At least two Plan Versions are required</strong>
         <p class="mt-1 text-sm text-secondary">Replanning or scenario runs create the history needed for comparison.</p>
+        <NavLink href="/plan/versions" class="mt-3 inline-block text-sm font-semibold text-accent hover:underline">Create or replan a version</NavLink>
     </div>
 }
 else
 {
-    <div class="mb-6 flex items-end gap-3 rounded border border-border bg-surface-raised p-4">
-        <label class="flex flex-col gap-1 text-sm">
-            <span class="text-xs text-secondary">Baseline</span>
-            <select class="rounded border border-border-strong px-2 py-1" @bind="baselineSelection">
-                @foreach (var plan in plans)
-                {
-                    <option value="@plan.PlanVersionId">@plan.VersionNumber &middot; @plan.CreatedOnUtc.ToString("dd MMM HH:mm")</option>
-                }
-            </select>
-        </label>
-        <span class="pb-1.5 text-muted">&rarr;</span>
-        <label class="flex flex-col gap-1 text-sm">
-            <span class="text-xs text-secondary">New plan</span>
-            <select class="rounded border border-border-strong px-2 py-1" @bind="newSelection">
-                @foreach (var plan in plans)
-                {
-                    <option value="@plan.PlanVersionId">@plan.VersionNumber &middot; @plan.CreatedOnUtc.ToString("dd MMM HH:mm")</option>
-                }
-            </select>
-        </label>
-        <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground" @onclick="CompareAsync">Compare</button>
-    </div>
+    <section class="mb-6 rounded border border-border bg-surface-raised p-4">
+        <div class="flex flex-wrap items-end gap-3">
+            <label class="flex min-w-60 flex-1 flex-col gap-1 text-sm">
+                <span class="text-xs text-secondary">Baseline</span>
+                <select class="rounded border border-border-strong px-2 py-1" @bind="baselineSelection">
+                    @foreach (var plan in plans)
+                    {
+                        <option value="@plan.PlanVersionId">@plan.VersionNumber &middot; @plan.CreatedOnUtc.ToString("dd MMM HH:mm") &middot; @plan.Status</option>
+                    }
+                </select>
+            </label>
+            <span class="pb-1.5 text-muted" aria-hidden="true">&rarr;</span>
+            <label class="flex min-w-60 flex-1 flex-col gap-1 text-sm">
+                <span class="text-xs text-secondary">New plan</span>
+                <select class="rounded border border-border-strong px-2 py-1" @bind="newSelection">
+                    @foreach (var plan in plans)
+                    {
+                        <option value="@plan.PlanVersionId">@plan.VersionNumber &middot; @plan.CreatedOnUtc.ToString("dd MMM HH:mm") &middot; @plan.Status</option>
+                    }
+                </select>
+            </label>
+            <button type="button" class="rounded bg-accent px-3 py-1.5 text-sm font-medium text-accent-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled="@(comparing || !CanCompare)" @onclick="CompareAsync">
+                @(comparing ? "Comparing…" : "Compare")
+            </button>
+        </div>
+
+        @if (!CanCompare)
+        {
+            <p class="mt-2 text-xs text-warning">Choose two different Plan Versions to compare.</p>
+        }
+        @if (!string.IsNullOrWhiteSpace(compareError))
+        {
+            <div role="alert" class="mt-3 rounded border border-border bg-danger-soft px-3 py-2 text-xs text-danger">@compareError</div>
+        }
+    </section>
 
     @if (comparing)
     {
@@ -49,7 +68,7 @@ else
     }
     else if (comparison is not null)
     {
-        <div class="mb-6 grid grid-cols-7 gap-3">
+        <div class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
             <div class="rounded border border-border bg-surface-raised p-3">
                 <div class="text-xs text-muted">BASELINE</div>
                 <strong>@comparison.Baseline.VersionNumber</strong>
@@ -67,31 +86,38 @@ else
             </div>
         </div>
 
-        <section class="rounded border border-border bg-surface-raised">
-            <table class="w-full text-sm">
-                <thead>
-                    <tr class="border-b border-border text-left text-xs text-muted">
-                        <th class="px-3 py-2 font-medium">Operation</th>
-                        <th class="px-3 py-2 font-medium">Change</th>
-                        <th class="px-3 py-2 font-medium">Resource</th>
-                        <th class="px-3 py-2 font-medium">Start</th>
-                        <th class="px-3 py-2 font-medium text-right">Movement</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var change in comparison.Changes)
-                    {
-                        <tr class="border-b border-border last:border-0 @(change.ChangeType == PlanOperationChangeType.Unchanged ? "text-muted" : "")">
-                            <td class="px-3 py-1.5"><strong>@change.PlanningKey</strong><div class="text-xs text-muted">@change.TaskType</div></td>
-                            <td class="px-3 py-1.5"><span class="rounded px-1.5 py-0.5 text-xs @ChangeClass(change.ChangeType)">@change.ChangeType</span></td>
-                            <td class="px-3 py-1.5 text-xs">@Display(change.BaselineResourceCode) &rarr; <strong>@Display(change.NewResourceCode)</strong></td>
-                            <td class="px-3 py-1.5 text-xs">@Time(change.BaselineStartUtc) &rarr; <strong>@Time(change.NewStartUtc)</strong></td>
-                            <td class="px-3 py-1.5 text-right font-medium @MovementClass(change.StartMovementMinutes)">@Movement(change.StartMovementMinutes)</td>
+        @if (comparison.Changes.Count == 0)
+        {
+            <div class="rounded border border-dashed border-border-strong bg-surface-raised p-6 text-center text-sm text-muted">No persisted operation differences were found between these versions.</div>
+        }
+        else
+        {
+            <section class="overflow-x-auto rounded border border-border bg-surface-raised">
+                <table class="w-full min-w-[860px] text-sm">
+                    <thead>
+                        <tr class="border-b border-border text-left text-xs text-muted">
+                            <th class="px-3 py-2 font-medium">Operation</th>
+                            <th class="px-3 py-2 font-medium">Change</th>
+                            <th class="px-3 py-2 font-medium">Resource</th>
+                            <th class="px-3 py-2 font-medium">Start</th>
+                            <th class="px-3 py-2 font-medium text-right">Movement</th>
                         </tr>
-                    }
-                </tbody>
-            </table>
-        </section>
+                    </thead>
+                    <tbody>
+                        @foreach (var change in comparison.Changes)
+                        {
+                            <tr class="border-b border-border last:border-0 @(change.ChangeType == PlanOperationChangeType.Unchanged ? "text-muted" : "")">
+                                <td class="px-3 py-1.5"><strong>@change.PlanningKey</strong><div class="text-xs text-muted">@change.TaskType</div></td>
+                                <td class="px-3 py-1.5"><span class="rounded px-1.5 py-0.5 text-xs @ChangeClass(change.ChangeType)">@change.ChangeType</span></td>
+                                <td class="px-3 py-1.5 text-xs">@Display(change.BaselineResourceCode) &rarr; <strong>@Display(change.NewResourceCode)</strong></td>
+                                <td class="px-3 py-1.5 text-xs">@Time(change.BaselineStartUtc) &rarr; <strong>@Time(change.NewStartUtc)</strong></td>
+                                <td class="px-3 py-1.5 text-right font-medium @MovementClass(change.StartMovementMinutes)">@Movement(change.StartMovementMinutes)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </section>
+        }
     }
 }
 
@@ -102,36 +128,69 @@ else
     private string newSelection = string.Empty;
     private bool loading = true;
     private bool comparing;
+    private string? compareError;
+
+    private bool CanCompare =>
+        Guid.TryParse(baselineSelection, out var baselineId)
+        && Guid.TryParse(newSelection, out var newId)
+        && baselineId != newId;
 
     protected override async Task OnInitializedAsync()
     {
-        plans = await PlannerQuery.GetRecentPlanVersionsAsync(40);
-        var current = plans.FirstOrDefault(x => x.PlanVersionId == WorkspaceState.CurrentPlanVersionId)
-                      ?? plans.FirstOrDefault(x => x.IsActive)
-                      ?? plans.FirstOrDefault();
-        var baseline = current?.ParentPlanVersionId.HasValue == true
-            ? plans.FirstOrDefault(x => x.PlanVersionId == current.ParentPlanVersionId.Value)
-            : plans.Skip(1).FirstOrDefault();
-        if (current is not null) newSelection = current.PlanVersionId.ToString();
-        if (baseline is not null) baselineSelection = baseline.PlanVersionId.ToString();
-        loading = false;
-        if (!string.IsNullOrWhiteSpace(baselineSelection) && !string.IsNullOrWhiteSpace(newSelection))
+        try
+        {
+            plans = await PlannerQuery.GetRecentPlanVersionsAsync(40);
+            var current = plans.FirstOrDefault(x => x.PlanVersionId == WorkspaceState.CurrentPlanVersionId)
+                          ?? plans.FirstOrDefault(x => x.IsActive)
+                          ?? plans.FirstOrDefault();
+            var baseline = current?.ParentPlanVersionId.HasValue == true
+                ? plans.FirstOrDefault(x => x.PlanVersionId == current.ParentPlanVersionId.Value)
+                : plans.Skip(1).FirstOrDefault();
+            if (current is not null) newSelection = current.PlanVersionId.ToString();
+            if (baseline is not null) baselineSelection = baseline.PlanVersionId.ToString();
+        }
+        catch (Exception ex)
+        {
+            compareError = ex.Message;
+        }
+        finally
+        {
+            loading = false;
+        }
+
+        if (CanCompare)
             await CompareAsync();
     }
 
     private async Task CompareAsync()
     {
-        if (!Guid.TryParse(baselineSelection, out var baselineId) ||
-            !Guid.TryParse(newSelection, out var newId) ||
-            baselineId == newId)
+        if (!CanCompare)
         {
             comparison = null;
             return;
         }
 
+        var baselineId = Guid.Parse(baselineSelection);
+        var newId = Guid.Parse(newSelection);
         comparing = true;
-        comparison = await PlannerQuery.GetPlanComparisonAsync(baselineId, newId);
-        comparing = false;
+        compareError = null;
+        StateHasChanged();
+        try
+        {
+            comparison = await PlannerQuery.GetPlanComparisonAsync(baselineId, newId);
+            if (comparison is null)
+                compareError = "Comparison data is not available for the selected Plan Versions.";
+        }
+        catch (Exception ex)
+        {
+            comparison = null;
+            compareError = ex.Message;
+        }
+        finally
+        {
+            comparing = false;
+            StateHasChanged();
+        }
     }
 
     private static string Display(string? value) => string.IsNullOrWhiteSpace(value) ? "—" : value;
