@@ -3,8 +3,13 @@
 
 <PageTitle>Inventory - APS</PageTitle>
 
-<h1 class="mb-1 text-lg font-semibold">Inventory</h1>
-<p class="mb-6 text-sm text-secondary">Current inventory positions from the authoritative snapshot provider.</p>
+<div class="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <div>
+        <h1 class="mb-1 text-lg font-semibold">Inventory</h1>
+        <p class="text-sm text-secondary">Current inventory positions from the authoritative snapshot provider.</p>
+    </div>
+    <NavLink href="/plan/material-flow" class="rounded border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Open material flow</NavLink>
+</div>
 
 @if (loading)
 {
@@ -12,39 +17,84 @@
 }
 else if (positions.Count == 0)
 {
-    <div class="rounded border border-dashed border-border-strong bg-surface-raised p-8 text-center text-primary">No inventory positions.</div>
+    <div class="rounded border border-dashed border-border-strong bg-surface-raised p-8 text-center">
+        <strong class="text-primary">No inventory positions</strong>
+        <p class="mt-1 text-sm text-secondary">The inventory snapshot provider returned no current material positions.</p>
+    </div>
 }
 else
 {
-    <div class="mb-4 flex items-center gap-2 text-sm">
-        <input class="w-64 rounded border border-border-strong px-2 py-1" placeholder="Filter by material / grade / section" @bind="filter" @bind:event="oninput" />
+    <div class="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <StatTile Label="Positions" Value="@positions.Count.ToString()" Sub="@($"{AtRiskCount} projected short")" />
+        <StatTile Label="Available" Value="@($"{TotalAvailable:0.##} MT")" />
+        <StatTile Label="Reserved" Value="@($"{TotalReserved:0.##} MT")" />
+        <StatTile Label="Confirmed incoming" Value="@($"{TotalIncoming:0.##} MT")" />
+        <StatTile Label="Projected" Value="@($"{TotalProjected:0.##} MT")" />
+    </div>
+
+    <div class="mb-4 flex flex-wrap items-center gap-2 text-sm">
+        <input class="min-w-60 flex-1 rounded border border-border-strong px-2 py-1 sm:max-w-96" placeholder="Filter material, grade or section" @bind="filter" @bind:event="oninput" />
+        @if (!string.IsNullOrWhiteSpace(filter))
+        {
+            <button type="button" class="rounded border border-border-strong px-2 py-1 text-xs hover:bg-surface-hover" @onclick="ClearFilter">Clear</button>
+        }
         <span class="text-xs text-muted">@filtered.Count of @positions.Count positions</span>
     </div>
 
-    <Table Headers="@(new[] {"Material", "Grade", "Section", "Stage", "Quality", "Available", "Reserved", "Confirmed incoming", "Projected"})">
-        @foreach (var p in filtered)
-        {
-            <tr class="border-b border-border last:border-0">
-                <td class="px-3 py-1.5">@p.MaterialCode</td>
-                <td class="px-3 py-1.5">@p.GradeCode</td>
-                <td class="px-3 py-1.5">@p.CrossSectionCode</td>
-                <td class="px-3 py-1.5">@p.Stage</td>
-                <td class="px-3 py-1.5">
-                    <span class="rounded px-1.5 py-0.5 text-xs @(p.QualityStatus is MaterialQualityStatus.Available or MaterialQualityStatus.Released ? "bg-success-soft text-success" : "bg-danger-soft text-danger")">@p.QualityStatus</span>
-                </td>
-                <td class="px-3 py-1.5 text-right">@p.AvailableQuantityMt.ToString("0.##")</td>
-                <td class="px-3 py-1.5 text-right">@p.ReservedQuantityMt.ToString("0.##")</td>
-                <td class="px-3 py-1.5 text-right">@p.ConfirmedIncomingQuantityMt.ToString("0.##")</td>
-                <td class="px-3 py-1.5 text-right font-medium">@p.ProjectedAvailableQuantityMt.ToString("0.##")</td>
-            </tr>
-        }
-    </Table>
+    @if (filtered.Count == 0)
+    {
+        <div class="rounded border border-dashed border-border-strong bg-surface-raised p-6 text-center text-sm text-muted">No inventory positions match this filter.</div>
+    }
+    else
+    {
+        <section class="overflow-x-auto rounded border border-border bg-surface-raised">
+            <table class="w-full min-w-[980px] text-sm">
+                <thead>
+                    <tr class="border-b border-border text-left text-xs text-muted">
+                        <th class="px-3 py-2 font-medium">Material</th>
+                        <th class="px-3 py-2 font-medium">Grade</th>
+                        <th class="px-3 py-2 font-medium">Section</th>
+                        <th class="px-3 py-2 font-medium">Stage</th>
+                        <th class="px-3 py-2 font-medium">Quality</th>
+                        <th class="px-3 py-2 text-right font-medium">Available</th>
+                        <th class="px-3 py-2 text-right font-medium">Reserved</th>
+                        <th class="px-3 py-2 text-right font-medium">Confirmed incoming</th>
+                        <th class="px-3 py-2 text-right font-medium">Projected</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in filtered)
+                    {
+                        <tr class="border-b border-border last:border-0 @(p.ProjectedAvailableQuantityMt < 0m ? "bg-danger-soft" : "")">
+                            <td class="px-3 py-1.5 font-medium">@p.MaterialCode</td>
+                            <td class="px-3 py-1.5">@p.GradeCode</td>
+                            <td class="px-3 py-1.5">@p.CrossSectionCode</td>
+                            <td class="px-3 py-1.5">@p.Stage</td>
+                            <td class="px-3 py-1.5">
+                                <span class="rounded px-1.5 py-0.5 text-xs @(p.QualityStatus is MaterialQualityStatus.Available or MaterialQualityStatus.Released ? "bg-success-soft text-success" : "bg-danger-soft text-danger")">@p.QualityStatus</span>
+                            </td>
+                            <td class="px-3 py-1.5 text-right">@p.AvailableQuantityMt.ToString("0.##")</td>
+                            <td class="px-3 py-1.5 text-right">@p.ReservedQuantityMt.ToString("0.##")</td>
+                            <td class="px-3 py-1.5 text-right">@p.ConfirmedIncomingQuantityMt.ToString("0.##")</td>
+                            <td class="px-3 py-1.5 text-right font-semibold @(p.ProjectedAvailableQuantityMt < 0m ? "text-danger" : "")">@p.ProjectedAvailableQuantityMt.ToString("0.##")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </section>
+    }
 }
 
 @code {
     private IReadOnlyCollection<InventoryPosition> positions = Array.Empty<InventoryPosition>();
     private bool loading = true;
     private string filter = "";
+
+    private decimal TotalAvailable => positions.Sum(x => x.AvailableQuantityMt);
+    private decimal TotalReserved => positions.Sum(x => x.ReservedQuantityMt);
+    private decimal TotalIncoming => positions.Sum(x => x.ConfirmedIncomingQuantityMt);
+    private decimal TotalProjected => positions.Sum(x => x.ProjectedAvailableQuantityMt);
+    private int AtRiskCount => positions.Count(x => x.ProjectedAvailableQuantityMt < 0m);
 
     private IReadOnlyList<InventoryPosition> filtered =>
         string.IsNullOrWhiteSpace(filter)
@@ -59,4 +109,6 @@ else
         positions = await InventorySnapshot.GetInventoryAsync();
         loading = false;
     }
+
+    private void ClearFilter() => filter = "";
 }
