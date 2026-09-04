@@ -26,6 +26,18 @@ public sealed class PlannerConstraintWorkspaceMarkupTests
     }
 
     [Fact]
+    public void Planning_preflight_is_read_only_and_routes_findings_to_the_right_editors()
+    {
+        var source = System.IO.File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/PlanningPreflight.razor"));
+
+        Assert.Contains("@page \"/plan/preflight\"", source, StringComparison.Ordinal);
+        Assert.Contains("IPlanningConfigurationDiagnosticsService", source, StringComparison.Ordinal);
+        Assert.Contains("Preflight is intentionally non-destructive", source, StringComparison.Ordinal);
+        Assert.Contains("finding.FixHref", source, StringComparison.Ordinal);
+        Assert.Contains("READY FOR CALCULATE", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Resource_constraint_workspace_edits_authoritative_eligibility_and_calendars()
     {
         var source = System.IO.File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/ResourceConstraints.razor"));
@@ -56,10 +68,11 @@ public sealed class PlannerConstraintWorkspaceMarkupTests
     }
 
     [Fact]
-    public void Main_menu_exposes_planner_what_if_and_constraint_workspaces()
+    public void Main_menu_exposes_planner_preflight_what_if_and_constraint_workspaces()
     {
         var source = System.IO.File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/DesktopMenuBar.razor"));
 
+        Assert.Contains("Href=\"/plan/preflight\"", source, StringComparison.Ordinal);
         Assert.Contains("Href=\"/plan/what-if\"", source, StringComparison.Ordinal);
         Assert.Contains("Href=\"/plan/resource-constraints\"", source, StringComparison.Ordinal);
         Assert.Contains("Href=\"/plan/process-constraints\"", source, StringComparison.Ordinal);
