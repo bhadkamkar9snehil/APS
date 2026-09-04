@@ -21,7 +21,7 @@
                 }
                 @foreach (var block in row.Blocks)
                 {
-                    <div class="absolute top-0.5 h-5 overflow-hidden rounded px-1 text-[10px] leading-5 text-white @CssClass(block.TaskType)" style="@BlockStyle(block.StartUtc, block.EndUtc)" title="@block.Title">
+                    <div class="absolute top-0.5 h-5 overflow-hidden rounded px-1 text-[10px] leading-5 @CssClass(block.TaskType)" style="@BlockStyle(block.StartUtc, block.EndUtc)" title="@block.Title">
                         @block.Title
                     </div>
                 }
@@ -65,10 +65,10 @@
 
     private static string CssClass(FiniteScheduleTaskType type) => type switch
     {
-        FiniteScheduleTaskType.Casting => "bg-process-casting",
-        FiniteScheduleTaskType.HotRolling => "bg-process-hot-roll",
-        FiniteScheduleTaskType.ColdRolling => "bg-process-cold-roll",
-        FiniteScheduleTaskType.Finishing => "bg-process-finishing",
-        _ => "bg-surface0"
+        FiniteScheduleTaskType.Casting => "bg-process-casting text-white",
+        FiniteScheduleTaskType.HotRolling => "bg-process-hot-roll text-white",
+        FiniteScheduleTaskType.ColdRolling => "bg-process-cold-roll text-white",
+        FiniteScheduleTaskType.Finishing => "bg-process-finishing text-white",
+        _ => "bg-border-strong text-primary"
     };
 }
