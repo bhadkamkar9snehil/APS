@@ -26,7 +26,19 @@ public sealed record PlanningAssumptions(
     /// Effective calendar intervals supplied to the solver for this plan. Optional so plan versions
     /// persisted before calendar snapshotting was introduced remain deserializable.
     /// </summary>
-    IReadOnlyCollection<ResourceCalendarAssumption>? ResourceCalendars = null);
+    IReadOnlyCollection<ResourceCalendarAssumption>? ResourceCalendars = null,
+    /// <summary>Full campaign/heat controls used for this run. Null means the Plan Version predates full constraint snapshotting.</summary>
+    CampaignPlanningPolicy? CampaignPolicy = null,
+    /// <summary>Production-structure controls used for this run.</summary>
+    ProductionStructurePlanningPolicy? StructurePolicy = null,
+    /// <summary>Replan time-fence policy used for this run, when the plan is a child replan.</summary>
+    PlanningTimeFencePolicy? TimeFencePolicy = null,
+    /// <summary>Operation commitment/redispatch policies supplied to the run, if planner policy was enabled.</summary>
+    IReadOnlyCollection<OperationAssignmentPolicy>? AssignmentPolicies = null,
+    /// <summary>Bounded repair scope used for a replan or local repair, when one was supplied.</summary>
+    RepairScopePolicy? RepairScopePolicy = null,
+    /// <summary>Solver effort limit used by the run.</summary>
+    int? MaxSolverSeconds = null);
 
 /// <summary>How one physical resource was modelled by the solver for this plan (#35).</summary>
 public sealed record ResourceSchedulingAssumption(
@@ -82,7 +94,7 @@ public sealed record PlanVersionSnapshot(
     /// <summary>
     /// Every operation of the effective route and what the planner decided about it, including the
     /// steps it chose not to run and why (#34). This is what lets a read model draw the manufacturing
-    /// chain the plan actually used rather than a fixed EAF/LRF/VD diagram.
+    /// chain a plan actually used rather than a fixed EAF/LRF/VD diagram.
     /// </summary>
     IReadOnlyCollection<RouteOperationDecision>? RouteOperationDecisions = null)
 {
