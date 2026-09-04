@@ -22,12 +22,32 @@
     </DesktopMenu>
     <DesktopMenu Label="Configure">
         <MenuLink Href="/plan/constraints" Label="Planning controls" />
+        <MenuLink Href="/plan/routes" Label="Routes and capabilities" />
         <MenuLink Href="/plan/master-data" Label="Master data" />
     </DesktopMenu>
     <DesktopMenu Label="Appearance">
         <MenuButton Label="System appearance" OnClick="() => Theme.SetModeAsync(ThemeMode.System)" />
         <MenuButton Label="Light appearance" OnClick="() => Theme.SetModeAsync(ThemeMode.Light)" />
         <MenuButton Label="Dark appearance" OnClick="() => Theme.SetModeAsync(ThemeMode.Dark)" />
+    </DesktopMenu>
+    <DesktopMenu Label="Help">
+        <div class="px-3 py-2 text-xs text-secondary">APS Planner v@(AppVersion)</div>
+        @if (Updates.Status.Phase == UpdatePhase.Available)
+        {
+            <MenuButton Label="@($"Download update v{Updates.Status.AvailableVersion}")" OnClick="() => Updates.DownloadAsync()" />
+        }
+        else if (Updates.Status.Phase == UpdatePhase.Downloading)
+        {
+            <div class="px-3 py-2 text-xs text-secondary">Downloading update · @(Updates.Status.DownloadProgress ?? 0)%</div>
+        }
+        else if (Updates.Status.Phase == UpdatePhase.ReadyToRestart)
+        {
+            <MenuButton Label="@($"Restart to apply v{Updates.Status.AvailableVersion}")" OnClick="Updates.RestartAndApply" />
+        }
+        else if (Updates.Status.Phase == UpdatePhase.Failed)
+        {
+            <div class="px-3 py-2 text-xs text-danger">Update check failed@(Updates.Status.FailureCode is null ? "" : $" ({Updates.Status.FailureCode})")</div>
+        }
     </DesktopMenu>
     <DesktopMenu Label="Help">
         <div class="px-3 py-2 text-xs text-secondary">APS Planner v@(AppVersion)</div>
