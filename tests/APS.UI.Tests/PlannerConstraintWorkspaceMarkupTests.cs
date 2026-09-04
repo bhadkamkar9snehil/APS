@@ -30,11 +30,27 @@ public sealed class PlannerConstraintWorkspaceMarkupTests
     }
 
     [Fact]
-    public void Main_menu_exposes_what_if_and_resource_constraint_workspaces()
+    public void Process_constraint_workspace_edits_sequence_and_thermal_constraints()
+    {
+        var source = System.IO.File.ReadAllText(Repo.File("src/APS.UI/Components/Pages/ProcessConstraints.razor"));
+
+        Assert.Contains("@page \"/plan/process-constraints\"", source, StringComparison.Ordinal);
+        Assert.Contains("Admin.CreateAsync(editingTransition)", source, StringComparison.Ordinal);
+        Assert.Contains("Admin.DeleteAsync<TransitionRule>", source, StringComparison.Ordinal);
+        Assert.Contains("Admin.CreateAsync(editingGradeTemperature)", source, StringComparison.Ordinal);
+        Assert.Contains("Admin.DeleteAsync<GradeProcessTemperatureRequirement>", source, StringComparison.Ordinal);
+        Assert.Contains("Admin.CreateAsync(editingResourceTemperature)", source, StringComparison.Ordinal);
+        Assert.Contains("Admin.DeleteAsync<ResourceTemperatureCapability>", source, StringComparison.Ordinal);
+        Assert.Contains("Confirm delete", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Main_menu_exposes_planner_what_if_and_constraint_workspaces()
     {
         var source = System.IO.File.ReadAllText(Repo.File("src/APS.UI/Components/Layout/DesktopMenuBar.razor"));
 
         Assert.Contains("Href=\"/plan/what-if\"", source, StringComparison.Ordinal);
         Assert.Contains("Href=\"/plan/resource-constraints\"", source, StringComparison.Ordinal);
+        Assert.Contains("Href=\"/plan/process-constraints\"", source, StringComparison.Ordinal);
     }
 }
