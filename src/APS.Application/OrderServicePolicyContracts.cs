@@ -42,7 +42,7 @@ public interface IOrderServicePolicyService
 /// <summary>
 /// One small projection owns the translation from commercial delivery flexibility to manufacturing
 /// timing. Requested/confirmed delivery remains the optimization target; the latest acceptable date is
-/// a separate feasibility/release boundary. This avoids quietly turning tolerance into the new target.
+/// a separate release boundary. This avoids quietly turning tolerance into the new target.
 /// </summary>
 public static class OrderServiceWindow
 {
@@ -55,9 +55,10 @@ public static class OrderServiceWindow
             .Select(item => Apply(item, policyBySalesOrder.GetValueOrDefault(item.SalesOrderId)))
             .ToArray();
 
-        // ProductionOrder.RequiredDate remains the preferred production target. The acceptable latest
-        // boundary travels separately through PlanningOrderServiceDeadline, so commercial master data
-        // and campaign service scoring are never rewritten just because a customer granted tolerance.
+        // ProductionOrder.RequiredDate remains the preferred production target. Tolerance is immutable
+        // Plan Version evidence and is enforced at release, so the campaign and finite-schedule objective
+        // still tries to meet the customer's requested/confirmed target instead of deliberately drifting
+        // work to the edge of the allowed window.
         return demand with { MakeToOrderDemand = items };
     }
 
@@ -94,14 +95,4 @@ public static class OrderServiceWindow
         commitment == ServiceCommitmentClass.Hard
             ? targetDelivery
             : configuredLatest ?? targetDelivery;
-
-    public static IReadOnlyCollection<PlanningOrderServiceDeadline> PlanningDeadlines(
-        DemandOrchestrationResult demand) =>
-        demand.MakeToOrderDemand
-            .Where(x => x.ProductionOrderId.HasValue && x.ManufacturingRequirementQuantityMt > 0m)
-            .Select(x => new PlanningOrderServiceDeadline(
-                x.ProductionOrderId!.Value,
-                x.ProductionRequiredByDate,
-                x.ProductionLatestAcceptableDate ?? x.ProductionRequiredByDate))
-            .ToArray();
 }
