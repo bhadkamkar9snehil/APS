@@ -1,0 +1,118 @@
+@page "/plan/preflight"
+@inject IPlanningConfigurationDiagnosticsService Diagnostics
+
+<PageTitle>Planning Preflight - APS</PageTitle>
+
+<div class="mb-5 flex flex-wrap items-start justify-between gap-3">
+    <div class="max-w-3xl">
+        <h1 class="mb-1 text-lg font-semibold">Planning Preflight</h1>
+        <p class="text-sm text-secondary">Check current manufacturing requirements against authoritative route, resource, calendar, sequence, scenario and thermal master data before spending solver time.</p>
+    </div>
+    <div class="flex flex-wrap gap-2">
+        <NavLink href="/plan/routes" class="rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Routes</NavLink>
+        <NavLink href="/plan/resource-constraints" class="rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Resources</NavLink>
+        <NavLink href="/plan/process-constraints" class="rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">Process</NavLink>
+        <button type="button" class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground disabled:opacity-50" disabled="@loading" @onclick="LoadAsync">@(loading ? "Checking…" : "Refresh preflight")</button>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div role="alert" class="mb-4 rounded border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger">@error</div>
+}
+
+@if (loading && view is null)
+{
+    <div class="space-y-2">@for (var i = 0; i < 5; i++) { <div class="aps-shimmer h-16 rounded-surface bg-surface-raised"></div> }</div>
+}
+else if (view is not null)
+{
+    <div class="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div class="rounded-surface border border-border bg-surface-raised p-3"><div class="text-xs text-muted">PLANNING STATE</div><strong class="mt-1 block text-base @(view.IsPlanningReady ? "text-success" : "text-danger")">@(view.IsPlanningReady ? "READY FOR CALCULATE" : "BLOCKED")</strong></div>
+        <div class="rounded-surface border border-border bg-surface-raised p-3"><div class="text-xs text-muted">BLOCKERS</div><strong class="text-lg @(view.BlockerCount > 0 ? "text-danger" : "text-success")">@view.BlockerCount</strong></div>
+        <div class="rounded-surface border border-border bg-surface-raised p-3"><div class="text-xs text-muted">WARNINGS</div><strong class="text-lg @(view.WarningCount > 0 ? "text-warning" : "text-primary")">@view.WarningCount</strong></div>
+        <div class="rounded-surface border border-border bg-surface-raised p-3"><div class="text-xs text-muted">OPEN PRODUCTION ORDERS</div><strong class="text-lg">@view.ProductionOrderCount</strong></div>
+        <div class="rounded-surface border border-border bg-surface-raised p-3"><div class="text-xs text-muted">PLANT MODEL</div><strong class="text-sm">@view.RouteCount routes · @view.ResourceCount resources</strong></div>
+    </div>
+
+    @if (view.Diagnostics.Count == 0)
+    {
+        <section class="rounded-surface border border-success/30 bg-success-soft p-6 text-center shadow-soft">
+            <strong class="text-success">No static configuration blockers or warnings were found</strong>
+            <p class="mx-auto mt-2 max-w-2xl text-sm text-secondary">This preflight checks deterministic master-data contradictions. Calculate can still surface demand/material/finite-schedule infeasibility that depends on quantities, timing or current inventory.</p>
+            <NavLink href="/plan/versions" class="mt-4 inline-flex rounded-control bg-accent px-4 py-2 text-sm font-semibold text-accent-foreground">Continue to Plan Versions</NavLink>
+        </section>
+    }
+    else
+    {
+        <div class="mb-3 flex flex-wrap items-center gap-2 text-xs">
+            <button type="button" class="rounded-control border px-2 py-1 @(filter == null ? "border-accent bg-accent-soft text-accent" : "border-border")" @onclick="() => filter = null">All @view.Diagnostics.Count</button>
+            <button type="button" class="rounded-control border px-2 py-1 @(filter == PlanningConfigurationDiagnosticSeverity.Blocker ? "border-danger bg-danger-soft text-danger" : "border-border")" @onclick="() => filter = PlanningConfigurationDiagnosticSeverity.Blocker">Blockers @view.BlockerCount</button>
+            <button type="button" class="rounded-control border px-2 py-1 @(filter == PlanningConfigurationDiagnosticSeverity.Warning ? "border-warning bg-warning-soft text-warning" : "border-border")" @onclick="() => filter = PlanningConfigurationDiagnosticSeverity.Warning">Warnings @view.WarningCount</button>
+        </div>
+
+        <div class="space-y-3">
+            @foreach (var group in FilteredDiagnostics.GroupBy(x => x.Area).OrderByDescending(x => x.Any(y => y.Severity == PlanningConfigurationDiagnosticSeverity.Blocker)).ThenBy(x => x.Key))
+            {
+                <section class="overflow-hidden rounded-surface border border-border bg-surface-raised shadow-soft">
+                    <div class="flex items-center justify-between border-b border-border px-4 py-2.5">
+                        <h2 class="text-sm font-semibold">@group.Key</h2>
+                        <span class="text-xs text-muted">@group.Count() finding(s)</span>
+                    </div>
+                    <div>
+                        @foreach (var finding in group)
+                        {
+                            <article class="flex flex-col gap-3 border-b border-border px-4 py-3 last:border-0 lg:flex-row lg:items-start">
+                                <div class="mt-0.5 w-20 shrink-0"><span class="inline-flex rounded px-2 py-0.5 text-[11px] font-semibold @SeverityClass(finding.Severity)">@finding.Severity.ToString().ToUpperInvariant()</span></div>
+                                <div class="min-w-0 flex-1">
+                                    <div class="flex flex-wrap items-center gap-x-2 gap-y-1"><strong class="text-sm">@finding.Title</strong><code class="text-[10px] text-muted">@finding.Code</code>@if (!string.IsNullOrWhiteSpace(finding.EntityCode)) { <span class="rounded bg-surface-inset px-1.5 py-0.5 text-[11px] text-secondary">@finding.EntityCode</span> }</div>
+                                    <p class="mt-1 text-sm text-secondary">@finding.Message</p>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(finding.FixHref))
+                                {
+                                    <NavLink href="@finding.FixHref" class="shrink-0 rounded-control border border-border-strong px-3 py-1.5 text-xs font-semibold hover:bg-surface-hover">@(finding.FixLabel ?? "Fix")</NavLink>
+                                }
+                            </article>
+                        }
+                    </div>
+                </section>
+            }
+        </div>
+
+        <div class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-surface border border-border bg-surface-inset p-4">
+            <p class="max-w-3xl text-xs text-secondary"><strong class="text-primary">Preflight is intentionally non-destructive.</strong> APS will not silently rewrite route endpoints, fabricate resource qualifications, repair temperatures or change customer demand just to make Calculate succeed.</p>
+            <NavLink href="/plan/versions" class="rounded-control bg-accent px-3 py-1.5 text-xs font-semibold text-accent-foreground">Open Plan Versions</NavLink>
+        </div>
+    }
+
+    <p class="mt-3 text-right text-[11px] text-muted">Generated @view.GeneratedOnUtc.ToString("dd MMM yyyy HH:mm:ss 'UTC'")</p>
+}
+
+@code {
+    private PlanningConfigurationDiagnosticsView? view;
+    private PlanningConfigurationDiagnosticSeverity? filter;
+    private bool loading = true;
+    private string? error;
+
+    private IEnumerable<PlanningConfigurationDiagnostic> FilteredDiagnostics => view?.Diagnostics
+        .Where(x => !filter.HasValue || x.Severity == filter.Value)
+        ?? Enumerable.Empty<PlanningConfigurationDiagnostic>();
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        error = null;
+        try { view = await Diagnostics.GetAsync(); }
+        catch (Exception ex) { error = ex.Message; }
+        finally { loading = false; }
+    }
+
+    private static string SeverityClass(PlanningConfigurationDiagnosticSeverity severity) => severity switch
+    {
+        PlanningConfigurationDiagnosticSeverity.Blocker => "bg-danger-soft text-danger",
+        PlanningConfigurationDiagnosticSeverity.Warning => "bg-warning-soft text-warning",
+        _ => "bg-info-soft text-info"
+    };
+}
