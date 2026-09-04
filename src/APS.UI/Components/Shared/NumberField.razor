@@ -1,0 +1,26 @@
+<label class="flex min-w-0 flex-col gap-1 text-sm">
+    <span class="text-xs text-secondary">@Label</span>
+    <input type="number"
+           min="@Min"
+           max="@Max"
+           step="@Step"
+           class="w-full rounded-control border border-border-strong bg-surface px-2 py-1.5 text-sm"
+           value="@Value"
+           @onchange="OnChanged" />
+</label>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "Value";
+    [Parameter] public decimal Value { get; set; }
+    [Parameter] public EventCallback<decimal> ValueChanged { get; set; }
+    [Parameter] public string Step { get; set; } = "0.1";
+    [Parameter] public string? Min { get; set; }
+    [Parameter] public string? Max { get; set; }
+
+    private async Task OnChanged(ChangeEventArgs args)
+    {
+        if (decimal.TryParse(args.Value?.ToString(), System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var value) ||
+            decimal.TryParse(args.Value?.ToString(), out value))
+            await ValueChanged.InvokeAsync(value);
+    }
+}
